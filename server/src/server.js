@@ -5,82 +5,155 @@ const crypto = require('crypto');
 const executor = require('./runtime/Executor');
 const sessionManager = require('./session/SessionManager');
 
-// 注册 CORS 插件，允许前端跨域访问
+// 导入 DB 和 Auth 模块
+const { db } = require('./db/index');
+const schema = require('./db/schema');
+const { eq } = require('drizzle-orm');
+const auth = require('./auth/index');
+
 fastify.register(require('@fastify/cors'), {
     origin: '*',
-    methods: ['GET', 'POST']
+    methods: ['GET', 'POST', 'PUT', 'DELETE']
 });
-
-// 注册 WebSocket 插件
 fastify.register(require('@fastify/websocket'));
 
-// 加载支持的 Agents 列表
 const agentsConfig = JSON.parse(fs.readFileSync(path.join(__dirname, 'agents.json'), 'utf8'));
 
-// 1. 获取支持的 Agent 列表
-fastify.get('/api/v1/agents', async () => {
-    return agentsConfig.agents;
+// Auth Hook
+fastify.decorate('authenticate', async function (request, reply) {
+    try {
+        const token = request.headers.authorization?.replace('Bearer ', '');
+        if (!token) throw new Error('Missing token');
+        const user = auth.verifyToken(token);
+        if (!user) throw new Error('Invalid token');
+        request.user = user;
+    } catch (err) {
+        reply.code(401).send({ error: 'Unauthorized' });
+    }
 });
 
-// 2. 启动特定 Agent 实例，初始化会话
-fastify.post('/api/v1/session/start', async (request, reply) => {
-    const { agent_id, configs } = request.body;
-    const agentMeta = agentsConfig.agents.find(a => a.id === agent_id);
-    
-    if (!agentMeta) {
-        return reply.code(404).send({ error: 'Agent not found' });
-    }
+// -- API Routes --
 
-    // 校验必填的环境变量配置
+// 注册
+fastify.post('/api/v1/auth/register', async (request, reply) => {
+    const { username, password } = request.body;
+    try {
+        const userId = `usr_${crypto.randomBytes(6).toString('hex')}`;
+        await db.insert(schema.users).values({
+            id: userId,
+            username,
+            passwordHash: auth.hashPassword(password),
+            createdAt: Date.now()
+        });
+        const token = auth.generateToken({ id: userId, username, role: 'user' });
+        return { token, user: { id: userId, username } };
+    } catch (e) {
+        return reply.code(400).send({ error: 'Username already exists' });
+    }
+});
+
+// 登录
+fastify.post('/api/v1/auth/login', async (request, reply) => {
+    const { username, password } = request.body;
+    const users = await db.select().from(schema.users).where(eq(schema.users.username, username));
+    if (users.length === 0 || !auth.verifyPassword(password, users[0].passwordHash)) {
+        return reply.code(401).send({ error: 'Invalid credentials' });
+    }
+    const token = auth.generateToken(users[0]);
+    return { token, user: { id: users[0].id, username: users[0].username } };
+});
+
+// 获取凭证设置
+fastify.get('/api/v1/secrets', { preValidation: [fastify.authenticate] }, async (request, reply) => {
+    const result = await db.select().from(schema.secrets).where(eq(schema.secrets.userId, request.user.id));
+    if (result.length === 0) return {};
+    return auth.decryptSecrets(result[0].encryptedData);
+});
+
+// 保存凭证设置
+fastify.post('/api/v1/secrets', { preValidation: [fastify.authenticate] }, async (request, reply) => {
+    const newSecrets = request.body;
+    const encrypted = auth.encryptSecrets(newSecrets);
+    
+    // UPSERT
+    const existing = await db.select().from(schema.secrets).where(eq(schema.secrets.userId, request.user.id));
+    if (existing.length > 0) {
+        await db.update(schema.secrets).set({ encryptedData: encrypted }).where(eq(schema.secrets.userId, request.user.id));
+    } else {
+        await db.insert(schema.secrets).values({ userId: request.user.id, encryptedData: encrypted });
+    }
+    return { success: true };
+});
+
+fastify.get('/api/v1/agents', async () => agentsConfig.agents);
+
+// 获取用户活跃会话列表
+fastify.get('/api/v1/sessions', { preValidation: [fastify.authenticate] }, async (request, reply) => {
+    return await db.select().from(schema.sessions).where(eq(schema.sessions.userId, request.user.id));
+});
+
+// 启动 Agent 实例
+fastify.post('/api/v1/session/start', { preValidation: [fastify.authenticate] }, async (request, reply) => {
+    const { agent_id } = request.body;
+    const agentMeta = agentsConfig.agents.find(a => a.id === agent_id);
+    if (!agentMeta) return reply.code(404).send({ error: 'Agent not found' });
+
+    // 从数据库中自动拉取环境变量凭证
+    const dbSecrets = await db.select().from(schema.secrets).where(eq(schema.secrets.userId, request.user.id));
+    const userSecrets = dbSecrets.length > 0 ? auth.decryptSecrets(dbSecrets[0].encryptedData) : {};
+
     for (const reqEnv of agentMeta.env_required) {
-        if (!configs || !configs[reqEnv]) {
-            return reply.code(400).send({ error: `Missing required env: ${reqEnv}` });
+        if (!userSecrets[reqEnv]) {
+            return reply.code(400).send({ error: `Missing required env in your Secrets Vault: ${reqEnv}` });
         }
     }
 
     const sessionId = `sess_${crypto.randomBytes(8).toString('hex')}`;
+    const ptyProcess = executor.spawn(agentMeta.cmd, agentMeta.args, userSecrets, request.user.id);
     
-    // 调用抽象执行层拉起 PTY
-    const ptyProcess = executor.spawn(agentMeta.cmd, agentMeta.args, configs);
-    
-    // 注册进会话管理器
     sessionManager.createSession(sessionId, ptyProcess, agent_id);
+    
+    // 写入数据库做持久化记录
+    await db.insert(schema.sessions).values({
+        id: sessionId,
+        userId: request.user.id,
+        agentId: agent_id,
+        cwd: `/tmp/agent-workspaces/${request.user.id}`,
+        createdAt: Date.now()
+    });
 
     return { session_id: sessionId, status: 'running' };
 });
 
-// 3. WebSocket 双向数据桥接路由
+// WebSocket Terminal
 fastify.get('/ws/v1/terminal', { websocket: true }, (connection, req) => {
-    // fastify req.url 可能是相对的，所以我们手动拼接一下
     const url = new URL(req.url, 'http://localhost');
     const sessionId = url.searchParams.get('sessionId');
+    // Auth should ideally be handled via a ticket/token in query param for WS, but MVP just passes sessionId.
     const session = sessionManager.getSession(sessionId);
 
     if (!session) {
-        connection.socket.send(JSON.stringify({ type: 'error', data: 'Invalid Session ID' }));
+        connection.socket.send(JSON.stringify({ type: 'error', data: 'Invalid or Expired Session' }));
         connection.socket.close();
         return;
     }
 
     const ptyProcess = session.ptyProcess;
 
-    // A. 监听 PTY 进程输出 (Stdout) -> 转发给前端 Web Terminal
     const ptyDataListener = ptyProcess.onData((data) => {
         connection.socket.send(JSON.stringify({ type: 'output', data: data }));
     });
 
-    // B. 监听前端 Web 终端用户的输入或控制指令
     connection.socket.on('message', (message) => {
         try {
             const msg = JSON.parse(message);
             if (msg.type === 'input') {
-                ptyProcess.write(msg.data); // 写入 PTY 终端输入
+                ptyProcess.write(msg.data);
             } else if (msg.type === 'resize') {
                 try {
-                    ptyProcess.resize(msg.cols, msg.rows); // 动态调整终端视口大小
+                    ptyProcess.resize(msg.cols, msg.rows);
                 } catch (e) {
                     const errorMsg = e instanceof Error ? e.message : String(e);
-                    // emdash source: suppress known node-pty errors during resize
                     if (!/EBADF|ENOTTY|ioctl\(2\) failed|not open|Napi::Error/.test(errorMsg)) {
                         console.error('PTY Resize Error:', errorMsg);
                     }
@@ -91,15 +164,11 @@ fastify.get('/ws/v1/terminal', { websocket: true }, (connection, req) => {
         }
     });
 
-    // C. 断开连接处理
     connection.socket.on('close', () => {
-        // MVP 阶段：断开 WS 时移除监听器以防止内存泄漏，但保留后台运行的 PTY 进程
         ptyDataListener.dispose();
-        console.log(`Session ${sessionId} WebSocket disconnected. Process kept alive.`);
     });
 });
 
-// 启动服务器
 fastify.listen({ port: 3000, host: '0.0.0.0' }, (err) => {
     if (err) { fastify.log.error(err); process.exit(1); }
 });

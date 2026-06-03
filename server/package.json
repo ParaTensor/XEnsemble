@@ -10,7 +10,10 @@
   "dependencies": {
     "@fastify/cors": "^8.3.0",
     "@fastify/websocket": "^8.2.0",
+    "better-sqlite3": "^9.6.0",
+    "drizzle-orm": "^0.30.10",
     "fastify": "^4.21.0",
+    "jsonwebtoken": "^9.0.2",
     "node-pty": "^1.0.0"
   },
   "devDependencies": {
