@@ -14,6 +14,10 @@ export default function Console() {
 
   // Workspace File Explorer states
   const [workspaceFiles, setWorkspaceFiles] = useState([]);
+  const [viewingFile, setViewingFile] = useState(null);
+  const [fileContent, setFileContent] = useState('');
+  const [isLoadingFiles, setIsLoadingFiles] = useState(false);
+  
   // Modals state
   const [showConfigModal, setShowConfigModal] = useState(false);
   const [showErrorModal, setShowErrorModal] = useState(false);
