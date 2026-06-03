@@ -5,6 +5,7 @@ import Login from './pages/Login';
 import Console from './pages/Console';
 import Settings from './pages/Settings';
 import AgentsAdmin from './pages/AgentsAdmin';
+import UserMenu from './components/UserMenu';
 
 export const AuthContext = React.createContext(null);
 
@@ -45,7 +46,7 @@ function App() {
             <Link to="/admin/agents" className={`hover:text-black ${location.pathname === '/admin/agents' ? 'text-zinc-900' : ''}`}>Registry</Link>
           )}
           <div className="w-px h-4 bg-zinc-300"></div>
-          <button onClick={logout} className="hover:text-black">Logout ({user?.username})</button>
+          <UserMenu username={user?.username} onLogout={logout} />
         </nav>
       </header>
       <main className="flex-1 overflow-auto p-8 flex flex-col max-w-[1600px] w-full mx-auto gap-6">

@@ -27,4 +27,10 @@
   ::-webkit-scrollbar-thumb:hover {
     @apply bg-zinc-400;
   }
+
+  .xterm-host .xterm,
+  .xterm-host .xterm-viewport {
+    height: 100%;
+    width: 100%;
+  }
 }

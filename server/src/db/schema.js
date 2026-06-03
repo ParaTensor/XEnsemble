@@ -13,9 +13,18 @@ const secrets = sqliteTable('secrets', {
   encryptedData: text('encrypted_data').notNull() // JSON string of encrypted keys
 });
 
+const projects = sqliteTable('projects', {
+  id: text('id').primaryKey(),
+  userId: text('user_id').notNull().references(() => users.id),
+  name: text('name').notNull(),
+  serverPath: text('server_path').notNull(),
+  createdAt: integer('created_at').notNull()
+});
+
 const sessions = sqliteTable('sessions', {
   id: text('id').primaryKey(),
   userId: text('user_id').notNull().references(() => users.id),
+  projectId: text('project_id').references(() => projects.id),
   agentId: text('agent_id').notNull(),
   cwd: text('cwd').notNull(),
   status: text('status').default('running'),
@@ -33,6 +42,7 @@ const agents = sqliteTable('agents', {
 module.exports = {
   users,
   secrets,
+  projects,
   sessions,
   agents
 };

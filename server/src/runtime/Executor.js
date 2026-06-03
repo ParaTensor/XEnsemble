@@ -2,34 +2,192 @@ const pty = require('node-pty');
 const path = require('path');
 const fs = require('fs');
 
+class AgentSpawnError extends Error {
+    constructor(message, statusCode = 400) {
+        super(message);
+        this.name = 'AgentSpawnError';
+        this.statusCode = statusCode;
+    }
+}
+
+const KNOWN_CLI_LOCATIONS = {
+    kimi: ['.kimi-code/bin/kimi'],
+    cursor: ['.local/bin/cursor'],
+    claude: ['.local/bin/claude'],
+    droid: ['.local/bin/droid'],
+    xagent: ['.local/bin/xagent'],
+};
+
+const HOME_PATH_PREFIXES = [
+    '.kimi-code/bin',
+    '.local/bin',
+    '.opencode/bin',
+    '.amp/bin',
+];
+
+function quotePosixArg(input) {
+    if (input.length === 0) return "''";
+    if (!/[\s'"\\$`\n\r\t;&|<>(){}[\]*?!]/.test(input)) return input;
+    return `'${input.replace(/'/g, "'\\''")}'`;
+}
+
+function isExecutable(filePath) {
+    try {
+        fs.accessSync(filePath, fs.constants.X_OK);
+        return true;
+    } catch {
+        return fs.existsSync(filePath);
+    }
+}
+
+function enrichPath(env) {
+    const home = env.HOME || process.env.HOME;
+    if (!home) return env.PATH || process.env.PATH || '';
+    const extra = HOME_PATH_PREFIXES.map((rel) => path.join(home, rel)).filter(isExecutable);
+    const parts = [...extra, ...(env.PATH || process.env.PATH || '').split(path.delimiter)].filter(Boolean);
+    const seen = new Set();
+    const merged = parts.filter((p) => {
+        if (seen.has(p)) return false;
+        seen.add(p);
+        return true;
+    });
+    return merged.join(path.delimiter);
+}
+
+function resolveExecutable(cmd, env) {
+    if (path.isAbsolute(cmd) || cmd.includes(path.sep)) {
+        return isExecutable(cmd) ? cmd : null;
+    }
+    const pathDirs = (env.PATH || '').split(path.delimiter).filter(Boolean);
+    for (const dir of pathDirs) {
+        const candidate = path.join(dir, cmd);
+        if (isExecutable(candidate)) return candidate;
+    }
+    return null;
+}
+
+function findOffPathInstall(cmd) {
+    const home = process.env.HOME;
+    if (!home) return null;
+    const relPaths = KNOWN_CLI_LOCATIONS[cmd] || [];
+    for (const rel of relPaths) {
+        const full = path.join(home, rel);
+        if (isExecutable(full)) return full;
+    }
+    return null;
+}
+
+function buildNotFoundMessage(cmd, agentName) {
+    const label = agentName ? `"${agentName}"` : `"${cmd}"`;
+    const offPath = findOffPathInstall(cmd);
+    const pathPreview = (process.env.PATH || '(empty)')
+        .split(path.delimiter)
+        .filter(Boolean)
+        .slice(0, 6)
+        .join(path.delimiter);
+    const pathSuffix = (process.env.PATH || '').split(path.delimiter).length > 6 ? `${path.delimiter}…` : '';
+
+    let message = `Cannot start agent ${label}: command "${cmd}" was not found in the backend server PATH.`;
+    if (offPath) {
+        message += ` The CLI exists at ${offPath} but the server cannot see it. In Agents admin set cmd to that full path, or restart the backend after exporting PATH to include ${path.dirname(offPath)}.`;
+    } else {
+        message += ` Install the "${cmd}" CLI on this machine, or set cmd to its absolute path in Agents admin.`;
+    }
+    message += ` Server PATH (preview): ${pathPreview}${pathSuffix}`;
+    return message;
+}
+
+function getSpawnHelperPath() {
+    const archDir = process.platform === 'darwin'
+        ? (process.arch === 'arm64' ? 'darwin-arm64' : 'darwin-x64')
+        : null;
+    if (!archDir) return null;
+    return path.join(__dirname, '../../node_modules/node-pty/prebuilds', archDir, 'spawn-helper');
+}
+
+function getSpawnHelperFixHint() {
+    const helper = getSpawnHelperPath();
+    if (!helper || !fs.existsSync(helper)) return null;
+    if (isExecutable(helper)) return null;
+    return `node-pty spawn-helper is missing the execute bit (${helper}). ` +
+        `From the server folder run: chmod +x node_modules/node-pty/prebuilds/*/spawn-helper, then restart the backend. ` +
+        `Future npm install runs postinstall to fix this automatically.`;
+}
+
+function buildPosixSpawnFailedMessage(cmd, agentName, resolved, cause) {
+    const label = agentName ? `"${agentName}"` : `"${cmd}"`;
+    const spawnHelperHint = getSpawnHelperFixHint();
+    if (spawnHelperHint) {
+        return `Cannot start agent ${label}: terminal backend is misconfigured (${cause}). ${spawnHelperHint}`;
+    }
+    const argsHint = cmd === 'kimi'
+        ? ' Kimi Code no longer supports `--mode agent`; set args to [] in Agents admin (interactive CLI).'
+        : '';
+    return `Cannot start agent ${label}: found executable at ${resolved} but failed to open a PTY (${cause}).` +
+        ` Run \`${path.basename(resolved)} --help\` in your terminal to verify the CLI.${argsHint}`;
+}
+
+/**
+ * emdash 通过 login shell (-il -c) 包装 agent 命令，以加载用户 PATH 与 profile。
+ */
+function resolveSpawnTarget(resolved, args) {
+    if (process.platform === 'win32') {
+        return { command: resolved, args: [...args] };
+    }
+    const shell = process.env.SHELL || '/bin/zsh';
+    const commandLine = `exec ${[resolved, ...args].map(quotePosixArg).join(' ')}`;
+    return { command: shell, args: ['-il', '-c', commandLine] };
+}
+
 class LocalPtyExecutor {
-    /**
-     * 拉起一个本地 PTY 进程
-     * @param {string} cmd - 命令路径名
-     * @param {string[]} args - 命令参数
-     * @param {Object} envs - 注入的环境变量
-     * @param {string} userId - 用户ID，用于隔离工作目录
-     * @returns {Object} node-pty 实例
-     */
-    spawn(cmd, args, envs, userId) {
-        // 隔离工作目录 (Workspace Jail)
-        const workspaceDir = path.join('/tmp/agent-workspaces', userId || 'default');
+    spawn(cmd, args, envs, userId, meta = {}) {
+        const workspaceDir = meta.cwd;
+        if (!workspaceDir || typeof workspaceDir !== 'string') {
+            throw new AgentSpawnError('Project workspace directory is required to start an agent.');
+        }
         if (!fs.existsSync(workspaceDir)) {
             fs.mkdirSync(workspaceDir, { recursive: true });
         }
 
-        // 降权运行 (De-escalation) 的预留位置
-        // 在生产环境中，可以将 cmd 替换为 'sudo', args 替换为 ['-u', 'low_priv_user', cmd, ...args]
-        // 这里为了兼容开发环境先采用直接拉起，但 CWD 被严格限制
-        
-        return pty.spawn(cmd, args, {
-            name: 'xterm-256color', // 支持丰富的终端颜色
-            cols: 80,
-            rows: 24,
+        const spawnEnv = {
+            ...process.env,
+            ...envs,
+            PATH: enrichPath({ ...process.env, ...envs }),
+            TERM: 'xterm-256color',
+        };
+
+        const resolved = resolveExecutable(cmd, spawnEnv);
+        if (!resolved) {
+            throw new AgentSpawnError(buildNotFoundMessage(cmd, meta.name));
+        }
+
+        const { command, args: spawnArgs } = resolveSpawnTarget(resolved, args);
+        const ptyOptions = {
+            name: 'xterm-256color',
+            cols: 120,
+            rows: 32,
             cwd: workspaceDir,
-            env: { ...process.env, ...envs } // 合并系统环境变量与用户动态配置
-        });
+            env: spawnEnv,
+        };
+
+        try {
+            return pty.spawn(command, spawnArgs, ptyOptions);
+        } catch (err) {
+            const cause = err instanceof Error ? err.message : String(err);
+            if (/posix_spawnp failed|ENOENT|not found/i.test(cause)) {
+                throw new AgentSpawnError(
+                    buildPosixSpawnFailedMessage(cmd, meta.name, resolved, cause),
+                    500
+                );
+            }
+            const label = meta.name ? `"${meta.name}"` : `"${cmd}"`;
+            throw new AgentSpawnError(
+                `Cannot start agent ${label}: failed to run "${resolved}" (${cause}).`,
+                500
+            );
+        }
     }
 }
 
 module.exports = new LocalPtyExecutor();
+module.exports.AgentSpawnError = AgentSpawnError;

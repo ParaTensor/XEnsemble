@@ -1,6 +1,6 @@
 class SessionManager {
     constructor() {
-        this.sessions = new Map(); // [sessionId, { ptyProcess, agentId, createdAt, history }]
+        this.sessions = new Map();
     }
 
     createSession(sessionId, ptyProcess, agentId) {
@@ -8,23 +8,50 @@ class SessionManager {
             ptyProcess,
             agentId,
             createdAt: Date.now(),
-            history: '' // 简易历史回放 Buffer
+            history: '',
+            status: 'running',
+            exitCode: null,
+            exitListeners: new Set(),
         };
 
-        // 持续记录 PTY 输出
         ptyProcess.onData((data) => {
             session.history += data;
-            // 限制 Buffer 大小，防止内存泄漏 (保留最后的 100KB)
             if (session.history.length > 100000) {
                 session.history = session.history.slice(-100000);
             }
         });
 
+        ptyProcess.onExit(({ exitCode, signal }) => {
+            session.status = 'exited';
+            session.exitCode = exitCode ?? signal ?? null;
+            for (const listener of session.exitListeners) {
+                try { listener(session.exitCode); } catch (_) { /* ignore */ }
+            }
+            session.exitListeners.clear();
+        });
+
         this.sessions.set(sessionId, session);
+        return session;
     }
 
     getSession(sessionId) {
         return this.sessions.get(sessionId);
+    }
+
+    isAlive(sessionId) {
+        const session = this.sessions.get(sessionId);
+        return Boolean(session && session.status === 'running' && session.ptyProcess);
+    }
+
+    onExit(sessionId, listener) {
+        const session = this.sessions.get(sessionId);
+        if (!session) return () => {};
+        if (session.status === 'exited') {
+            listener(session.exitCode);
+            return () => {};
+        }
+        session.exitListeners.add(listener);
+        return () => session.exitListeners.delete(listener);
     }
 
     deleteSession(sessionId) {

@@ -1,3 +1,4 @@
 node_modules/
 emdash_source/
 .env
+server/data/
