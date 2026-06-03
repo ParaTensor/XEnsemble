@@ -12,26 +12,27 @@ export default function AgentConsole({ sessionId, agentName }) {
     useEffect(() => {
         if (!terminalRef.current) return;
 
-        // 1. 初始化 xterm.js
+        // Initialize xterm.js with ParaRouter 'tech-console' aesthetic
         const term = new Terminal({
             cursorBlink: true,
             theme: { 
-                background: '#121317',
-                foreground: '#f0f0f2',
-                cursor: '#5e6ad2',
-                selectionBackground: 'rgba(94, 106, 210, 0.3)',
-                black: '#121317',
-                red: '#ff3b30',
-                green: '#4cd964',
-                yellow: '#ffcc00',
-                blue: '#5e6ad2',
-                magenta: '#ff2d55',
-                cyan: '#5ac8fa',
-                white: '#f0f0f2',
+                background: '#18181b', // bg-zinc-900
+                foreground: '#fafafa', // text-zinc-50
+                cursor: '#ffffff',
+                selectionBackground: 'rgba(255, 255, 255, 0.2)',
+                black: '#18181b',
+                red: '#ef4444',
+                green: '#22c55e',
+                yellow: '#eab308',
+                blue: '#3b82f6',
+                magenta: '#d946ef',
+                cyan: '#06b6d4',
+                white: '#fafafa',
             },
-            fontFamily: "'JetBrains Mono', 'Fira Code', Consolas, monospace",
-            fontSize: 14,
-            padding: 15
+            fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace",
+            fontSize: 13,
+            lineHeight: 1.4,
+            padding: 16
         });
         
         const fitAddon = new FitAddon();
@@ -45,17 +46,16 @@ export default function AgentConsole({ sessionId, agentName }) {
         
         xtermRef.current = term;
 
-        // 2. 建立 WebSocket 连接
+        // Connect WebSocket
         const wsUrl = `ws://localhost:3000/ws/v1/terminal?sessionId=${sessionId}`;
         const ws = new WebSocket(wsUrl);
         wsRef.current = ws;
 
         ws.onopen = () => {
             setStatus('connected');
-            handleResize(); // 同步视口大小
+            handleResize();
         };
 
-        // 3. 处理后端传入的 PTY 流并渲染
         ws.onmessage = (event) => {
             try {
                 const msg = JSON.parse(event.data);
@@ -79,14 +79,12 @@ export default function AgentConsole({ sessionId, agentName }) {
             term.write('\r\n\x1b[31m[WebSocket Connection Error]\x1b[0m\r\n');
         };
 
-        // 4. 将用户在 Web 端的键盘输入发送给后端 PTY
         term.onData((data) => {
             if (ws.readyState === WebSocket.OPEN) {
                 ws.send(JSON.stringify({ type: 'input', data }));
             }
         });
 
-        // 5. 监听窗口大小变化并同步给后台 PTY
         const handleResize = () => {
             if (fitAddon && term) {
                 fitAddon.fit();
@@ -100,14 +98,8 @@ export default function AgentConsole({ sessionId, agentName }) {
             }
         };
         
-        const resizeObserver = new ResizeObserver(() => {
-            handleResize();
-        });
-        
-        if (terminalRef.current) {
-            resizeObserver.observe(terminalRef.current);
-        }
-
+        const resizeObserver = new ResizeObserver(() => handleResize());
+        if (terminalRef.current) resizeObserver.observe(terminalRef.current);
         window.addEventListener('resize', handleResize);
 
         return () => {
@@ -121,14 +113,25 @@ export default function AgentConsole({ sessionId, agentName }) {
     }, [sessionId]);
 
     return (
-        <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-            <div className="terminal-header">
-                <div className="terminal-title">
-                    <span className={`status-dot ${status}`}></span>
-                    {agentName || 'Terminal'} - {sessionId.substring(0, 13)}...
+        <div className="flex flex-col h-full bg-zinc-900 rounded-lg overflow-hidden">
+            {/* Terminal Header Row */}
+            <div className="flex items-center justify-between px-4 py-2 border-b border-zinc-800 bg-zinc-950 shrink-0">
+                <div className="flex items-center gap-3">
+                    {/* Traffic light indicator */}
+                    <div className="flex items-center gap-1.5">
+                        <div className={`w-2.5 h-2.5 rounded-full ${status === 'connected' ? 'bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.4)]' : status === 'connecting' ? 'bg-yellow-500 animate-pulse' : 'bg-red-500'}`}></div>
+                    </div>
+                    <div className="text-xs font-mono text-zinc-400 tracking-wide">
+                        {agentName || 'Terminal'} <span className="opacity-50 mx-1">/</span> {sessionId.substring(0, 13)}
+                    </div>
+                </div>
+                <div className="text-[10px] font-mono text-zinc-600 uppercase tracking-widest">
+                    PTY Bridge
                 </div>
             </div>
-            <div className="terminal-container" ref={terminalRef}></div>
+            
+            {/* Terminal Viewport */}
+            <div className="flex-1 overflow-hidden" ref={terminalRef}></div>
         </div>
     );
 }
