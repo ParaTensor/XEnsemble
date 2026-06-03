@@ -75,19 +75,23 @@ fastify.get('/api/v1/secrets', { preValidation: [fastify.authenticate] }, async 
     return auth.decryptSecrets(result[0].encryptedData);
 });
 
-// 保存凭证设置
+// 保存凭证设置 (Merge with existing)
 fastify.post('/api/v1/secrets', { preValidation: [fastify.authenticate] }, async (request, reply) => {
-    const newSecrets = request.body;
-    const encrypted = auth.encryptSecrets(newSecrets);
-    
-    // UPSERT
     const existing = await db.select().from(schema.secrets).where(eq(schema.secrets.userId, request.user.id));
+    let currentSecrets = {};
+    if (existing.length > 0) {
+        currentSecrets = auth.decryptSecrets(existing[0].encryptedData);
+    }
+    
+    const mergedSecrets = { ...currentSecrets, ...request.body };
+    const encrypted = auth.encryptSecrets(mergedSecrets);
+    
     if (existing.length > 0) {
         await db.update(schema.secrets).set({ encryptedData: encrypted }).where(eq(schema.secrets.userId, request.user.id));
     } else {
         await db.insert(schema.secrets).values({ userId: request.user.id, encryptedData: encrypted });
     }
-    return { success: true };
+    return { success: true, secrets: mergedSecrets };
 });
 
 fastify.get('/api/v1/agents', async () => {

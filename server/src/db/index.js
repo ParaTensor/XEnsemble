@@ -51,8 +51,15 @@ sqlite.exec(`
 const agentsCount = sqlite.prepare('SELECT COUNT(*) as count FROM agents').get();
 if (agentsCount.count === 0) {
     const insertAgent = sqlite.prepare('INSERT INTO agents (id, name, cmd, args, env_required) VALUES (?, ?, ?, ?, ?)');
-    insertAgent.run('claude-code', 'Claude Code', 'claude', JSON.stringify(['--not-interactive']), JSON.stringify(['ANTHROPIC_API_KEY', 'ANTHROPIC_BASE_URL']));
-    insertAgent.run('xagent-cli', 'XAgent CLI', 'xagent', JSON.stringify(['run']), JSON.stringify(['OPENAI_API_KEY', 'LLM_ROUTER_URL']));
+    insertAgent.run('claude-code', 'Claude Code', 'claude', JSON.stringify(['--not-interactive']), JSON.stringify(['ANTHROPIC_API_KEY']));
+    insertAgent.run('xagent', 'XAgent', 'xagent', JSON.stringify(['run']), JSON.stringify(['OPENAI_API_KEY']));
+    insertAgent.run('kimi-code', 'Kimi Code', 'kimi', JSON.stringify(['--mode', 'agent']), JSON.stringify(['KIMI_API_KEY']));
+    insertAgent.run('cursor', 'Cursor Agent', 'cursor', JSON.stringify(['--headless']), JSON.stringify([]));
+    insertAgent.run('amp', 'AMP', 'amp', JSON.stringify([]), JSON.stringify(['AMP_API_KEY']));
+    insertAgent.run('droid', 'Droid', 'droid', JSON.stringify(['start']), JSON.stringify([]));
+    insertAgent.run('commandcode', 'CommandCode', 'commandcode', JSON.stringify([]), JSON.stringify(['COHERE_API_KEY']));
+    insertAgent.run('hermes', 'Hermes', 'hermes', JSON.stringify(['--run']), JSON.stringify(['HERMES_API_KEY']));
+    insertAgent.run('openclaw', 'OpenClaw', 'openclaw', JSON.stringify([]), JSON.stringify(['OPENCLAW_KEY']));
 }
 
 module.exports = { db, sqlite };

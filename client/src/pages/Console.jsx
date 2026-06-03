@@ -14,9 +14,11 @@ export default function Console() {
 
   // Workspace File Explorer states
   const [workspaceFiles, setWorkspaceFiles] = useState([]);
-  const [viewingFile, setViewingFile] = useState(null);
-  const [fileContent, setFileContent] = useState('');
-  const [isLoadingFiles, setIsLoadingFiles] = useState(false);
+  // Modals state
+  const [showConfigModal, setShowConfigModal] = useState(false);
+  const [showErrorModal, setShowErrorModal] = useState(false);
+  const [configKeys, setConfigKeys] = useState({});
+  const [configSaving, setConfigSaving] = useState(false);
 
   useEffect(() => {
     fetch('http://localhost:3000/api/v1/agents')
@@ -84,8 +86,42 @@ export default function Console() {
       fetchSessions();
     } catch (err) {
       setError(err.message);
+      setShowErrorModal(true);
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const openConfigModal = () => {
+    const required = selectedAgent?.env_required || [];
+    const initialKeys = {};
+    required.forEach(k => initialKeys[k] = '');
+    setConfigKeys(initialKeys);
+    setShowConfigModal(true);
+  };
+
+  const handleSaveConfig = async (e) => {
+    e.preventDefault();
+    setConfigSaving(true);
+    try {
+      const res = await fetch('http://localhost:3000/api/v1/secrets', {
+        method: 'POST',
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}` 
+        },
+        body: JSON.stringify(configKeys)
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to save keys');
+      setShowConfigModal(false);
+      // Optional: immediately launch the agent after saving keys
+      // handleStartSession();
+    } catch (err) {
+      setError(err.message);
+      setShowErrorModal(true);
+    } finally {
+      setConfigSaving(false);
     }
   };
 
@@ -138,9 +174,79 @@ export default function Console() {
         </div>
       </div>
 
-      {error && (
-        <div className="shrink-0 p-3 bg-red-50 border border-red-200 text-red-600 rounded-md text-sm font-medium">
-          {error}
+      {/* Dialog Modals */}
+      {showErrorModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-zinc-900/40 backdrop-blur-sm p-4">
+          <div className="bg-white rounded-lg shadow-xl w-full max-w-md overflow-hidden border border-zinc-200">
+            <div className="p-5 border-b border-zinc-100 flex items-center gap-3 bg-red-50 text-red-600">
+              <X className="w-5 h-5 shrink-0" />
+              <h3 className="font-semibold text-sm">Action Failed</h3>
+            </div>
+            <div className="p-5 text-sm text-zinc-600 break-words">
+              {error}
+            </div>
+            <div className="p-4 border-t border-zinc-100 bg-zinc-50 flex justify-end">
+              <button 
+                onClick={() => setShowErrorModal(false)}
+                className="h-9 px-4 bg-zinc-900 text-white rounded-md text-sm font-medium hover:bg-zinc-800"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showConfigModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-zinc-900/40 backdrop-blur-sm p-4">
+          <div className="bg-white rounded-lg shadow-xl w-full max-w-md overflow-hidden border border-zinc-200">
+            <form onSubmit={handleSaveConfig}>
+              <div className="p-5 border-b border-zinc-100 flex items-center gap-3 bg-zinc-50">
+                <Settings2 className="w-5 h-5 shrink-0 text-zinc-500" />
+                <h3 className="font-semibold text-sm text-zinc-900">Configure {selectedAgent?.name}</h3>
+              </div>
+              <div className="p-5 space-y-4">
+                <p className="text-sm text-zinc-500 mb-4">
+                  Please provide the required API keys for this agent. They will be securely saved to your personal vault.
+                </p>
+                {selectedAgent?.env_required?.length === 0 ? (
+                  <p className="text-sm font-medium text-zinc-900">No special API keys required for this agent.</p>
+                ) : (
+                  selectedAgent?.env_required?.map(key => (
+                    <div key={key}>
+                      <label className="block text-xs font-semibold uppercase tracking-wider text-zinc-500 mb-1">{key}</label>
+                      <input 
+                        type={key.includes('KEY') || key.includes('TOKEN') ? 'password' : 'text'}
+                        required
+                        className="w-full h-9 px-3 border border-zinc-200 rounded-md focus:border-black focus:ring-1 focus:ring-black text-sm font-mono"
+                        value={configKeys[key] || ''}
+                        onChange={e => setConfigKeys({...configKeys, [key]: e.target.value})}
+                        placeholder={`Enter ${key}`}
+                      />
+                    </div>
+                  ))
+                )}
+              </div>
+              <div className="p-4 border-t border-zinc-100 bg-zinc-50 flex justify-end gap-2">
+                <button 
+                  type="button"
+                  onClick={() => setShowConfigModal(false)}
+                  className="h-9 px-4 bg-white border border-zinc-200 text-zinc-700 rounded-md text-sm font-medium hover:bg-zinc-50"
+                >
+                  Cancel
+                </button>
+                {selectedAgent?.env_required?.length > 0 && (
+                  <button 
+                    type="submit"
+                    disabled={configSaving}
+                    className="h-9 px-4 bg-black text-white rounded-md text-sm font-medium hover:bg-zinc-800 disabled:opacity-50"
+                  >
+                    {configSaving ? 'Saving...' : 'Save Keys'}
+                  </button>
+                )}
+              </div>
+            </form>
+          </div>
         </div>
       )}
 
@@ -188,15 +294,25 @@ export default function Console() {
                   <Settings2 className="w-4 h-4 text-zinc-500" />
                   <h2 className="text-sm font-semibold text-zinc-900 uppercase tracking-wider">New Instance</h2>
                 </div>
-                <div className="space-y-2">
-                  <label className="block text-xs font-semibold uppercase tracking-wider text-zinc-500">Target Agent</label>
-                  <select 
-                    className="w-full appearance-none bg-white border border-zinc-200 rounded-md px-3 py-2 text-sm focus:border-black focus:ring-1 focus:ring-black"
-                    value={selectedAgentId} 
-                    onChange={e => setSelectedAgentId(e.target.value)}
-                  >
-                    {agents.map(agent => <option key={agent.id} value={agent.id}>{agent.name}</option>)}
-                  </select>
+                <div className="space-y-4">
+                  <div className="space-y-2">
+                    <label className="block text-xs font-semibold uppercase tracking-wider text-zinc-500">Target Agent</label>
+                    <select 
+                      className="w-full appearance-none bg-white border border-zinc-200 rounded-md px-3 py-2 text-sm focus:border-black focus:ring-1 focus:ring-black"
+                      value={selectedAgentId} 
+                      onChange={e => setSelectedAgentId(e.target.value)}
+                    >
+                      {agents.map(agent => <option key={agent.id} value={agent.id}>{agent.name}</option>)}
+                    </select>
+                  </div>
+                  {selectedAgent?.env_required?.length > 0 && (
+                    <button 
+                      onClick={openConfigModal}
+                      className="w-full flex items-center justify-center gap-2 h-9 border border-zinc-200 rounded-md text-sm font-medium text-zinc-700 hover:bg-zinc-50 transition-colors"
+                    >
+                      <Settings2 className="w-4 h-4" /> Configure Keys
+                    </button>
+                  )}
                 </div>
               </div>
 
