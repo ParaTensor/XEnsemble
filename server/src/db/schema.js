@@ -22,8 +22,17 @@ const sessions = sqliteTable('sessions', {
   createdAt: integer('created_at').notNull()
 });
 
+const agents = sqliteTable('agents', {
+  id: text('id').primaryKey(),
+  name: text('name').notNull(),
+  cmd: text('cmd').notNull(),
+  args: text('args').notNull(), // JSON string array
+  envRequired: text('env_required').notNull() // JSON string array
+});
+
 module.exports = {
   users,
   secrets,
-  sessions
+  sessions,
+  agents
 };

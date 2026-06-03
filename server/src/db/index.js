@@ -37,6 +37,22 @@ sqlite.exec(`
     created_at INTEGER NOT NULL,
     FOREIGN KEY(user_id) REFERENCES users(id)
   );
+
+  CREATE TABLE IF NOT EXISTS agents (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    cmd TEXT NOT NULL,
+    args TEXT NOT NULL,
+    env_required TEXT NOT NULL
+  );
 `);
+
+// 默认植入静态配置的 Agent 数据 (如果表为空)
+const agentsCount = sqlite.prepare('SELECT COUNT(*) as count FROM agents').get();
+if (agentsCount.count === 0) {
+    const insertAgent = sqlite.prepare('INSERT INTO agents (id, name, cmd, args, env_required) VALUES (?, ?, ?, ?, ?)');
+    insertAgent.run('claude-code', 'Claude Code', 'claude', JSON.stringify(['--not-interactive']), JSON.stringify(['ANTHROPIC_API_KEY', 'ANTHROPIC_BASE_URL']));
+    insertAgent.run('xagent-cli', 'XAgent CLI', 'xagent', JSON.stringify(['run']), JSON.stringify(['OPENAI_API_KEY', 'LLM_ROUTER_URL']));
+}
 
 module.exports = { db, sqlite };

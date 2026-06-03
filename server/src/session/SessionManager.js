@@ -1,14 +1,26 @@
 class SessionManager {
     constructor() {
-        this.sessions = new Map(); // 存储格式: [sessionId, { ptyProcess, agentId, createdAt }]
+        this.sessions = new Map(); // [sessionId, { ptyProcess, agentId, createdAt, history }]
     }
 
     createSession(sessionId, ptyProcess, agentId) {
-        this.sessions.set(sessionId, {
+        const session = {
             ptyProcess,
             agentId,
-            createdAt: Date.now()
+            createdAt: Date.now(),
+            history: '' // 简易历史回放 Buffer
+        };
+
+        // 持续记录 PTY 输出
+        ptyProcess.onData((data) => {
+            session.history += data;
+            // 限制 Buffer 大小，防止内存泄漏 (保留最后的 100KB)
+            if (session.history.length > 100000) {
+                session.history = session.history.slice(-100000);
+            }
         });
+
+        this.sessions.set(sessionId, session);
     }
 
     getSession(sessionId) {
@@ -20,18 +32,11 @@ class SessionManager {
         if (session && session.ptyProcess) {
             const pid = session.ptyProcess.pid;
             try {
-                // emdash source: kill the process group to ensure child processes are also terminated
                 if (process.platform !== 'win32' && Number.isInteger(pid) && pid > 0) {
-                    try {
-                        process.kill(-pid, 'SIGTERM');
-                    } catch (e) {}
-                    setTimeout(() => {
-                        try {
-                            process.kill(-pid, 'SIGKILL');
-                        } catch (e) {}
-                    }, 2000);
+                    try { process.kill(-pid, 'SIGTERM'); } catch (e) {}
+                    setTimeout(() => { try { process.kill(-pid, 'SIGKILL'); } catch (e) {} }, 2000);
                 }
-                session.ptyProcess.kill(); // 彻底销毁子进程
+                session.ptyProcess.kill();
             } catch (e) {
                 console.error(`Kill process error: ${e.message}`);
             }

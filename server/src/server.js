@@ -17,8 +17,6 @@ fastify.register(require('@fastify/cors'), {
 });
 fastify.register(require('@fastify/websocket'));
 
-const agentsConfig = JSON.parse(fs.readFileSync(path.join(__dirname, 'agents.json'), 'utf8'));
-
 // Auth Hook
 fastify.decorate('authenticate', async function (request, reply) {
     try {
@@ -85,7 +83,16 @@ fastify.post('/api/v1/secrets', { preValidation: [fastify.authenticate] }, async
     return { success: true };
 });
 
-fastify.get('/api/v1/agents', async () => agentsConfig.agents);
+fastify.get('/api/v1/agents', async () => {
+    const allAgents = await db.select().from(schema.agents);
+    return allAgents.map(a => ({
+        id: a.id,
+        name: a.name,
+        cmd: a.cmd,
+        args: JSON.parse(a.args),
+        env_required: JSON.parse(a.envRequired)
+    }));
+});
 
 // 获取用户活跃会话列表
 fastify.get('/api/v1/sessions', { preValidation: [fastify.authenticate] }, async (request, reply) => {
@@ -95,8 +102,14 @@ fastify.get('/api/v1/sessions', { preValidation: [fastify.authenticate] }, async
 // 启动 Agent 实例
 fastify.post('/api/v1/session/start', { preValidation: [fastify.authenticate] }, async (request, reply) => {
     const { agent_id } = request.body;
-    const agentMeta = agentsConfig.agents.find(a => a.id === agent_id);
-    if (!agentMeta) return reply.code(404).send({ error: 'Agent not found' });
+    
+    const dbAgents = await db.select().from(schema.agents).where(eq(schema.agents.id, agent_id));
+    if (dbAgents.length === 0) return reply.code(404).send({ error: 'Agent not found' });
+    const agentMeta = {
+        ...dbAgents[0],
+        args: JSON.parse(dbAgents[0].args),
+        env_required: JSON.parse(dbAgents[0].envRequired)
+    };
 
     // 从数据库中自动拉取环境变量凭证
     const dbSecrets = await db.select().from(schema.secrets).where(eq(schema.secrets.userId, request.user.id));
@@ -129,7 +142,6 @@ fastify.post('/api/v1/session/start', { preValidation: [fastify.authenticate] },
 fastify.get('/ws/v1/terminal', { websocket: true }, (connection, req) => {
     const url = new URL(req.url, 'http://localhost');
     const sessionId = url.searchParams.get('sessionId');
-    // Auth should ideally be handled via a ticket/token in query param for WS, but MVP just passes sessionId.
     const session = sessionManager.getSession(sessionId);
 
     if (!session) {
@@ -139,6 +151,11 @@ fastify.get('/ws/v1/terminal', { websocket: true }, (connection, req) => {
     }
 
     const ptyProcess = session.ptyProcess;
+
+    // 发送历史回放 (Session Replay)
+    if (session.history) {
+        connection.socket.send(JSON.stringify({ type: 'output', data: session.history }));
+    }
 
     const ptyDataListener = ptyProcess.onData((data) => {
         connection.socket.send(JSON.stringify({ type: 'output', data: data }));
