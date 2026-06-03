@@ -169,6 +169,49 @@ fastify.get('/ws/v1/terminal', { websocket: true }, (connection, req) => {
     });
 });
 
+// Workspace API - List Files
+fastify.get('/api/v1/workspace/files', { preValidation: [fastify.authenticate] }, async (request, reply) => {
+    const workspaceDir = path.join('/tmp/agent-workspaces', request.user.id);
+    if (!fs.existsSync(workspaceDir)) return [];
+    
+    // Recursive directory read for simple file tree
+    const getAllFiles = function(dirPath, arrayOfFiles) {
+        let files;
+        try { files = fs.readdirSync(dirPath); } catch (e) { return arrayOfFiles; }
+        arrayOfFiles = arrayOfFiles || [];
+        files.forEach(function(file) {
+            const fullPath = path.join(dirPath, file);
+            if (fs.statSync(fullPath).isDirectory()) {
+                arrayOfFiles.push({ name: file, path: fullPath.replace(workspaceDir, ''), type: 'directory' });
+                arrayOfFiles = getAllFiles(fullPath, arrayOfFiles);
+            } else {
+                arrayOfFiles.push({ name: file, path: fullPath.replace(workspaceDir, ''), type: 'file' });
+            }
+        });
+        return arrayOfFiles;
+    };
+    return getAllFiles(workspaceDir, []);
+});
+
+// Workspace API - Read File
+fastify.get('/api/v1/workspace/file', { preValidation: [fastify.authenticate] }, async (request, reply) => {
+    const filePath = request.query.path;
+    if (!filePath) return reply.code(400).send({ error: 'Missing path' });
+    
+    // Security: prevent directory traversal
+    const safePath = path.normalize(filePath).replace(/^(\.\.(\/|\\|$))+/, '');
+    const absolutePath = path.join('/tmp/agent-workspaces', request.user.id, safePath);
+    
+    if (!absolutePath.startsWith(path.join('/tmp/agent-workspaces', request.user.id))) {
+        return reply.code(403).send({ error: 'Access denied' });
+    }
+    
+    if (!fs.existsSync(absolutePath)) return reply.code(404).send({ error: 'File not found' });
+    
+    const content = fs.readFileSync(absolutePath, 'utf8');
+    return { content };
+});
+
 fastify.listen({ port: 3000, host: '0.0.0.0' }, (err) => {
     if (err) { fastify.log.error(err); process.exit(1); }
 });
