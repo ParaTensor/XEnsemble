@@ -1,0 +1,18 @@
+{
+  "agents": [
+    {
+      "id": "claude-code",
+      "name": "Claude Code",
+      "cmd": "claude",
+      "args": ["--not-interactive"],
+      "env_required": ["ANTHROPIC_API_KEY", "ANTHROPIC_BASE_URL"]
+    },
+    {
+      "id": "xagent-cli",
+      "name": "XAgent CLI",
+      "cmd": "xagent",
+      "args": ["run"],
+      "env_required": ["OPENAI_API_KEY", "LLM_ROUTER_URL"]
+    }
+  ]
+}
