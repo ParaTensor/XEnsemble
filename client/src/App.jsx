@@ -4,6 +4,7 @@ import { TerminalSquare } from 'lucide-react';
 import Login from './pages/Login';
 import Console from './pages/Console';
 import Settings from './pages/Settings';
+import AgentsAdmin from './pages/AgentsAdmin';
 
 export const AuthContext = React.createContext(null);
 
@@ -40,6 +41,9 @@ function App() {
         <nav className="text-sm font-medium text-zinc-500 flex gap-6 items-center">
           <Link to="/console" className={`hover:text-black ${location.pathname === '/console' ? 'text-zinc-900' : ''}`}>Sessions</Link>
           <Link to="/settings" className={`hover:text-black ${location.pathname === '/settings' ? 'text-zinc-900' : ''}`}>Vault & Settings</Link>
+          {user?.role === 'admin' && (
+            <Link to="/admin/agents" className={`hover:text-black ${location.pathname === '/admin/agents' ? 'text-zinc-900' : ''}`}>Registry</Link>
+          )}
           <div className="w-px h-4 bg-zinc-300"></div>
           <button onClick={logout} className="hover:text-black">Logout ({user?.username})</button>
         </nav>
@@ -61,6 +65,10 @@ function App() {
         
         <Route path="/settings" element={
           token ? <Shell><Settings /></Shell> : <Navigate to="/login" />
+        } />
+
+        <Route path="/admin/agents" element={
+          token && user?.role === 'admin' ? <Shell><AgentsAdmin /></Shell> : <Navigate to="/console" />
         } />
 
         <Route path="*" element={<Navigate to={token ? "/console" : "/login"} />} />

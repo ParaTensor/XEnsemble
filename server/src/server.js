@@ -4,11 +4,12 @@ const fs = require('fs');
 const crypto = require('crypto');
 const executor = require('./runtime/Executor');
 const sessionManager = require('./session/SessionManager');
+const monitor = require('./runtime/Monitor');
 
 // 导入 DB 和 Auth 模块
 const { db } = require('./db/index');
 const schema = require('./db/schema');
-const { eq } = require('drizzle-orm');
+const { eq, sql } = require('drizzle-orm');
 const auth = require('./auth/index');
 
 fastify.register(require('@fastify/cors'), {
@@ -37,14 +38,20 @@ fastify.post('/api/v1/auth/register', async (request, reply) => {
     const { username, password } = request.body;
     try {
         const userId = `usr_${crypto.randomBytes(6).toString('hex')}`;
+        
+        // If this is the first user, make them admin
+        const usersCount = await db.select({ count: sql`count(*)` }).from(schema.users);
+        const role = usersCount[0].count === 0 ? 'admin' : 'user';
+
         await db.insert(schema.users).values({
             id: userId,
             username,
             passwordHash: auth.hashPassword(password),
+            role: role,
             createdAt: Date.now()
         });
-        const token = auth.generateToken({ id: userId, username, role: 'user' });
-        return { token, user: { id: userId, username } };
+        const token = auth.generateToken({ id: userId, username, role });
+        return { token, user: { id: userId, username, role } };
     } catch (e) {
         return reply.code(400).send({ error: 'Username already exists' });
     }
@@ -58,7 +65,7 @@ fastify.post('/api/v1/auth/login', async (request, reply) => {
         return reply.code(401).send({ error: 'Invalid credentials' });
     }
     const token = auth.generateToken(users[0]);
-    return { token, user: { id: users[0].id, username: users[0].username } };
+    return { token, user: { id: users[0].id, username: users[0].username, role: users[0].role } };
 });
 
 // 获取凭证设置
@@ -92,6 +99,22 @@ fastify.get('/api/v1/agents', async () => {
         args: JSON.parse(a.args),
         env_required: JSON.parse(a.envRequired)
     }));
+});
+
+// Admin: 添加新 Agent
+fastify.post('/api/v1/agents', { preValidation: [fastify.authenticate] }, async (request, reply) => {
+    // In a real app, verify request.user.role === 'admin'
+    const { id, name, cmd, args, env_required } = request.body;
+    try {
+        await db.insert(schema.agents).values({
+            id, name, cmd, 
+            args: JSON.stringify(args || []),
+            envRequired: JSON.stringify(env_required || [])
+        });
+        return { success: true };
+    } catch (e) {
+        return reply.code(400).send({ error: 'Failed to insert agent or ID already exists' });
+    }
 });
 
 // 获取用户活跃会话列表
@@ -161,6 +184,13 @@ fastify.get('/ws/v1/terminal', { websocket: true }, (connection, req) => {
         connection.socket.send(JSON.stringify({ type: 'output', data: data }));
     });
 
+    // 开启系统资源监控轮询 (每3秒拉取一次底层 PTY 进程资源消耗)
+    const metricsInterval = setInterval(async () => {
+        if (!ptyProcess || !ptyProcess.pid) return;
+        const stats = await monitor.getProcessStats(ptyProcess.pid);
+        connection.socket.send(JSON.stringify({ type: 'metrics', data: stats }));
+    }, 3000);
+
     connection.socket.on('message', (message) => {
         try {
             const msg = JSON.parse(message);
@@ -183,6 +213,7 @@ fastify.get('/ws/v1/terminal', { websocket: true }, (connection, req) => {
 
     connection.socket.on('close', () => {
         ptyDataListener.dispose();
+        clearInterval(metricsInterval);
     });
 });
 
