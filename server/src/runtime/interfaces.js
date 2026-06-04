@@ -29,6 +29,8 @@ class StreamHandle {
     resize(cols, rows) { throw new Error('StreamHandle.resize not implemented'); }
     kill() { throw new Error('StreamHandle.kill not implemented'); }
     get pid() { throw new Error('StreamHandle.pid not implemented'); }
+    /** Provider 内 PTY stream 标识，用于 sessions.stream_ref / attachSession */
+    get streamRef() { return null; }
     async getMetrics() { return { cpu: 0, memory: 0 }; }
 }
 

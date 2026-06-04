@@ -10,6 +10,7 @@ import {
   APP_SHELL_MAX_CLASS,
   APP_SHELL_PAD_CLASS,
   APP_SHELL_MAIN_PY_CLASS,
+  APP_SHELL_CONSOLE_PY_CLASS,
 } from './lib/appShellLayout';
 import { cn } from './lib/utils';
 import { consoleNavActiveClass, consoleNavIdleClass } from './lib/consoleTokens';
@@ -45,7 +46,7 @@ function App() {
       location.pathname === path ? consoleNavActiveClass : consoleNavIdleClass,
     );
 
-  const Shell = ({ children }) => (
+  const Shell = ({ children, compactMain = false }) => (
     <div className="h-full flex flex-col bg-zinc-50">
       <header className="sticky top-0 z-50 flex-none border-b border-zinc-200 bg-white">
         <div className={cn('mx-auto flex h-14 items-center justify-between', APP_SHELL_MAX_CLASS, APP_SHELL_PAD_CLASS)}>
@@ -75,7 +76,7 @@ function App() {
           'mx-auto flex w-full flex-1 flex-col overflow-auto',
           APP_SHELL_MAX_CLASS,
           APP_SHELL_PAD_CLASS,
-          APP_SHELL_MAIN_PY_CLASS,
+          compactMain ? APP_SHELL_CONSOLE_PY_CLASS : APP_SHELL_MAIN_PY_CLASS,
         )}
       >
         {children}
@@ -93,7 +94,7 @@ function App() {
 
         <Route
           path="/console"
-          element={token ? <Shell><Console /></Shell> : <Navigate to="/login" />}
+          element={token ? <Shell compactMain><Console /></Shell> : <Navigate to="/login" />}
         />
 
         <Route path="/settings" element={<Navigate to="/console" replace />} />

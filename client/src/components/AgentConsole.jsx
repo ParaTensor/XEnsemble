@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Cpu, HardDrive } from 'lucide-react';
+import { Cpu, HardDrive, Unplug, PanelRightOpen, PanelRightClose } from 'lucide-react';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import '@xterm/xterm/css/xterm.css';
@@ -23,7 +23,14 @@ function measureTerminalSize(terminal, container) {
     };
 }
 
-export default function AgentConsole({ sessionId, agentName, onSessionEnd }) {
+export default function AgentConsole({
+    sessionId,
+    agentName,
+    onSessionEnd,
+    onDisconnect,
+    workspaceOpen,
+    onToggleWorkspace,
+}) {
     const [metrics, setMetrics] = useState({ cpu: 0, memory: 0 });
     const [ended, setEnded] = useState(false);
     const containerRef = useRef(null);
@@ -160,9 +167,9 @@ export default function AgentConsole({ sessionId, agentName, onSessionEnd }) {
                         {agentName} <span className="text-zinc-600">[{sessionId}]</span>
                     </span>
                 </div>
-                <div className="flex items-center gap-4 text-xs font-mono text-zinc-400">
+                <div className="flex items-center gap-3 text-xs font-mono text-zinc-400">
                     {!ended && (
-                        <span className="text-zinc-500 hidden sm:inline">Click terminal to type</span>
+                        <span className="text-zinc-500 hidden lg:inline">Click terminal to type</span>
                     )}
                     <div className="flex items-center gap-1.5" title="CPU Usage">
                         <Cpu className="w-3.5 h-3.5 text-zinc-500" />
@@ -172,6 +179,37 @@ export default function AgentConsole({ sessionId, agentName, onSessionEnd }) {
                         <HardDrive className="w-3.5 h-3.5 text-zinc-500" />
                         <span>{formatMem(metrics.memory)}</span>
                     </div>
+                    {(onDisconnect || onToggleWorkspace) && (
+                        <>
+                            <div className="hidden sm:block h-4 w-px bg-zinc-700" aria-hidden />
+                            <div className="flex items-center gap-0.5">
+                                {onDisconnect && (
+                                    <button
+                                        type="button"
+                                        onClick={onDisconnect}
+                                        title="Disconnect view"
+                                        className="rounded-md p-1.5 text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200"
+                                    >
+                                        <Unplug className="w-3.5 h-3.5" />
+                                    </button>
+                                )}
+                                {onToggleWorkspace && (
+                                    <button
+                                        type="button"
+                                        onClick={onToggleWorkspace}
+                                        title={workspaceOpen ? 'Hide workspace files' : 'Show workspace files'}
+                                        className="rounded-md p-1.5 text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200"
+                                    >
+                                        {workspaceOpen ? (
+                                            <PanelRightClose className="w-3.5 h-3.5" />
+                                        ) : (
+                                            <PanelRightOpen className="w-3.5 h-3.5" />
+                                        )}
+                                    </button>
+                                )}
+                            </div>
+                        </>
+                    )}
                 </div>
             </div>
 

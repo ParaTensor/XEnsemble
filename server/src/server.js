@@ -4,6 +4,10 @@ const WebSocket = require('ws');
 
 const { getRuntime } = require('./runtime/registry');
 const { AgentSpawnError, RuntimeError } = require('./runtime/interfaces');
+const { ensureProjectRuntime, formatRuntime } = require('./runtime/RuntimeService');
+const deploymentService = require('./deployments/DeploymentService');
+const { registerPreviewGateway } = require('./preview/gateway');
+const { startPreviewLifecycle } = require('./preview/lifecycle');
 const sessionManager = require('./session/SessionManager');
 
 const { db } = require('./db/index');
@@ -145,6 +149,7 @@ fastify.get('/api/v1/projects', { preValidation: [fastify.authenticate] }, async
             id: p.id,
             name: p.name,
             server_path: p.serverPath,
+            default_runtime_id: p.defaultRuntimeId,
             created_at: p.createdAt,
         }))
         .sort((a, b) => b.created_at - a.created_at);
@@ -157,28 +162,35 @@ fastify.post('/api/v1/projects', { preValidation: [fastify.authenticate] }, asyn
     if (name.length > 120) return reply.code(400).send({ error: 'Project name is too long' });
 
     const projectId = `proj_${crypto.randomBytes(8).toString('hex')}`;
+    const createdAt = Date.now();
+    const stubProject = { id: projectId, userId: request.user.id, serverPath: '', defaultRuntimeId: null };
+
     let workspacePath;
+    let defaultRuntimeId;
     try {
-        const result = await runtime.provider.ensureReady({ userId: request.user.id, id: projectId });
-        workspacePath = result.workspacePath;
+        await db.insert(schema.projects).values({
+            id: projectId,
+            userId: request.user.id,
+            name,
+            serverPath: '',
+            createdAt,
+        });
+        const { runtime, workspacePath: ws } = await ensureProjectRuntime(
+            { ...stubProject, id: projectId },
+        );
+        workspacePath = ws;
+        defaultRuntimeId = runtime.id;
     } catch (err) {
         request.log.error(err);
+        await db.delete(schema.projects).where(eq(schema.projects.id, projectId)).catch(() => {});
         return reply.code(500).send({ error: 'Failed to create project directory' });
     }
-
-    const createdAt = Date.now();
-    await db.insert(schema.projects).values({
-        id: projectId,
-        userId: request.user.id,
-        name,
-        serverPath: workspacePath,
-        createdAt,
-    });
 
     return {
         id: projectId,
         name,
         server_path: workspacePath,
+        default_runtime_id: defaultRuntimeId,
         created_at: createdAt,
     };
 });
@@ -219,10 +231,17 @@ fastify.post('/api/v1/session/start', { preValidation: [fastify.authenticate] },
     if (!project) return reply.code(404).send({ error: 'Project not found' });
 
     let workspacePath;
+    let runtimeId;
+    let recoverable;
     try {
-        const result = await runtime.provider.ensureReady({ userId: project.userId, id: project.id });
-        workspacePath = result.workspacePath;
+        const ready = await ensureProjectRuntime(project);
+        workspacePath = ready.workspacePath;
+        runtimeId = ready.runtime.id;
+        recoverable = ready.recoverable;
     } catch (err) {
+        if (err instanceof RuntimeError) {
+            return reply.code(err.statusCode).send({ error: err.message });
+        }
         request.log.error(err);
         return reply.code(500).send({ error: 'Project workspace directory is missing and could not be recreated' });
     }
@@ -276,16 +295,27 @@ fastify.post('/api/v1/session/start', { preValidation: [fastify.authenticate] },
         }, 1200);
     }
 
+    const streamRef = handle.streamRef ?? null;
+
     await db.insert(schema.sessions).values({
         id: sessionId,
         userId: request.user.id,
         projectId: project_id,
+        runtimeId,
         agentId: agent_id,
         cwd: workspacePath,
-        createdAt: Date.now()
+        streamRef,
+        recoverable,
+        createdAt: Date.now(),
     });
 
-    return { session_id: sessionId, status: 'running' };
+    return {
+        session_id: sessionId,
+        status: 'running',
+        runtime_id: runtimeId,
+        stream_ref: streamRef,
+        recoverable,
+    };
 });
 
 // WebSocket Terminal（协议不变，内部 bridge 改用 handle 接口）
@@ -387,7 +417,97 @@ fastify.register(async function terminalWsRoutes(app) {
     });
 });
 
-// Workspace API — 委托 FsAdapter（不再直接 fs.*）
+// Runtimes — 按 project 列出（一等实体）
+fastify.get('/api/v1/runtimes', { preValidation: [fastify.authenticate] }, async (request, reply) => {
+    const projectId = request.query.project_id;
+    if (!projectId) return reply.code(400).send({ error: 'project_id is required' });
+
+    const project = await getProjectForUser(request.user.id, projectId);
+    if (!project) return reply.code(404).send({ error: 'Project not found' });
+
+    const rows = await db.select().from(schema.runtimes)
+        .where(eq(schema.runtimes.projectId, projectId));
+    return rows.map(formatRuntime);
+});
+
+// Deployments — CRUD + preview start/stop（Architecture.md 步骤 2）
+fastify.get('/api/v1/deployments', { preValidation: [fastify.authenticate] }, async (request, reply) => {
+    const projectId = request.query.project_id;
+    if (!projectId) return reply.code(400).send({ error: 'project_id is required' });
+
+    const project = await getProjectForUser(request.user.id, projectId);
+    if (!project) return reply.code(404).send({ error: 'Project not found' });
+
+    return deploymentService.listForProject(request.user.id, projectId);
+});
+
+fastify.get('/api/v1/deployments/:deploymentId', { preValidation: [fastify.authenticate] }, async (request, reply) => {
+    const row = await deploymentService.getForUser(request.user.id, request.params.deploymentId);
+    if (!row) return reply.code(404).send({ error: 'Deployment not found' });
+    return deploymentService.formatDeployment(row);
+});
+
+fastify.post('/api/v1/projects/:projectId/preview', { preValidation: [fastify.authenticate] }, async (request, reply) => {
+    const project = await getProjectForUser(request.user.id, request.params.projectId);
+    if (!project) return reply.code(404).send({ error: 'Project not found' });
+
+    try {
+        const dep = await deploymentService.deployAndStartPreview(request.user.id, project);
+        return reply.code(201).send(dep);
+    } catch (err) {
+        const code = err instanceof RuntimeError ? err.statusCode : 503;
+        return reply.code(code).send({
+            error: err instanceof Error ? err.message : 'Preview deploy failed',
+        });
+    }
+});
+
+fastify.post('/api/v1/deployments', { preValidation: [fastify.authenticate] }, async (request, reply) => {
+    const projectId = request.body?.project_id;
+    if (!projectId) return reply.code(400).send({ error: 'project_id is required' });
+
+    const project = await getProjectForUser(request.user.id, projectId);
+    if (!project) return reply.code(404).send({ error: 'Project not found' });
+
+    const dep = await deploymentService.createPreview(request.user.id, project);
+    return reply.code(201).send(dep);
+});
+
+fastify.post('/api/v1/deployments/:deploymentId/start', { preValidation: [fastify.authenticate] }, async (request, reply) => {
+    const row = await deploymentService.getForUser(request.user.id, request.params.deploymentId);
+    if (!row) return reply.code(404).send({ error: 'Deployment not found' });
+
+    const project = await getProjectForUser(request.user.id, row.projectId);
+    if (!project) return reply.code(404).send({ error: 'Project not found' });
+
+    try {
+        return await deploymentService.startPreview(request.user.id, project, row);
+    } catch (err) {
+        const rowAfter = await deploymentService.getForUser(request.user.id, row.id);
+        const code = err instanceof RuntimeError ? err.statusCode : 503;
+        return reply.code(code).send({
+            error: err instanceof Error ? err.message : 'Preview start failed',
+            deployment: deploymentService.formatDeployment(rowAfter),
+        });
+    }
+});
+
+fastify.post('/api/v1/deployments/:deploymentId/stop', { preValidation: [fastify.authenticate] }, async (request, reply) => {
+    const row = await deploymentService.getForUser(request.user.id, request.params.deploymentId);
+    if (!row) return reply.code(404).send({ error: 'Deployment not found' });
+
+    return deploymentService.stopPreview(request.user.id, row);
+});
+
+fastify.delete('/api/v1/deployments/:deploymentId', { preValidation: [fastify.authenticate] }, async (request, reply) => {
+    const row = await deploymentService.getForUser(request.user.id, request.params.deploymentId);
+    if (!row) return reply.code(404).send({ error: 'Deployment not found' });
+
+    await deploymentService.remove(request.user.id, row.id);
+    return { ok: true };
+});
+
+// Workspace API — 经 runtime 解析 workspace 根路径后委托 FsAdapter
 fastify.get('/api/v1/workspace/files', { preValidation: [fastify.authenticate] }, async (request, reply) => {
     const projectId = request.query.project_id;
     if (!projectId) return reply.code(400).send({ error: 'project_id is required' });
@@ -395,7 +515,13 @@ fastify.get('/api/v1/workspace/files', { preValidation: [fastify.authenticate] }
     const project = await getProjectForUser(request.user.id, projectId);
     if (!project) return reply.code(404).send({ error: 'Project not found' });
 
-    return runtime.fs.fsList(project.serverPath);
+    try {
+        const { workspacePath } = await ensureProjectRuntime(project);
+        return runtime.fs.fsList(workspacePath);
+    } catch (err) {
+        const code = err instanceof RuntimeError ? err.statusCode : 500;
+        return reply.code(code).send({ error: err.message });
+    }
 });
 
 fastify.get('/api/v1/workspace/file', { preValidation: [fastify.authenticate] }, async (request, reply) => {
@@ -408,14 +534,24 @@ fastify.get('/api/v1/workspace/file', { preValidation: [fastify.authenticate] },
     if (!project) return reply.code(404).send({ error: 'Project not found' });
 
     try {
-        const content = await runtime.fs.fsRead(project.serverPath, filePath);
+        const { workspacePath } = await ensureProjectRuntime(project);
+        const content = await runtime.fs.fsRead(workspacePath, filePath);
         return { content };
     } catch (err) {
-        const code = err.statusCode || 500;
+        const code = err instanceof RuntimeError ? err.statusCode : 500;
         return reply.code(code).send({ error: err.message });
     }
 });
 
-fastify.listen({ port: 3000, host: '0.0.0.0' }, (err) => {
-    if (err) { fastify.log.error(err); process.exit(1); }
+async function startServer() {
+    await registerPreviewGateway(fastify);
+    startPreviewLifecycle();
+
+    const port = Number(process.env.PORT) || 3000;
+    await fastify.listen({ port, host: '0.0.0.0' });
+}
+
+startServer().catch((err) => {
+    fastify.log.error(err);
+    process.exit(1);
 });

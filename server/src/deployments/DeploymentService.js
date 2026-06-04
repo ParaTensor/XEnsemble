@@ -1,0 +1,199 @@
+const crypto = require('crypto');
+const { eq, and, desc } = require('drizzle-orm');
+const { db } = require('../db/index');
+const schema = require('../db/schema');
+const { getRuntime } = require('../runtime/registry');
+const { RuntimeError } = require('../runtime/interfaces');
+const { ensureProjectRuntime } = require('../runtime/RuntimeService');
+const { recordEvent } = require('../events/recordEvent');
+const { singleflight } = require('../runtime/singleflight');
+
+const PREVIEW_TTL_MS = 24 * 60 * 60 * 1000;
+
+function formatDeployment(row) {
+    return {
+        id: row.id,
+        user_id: row.userId,
+        project_id: row.projectId,
+        runtime_id: row.runtimeId,
+        kind: row.kind,
+        status: row.status,
+        public_url: row.publicUrl,
+        internal_ref: row.internalRef,
+        revision: row.revision,
+        expires_at: row.expiresAt,
+        created_at: row.createdAt,
+        updated_at: row.updatedAt,
+        last_error_code: row.lastErrorCode,
+        last_error_message: row.lastErrorMessage,
+    };
+}
+
+async function listForProject(userId, projectId) {
+    const rows = await db.select().from(schema.deployments)
+        .where(and(
+            eq(schema.deployments.userId, userId),
+            eq(schema.deployments.projectId, projectId),
+        ))
+        .orderBy(desc(schema.deployments.createdAt));
+    return rows.map(formatDeployment);
+}
+
+async function getForUser(userId, deploymentId) {
+    const rows = await db.select().from(schema.deployments)
+        .where(and(
+            eq(schema.deployments.id, deploymentId),
+            eq(schema.deployments.userId, userId),
+        ));
+    return rows[0] || null;
+}
+
+async function createPreview(userId, project) {
+    const { runtime } = await ensureProjectRuntime(project);
+    const now = Date.now();
+    const id = `dep_${crypto.randomBytes(8).toString('hex')}`;
+    const revision = `checkpoint:${now}`;
+
+    await db.insert(schema.deployments).values({
+        id,
+        userId,
+        projectId: project.id,
+        runtimeId: runtime.id,
+        kind: 'preview',
+        status: 'pending',
+        revision,
+        expiresAt: now + PREVIEW_TTL_MS,
+        createdAt: now,
+        updatedAt: now,
+        createdBy: userId,
+    });
+
+    await recordEvent({
+        userId,
+        projectId: project.id,
+        subjectType: 'deployment',
+        subjectId: id,
+        type: 'created',
+        data: { kind: 'preview', revision },
+    });
+
+    const row = await getForUser(userId, id);
+    return formatDeployment(row);
+}
+
+async function startPreview(userId, project, deployment) {
+    return singleflight(`preview:start:${deployment.id}`, async () => {
+        const { runtime, workspacePath } = await ensureProjectRuntime(project);
+        const now = Date.now();
+        const rt = getRuntime();
+
+        await db.update(schema.deployments).set({
+            status: 'building',
+            runtimeId: runtime.id,
+            updatedAt: now,
+            lastErrorCode: null,
+            lastErrorMessage: null,
+        }).where(eq(schema.deployments.id, deployment.id));
+
+        try {
+            const result = await rt.preview.startPreview(
+                { ...project, workspacePath },
+                { revision: deployment.revision, deploymentId: deployment.id },
+            );
+            await db.update(schema.deployments).set({
+                status: 'running',
+                publicUrl: result.publicUrl ?? null,
+                internalRef: result.internalRef ?? null,
+                updatedAt: Date.now(),
+            }).where(eq(schema.deployments.id, deployment.id));
+
+            await recordEvent({
+                userId,
+                projectId: project.id,
+                subjectType: 'deployment',
+                subjectId: deployment.id,
+                type: 'ready',
+                data: { publicUrl: result.publicUrl },
+            });
+        } catch (err) {
+            const message = err instanceof Error ? err.message : String(err);
+            const code = err instanceof RuntimeError ? String(err.statusCode) : 'preview_unavailable';
+            await db.update(schema.deployments).set({
+                status: 'failed',
+                lastErrorCode: code,
+                lastErrorMessage: message,
+                updatedAt: Date.now(),
+            }).where(eq(schema.deployments.id, deployment.id));
+
+            await recordEvent({
+                userId,
+                projectId: project.id,
+                subjectType: 'deployment',
+                subjectId: deployment.id,
+                type: 'failed',
+                data: { code, message },
+            });
+            throw err;
+        }
+
+        const row = await getForUser(userId, deployment.id);
+        return formatDeployment(row);
+    });
+}
+
+async function stopPreview(userId, deployment) {
+    const rt = getRuntime();
+    try {
+        await rt.preview.stopPreview(deployment);
+    } catch (_) {
+        /* Local MVP：stop 可能未实现，仍标记 stopped */
+    }
+    const now = Date.now();
+    await db.update(schema.deployments).set({
+        status: 'stopped',
+        updatedAt: now,
+        stoppedBy: userId,
+    }).where(eq(schema.deployments.id, deployment.id));
+
+    await recordEvent({
+        userId,
+        projectId: deployment.projectId,
+        subjectType: 'deployment',
+        subjectId: deployment.id,
+        type: 'stopped',
+        data: {},
+    });
+
+    const row = await getForUser(userId, deployment.id);
+    return formatDeployment(row);
+}
+
+async function remove(userId, deploymentId) {
+    const row = await getForUser(userId, deploymentId);
+    if (row && row.status === 'running') {
+        await stopPreview(userId, row);
+    }
+    await db.delete(schema.deployments)
+        .where(and(
+            eq(schema.deployments.id, deploymentId),
+            eq(schema.deployments.userId, userId),
+        ));
+}
+
+/** 创建 preview deployment 并立即 start（Console 一键部署）。 */
+async function deployAndStartPreview(userId, project) {
+    const dep = await createPreview(userId, project);
+    const row = await getForUser(userId, dep.id);
+    return startPreview(userId, project, row);
+}
+
+module.exports = {
+    formatDeployment,
+    listForProject,
+    getForUser,
+    createPreview,
+    startPreview,
+    stopPreview,
+    deployAndStartPreview,
+    remove,
+};

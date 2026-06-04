@@ -122,6 +122,20 @@ if (!projectCols.some((c) => c.name === 'default_runtime_id')) {
     sqlite.exec(`ALTER TABLE projects ADD COLUMN default_runtime_id TEXT`);
 }
 
+const sessionColsAfter = sqlite.prepare(`PRAGMA table_info(sessions)`).all();
+if (!sessionColsAfter.some((c) => c.name === 'runtime_id')) {
+    sqlite.exec(`ALTER TABLE sessions ADD COLUMN runtime_id TEXT REFERENCES runtimes(id)`);
+}
+if (!sessionColsAfter.some((c) => c.name === 'stream_ref')) {
+    sqlite.exec(`ALTER TABLE sessions ADD COLUMN stream_ref TEXT`);
+}
+if (!sessionColsAfter.some((c) => c.name === 'recoverable')) {
+    sqlite.exec(`ALTER TABLE sessions ADD COLUMN recoverable INTEGER DEFAULT 0`);
+}
+
+const { backfillDefaultRuntimes } = require('./backfillRuntimes');
+backfillDefaultRuntimes(sqlite);
+
 // ─── 默认 Agent 数据 ───
 
 const insertAgent = sqlite.prepare('INSERT OR IGNORE INTO agents (id, name, cmd, args, env_required) VALUES (?, ?, ?, ?, ?)');

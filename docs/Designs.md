@@ -46,3 +46,14 @@ Agent 控制台、Settings 弹窗、Registry 等 authenticated 页面均属 Cons
 - 边框：`border-zinc-200` / `border-zinc-300`
 - 主按钮：`Button variant="primary"`
 - 输入 focus：`focus:border-black focus:ring-1 focus:ring-black`
+
+## Preview（Console 终端区）
+
+数据与 API 契约见 `docs/Architecture.md` 5.3；实现组件 `PreviewPanel.jsx`。
+
+- **位置**：有活跃 session 且绑定 workspace 时，贴在终端面板上方（`border-b` 条，非弹窗）。
+- **状态徽章**：`pending` / `building` / `amber`、`running` / `green`、`failed` / `red`，字号 `text-[10px] uppercase`。
+- **操作**：Deploy preview（`POST /api/v1/projects/:id/preview`）、Stop、Restart、Refresh、Open（新标签）、Embed（iframe，`h-48`，`sandbox` 含 scripts/forms）。
+- **TTL**：running 时显示 `expires_at` 倒计时（`font-mono text-[10px]`）。
+- **错误**：条内 `text-xs text-red-600 bg-red-50`，不用 Settings 式弹窗；与 Toast 规则不冲突（部署失败可仅内联，全局 toast 可选）。
+- **鉴权 iframe**：`public_url` 追加 `access_token` query（Gateway 校验，见 Architecture 7）。

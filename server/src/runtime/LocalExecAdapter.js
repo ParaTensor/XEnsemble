@@ -170,6 +170,11 @@ class LocalStreamHandle extends StreamHandle {
         return this._pty.pid;
     }
 
+    get streamRef() {
+        const pid = this._pty.pid;
+        return Number.isInteger(pid) && pid > 0 ? `local:pty:${pid}` : null;
+    }
+
     async getMetrics() {
         if (!this._pty.pid) return { cpu: 0, memory: 0 };
         return getProcessStats(this._pty.pid);

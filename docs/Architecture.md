@@ -17,13 +17,12 @@ Agent 注册、`env_required`、Vault 注入与启动逻辑见 `docs/agents.md`�
 
 ## 2. 当前状态（MVP → v2 抽象层）
 
-- 控制面与执行面仍**同机 colocate**，但代码已完成第一阶段抽象：`server.js` 通过 `runtime/registry.js` 获取 `RuntimeProvider / ExecAdapter / FsAdapter / PreviewAdapter`，不再直接拥有本地 PTY 或直接读写 workspace。
-- Local provider 是当前唯一实现：`LocalRuntimeProvider` 负责本地 workspace 生命周期，`LocalExecAdapter` 封装 node-pty，`LocalFsAdapter` 封装本地 fs + `resolveSafePath` jail，`LocalPreviewAdapter` 仍为占位。
-- Session：DB 持久化元数据 + 控制面内存 `StreamHandle` bridge；Local 模式下 server 重启后活跃终端仍不可恢复。
-- Workspace 文件：仅读 API（`/api/v1/workspace/files`、`.../file`）已委托 `FsAdapter`；写操作仍仅通过 Agent 在终端内完成。
-- 无 Preview/Deployment 资源：无公网 URL、无 build 流水线、无 port 暴露。
-- Schema 已具备 `runtimes / deployments / events` 基础表；Preview API、Gateway、真实云/容器 provider、session stream reattach 尚未实现。
-- 限制：尚无法为客户提供独立云端部署效果；执行仍未水平扩展到独立运行环境；多 server 实例时活跃 Session bridge 仍需 sticky 或外置 routing。
+- 控制面与执行面仍**同机 colocate**；`RuntimeService` 单飞 + default runtime 持久化；执行经四组 adapter。
+- **Local provider（完整本地路径）**：`LocalPreviewAdapter` 按 `.agents/preview.json` 或 `package.json` scripts 起子进程；**Gateway** `GET/WS /preview/:deploymentId/*`（`http-proxy`，Bearer 或 `access_token`）；`preview/lifecycle.js` TTL 与重启对账。
+- **Console Preview（步骤 3）**：`PreviewPanel` — Deploy / Stop / Restart / Embed / Open / TTL。
+- **Deployments API**：CRUD + start/stop + `POST /api/v1/projects/:id/preview` 一键部署；`public_url` 指向 control plane Gateway（非裸绑 workspace 端口）。
+- **Session**：`runtime_id / stream_ref / recoverable` 已落库；scrollback 仍控制面内存，`attachSession` 未实现。
+- **尚未实现（步骤 5+）**：Docker/K8s provider、生产子域名 Gateway、Git workspaceRef、session bridge 外置/多实例、contract test 套件自动化。
 
 架构已是 B/S 服务端驱动（前端仅 Console + WS 终端），并已完成本地执行路径的 adapter 化；后续重点是补 Preview/Deployment 一等资源、真实 provider、Gateway 与 session 可恢复能力。
 
@@ -282,6 +281,14 @@ Preview 与 Agent Session **解耦**：可以没有活跃 agent session 时仍�
 
 - `server/src/runtime/interfaces.js`：定义 `RuntimeProvider / ExecAdapter / FsAdapter / PreviewAdapter / StreamHandle`。
 - `server/src/runtime/registry.js`：按配置注入 provider adapters（当前仅 `local`）。
+- `server/src/runtime/RuntimeService.js`：`ensureProjectRuntime` 单飞、default runtime 创建/持久化、workspace 路径解析。
+- `server/src/runtime/singleflight.js`：provision 并发合并。
+- `server/src/db/backfillRuntimes.js`：历史 project 回填 default runtime。
+- `server/src/deployments/DeploymentService.js`：deployments CRUD 与 preview start/stop 状态机。
+- `server/src/events/recordEvent.js`：写入 `events` 审计表。
+- `server/src/runtime/localPreviewRegistry.js`、`previewContract.js`：Local preview 进程与启动契约。
+- `server/src/preview/gateway.js`、`preview/lifecycle.js`：反代与 TTL/重启对账。
+- `client/src/components/PreviewPanel.jsx`：Console Preview UI（对齐 Designs.md Preview 节）。
 - `server/src/runtime/LocalExecAdapter.js`：Local node-pty 实现；任何 node-pty / 本地进程假设只允许在 Local 实现内部。
 - `server/src/runtime/LocalRuntimeProvider.js`：Local workspace 生命周期。
 - `server/src/runtime/LocalFsAdapter.js`：Local 受控 FS 读操作。
@@ -306,10 +313,10 @@ Preview 与 Agent Session **解耦**：可以没有活跃 agent session 时仍�
 
 ## 9. 推荐演进步骤（团队对齐执行顺序）
 
-1. **抽象层**（不改行为，已完成基础版）：定义 provider adapters 与 `StreamHandle`；把现有 Local 逻辑封装；workspace API 内部委托；SessionManager 支持 handle 泛化。保证 `npm run dev` 启动本地仍完全可用。
-2. **Schema + API**：补齐 `runtimes / deployments / events`；为历史 project backfill default runtime；project 仅保留 `default_runtime_id` 指针；新增 deployments 基础 CRUD API（preview 为主）。
-3. **Console 骨架**：在 terminal 头或右面板增加 Preview 入口（状态、URL 展示、操作按钮），调用新 API。UI 细节对齐 Designs.md。
-4. **Local Preview 模拟**（可选）：在 Local provider 内支持“start preview port”，用 control proxy 暴露 `http://localhost:3000/preview/...` 作为过渡。此 Local preview **仅 dev 用途**，须经 PreviewAdapter + Deployment 记录走正式路径，**不构成第 8 节红线（"直接绑定本地端口作预览"）的违例**；红线针对的是控制面在启动时**绕过 Deployment/Gateway** 直接 bind 端口。
+1. **抽象层**（✅）：provider adapters + `StreamHandle` + SessionManager 泛化。
+2. **Schema + API**（✅）：`runtimes / deployments / events`、backfill、`RuntimeService`、deployments CRUD。
+3. **Console 骨架**（✅）：`PreviewPanel` + Designs.md Preview 节。
+4. **Local Preview + Gateway**（✅）：`LocalPreviewAdapter` + `/preview/:id` 反代 + lifecycle TTL；须经 Deployment 记录（非红线裸绑端口）。
 5. **真实 Provider**：实现第一个云/容器 provider（如本地 Docker 模拟完整云路径，或接 K8s）。此时 Local 仅用于纯单机无容器开发。
 6. **Gateway 与 URL**：生产级子域名 + 反代；支持 iframe 预览与外部打开。
 7. **Git 集成 & Skill**：workspaceRef 支持 git；引入 `.agents/` 目录（preview.skill、deploy.skill）供 Agent 发现启动契约。

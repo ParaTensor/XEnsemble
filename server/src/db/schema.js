@@ -26,8 +26,11 @@ const sessions = sqliteTable('sessions', {
   id: text('id').primaryKey(),
   userId: text('user_id').notNull().references(() => users.id),
   projectId: text('project_id').references(() => projects.id),
+  runtimeId: text('runtime_id').references(() => runtimes.id),
   agentId: text('agent_id').notNull(),
   cwd: text('cwd').notNull(),
+  streamRef: text('stream_ref'),
+  recoverable: integer('recoverable', { mode: 'boolean' }).default(false),
   status: text('status').default('running'),
   createdAt: integer('created_at').notNull()
 });

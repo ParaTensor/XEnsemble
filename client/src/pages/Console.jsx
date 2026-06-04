@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useContext } from 'react';
 import AgentConsole from '../components/AgentConsole';
+import PreviewPanel from '../components/PreviewPanel';
 import SelectMenu from '../components/SelectMenu';
-import { TerminalSquare, Play, Unplug, Settings2, FolderOpen, FileText, X, RefreshCw, Plus, PanelRightOpen, PanelRightClose, Trash2, ChevronRight, ChevronDown, FolderPlus } from 'lucide-react';
+import { TerminalSquare, Play, Settings2, FolderOpen, FileText, X, RefreshCw, Plus, Trash2, ChevronRight, ChevronDown, FolderPlus } from 'lucide-react';
 import { AuthContext } from '../App';
 import { getSecretLabel, isSecretPasswordField } from '../lib/secretLabels';
 
@@ -795,10 +796,9 @@ export default function Console() {
       )}
 
       {/* Main Split Layout */}
-      <div className="flex-1 min-h-0 flex flex-col lg:flex-row gap-6">
-        
+      <div className="flex min-h-0 flex-1 flex-col gap-6 lg:flex-row lg:items-start">
         {/* Left Panel: Workspaces + Sessions */}
-        <div className="w-full lg:w-80 shrink-0 flex flex-col gap-3 min-h-0">
+        <div className="flex w-full shrink-0 flex-col gap-3 min-h-0 lg:w-80">
           <div className="flex gap-2 shrink-0">
             <button
               type="button"
@@ -941,36 +941,20 @@ export default function Console() {
           )}
 
           {/* Terminal View */}
-          <div className="flex-1 min-h-0 bg-white border border-zinc-200 rounded-lg shadow-sm flex flex-col overflow-hidden">
-            <div className="flex h-10 shrink-0 items-center justify-end gap-2 px-3 border-b border-zinc-100">
-              {activeSession && (
-                <>
-                  <button
-                    type="button"
-                    onClick={() => setActiveSession(null)}
-                    title="Disconnect view"
-                    className="flex items-center justify-center h-8 w-8 rounded-md text-zinc-500 hover:bg-zinc-100 hover:text-zinc-900"
-                  >
-                    <Unplug className="w-4 h-4" />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setWorkspaceOpen(v => !v)}
-                    title={workspaceOpen ? 'Hide workspace' : 'Show workspace'}
-                    className="flex items-center justify-center h-8 w-8 rounded-md text-zinc-500 hover:bg-zinc-100 hover:text-zinc-900"
-                  >
-                    {workspaceOpen ? <PanelRightClose className="w-4 h-4" /> : <PanelRightOpen className="w-4 h-4" />}
-                  </button>
-                </>
+          <div className="flex flex-1 min-h-0 flex-col overflow-hidden rounded-lg border border-zinc-200 bg-white shadow-sm">
+            <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+              {activeSession?.projectId && (
+                <PreviewPanel projectId={activeSession.projectId} token={token} />
               )}
-            </div>
-            <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
               {activeSession ? (
                 <AgentConsole
                   key={activeSession.sessionId}
                   sessionId={activeSession.sessionId}
                   agentName={activeSession.agentName}
                   onSessionEnd={handleSessionEnd}
+                  onDisconnect={() => setActiveSession(null)}
+                  workspaceOpen={workspaceOpen}
+                  onToggleWorkspace={() => setWorkspaceOpen((v) => !v)}
                 />
               ) : (
                 <div className="flex-1 flex flex-col items-center justify-center text-zinc-400 p-8 text-center bg-zinc-50/50">
