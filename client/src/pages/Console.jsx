@@ -25,6 +25,16 @@ function formatSessionTime(ts) {
   return new Date(ts).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
 }
 
+function partitionSessions(sessions) {
+  const running = [];
+  const history = [];
+  for (const s of sessions) {
+    if (s.alive === true) running.push(s);
+    else history.push(s);
+  }
+  return { running, history };
+}
+
 function buildWorkspaces(projects, sessions) {
   const byProject = {};
   for (const s of sessions) {
@@ -84,6 +94,8 @@ export default function Console() {
   const [configSaving, setConfigSaving] = useState(false);
   const [configLoading, setConfigLoading] = useState(false);
   const [deletingSessionId, setDeletingSessionId] = useState(null);
+  const [expandedHistoryWorkspaces, setExpandedHistoryWorkspaces] = useState(() => new Set());
+  const [deleteConfirmSession, setDeleteConfirmSession] = useState(null);
 
   useEffect(() => {
     if (!token) return;
@@ -161,6 +173,15 @@ export default function Console() {
 
   const toggleWorkspaceExpanded = (workspaceId) => {
     setExpandedWorkspaces((prev) => {
+      const next = new Set(prev);
+      if (next.has(workspaceId)) next.delete(workspaceId);
+      else next.add(workspaceId);
+      return next;
+    });
+  };
+
+  const toggleHistoryExpanded = (workspaceId) => {
+    setExpandedHistoryWorkspaces((prev) => {
       const next = new Set(prev);
       if (next.has(workspaceId)) next.delete(workspaceId);
       else next.add(workspaceId);
@@ -434,6 +455,8 @@ export default function Console() {
     fetchSessions();
   };
 
+  const getAgentLabel = (agentId) => agents.find((a) => a.id === agentId)?.name || agentId;
+
   const handleDeleteSession = async (sessionId) => {
     setDeletingSessionId(sessionId);
     try {
@@ -444,6 +467,7 @@ export default function Console() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed to delete session');
       if (activeSession?.sessionId === sessionId) setActiveSession(null);
+      setDeleteConfirmSession(null);
       fetchWorkspaces();
     } catch (err) {
       setError(err.message);
@@ -453,13 +477,134 @@ export default function Console() {
     }
   };
 
-  const getAgentLabel = (agentId) => agents.find((a) => a.id === agentId)?.name || agentId;
+  const requestDeleteSession = (session, ws) => {
+    setDeleteConfirmSession({
+      sessionId: session.id,
+      isLive: session.alive === true,
+      agentLabel: getAgentLabel(session.agentId),
+      workspaceName: ws.name,
+    });
+  };
+
+  const renderSessionRow = (s, ws, { isHistory = false } = {}) => {
+    const isActive = activeSession?.sessionId === s.id;
+    const isLive = s.alive === true;
+    const isDeleting = deletingSessionId === s.id;
+
+    const rowBody = (
+      <>
+        <div className="flex items-center justify-between gap-2">
+          <span className={`font-medium truncate text-xs ${isActive ? 'text-zinc-900' : 'text-zinc-700'}`}>
+            {getAgentLabel(s.agentId)}
+          </span>
+          {isActive && isLive ? (
+            <span className="shrink-0 text-[10px] uppercase tracking-wider font-semibold text-green-600">Live</span>
+          ) : isLive ? (
+            <span className="shrink-0 text-[10px] uppercase tracking-wider font-semibold text-zinc-400">Run</span>
+          ) : (
+            <span className="shrink-0 text-[10px] uppercase tracking-wider font-semibold text-zinc-400">End</span>
+          )}
+        </div>
+        <div className="text-[11px] text-zinc-400 truncate mt-0.5">{formatSessionTime(s.createdAt)}</div>
+      </>
+    );
+
+    return (
+      <div
+        key={s.id}
+        className={`group/session relative rounded-md border text-sm transition-colors ${
+          isActive
+            ? 'border-black bg-zinc-50 ring-1 ring-black/5'
+            : isLive
+              ? 'border-zinc-200 hover:border-zinc-300 hover:bg-zinc-50'
+              : 'border-zinc-200 opacity-70'
+        }`}
+      >
+        {isHistory ? (
+          <div className="w-full text-left p-2.5 pr-8 cursor-default">{rowBody}</div>
+        ) : (
+          <button
+            type="button"
+            disabled={isDeleting}
+            onClick={() => {
+              setActiveSession({
+                sessionId: s.id,
+                agentName: getAgentLabel(s.agentId),
+                projectId: s.projectId,
+                projectName: s.projectName || ws.name,
+              });
+            }}
+            className="w-full text-left p-2.5 pr-8 disabled:opacity-50"
+          >
+            {rowBody}
+          </button>
+        )}
+        <button
+          type="button"
+          title={isHistory ? 'Remove from history' : 'Stop and remove session'}
+          disabled={isDeleting}
+          onClick={(e) => {
+            e.stopPropagation();
+            requestDeleteSession(s, ws);
+          }}
+          className="absolute right-1.5 top-1/2 -translate-y-1/2 p-1 rounded-md text-zinc-400 hover:text-red-600 hover:bg-red-50 opacity-0 group-hover/session:opacity-100 focus:opacity-100 transition-opacity disabled:opacity-50"
+        >
+          <Trash2 className={`w-3 h-3 ${isDeleting ? 'animate-pulse' : ''}`} />
+        </button>
+      </div>
+    );
+  };
+
   const workspaces = buildWorkspaces(projects, sessions);
   const runningCount = sessions.filter((s) => s.alive === true).length;
 
   return (
     <>
       {/* Dialog Modals */}
+      {deleteConfirmSession && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4">
+          <div className="bg-white rounded-lg shadow-sm w-full max-w-md overflow-hidden border border-zinc-200">
+            <div className="p-5 border-b border-zinc-100 flex items-center gap-3 bg-zinc-50">
+              <Trash2 className="w-5 h-5 shrink-0 text-zinc-500" />
+              <h3 className="font-semibold text-sm text-zinc-900">
+                {deleteConfirmSession.isLive ? 'Stop session' : 'Remove from history'}
+              </h3>
+            </div>
+            <div className="p-5 text-sm text-zinc-600">
+              {deleteConfirmSession.isLive ? (
+                <>
+                  Stop <span className="font-medium text-zinc-900">{deleteConfirmSession.agentLabel}</span> in{' '}
+                  <span className="font-medium text-zinc-900">{deleteConfirmSession.workspaceName}</span> and remove this session?
+                </>
+              ) : (
+                <>
+                  Remove <span className="font-medium text-zinc-900">{deleteConfirmSession.agentLabel}</span> from history in{' '}
+                  <span className="font-medium text-zinc-900">{deleteConfirmSession.workspaceName}</span>?
+                </>
+              )}
+              <p className="mt-2 text-xs text-zinc-500">Workspace files on the server will be kept.</p>
+            </div>
+            <div className="p-4 border-t border-zinc-100 bg-zinc-50 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setDeleteConfirmSession(null)}
+                className="h-9 px-4 bg-white border border-zinc-200 text-zinc-700 rounded-md text-sm font-medium hover:bg-zinc-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={deletingSessionId === deleteConfirmSession.sessionId}
+                onClick={() => handleDeleteSession(deleteConfirmSession.sessionId)}
+                className="h-9 px-4 bg-red-600 text-white rounded-md text-sm font-medium hover:bg-red-700 disabled:opacity-50"
+              >
+                {deletingSessionId === deleteConfirmSession.sessionId ? 'Removing…' : deleteConfirmSession.isLive ? 'Stop & remove' : 'Remove'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {showErrorModal && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4">
           <div className="bg-white rounded-lg shadow-sm w-full max-w-md overflow-hidden border border-zinc-200">
@@ -683,8 +828,17 @@ export default function Console() {
                 <div className="flex flex-col gap-0.5">
                   {workspaces.map((ws) => {
                     const expanded = expandedWorkspaces.has(ws.id);
-                    const liveInWs = ws.sessions.filter((s) => s.alive).length;
+                    const { running: runningSessions, history: historySessions } = partitionSessions(ws.sessions);
+                    const liveInWs = runningSessions.length;
+                    const historyExpanded = expandedHistoryWorkspaces.has(ws.id);
                     const isOrphan = ws.id === '_orphan';
+                    const sessionSummary = (() => {
+                      if (ws.sessions.length === 0) return 'No sessions';
+                      const parts = [];
+                      if (liveInWs > 0) parts.push(`${liveInWs} running`);
+                      if (historySessions.length > 0) parts.push(`${historySessions.length} in history`);
+                      return parts.join(' · ');
+                    })();
                     return (
                       <div key={ws.id} className="rounded-md">
                         <div className="group flex items-center gap-0.5 rounded-md hover:bg-zinc-50">
@@ -708,7 +862,7 @@ export default function Console() {
                               )}
                             </div>
                             <div className="text-[11px] text-zinc-400 truncate">
-                              {ws.sessions.length === 0 ? 'No sessions' : `${ws.sessions.length} session${ws.sessions.length > 1 ? 's' : ''}`}
+                              {sessionSummary}
                             </div>
                           </button>
                           {!isOrphan && (
@@ -725,71 +879,34 @@ export default function Console() {
                         </div>
                         {expanded && (
                           <div className="ml-5 pl-2 border-l border-zinc-100 flex flex-col gap-1 pb-1">
-                            {ws.sessions.length === 0 ? (
+                            {runningSessions.length === 0 && historySessions.length === 0 ? (
                               <p className="text-xs text-zinc-400 py-2 px-1">No sessions. Use + to add one.</p>
                             ) : (
-                              ws.sessions.map((s) => {
-                                const isActive = activeSession?.sessionId === s.id;
-                                const isLive = s.alive === true;
-                                const isDeleting = deletingSessionId === s.id;
-                                return (
-                                  <div
-                                    key={s.id}
-                                    className={`group/session relative rounded-md border text-sm transition-colors ${
-                                      isActive
-                                        ? 'border-black bg-zinc-50 ring-1 ring-black/5'
-                                        : isLive
-                                          ? 'border-zinc-200 hover:border-zinc-300 hover:bg-zinc-50'
-                                          : 'border-zinc-200 opacity-60 hover:bg-zinc-50'
-                                    }`}
-                                  >
+                              <>
+                                {runningSessions.length === 0 && (
+                                  <p className="text-xs text-zinc-400 py-1.5 px-1">No running sessions. Use + to start a new terminal.</p>
+                                )}
+                                {runningSessions.map((s) => renderSessionRow(s, ws))}
+                                {historySessions.length > 0 && (
+                                  <div className="mt-1 flex flex-col gap-1">
                                     <button
                                       type="button"
-                                      disabled={isDeleting}
-                                      onClick={() => {
-                                        if (!isLive) {
-                                          setError('This session has ended. Start a new session in this workspace (+).');
-                                          setShowErrorModal(true);
-                                          return;
-                                        }
-                                        setActiveSession({
-                                          sessionId: s.id,
-                                          agentName: getAgentLabel(s.agentId),
-                                          projectId: s.projectId,
-                                          projectName: s.projectName || ws.name,
-                                        });
-                                      }}
-                                      className="w-full text-left p-2.5 pr-8 disabled:opacity-50"
+                                      onClick={() => toggleHistoryExpanded(ws.id)}
+                                      className="flex items-center gap-1.5 py-1.5 px-1 text-xs font-medium text-zinc-500 hover:text-zinc-800 rounded-md hover:bg-zinc-50"
+                                      aria-expanded={historyExpanded}
                                     >
-                                      <div className="flex items-center justify-between gap-2">
-                                        <span className={`font-medium truncate text-xs ${isActive ? 'text-zinc-900' : 'text-zinc-700'}`}>
-                                          {getAgentLabel(s.agentId)}
-                                        </span>
-                                        {isActive && isLive ? (
-                                          <span className="shrink-0 text-[10px] uppercase tracking-wider font-semibold text-green-600">Live</span>
-                                        ) : isLive ? (
-                                          <span className="shrink-0 text-[10px] uppercase tracking-wider font-semibold text-zinc-400">Run</span>
-                                        ) : (
-                                          <span className="shrink-0 text-[10px] uppercase tracking-wider font-semibold text-zinc-400">End</span>
-                                        )}
-                                      </div>
-                                      <div className="text-[11px] text-zinc-400 truncate mt-0.5">{formatSessionTime(s.createdAt)}</div>
+                                      {historyExpanded ? (
+                                        <ChevronDown className="w-3 h-3 shrink-0" />
+                                      ) : (
+                                        <ChevronRight className="w-3 h-3 shrink-0" />
+                                      )}
+                                      History
+                                      <span className="text-zinc-400 font-normal">({historySessions.length})</span>
                                     </button>
-                                    <button
-                                      type="button"
-                                      title="Delete session"
-                                      disabled={isDeleting}
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        handleDeleteSession(s.id);
-                                      }}
-                                      className="absolute right-1.5 top-1/2 -translate-y-1/2 p-1 rounded-md text-zinc-400 hover:text-red-600 hover:bg-red-50 opacity-0 group-hover/session:opacity-100 focus:opacity-100 transition-opacity disabled:opacity-50"
-                                    >
-                                      <Trash2 className={`w-3 h-3 ${isDeleting ? 'animate-pulse' : ''}`} />
-                                    </button>
+                                    {historyExpanded && historySessions.map((s) => renderSessionRow(s, ws, { isHistory: true }))}
                                   </div>
-                                );
-                              })
+                                )}
+                              </>
                             )}
                           </div>
                         )}

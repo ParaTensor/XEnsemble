@@ -1,6 +1,6 @@
 # XEnsemble UI Design
 
-**唯一 UI 规范**（对齐 [ParaRouter DESIGN.md](https://github.com/EeroEternal/ParaRouter/blob/main/DESIGN.md) 的 Console 面）。`docs/agents.md` 与 `AGENTS.md` 仅引用本文，不重复细则。
+**唯一 UI 规范**（对齐 [ParaRouter DESIGN.md](https://github.com/EeroEternal/ParaRouter/blob/main/DESIGN.md) 的 Console 面）。后端系统架构以 `docs/Architecture.md` 为唯一规范；`docs/agents.md` 与 `AGENTS.md` 仅引用本文，不重复细则。
 
 ## Surface：Console
 
