@@ -3,11 +3,21 @@ import AgentConsole from '../components/AgentConsole';
 import SelectMenu from '../components/SelectMenu';
 import { TerminalSquare, Play, Unplug, Settings2, FolderOpen, FileText, X, RefreshCw, Plus, PanelRightOpen, PanelRightClose, Trash2, ChevronRight, ChevronDown, FolderPlus } from 'lucide-react';
 import { AuthContext } from '../App';
+import { getSecretLabel, isSecretPasswordField } from '../lib/secretLabels';
+
+const DEFAULT_AGENT_ID = 'kimi-code';
+
+const SLUG_WORDS = [
+  'small', 'heavy', 'many', 'quiet', 'swift', 'bright', 'calm', 'bold', 'brave', 'clear',
+  'dark', 'fast', 'fresh', 'grand', 'keen', 'light', 'neat', 'proud', 'sharp', 'warm',
+  'flies', 'colts', 'items', 'signs', 'hounds', 'clouds', 'doors', 'fields', 'flames', 'gates',
+  'hints', 'ideas', 'kites', 'lanes', 'maps', 'nodes', 'paths', 'roads', 'stars', 'trees',
+  'film', 'play', 'argue', 'invent', 'travel', 'cheer', 'results', 'forest', 'river', 'stone',
+];
 
 function defaultWorkspaceName() {
-  const d = new Date();
-  const p = (n) => String(n).padStart(2, '0');
-  return `workspace-${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}`;
+  const pick = () => SLUG_WORDS[Math.floor(Math.random() * SLUG_WORDS.length)];
+  return `${pick()}-${pick()}-${pick()}`;
 }
 
 function formatSessionTime(ts) {
@@ -81,7 +91,10 @@ export default function Console() {
       .then(res => res.json())
       .then(data => {
         setAgents(data);
-        if (data.length > 0) setSelectedAgentId(data[0].id);
+        if (data.length > 0) {
+          const preferred = data.find((a) => a.id === DEFAULT_AGENT_ID) || data[0];
+          setSelectedAgentId(preferred.id);
+        }
       })
       .catch(() => setError('Could not connect to backend server.'));
 
@@ -232,7 +245,7 @@ export default function Console() {
       openConfigModal();
       return false;
     } catch {
-      setError('Could not verify API keys. Configure them in Vault & Settings.');
+      setError('Could not verify API keys. Open Settings from the account menu to configure them.');
       openConfigModal();
       return false;
     }
@@ -446,41 +459,10 @@ export default function Console() {
 
   return (
     <>
-      <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-4 shrink-0">
-        <div className="flex-1 min-w-0 flex flex-col gap-1">
-          <h1 className="text-2xl font-bold text-zinc-900">Active Session</h1>
-          <p className="text-sm text-zinc-500 max-w-2xl">
-            Run your enterprise agent in a restricted workspace jail. View generated files directly in the browser.
-          </p>
-        </div>
-        <div className="flex flex-nowrap items-end justify-end gap-2 shrink-0 lg:ml-auto">
-          {activeSession && (
-            <>
-              <button
-                type="button"
-                onClick={() => setActiveSession(null)}
-                title="Disconnect view"
-                className="flex items-center justify-center h-9 w-9 rounded-md border border-zinc-300 text-zinc-600 bg-white hover:bg-zinc-50 hover:text-zinc-900"
-              >
-                <Unplug className="w-4 h-4" />
-              </button>
-              <button
-                type="button"
-                onClick={() => setWorkspaceOpen(v => !v)}
-                title={workspaceOpen ? 'Hide workspace' : 'Show workspace'}
-                className="flex items-center justify-center h-9 w-9 rounded-md border border-zinc-300 text-zinc-600 bg-white hover:bg-zinc-50 hover:text-zinc-900"
-              >
-                {workspaceOpen ? <PanelRightClose className="w-4 h-4" /> : <PanelRightOpen className="w-4 h-4" />}
-              </button>
-            </>
-          )}
-        </div>
-      </div>
-
       {/* Dialog Modals */}
       {showErrorModal && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-zinc-900/40 backdrop-blur-sm p-4">
-          <div className="bg-white rounded-lg shadow-xl w-full max-w-md overflow-hidden border border-zinc-200">
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4">
+          <div className="bg-white rounded-lg shadow-sm w-full max-w-md overflow-hidden border border-zinc-200">
             <div className="p-5 border-b border-zinc-100 flex items-center gap-3 bg-red-50 text-red-600">
               <X className="w-5 h-5 shrink-0" />
               <h3 className="font-semibold text-sm">Action Failed</h3>
@@ -514,8 +496,8 @@ export default function Console() {
       )}
 
       {showNewInstanceModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-zinc-900/40 backdrop-blur-sm p-4">
-          <div className="bg-white rounded-lg shadow-xl w-full max-w-lg overflow-hidden border border-zinc-200">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="bg-white rounded-lg shadow-sm w-full max-w-lg overflow-hidden border border-zinc-200">
             <div className="p-5 border-b border-zinc-100 flex items-center gap-3 bg-zinc-50">
               <Plus className="w-5 h-5 shrink-0 text-zinc-500" />
               <h3 className="font-semibold text-sm text-zinc-900">
@@ -533,7 +515,7 @@ export default function Console() {
                     type="text"
                     value={newProjectName}
                     onChange={e => setNewProjectName(e.target.value)}
-                    placeholder="workspace-20260604-1430"
+                    placeholder="quiet-forest-door"
                     className="w-full h-9 px-3 border border-zinc-200 rounded-md text-sm focus:border-black focus:ring-1 focus:ring-black"
                   />
                   <p className="text-xs text-zinc-500 mt-2">Creates an isolated project directory. You can add more parallel sessions later.</p>
@@ -603,8 +585,8 @@ export default function Console() {
       )}
 
       {showConfigModal && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-zinc-900/40 backdrop-blur-sm p-4">
-          <div className="bg-white rounded-lg shadow-xl w-full max-w-md overflow-hidden border border-zinc-200">
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4">
+          <div className="bg-white rounded-lg shadow-sm w-full max-w-md overflow-hidden border border-zinc-200">
             <form onSubmit={handleSaveConfig}>
               <div className="p-5 border-b border-zinc-100 flex items-center gap-3 bg-zinc-50">
                 <Settings2 className="w-5 h-5 shrink-0 text-zinc-500" />
@@ -625,17 +607,17 @@ export default function Console() {
                   selectedAgent?.env_required?.map(key => (
                     <div key={key}>
                       <div className="flex items-center justify-between mb-1">
-                        <label className="block text-xs font-semibold uppercase tracking-wider text-zinc-500">{key}</label>
+                        <label className="block text-sm font-medium text-zinc-900">{getSecretLabel(key)}</label>
                         {savedConfigKeys[key] && (
                           <span className="text-xs text-green-600 font-medium">Saved</span>
                         )}
                       </div>
                       <input 
-                        type={key.includes('KEY') || key.includes('TOKEN') ? 'password' : 'text'}
+                        type={isSecretPasswordField(key) ? 'password' : 'text'}
                         className="w-full h-9 px-3 border border-zinc-200 rounded-md focus:border-black focus:ring-1 focus:ring-black text-sm font-mono"
                         value={configKeys[key] || ''}
                         onChange={e => setConfigKeys({...configKeys, [key]: e.target.value})}
-                        placeholder={savedConfigKeys[key] ? 'Leave unchanged or enter new value' : `Enter ${key}`}
+                        placeholder={savedConfigKeys[key] ? 'Leave unchanged or enter new value' : `Enter ${getSecretLabel(key)}`}
                       />
                     </div>
                   ))
@@ -843,20 +825,44 @@ export default function Console() {
 
           {/* Terminal View */}
           <div className="flex-1 min-h-0 bg-white border border-zinc-200 rounded-lg shadow-sm flex flex-col overflow-hidden">
-            {activeSession ? (
-              <AgentConsole
-                key={activeSession.sessionId}
-                sessionId={activeSession.sessionId}
-                agentName={activeSession.agentName}
-                onSessionEnd={handleSessionEnd}
-              />
-            ) : (
-              <div className="flex-1 flex flex-col items-center justify-center text-zinc-400 p-8 text-center bg-zinc-50/50">
-                <TerminalSquare className="w-12 h-12 mb-4 text-zinc-300" strokeWidth={1} />
-                <h3 className="text-base font-medium text-zinc-900 mb-1">No Active Session</h3>
-                <p className="text-sm">Expand a workspace and select a session, or create a new workspace.</p>
-              </div>
-            )}
+            <div className="flex h-10 shrink-0 items-center justify-end gap-2 px-3 border-b border-zinc-100">
+              {activeSession && (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => setActiveSession(null)}
+                    title="Disconnect view"
+                    className="flex items-center justify-center h-8 w-8 rounded-md text-zinc-500 hover:bg-zinc-100 hover:text-zinc-900"
+                  >
+                    <Unplug className="w-4 h-4" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setWorkspaceOpen(v => !v)}
+                    title={workspaceOpen ? 'Hide workspace' : 'Show workspace'}
+                    className="flex items-center justify-center h-8 w-8 rounded-md text-zinc-500 hover:bg-zinc-100 hover:text-zinc-900"
+                  >
+                    {workspaceOpen ? <PanelRightClose className="w-4 h-4" /> : <PanelRightOpen className="w-4 h-4" />}
+                  </button>
+                </>
+              )}
+            </div>
+            <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
+              {activeSession ? (
+                <AgentConsole
+                  key={activeSession.sessionId}
+                  sessionId={activeSession.sessionId}
+                  agentName={activeSession.agentName}
+                  onSessionEnd={handleSessionEnd}
+                />
+              ) : (
+                <div className="flex-1 flex flex-col items-center justify-center text-zinc-400 p-8 text-center bg-zinc-50/50">
+                  <TerminalSquare className="w-12 h-12 mb-4 text-zinc-300" strokeWidth={1} />
+                  <h3 className="text-base font-medium text-zinc-900 mb-1">No Active Session</h3>
+                  <p className="text-sm">Expand a workspace and select a session, or create a new workspace.</p>
+                </div>
+              )}
+            </div>
           </div>
         </div>
 

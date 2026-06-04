@@ -63,9 +63,9 @@ if (!sessionCols.some((c) => c.name === 'project_id')) {
 
 // 默认植入静态配置的 Agent 数据 (使用 INSERT OR IGNORE 防止重复，并能在以后无缝新增)
 const insertAgent = sqlite.prepare('INSERT OR IGNORE INTO agents (id, name, cmd, args, env_required) VALUES (?, ?, ?, ?, ?)');
+insertAgent.run('kimi-code', 'Kimi Code', 'kimi', JSON.stringify([]), JSON.stringify(['KIMI_API_KEY']));
 insertAgent.run('claude-code', 'Claude Code', 'claude', JSON.stringify(['--not-interactive']), JSON.stringify(['ANTHROPIC_API_KEY']));
 insertAgent.run('xagent', 'XAgent', 'xagent', JSON.stringify(['run']), JSON.stringify(['OPENAI_API_KEY']));
-insertAgent.run('kimi-code', 'Kimi Code', 'kimi', JSON.stringify([]), JSON.stringify(['KIMI_API_KEY']));
 sqlite.prepare(`UPDATE agents SET args = ? WHERE id = 'kimi-code'`).run(JSON.stringify([]));
 insertAgent.run('cursor', 'Cursor Agent', 'cursor', JSON.stringify(['--headless']), JSON.stringify([]));
 insertAgent.run('amp', 'AMP', 'amp', JSON.stringify([]), JSON.stringify(['AMP_API_KEY']));

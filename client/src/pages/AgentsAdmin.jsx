@@ -1,22 +1,36 @@
 import React, { useState, useEffect, useContext } from 'react';
+import { Plus } from 'lucide-react';
 import { AuthContext } from '../App';
-import { Database, Plus } from 'lucide-react';
+import Button from '../components/Button';
+import Input from '../components/Input';
+import PageHeader from '../components/PageHeader';
+import { useToast } from '../components/Toast';
+import {
+  consoleCardClass,
+  consolePageStackClass,
+  consoleSectionLabelClass,
+  consoleTableBodyCellClass,
+  consoleTableHeadCellClass,
+  consoleTableShellClass,
+} from '../lib/consoleTokens';
 
 export default function AgentsAdmin() {
   const { token } = useContext(AuthContext);
+  const { showToast } = useToast();
   const [agents, setAgents] = useState([]);
   const [showForm, setShowForm] = useState(false);
-  
   const [newAgent, setNewAgent] = useState({
-    id: '', name: '', cmd: '', args: '[]', env_required: '[]'
+    id: '',
+    name: '',
+    cmd: '',
+    args: '[]',
+    env_required: '[]',
   });
-  const [error, setError] = useState(null);
-  const [success, setSuccess] = useState(null);
 
   const fetchAgents = () => {
     fetch('http://localhost:3000/api/v1/agents')
-      .then(res => res.json())
-      .then(data => setAgents(data));
+      .then((res) => res.json())
+      .then((data) => setAgents(data));
   };
 
   useEffect(() => {
@@ -25,122 +39,147 @@ export default function AgentsAdmin() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    setError(null);
-    setSuccess(null);
     try {
       const parsedArgs = JSON.parse(newAgent.args);
       const parsedEnv = JSON.parse(newAgent.env_required);
 
       const res = await fetch('http://localhost:3000/api/v1/agents', {
         method: 'POST',
-        headers: { 
+        headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
+          Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify({
           ...newAgent,
           args: parsedArgs,
-          env_required: parsedEnv
-        })
+          env_required: parsedEnv,
+        }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
-      
-      setSuccess('Agent successfully registered!');
+
+      showToast('success', 'Agent registered.');
       setShowForm(false);
       setNewAgent({ id: '', name: '', cmd: '', args: '[]', env_required: '[]' });
       fetchAgents();
     } catch (err) {
-      setError(err.message || 'Invalid JSON format in Args or Env Required');
+      showToast('error', err.message || 'Invalid JSON in Args or Env Required');
     }
   };
 
   return (
-    <div className="max-w-4xl mx-auto w-full">
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h1 className="text-2xl font-bold text-zinc-900">Agent Registry (Admin)</h1>
-          <p className="text-sm text-zinc-500">Dynamically register new tools or LLM agents to the database.</p>
-        </div>
-        <button 
-          onClick={() => setShowForm(!showForm)}
-          className="flex items-center gap-2 h-9 px-4 bg-black text-white rounded-md text-sm font-medium hover:bg-zinc-800"
-        >
-          <Plus className="w-4 h-4" /> Add Agent
-        </button>
-      </div>
-
-      {error && <div className="mb-4 p-3 bg-red-50 text-red-700 border border-red-200 rounded-md text-sm">{error}</div>}
-      {success && <div className="mb-4 p-3 bg-green-50 text-green-700 border border-green-200 rounded-md text-sm">{success}</div>}
+    <div className={`w-full ${consolePageStackClass}`}>
+      <PageHeader
+        title="Agent Registry"
+        description="Register tools and LLM agents in the database."
+        actions={(
+          <Button type="button" onClick={() => setShowForm(!showForm)} size="md" className="shrink-0">
+            <Plus className="w-4 h-4" />
+            Add Agent
+          </Button>
+        )}
+      />
 
       {showForm && (
-        <form onSubmit={handleSubmit} className="bg-white border border-zinc-200 rounded-lg p-5 mb-6 shadow-sm space-y-4">
-          <h2 className="text-sm font-semibold text-zinc-900 uppercase tracking-wider mb-2">Register New Agent</h2>
-          <div className="grid grid-cols-2 gap-4">
+        <form onSubmit={handleSubmit} className={`${consoleCardClass} p-5 space-y-4`}>
+          <h2 className={consoleSectionLabelClass}>Register new agent</h2>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div>
-              <label className="block text-xs font-semibold text-zinc-500 mb-1">ID (e.g., custom-claude)</label>
-              <input required value={newAgent.id} onChange={e => setNewAgent({...newAgent, id: e.target.value})} className="w-full h-9 px-3 border border-zinc-200 rounded-md text-sm" />
+              <label className={`block mb-1 ${consoleSectionLabelClass}`}>ID</label>
+              <Input
+                required
+                value={newAgent.id}
+                onChange={(e) => setNewAgent({ ...newAgent, id: e.target.value })}
+                className="h-9 py-1.5"
+              />
             </div>
             <div>
-              <label className="block text-xs font-semibold text-zinc-500 mb-1">Display Name</label>
-              <input required value={newAgent.name} onChange={e => setNewAgent({...newAgent, name: e.target.value})} className="w-full h-9 px-3 border border-zinc-200 rounded-md text-sm" />
+              <label className={`block mb-1 ${consoleSectionLabelClass}`}>Display name</label>
+              <Input
+                required
+                value={newAgent.name}
+                onChange={(e) => setNewAgent({ ...newAgent, name: e.target.value })}
+                className="h-9 py-1.5"
+              />
             </div>
             <div>
-              <label className="block text-xs font-semibold text-zinc-500 mb-1">Command (CLI Executable)</label>
-              <input required value={newAgent.cmd} onChange={e => setNewAgent({...newAgent, cmd: e.target.value})} className="w-full h-9 px-3 border border-zinc-200 rounded-md text-sm" />
+              <label className={`block mb-1 ${consoleSectionLabelClass}`}>Command</label>
+              <Input
+                required
+                value={newAgent.cmd}
+                onChange={(e) => setNewAgent({ ...newAgent, cmd: e.target.value })}
+                className="h-9 py-1.5"
+              />
             </div>
             <div>
-              <label className="block text-xs font-semibold text-zinc-500 mb-1">Arguments (JSON Array)</label>
-              <input required value={newAgent.args} onChange={e => setNewAgent({...newAgent, args: e.target.value})} className="w-full h-9 px-3 border border-zinc-200 rounded-md text-sm font-mono" />
+              <label className={`block mb-1 ${consoleSectionLabelClass}`}>Arguments (JSON)</label>
+              <Input
+                required
+                value={newAgent.args}
+                onChange={(e) => setNewAgent({ ...newAgent, args: e.target.value })}
+                className="h-9 py-1.5 font-mono"
+              />
             </div>
-            <div className="col-span-2">
-              <label className="block text-xs font-semibold text-zinc-500 mb-1">Required Env Variables (JSON Array)</label>
-              <input required value={newAgent.env_required} onChange={e => setNewAgent({...newAgent, env_required: e.target.value})} className="w-full h-9 px-3 border border-zinc-200 rounded-md text-sm font-mono" />
-              <p className="text-xs text-zinc-400 mt-1">Users will need to have these keys in their Vault to launch this agent.</p>
+            <div className="sm:col-span-2">
+              <label className={`block mb-1 ${consoleSectionLabelClass}`}>Required env (JSON)</label>
+              <Input
+                required
+                value={newAgent.env_required}
+                onChange={(e) => setNewAgent({ ...newAgent, env_required: e.target.value })}
+                className="h-9 py-1.5 font-mono"
+              />
+              <p className="mt-1 text-xs text-zinc-400">
+                Users configure these keys under Settings → Agents.
+              </p>
             </div>
           </div>
-          <div className="flex justify-end gap-2 mt-4">
-            <button type="button" onClick={() => setShowForm(false)} className="h-9 px-4 rounded-md text-sm font-medium border border-zinc-200 hover:bg-zinc-50">Cancel</button>
-            <button type="submit" className="h-9 px-4 bg-black text-white rounded-md text-sm font-medium hover:bg-zinc-800">Save to Registry</button>
+          <div className="flex justify-end gap-2 pt-2">
+            <Button type="button" variant="secondary" size="md" onClick={() => setShowForm(false)}>
+              Cancel
+            </Button>
+            <Button type="submit" size="md">
+              Save to registry
+            </Button>
           </div>
         </form>
       )}
 
-      <div className="bg-white border border-zinc-200 rounded-lg shadow-sm overflow-hidden">
-        <div className="border-b border-zinc-200 bg-zinc-50 px-4 py-3 flex items-center gap-2">
-          <Database className="w-4 h-4 text-zinc-500" />
-          <h2 className="text-sm font-semibold text-zinc-900">Active Registry</h2>
-        </div>
+      <div className={consoleTableShellClass}>
         <div className="overflow-x-auto">
           <table className="w-full text-left text-sm whitespace-nowrap">
-            <thead className="bg-white border-b border-zinc-200 text-zinc-500">
+            <thead className="border-b border-zinc-200 bg-white">
               <tr>
-                <th className="px-4 py-3 font-semibold w-1/4">Name / ID</th>
-                <th className="px-4 py-3 font-semibold w-1/4">Executable</th>
-                <th className="px-4 py-3 font-semibold w-1/2">Required Variables</th>
+                <th className={`${consoleTableHeadCellClass} w-1/4`}>Name / ID</th>
+                <th className={`${consoleTableHeadCellClass} w-1/4`}>Executable</th>
+                <th className={`${consoleTableHeadCellClass} w-1/2`}>Required variables</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-zinc-100">
-              {agents.map(agent => (
+              {agents.map((agent) => (
                 <tr key={agent.id} className="hover:bg-zinc-50/50">
-                  <td className="px-4 py-3">
+                  <td className={consoleTableBodyCellClass}>
                     <div className="font-medium text-zinc-900">{agent.name}</div>
-                    <div className="text-xs text-zinc-400">{agent.id}</div>
+                    <div className="font-mono text-xs text-zinc-400">{agent.id}</div>
                   </td>
-                  <td className="px-4 py-3">
-                    <div className="font-mono bg-zinc-100 text-zinc-700 px-1.5 py-0.5 rounded inline-flex text-xs">
+                  <td className={consoleTableBodyCellClass}>
+                    <span className="inline-flex rounded bg-zinc-100 px-1.5 py-0.5 font-mono text-xs text-zinc-700">
                       {agent.cmd} {agent.args.join(' ')}
-                    </div>
+                    </span>
                   </td>
-                  <td className="px-4 py-3">
-                    <div className="flex gap-1 flex-wrap">
-                      {agent.env_required.length === 0 ? <span className="text-zinc-400 text-xs">None</span> : 
-                        agent.env_required.map(env => (
-                          <span key={env} className="px-1.5 py-0.5 bg-zinc-100 border border-zinc-200 rounded text-xs text-zinc-600 font-mono">
+                  <td className={consoleTableBodyCellClass}>
+                    <div className="flex flex-wrap gap-1">
+                      {agent.env_required.length === 0 ? (
+                        <span className="text-xs text-zinc-400">None</span>
+                      ) : (
+                        agent.env_required.map((env) => (
+                          <span
+                            key={env}
+                            className="rounded border border-zinc-200 bg-zinc-100 px-1.5 py-0.5 font-mono text-xs text-zinc-600"
+                          >
                             {env}
                           </span>
                         ))
-                      }
+                      )}
                     </div>
                   </td>
                 </tr>

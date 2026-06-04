@@ -1,17 +1,25 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { Routes, Route, Link, useNavigate, useLocation, Navigate } from 'react-router-dom';
-import { TerminalSquare } from 'lucide-react';
 import Login from './pages/Login';
 import Console from './pages/Console';
-import Settings from './pages/Settings';
 import AgentsAdmin from './pages/AgentsAdmin';
 import UserMenu from './components/UserMenu';
+import BrandMark from './components/BrandMark';
+import SettingsModal from './components/SettingsModal';
+import {
+  APP_SHELL_MAX_CLASS,
+  APP_SHELL_PAD_CLASS,
+  APP_SHELL_MAIN_PY_CLASS,
+} from './lib/appShellLayout';
+import { cn } from './lib/utils';
+import { consoleNavActiveClass, consoleNavIdleClass } from './lib/consoleTokens';
 
 export const AuthContext = React.createContext(null);
 
 function App() {
   const [token, setToken] = useState(localStorage.getItem('token'));
   const [user, setUser] = useState(JSON.parse(localStorage.getItem('user')));
+  const [showSettingsModal, setShowSettingsModal] = useState(false);
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -31,27 +39,50 @@ function App() {
     navigate('/login');
   };
 
-  // Layout for authenticated pages
+  const navLinkClass = (path) =>
+    cn(
+      'text-sm font-medium transition-colors',
+      location.pathname === path ? consoleNavActiveClass : consoleNavIdleClass,
+    );
+
   const Shell = ({ children }) => (
-    <div className="h-full flex flex-col font-sans bg-zinc-50">
-      <header className="flex-none bg-white border-b border-zinc-200 px-6 py-4 flex items-center justify-between">
-        <div className="flex items-center gap-2 text-zinc-900">
-          <TerminalSquare className="w-5 h-5" />
-          <span className="font-bold text-lg tracking-tight">Agent Console</span>
+    <div className="h-full flex flex-col bg-zinc-50">
+      <header className="sticky top-0 z-50 flex-none border-b border-zinc-200 bg-white">
+        <div className={cn('mx-auto flex h-14 items-center justify-between', APP_SHELL_MAX_CLASS, APP_SHELL_PAD_CLASS)}>
+          <Link to="/console" className="flex items-center gap-2.5 text-zinc-900">
+            <BrandMark className="h-8 w-8" />
+            <span className="text-lg font-bold tracking-tight text-black">XEnsemble</span>
+          </Link>
+          <nav className="flex items-center gap-6">
+            {user?.role === 'admin' && (
+              <>
+                <Link to="/admin/agents" className={navLinkClass('/admin/agents')}>
+                  Registry
+                </Link>
+                <div className="h-4 w-px bg-zinc-300" />
+              </>
+            )}
+            <UserMenu
+              username={user?.username}
+              onLogout={logout}
+              onOpenSettings={() => setShowSettingsModal(true)}
+            />
+          </nav>
         </div>
-        <nav className="text-sm font-medium text-zinc-500 flex gap-6 items-center">
-          <Link to="/console" className={`hover:text-black ${location.pathname === '/console' ? 'text-zinc-900' : ''}`}>Sessions</Link>
-          <Link to="/settings" className={`hover:text-black ${location.pathname === '/settings' ? 'text-zinc-900' : ''}`}>Vault & Settings</Link>
-          {user?.role === 'admin' && (
-            <Link to="/admin/agents" className={`hover:text-black ${location.pathname === '/admin/agents' ? 'text-zinc-900' : ''}`}>Registry</Link>
-          )}
-          <div className="w-px h-4 bg-zinc-300"></div>
-          <UserMenu username={user?.username} onLogout={logout} />
-        </nav>
       </header>
-      <main className="flex-1 overflow-auto p-8 flex flex-col max-w-[1600px] w-full mx-auto gap-6">
+      <main
+        className={cn(
+          'mx-auto flex w-full flex-1 flex-col overflow-auto',
+          APP_SHELL_MAX_CLASS,
+          APP_SHELL_PAD_CLASS,
+          APP_SHELL_MAIN_PY_CLASS,
+        )}
+      >
         {children}
       </main>
+      {showSettingsModal && (
+        <SettingsModal onClose={() => setShowSettingsModal(false)} />
+      )}
     </div>
   );
 
@@ -59,20 +90,26 @@ function App() {
     <AuthContext.Provider value={{ token, user, login, logout }}>
       <Routes>
         <Route path="/login" element={!token ? <Login /> : <Navigate to="/console" />} />
-        
-        <Route path="/console" element={
-          token ? <Shell><Console /></Shell> : <Navigate to="/login" />
-        } />
-        
-        <Route path="/settings" element={
-          token ? <Shell><Settings /></Shell> : <Navigate to="/login" />
-        } />
 
-        <Route path="/admin/agents" element={
-          token && user?.role === 'admin' ? <Shell><AgentsAdmin /></Shell> : <Navigate to="/console" />
-        } />
+        <Route
+          path="/console"
+          element={token ? <Shell><Console /></Shell> : <Navigate to="/login" />}
+        />
 
-        <Route path="*" element={<Navigate to={token ? "/console" : "/login"} />} />
+        <Route path="/settings" element={<Navigate to="/console" replace />} />
+
+        <Route
+          path="/admin/agents"
+          element={
+            token && user?.role === 'admin' ? (
+              <Shell><AgentsAdmin /></Shell>
+            ) : (
+              <Navigate to="/console" />
+            )
+          }
+        />
+
+        <Route path="*" element={<Navigate to={token ? '/console' : '/login'} />} />
       </Routes>
     </AuthContext.Provider>
   );

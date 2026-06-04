@@ -112,8 +112,15 @@ fastify.post('/api/v1/secrets', { preValidation: [fastify.authenticate] }, async
     }
 });
 
+const DEFAULT_AGENT_ID = 'kimi-code';
+
 fastify.get('/api/v1/agents', async () => {
     const allAgents = await db.select().from(schema.agents);
+    allAgents.sort((a, b) => {
+        if (a.id === DEFAULT_AGENT_ID) return -1;
+        if (b.id === DEFAULT_AGENT_ID) return 1;
+        return a.name.localeCompare(b.name);
+    });
     return allAgents.map(a => ({
         id: a.id,
         name: a.name,

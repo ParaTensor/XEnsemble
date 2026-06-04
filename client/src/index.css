@@ -1,19 +1,38 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 @layer base {
-  body {
-    @apply bg-zinc-50 text-zinc-900 antialiased h-screen overflow-hidden;
+  html {
+    scrollbar-gutter: stable;
   }
-  
+
+  body {
+    @apply bg-zinc-50 text-zinc-950 antialiased h-screen overflow-hidden;
+    font-family: 'Inter', ui-sans-serif, system-ui, sans-serif;
+    scrollbar-gutter: stable;
+  }
+
   #root {
     @apply h-full;
   }
 }
 
 @layer components {
-  /* Minimal scrollbar for tech-console aesthetic */
+  .console-input {
+    @apply w-full bg-white border border-zinc-300 rounded-md px-3 py-2 text-sm text-zinc-900 placeholder:text-zinc-400 focus:outline-none focus:border-black focus:ring-1 focus:ring-black transition-colors;
+  }
+
+  .console-input-mono {
+    @apply console-input font-mono;
+  }
+
+  .console-section-label {
+    @apply text-xs font-semibold uppercase tracking-wider text-zinc-500;
+  }
+
   ::-webkit-scrollbar {
     width: 8px;
     height: 8px;

@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { CircleUser, LogOut } from 'lucide-react';
+import { CircleUser, LogOut, Settings2 } from 'lucide-react';
 
-export default function UserMenu({ username, onLogout }) {
+export default function UserMenu({ username, onLogout, onOpenSettings }) {
   const [open, setOpen] = useState(false);
   const rootRef = useRef(null);
 
@@ -28,6 +28,11 @@ export default function UserMenu({ username, onLogout }) {
     onLogout();
   };
 
+  const handleSettings = () => {
+    setOpen(false);
+    onOpenSettings?.();
+  };
+
   return (
     <div ref={rootRef} className="relative">
       <button
@@ -52,6 +57,17 @@ export default function UserMenu({ username, onLogout }) {
             <p className="text-xs text-zinc-400">Signed in as</p>
             <p className="text-sm font-medium text-zinc-900 truncate">{username}</p>
           </div>
+          {onOpenSettings && (
+            <button
+              type="button"
+              role="menuitem"
+              onClick={handleSettings}
+              className="w-full flex items-center gap-2 px-3 py-2 text-sm text-zinc-600 hover:bg-zinc-50 hover:text-zinc-900"
+            >
+              <Settings2 className="w-4 h-4 shrink-0" />
+              Settings
+            </button>
+          )}
           <button
             type="button"
             role="menuitem"
