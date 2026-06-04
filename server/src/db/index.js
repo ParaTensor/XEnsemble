@@ -3,7 +3,6 @@ const { drizzle } = require('drizzle-orm/better-sqlite3');
 const path = require('path');
 const fs = require('fs');
 
-// Ensure data directory exists
 const dataDir = path.join(__dirname, '../../data');
 if (!fs.existsSync(dataDir)) {
     fs.mkdirSync(dataDir, { recursive: true });
@@ -12,7 +11,8 @@ if (!fs.existsSync(dataDir)) {
 const sqlite = new Database(path.join(dataDir, 'emdash.db'));
 const db = drizzle(sqlite);
 
-// Simple auto-migrate for MVP (in production use drizzle-kit migrate)
+// ─── Auto-migrate（MVP；生产使用 drizzle-kit migrate） ───
+
 sqlite.exec(`
   CREATE TABLE IF NOT EXISTS users (
     id TEXT PRIMARY KEY,
@@ -21,7 +21,7 @@ sqlite.exec(`
     role TEXT DEFAULT 'user',
     created_at INTEGER NOT NULL
   );
-  
+
   CREATE TABLE IF NOT EXISTS secrets (
     user_id TEXT PRIMARY KEY,
     encrypted_data TEXT NOT NULL,
@@ -33,6 +33,7 @@ sqlite.exec(`
     user_id TEXT NOT NULL,
     name TEXT NOT NULL,
     server_path TEXT NOT NULL,
+    default_runtime_id TEXT,
     created_at INTEGER NOT NULL,
     FOREIGN KEY(user_id) REFERENCES users(id)
   );
@@ -54,14 +55,75 @@ sqlite.exec(`
     args TEXT NOT NULL,
     env_required TEXT NOT NULL
   );
+
+  CREATE TABLE IF NOT EXISTS runtimes (
+    id TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL,
+    provider TEXT NOT NULL DEFAULT 'local',
+    runtime_ref TEXT,
+    role TEXT NOT NULL DEFAULT 'default',
+    status TEXT DEFAULT 'ready',
+    endpoint TEXT,
+    specs TEXT,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL,
+    FOREIGN KEY(project_id) REFERENCES projects(id)
+  );
+
+  CREATE TABLE IF NOT EXISTS deployments (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    project_id TEXT NOT NULL,
+    runtime_id TEXT,
+    kind TEXT NOT NULL DEFAULT 'preview',
+    status TEXT NOT NULL DEFAULT 'pending',
+    public_url TEXT,
+    internal_ref TEXT,
+    revision TEXT,
+    expires_at INTEGER,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL,
+    created_by TEXT,
+    stopped_by TEXT,
+    last_error_code TEXT,
+    last_error_message TEXT,
+    resource_tier TEXT,
+    region TEXT,
+    build_log TEXT,
+    runtime_log TEXT,
+    FOREIGN KEY(user_id) REFERENCES users(id),
+    FOREIGN KEY(project_id) REFERENCES projects(id),
+    FOREIGN KEY(runtime_id) REFERENCES runtimes(id)
+  );
+
+  CREATE TABLE IF NOT EXISTS events (
+    id TEXT PRIMARY KEY,
+    user_id TEXT,
+    project_id TEXT,
+    subject_type TEXT NOT NULL,
+    subject_id TEXT NOT NULL,
+    type TEXT NOT NULL,
+    data TEXT,
+    created_at INTEGER NOT NULL,
+    FOREIGN KEY(user_id) REFERENCES users(id),
+    FOREIGN KEY(project_id) REFERENCES projects(id)
+  );
 `);
+
+// ─── 增量 ALTER 迁移（向后兼容已有 DB） ───
 
 const sessionCols = sqlite.prepare(`PRAGMA table_info(sessions)`).all();
 if (!sessionCols.some((c) => c.name === 'project_id')) {
     sqlite.exec(`ALTER TABLE sessions ADD COLUMN project_id TEXT REFERENCES projects(id)`);
 }
 
-// 默认植入静态配置的 Agent 数据 (使用 INSERT OR IGNORE 防止重复，并能在以后无缝新增)
+const projectCols = sqlite.prepare(`PRAGMA table_info(projects)`).all();
+if (!projectCols.some((c) => c.name === 'default_runtime_id')) {
+    sqlite.exec(`ALTER TABLE projects ADD COLUMN default_runtime_id TEXT`);
+}
+
+// ─── 默认 Agent 数据 ───
+
 const insertAgent = sqlite.prepare('INSERT OR IGNORE INTO agents (id, name, cmd, args, env_required) VALUES (?, ?, ?, ?, ?)');
 insertAgent.run('kimi-code', 'Kimi Code', 'kimi', JSON.stringify([]), JSON.stringify(['KIMI_API_KEY']));
 insertAgent.run('claude-code', 'Claude Code', 'claude', JSON.stringify(['--not-interactive']), JSON.stringify(['ANTHROPIC_API_KEY']));

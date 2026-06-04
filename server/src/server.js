@@ -1,19 +1,17 @@
 const fastify = require('fastify')({ logger: true });
-const path = require('path');
-const fs = require('fs');
 const crypto = require('crypto');
 const WebSocket = require('ws');
-const executor = require('./runtime/Executor');
-const { AgentSpawnError } = require('./runtime/Executor');
-const sessionManager = require('./session/SessionManager');
-const monitor = require('./runtime/Monitor');
 
-// 导入 DB 和 Auth 模块
+const { getRuntime } = require('./runtime/registry');
+const { AgentSpawnError, RuntimeError } = require('./runtime/interfaces');
+const sessionManager = require('./session/SessionManager');
+
 const { db } = require('./db/index');
 const schema = require('./db/schema');
 const { eq, and, sql } = require('drizzle-orm');
 const auth = require('./auth/index');
-const workspace = require('./workspace');
+
+const runtime = getRuntime();
 
 async function getProjectForUser(userId, projectId) {
     const rows = await db.select().from(schema.projects)
@@ -43,13 +41,10 @@ fastify.decorate('authenticate', async function (request, reply) {
 
 // -- API Routes --
 
-// 注册
 fastify.post('/api/v1/auth/register', async (request, reply) => {
     const { username, password } = request.body;
     try {
         const userId = `usr_${crypto.randomBytes(6).toString('hex')}`;
-        
-        // If this is the first user, make them admin
         const usersCount = await db.select({ count: sql`count(*)` }).from(schema.users);
         const role = usersCount[0].count === 0 ? 'admin' : 'user';
 
@@ -67,7 +62,6 @@ fastify.post('/api/v1/auth/register', async (request, reply) => {
     }
 });
 
-// 登录
 fastify.post('/api/v1/auth/login', async (request, reply) => {
     const { username, password } = request.body;
     const users = await db.select().from(schema.users).where(eq(schema.users.username, username));
@@ -78,14 +72,12 @@ fastify.post('/api/v1/auth/login', async (request, reply) => {
     return { token, user: { id: users[0].id, username: users[0].username, role: users[0].role } };
 });
 
-// 获取凭证设置
 fastify.get('/api/v1/secrets', { preValidation: [fastify.authenticate] }, async (request, reply) => {
     const result = await db.select().from(schema.secrets).where(eq(schema.secrets.userId, request.user.id));
     if (result.length === 0) return {};
     return auth.decryptSecrets(result[0].encryptedData);
 });
 
-// 保存凭证设置 (Merge with existing)
 fastify.post('/api/v1/secrets', { preValidation: [fastify.authenticate] }, async (request, reply) => {
     try {
         const existing = await db.select().from(schema.secrets).where(eq(schema.secrets.userId, request.user.id));
@@ -130,13 +122,11 @@ fastify.get('/api/v1/agents', async () => {
     }));
 });
 
-// Admin: 添加新 Agent
 fastify.post('/api/v1/agents', { preValidation: [fastify.authenticate] }, async (request, reply) => {
-    // In a real app, verify request.user.role === 'admin'
     const { id, name, cmd, args, env_required } = request.body;
     try {
         await db.insert(schema.agents).values({
-            id, name, cmd, 
+            id, name, cmd,
             args: JSON.stringify(args || []),
             envRequired: JSON.stringify(env_required || [])
         });
@@ -146,7 +136,7 @@ fastify.post('/api/v1/agents', { preValidation: [fastify.authenticate] }, async 
     }
 });
 
-// Projects — list (Pick)
+// Projects — list
 fastify.get('/api/v1/projects', { preValidation: [fastify.authenticate] }, async (request) => {
     const rows = await db.select().from(schema.projects)
         .where(eq(schema.projects.userId, request.user.id));
@@ -160,16 +150,17 @@ fastify.get('/api/v1/projects', { preValidation: [fastify.authenticate] }, async
         .sort((a, b) => b.created_at - a.created_at);
 });
 
-// Projects — create empty directory (New)
+// Projects — create（通过 RuntimeProvider.ensureReady 创建 workspace）
 fastify.post('/api/v1/projects', { preValidation: [fastify.authenticate] }, async (request, reply) => {
     const name = String(request.body?.name || '').trim();
     if (!name) return reply.code(400).send({ error: 'Project name is required' });
     if (name.length > 120) return reply.code(400).send({ error: 'Project name is too long' });
 
     const projectId = `proj_${crypto.randomBytes(8).toString('hex')}`;
-    let serverPath;
+    let workspacePath;
     try {
-        serverPath = workspace.createProjectDirectory(request.user.id, projectId);
+        const result = await runtime.provider.ensureReady({ userId: request.user.id, id: projectId });
+        workspacePath = result.workspacePath;
     } catch (err) {
         request.log.error(err);
         return reply.code(500).send({ error: 'Failed to create project directory' });
@@ -180,19 +171,19 @@ fastify.post('/api/v1/projects', { preValidation: [fastify.authenticate] }, asyn
         id: projectId,
         userId: request.user.id,
         name,
-        serverPath,
+        serverPath: workspacePath,
         createdAt,
     });
 
     return {
         id: projectId,
         name,
-        server_path: serverPath,
+        server_path: workspacePath,
         created_at: createdAt,
     };
 });
 
-// 获取用户会话列表（含内存 PTY 是否仍存活）
+// Sessions — list
 fastify.get('/api/v1/sessions', { preValidation: [fastify.authenticate] }, async (request, reply) => {
     const rows = await db.select().from(schema.sessions).where(eq(schema.sessions.userId, request.user.id));
     const projectRows = await db.select().from(schema.projects)
@@ -217,7 +208,7 @@ fastify.delete('/api/v1/sessions/:sessionId', { preValidation: [fastify.authenti
     return { ok: true };
 });
 
-// 启动 Agent 实例
+// 启动 Agent Session（通过 RuntimeProvider + ExecAdapter）
 fastify.post('/api/v1/session/start', { preValidation: [fastify.authenticate] }, async (request, reply) => {
     const { agent_id, project_id } = request.body;
     if (!project_id) {
@@ -226,13 +217,14 @@ fastify.post('/api/v1/session/start', { preValidation: [fastify.authenticate] },
 
     const project = await getProjectForUser(request.user.id, project_id);
     if (!project) return reply.code(404).send({ error: 'Project not found' });
-    if (!fs.existsSync(project.serverPath)) {
-        try {
-            fs.mkdirSync(project.serverPath, { recursive: true });
-        } catch (err) {
-            request.log.error(err);
-            return reply.code(500).send({ error: 'Project workspace directory is missing and could not be recreated' });
-        }
+
+    let workspacePath;
+    try {
+        const result = await runtime.provider.ensureReady({ userId: project.userId, id: project.id });
+        workspacePath = result.workspacePath;
+    } catch (err) {
+        request.log.error(err);
+        return reply.code(500).send({ error: 'Project workspace directory is missing and could not be recreated' });
     }
 
     const dbAgents = await db.select().from(schema.agents).where(eq(schema.agents.id, agent_id));
@@ -243,7 +235,6 @@ fastify.post('/api/v1/session/start', { preValidation: [fastify.authenticate] },
         env_required: JSON.parse(dbAgents[0].envRequired)
     };
 
-    // 从数据库中自动拉取环境变量凭证
     const dbSecrets = await db.select().from(schema.secrets).where(eq(schema.secrets.userId, request.user.id));
     const userSecrets = dbSecrets.length > 0 ? auth.decryptSecrets(dbSecrets[0].encryptedData) : {};
 
@@ -254,14 +245,13 @@ fastify.post('/api/v1/session/start', { preValidation: [fastify.authenticate] },
     }
 
     const sessionId = `sess_${crypto.randomBytes(8).toString('hex')}`;
-    let ptyProcess;
+    let handle;
     try {
-        ptyProcess = executor.spawn(
+        handle = runtime.exec.spawn(
             agentMeta.cmd,
             agentMeta.args,
             userSecrets,
-            request.user.id,
-            { name: agentMeta.name, cwd: project.serverPath }
+            { name: agentMeta.name, cwd: workspacePath }
         );
     } catch (err) {
         if (err instanceof AgentSpawnError) {
@@ -271,7 +261,7 @@ fastify.post('/api/v1/session/start', { preValidation: [fastify.authenticate] },
         return reply.code(500).send({ error: 'Failed to start agent session' });
     }
 
-    sessionManager.createSession(sessionId, ptyProcess, agent_id);
+    sessionManager.createSession(sessionId, handle, agent_id);
 
     sessionManager.onExit(sessionId, () => {
         db.update(schema.sessions)
@@ -280,31 +270,25 @@ fastify.post('/api/v1/session/start', { preValidation: [fastify.authenticate] },
             .catch((err) => fastify.log.error(err, 'Failed to persist session exit status'));
     });
 
-    // Kimi Code 启动时会阻塞在版本更新选择页，发送 Esc 进入主界面
     if (agent_id === 'kimi-code') {
         setTimeout(() => {
-            try { ptyProcess.write('\x1b'); } catch (_) { /* session may have ended */ }
+            try { handle.write('\x1b'); } catch (_) { /* session may have ended */ }
         }, 1200);
     }
 
-    // 写入数据库做持久化记录
     await db.insert(schema.sessions).values({
         id: sessionId,
         userId: request.user.id,
         projectId: project_id,
         agentId: agent_id,
-        cwd: project.serverPath,
+        cwd: workspacePath,
         createdAt: Date.now()
     });
 
     return { session_id: sessionId, status: 'running' };
 });
 
-// WebSocket Terminal.
-// IMPORTANT: register the ws route inside a plugin loaded AFTER @fastify/websocket so the
-// plugin's onRoute hook is active. Defining { websocket: true } routes at the top level before
-// the plugin finishes loading silently degrades them to plain HTTP GET (the connection arg
-// becomes a Fastify Request, breaking the upgrade) — that was the root cause of the hangs/500s.
+// WebSocket Terminal（协议不变，内部 bridge 改用 handle 接口）
 fastify.register(async function terminalWsRoutes(app) {
     app.get('/ws/v1/terminal', { websocket: true }, (connection, req) => {
         const ws = connection.socket;
@@ -347,22 +331,24 @@ fastify.register(async function terminalWsRoutes(app) {
             return;
         }
 
-        const ptyProcess = session.ptyProcess;
+        const handle = session.handle;
 
         const cleanup = () => {
             offExit();
-            ptyDataListener.dispose();
+            dataListener.dispose();
             clearInterval(metricsInterval);
         };
 
-        const ptyDataListener = ptyProcess.onData((data) => {
+        const dataListener = handle.onData((data) => {
             sendJson({ type: 'output', data });
         });
 
         const metricsInterval = setInterval(async () => {
-            if (!sessionManager.isAlive(sessionId) || !ptyProcess?.pid) return;
-            const stats = await monitor.getProcessStats(ptyProcess.pid);
-            sendJson({ type: 'metrics', data: stats });
+            if (!sessionManager.isAlive(sessionId)) return;
+            try {
+                const stats = await handle.getMetrics();
+                sendJson({ type: 'metrics', data: stats });
+            } catch (_) { /* ignore metrics errors */ }
         }, 3000);
 
         const offExit = sessionManager.onExit(sessionId, (exitCode) => {
@@ -381,10 +367,10 @@ fastify.register(async function terminalWsRoutes(app) {
                 const raw = typeof message === 'string' ? message : message.toString();
                 const msg = JSON.parse(raw);
                 if (msg.type === 'input') {
-                    ptyProcess.write(msg.data);
+                    handle.write(msg.data);
                 } else if (msg.type === 'resize') {
                     try {
-                        ptyProcess.resize(msg.cols, msg.rows);
+                        handle.resize(msg.cols, msg.rows);
                     } catch (e) {
                         const errorMsg = e instanceof Error ? e.message : String(e);
                         if (!/EBADF|ENOTTY|ioctl\(2\) failed|not open|Napi::Error/.test(errorMsg)) {
@@ -401,7 +387,7 @@ fastify.register(async function terminalWsRoutes(app) {
     });
 });
 
-// Workspace API - List Files
+// Workspace API — 委托 FsAdapter（不再直接 fs.*）
 fastify.get('/api/v1/workspace/files', { preValidation: [fastify.authenticate] }, async (request, reply) => {
     const projectId = request.query.project_id;
     if (!projectId) return reply.code(400).send({ error: 'project_id is required' });
@@ -409,31 +395,9 @@ fastify.get('/api/v1/workspace/files', { preValidation: [fastify.authenticate] }
     const project = await getProjectForUser(request.user.id, projectId);
     if (!project) return reply.code(404).send({ error: 'Project not found' });
 
-    const workspaceDir = project.serverPath;
-    if (!fs.existsSync(workspaceDir)) return [];
-
-    const rootResolved = path.resolve(workspaceDir);
-    const getAllFiles = function(dirPath, arrayOfFiles) {
-        let files;
-        try { files = fs.readdirSync(dirPath); } catch (e) { return arrayOfFiles; }
-        arrayOfFiles = arrayOfFiles || [];
-        files.forEach(function(file) {
-            const fullPath = path.join(dirPath, file);
-            if (fs.statSync(fullPath).isDirectory()) {
-                const rel = path.relative(rootResolved, fullPath);
-                arrayOfFiles.push({ name: file, path: rel.startsWith('..') ? file : `/${rel}`.replace(/\\/g, '/'), type: 'directory' });
-                arrayOfFiles = getAllFiles(fullPath, arrayOfFiles);
-            } else {
-                const rel = path.relative(rootResolved, fullPath);
-                arrayOfFiles.push({ name: file, path: rel.startsWith('..') ? file : `/${rel}`.replace(/\\/g, '/'), type: 'file' });
-            }
-        });
-        return arrayOfFiles;
-    };
-    return getAllFiles(workspaceDir, []);
+    return runtime.fs.fsList(project.serverPath);
 });
 
-// Workspace API - Read File
 fastify.get('/api/v1/workspace/file', { preValidation: [fastify.authenticate] }, async (request, reply) => {
     const projectId = request.query.project_id;
     const filePath = request.query.path;
@@ -443,14 +407,13 @@ fastify.get('/api/v1/workspace/file', { preValidation: [fastify.authenticate] },
     const project = await getProjectForUser(request.user.id, projectId);
     if (!project) return reply.code(404).send({ error: 'Project not found' });
 
-    const absolutePath = workspace.resolveSafePath(project.serverPath, filePath);
-    if (!absolutePath) return reply.code(403).send({ error: 'Access denied' });
-
-    if (!fs.existsSync(absolutePath)) return reply.code(404).send({ error: 'File not found' });
-    if (fs.statSync(absolutePath).isDirectory()) return reply.code(400).send({ error: 'Path is a directory' });
-
-    const content = fs.readFileSync(absolutePath, 'utf8');
-    return { content };
+    try {
+        const content = await runtime.fs.fsRead(project.serverPath, filePath);
+        return { content };
+    } catch (err) {
+        const code = err.statusCode || 500;
+        return reply.code(code).send({ error: err.message });
+    }
 });
 
 fastify.listen({ port: 3000, host: '0.0.0.0' }, (err) => {
