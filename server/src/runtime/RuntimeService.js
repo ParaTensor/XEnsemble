@@ -13,7 +13,8 @@ function runtimeKey(projectId, runtimeId) {
 }
 
 /**
- * 确保 project 有 default runtime 记录并完成 provider provision。
+ * 确保 project 有 default runtime 记录并完成 provider provision / restore。
+ * opts.baseSnapshotId / opts.checkpointId 预留给云 provider 恢复 repo snapshot 或 session checkpoint。
  * @returns {Promise<{ runtime: object, workspacePath: string, recoverable: boolean }>}
  */
 async function ensureProjectRuntime(project, opts = {}) {
@@ -37,7 +38,11 @@ async function ensureProjectRuntime(project, opts = {}) {
             runtimeRow = created.runtime;
         }
 
-        const provision = await rt.provider.ensureReady(project, { runtimeId: runtimeRow.id });
+        const provision = await rt.provider.ensureReady(project, {
+            runtimeId: runtimeRow.id,
+            baseSnapshotId: opts.baseSnapshotId,
+            checkpointId: opts.checkpointId,
+        });
         const workspacePath = provision.workspacePath;
         const now = Date.now();
 

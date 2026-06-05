@@ -13,7 +13,7 @@ Agent 注册、`env_required`、Vault 注入与启动逻辑见 `docs/agents.md`�
 - **控制面稳定**：客户端 WebSocket 终端协议（/ws/v1/terminal）、核心 REST API、Console 交互模式保持不变或向后兼容。新增能力通过新端点与资源暴露。
 - **Dev/Prod 一致性**：本地开发使用 Local 实现完全模拟云路径；禁止在控制面或非 Local 模块直接硬编码本机 FS/PTY 假设。
 - **隔离与成本可控**：Project 级 Runtime 持久化；Preview 有独立生命周期与 TTL；资源限额、强隔离（不同 project/user 不同容器）。
-- **可演进**：支持多种 Runtime Provider（K8s、Docker、本地 SSH、Cloudflare Sandbox 等）；Workspace 支持 Git 作为事实来源。
+- **可演进**：支持多种 Runtime Provider（K8s、Docker、本地 SSH、Cloudflare Sandbox 等）；Workspace 支持外部 Git provider 作为源码事实来源，并由平台维护 repo snapshot / session checkpoint。
 
 ## 2. 当前状态（MVP → v2 抽象层）
 
@@ -22,7 +22,7 @@ Agent 注册、`env_required`、Vault 注入与启动逻辑见 `docs/agents.md`�
 - **Console Preview（步骤 3）**：`PreviewPanel` — Deploy / Stop / Restart / Embed / Open / TTL。
 - **Deployments API**：CRUD + start/stop + `POST /api/v1/projects/:id/preview` 一键部署；`public_url` 指向 control plane Gateway（非裸绑 workspace 端口）。
 - **Session**：`runtime_id / stream_ref / recoverable` 已落库；scrollback 仍控制面内存，`attachSession` 未实现。
-- **尚未实现（步骤 5+）**：Docker/K8s provider、生产子域名 Gateway、Git workspaceRef、session bridge 外置/多实例、contract test 套件自动化。
+- **尚未实现（步骤 5+）**：Docker/K8s provider、生产子域名 Gateway、Git provider 同步、repo baseline snapshot 预热、session checkpoint 恢复、session bridge 外置/多实例、contract test 套件自动化。
 
 架构已是 B/S 服务端驱动（前端仅 Console + WS 终端），并已完成本地执行路径的 adapter 化；后续重点是补 Preview/Deployment 一等资源、真实 provider、Gateway 与 session 可恢复能力。
 
@@ -57,7 +57,7 @@ Per-Project Runtimes (cloud sandboxes / containers)
   └─ User App processes (for preview: npm run dev, etc.)
          │
          ▼
-Storage Layer (volumes / git / object) + Preview Ingress (public URLs)
+Storage Layer (volumes / git / object snapshots) + Preview Ingress (public URLs)
 ```
 
 - **Control Plane**：无状态或弱状态（除内存 bridge）；可多实例（需外部化 Session 桥接状态或 sticky）。
@@ -74,6 +74,17 @@ Storage Layer (volumes / git / object) + Preview Ingress (public URLs)
 - staging / prod 部署使用**隔离的 runtime 或同一 runtime 的不同 profile**（见 5.3）。
 
 因此 runtime 是**一等实体**（独立表，见第 4 节），不可降级为 project 的单值字段。project 仅记录"默认 runtime 指针"用于快速 attach；其余 runtime 通过 `runtimes.project_id` 关联。
+
+#### Project Dev Environment（repo 维护构建环境）
+
+面向真实工程项目，XEnsemble 不应只维护一个可读写目录，而应维护 **Project Dev Environment**：
+
+- **外部 Git provider 是源码事实来源**：优先集成 GitHub / GitLab / 企业 Git，不自研 Git server；项目仅保存 provider、repo URL、默认分支、installation/token 引用与 lastSyncSha。
+- **Repo baseline snapshot**：平台按计划任务或 webhook 从默认分支同步，安装依赖、预热 build/cache，并保存为 `repo_snapshots`；agent session 从最新 snapshot 派生，避免每次从空目录 clone/install。
+- **Workspace checkpoint**：agent 修改、测试、预览后的会话状态可保存为 `workspace_checkpoints`；用户 follow-up prompt 时可从上一次 checkpoint 恢复。
+- **Dev environment profile**：项目的工程服务契约（app/dev command、端口、Postgres/Redis 等依赖服务、lint/test/build/preview 命令）由 `.agents/dev.env.json`、`.agents/preview.json`、`package.json`、`docker-compose.yml`、`.devcontainer` 或控制面配置解析/覆盖。
+
+Git 负责可追踪源码历史；repo snapshot 负责快速启动基线；workspace checkpoint 负责 agent 会话连续性；deployment revision 必须指向 gitSha / snapshotId / checkpointId 中的一个确定对象。
 
 #### 组件职责边界（避免执行接口成为"上帝接口"）
 
@@ -141,7 +152,7 @@ MVP 可使用 sticky session 保证同一 terminal WebSocket 落到持有 bridge
 ## 4. 核心领域模型（建议扩展 schema）
 
 现有表（保持兼容）：
-- users, secrets (encrypted), agents (注册表), projects (id, userId, name, **serverPath** → 演进为 workspaceRef, defaultRuntimeId), sessions (id, userId, projectId, agentId, cwd, status, createdAt)
+- users, secrets (encrypted), agents (注册表), projects (id, userId, name, **serverPath** → 演进为 workspaceRef, defaultRuntimeId, repo*), sessions (id, userId, projectId, agentId, cwd, status, createdAt)
 
 新增 / 演进：
 
@@ -186,12 +197,33 @@ projects.serverPath 在 Local provider 下仍可直接映射；云 provider 下�
   - lastAttachAt, endedAt, exitCode
   - deploymentSnapshot（可选；或仅通过 project 关联当前活跃 preview）
 
+- **projects repo 字段**（不自建 Git server，先接外部 provider）：
+  - repo_provider: 'github' | 'gitlab' | 'generic_git' | 'none'
+  - repo_url, repo_default_branch, repo_installation_ref, repo_token_secret_ref
+  - workspace_mode: 'local' | 'git' | 'snapshot'
+  - last_sync_sha, last_snapshot_id, dev_profile_id
+
+- **dev_environment_profiles**：
+  - id, projectId, source: 'detected' | 'manual' | 'repo'
+  - profileJson（服务、命令、端口、checks、preview 契约）
+  - createdAt, updatedAt
+
+- **repo_snapshots**：
+  - id, projectId, gitSha, branch, status: 'pending' | 'building' | 'ready' | 'failed' | 'expired'
+  - storageRef（provider snapshot id / object storage ref / local path）
+  - buildLog, lastError, createdAt, updatedAt, expiresAt
+
+- **workspace_checkpoints**：
+  - id, projectId, sessionId, baseSnapshotId, status: 'pending' | 'ready' | 'failed' | 'expired'
+  - storageRef, diffRef, gitSha, createdBy, createdAt, expiresAt
+  - 用途：follow-up prompt 恢复、preview 确定 revision、PR 前验证。
+
 ## 5. 关键流程（对实现有约束）
 
 ### 5.1 启动 Agent Session（支持远程 Runtime）
 
 1. `POST /api/v1/session/start`（agent_id + project_id）
-2. Control 鉴权 → 取 project → 解析 `defaultRuntimeId` / runtime 记录 → 调用 `runtime.provider.ensureReady(project, { runtimeId })`（本地 mkdir 或云 provision/attach）。
+2. Control 鉴权 → 取 project → 解析 `defaultRuntimeId` / runtime 记录 → 选择 `checkpointId` 或最新 `repoSnapshotId` → 调用 `runtime.provider.ensureReady(project, { runtimeId, checkpointId?, baseSnapshotId? })`（本地 mkdir 或云 provision/attach/restore）。
 3. 取 user Secrets → `runtime.exec.spawn(cmd, args, envs, { cwd: runtimeWorkspacePath, ... })`
    - Local：由 `LocalExecAdapter` 封装 node-pty，返回 `StreamHandle`。
    - 远程：向 runtime 发起远程 exec 请求，返回可 reattach 的 stream handle（WS / multiplexed channel）。
@@ -222,7 +254,7 @@ Kimi Code 等特殊 Esc hack 保留在启动后处理层。
 2. Control 创建 `Deployment` 记录（kind=preview）。
 3. `PreviewManager.deploy(project)`：
    - 确保 runtime 就绪。
-   - 生成明确 revision：已提交代码用 gitSha；未提交工作区先生成 snapshot/checkpoint，并写入 `deployments.revision`，禁止以裸 `latest` 启动 preview。
+   - 生成明确 revision：已提交代码用 gitSha；未提交工作区先生成 workspace checkpoint，并写入 `deployments.revision`，禁止以裸 `latest` 启动 preview。
    - 通过 runtime 执行“启动预览”契约：
      - 优先读项目内 `.agents/preview.skill.md` 或 `package.json` scripts（dev/start/build）。
      - 或平台约定的启动命令 + ready 探测（端口或日志匹配）。
@@ -255,8 +287,10 @@ Preview 与 Agent Session **解耦**：可以没有活跃 agent session 时仍�
 
 ## 6. 存储策略
 
-- **首选 Git 作为可同步事实来源**：project 记录 repo URL + branch + lastSync。Runtime attach 时 `git clone/pull`；Agent 改动可 `git commit/push` 或由平台做 checkpoint。
-- **卷持久化是运行时工作副本**：K8s PVC / 云盘 per project。Local 下映射为目录。runtime 重建优先复用卷；跨 provider 迁移时以 Git + checkpoint / snapshot 恢复。
+- **首选外部 Git provider 作为源码事实来源**：project 记录 repo URL + branch + lastSyncSha；Runtime attach 时基于 repo snapshot / checkpoint restore，而不是每次直接 clone/pull。
+- **Repo snapshot 是快速启动基线**：定时任务或 webhook 触发 clone/install/build/cache warmup，保存 filesystem snapshot；snapshot 可以落在 provider 原生 snapshot、对象存储或 Local 目录中。
+- **Workspace checkpoint 是 agent 会话状态**：agent 修改后的工作区、依赖变化、测试产物与 diff 引用可 checkpoint；follow-up prompt、preview、PR 验证均应可指向 checkpoint。
+- **卷持久化是运行时工作副本**：K8s PVC / 云盘 per project/runtime。Local 下映射为目录。runtime 重建优先复用卷；跨 provider 迁移时以 Git + checkpoint / snapshot 恢复。
 - **对象存储快照**：用于备份/回滚/跨 provider 迁移。
 - 当前 `WORKSPACE_ROOT` 仅 LocalProvider 内部实现细节；云场景下 server 本地不应有完整 workspace 副本（除缓存）。
 
@@ -302,7 +336,8 @@ Preview 与 Agent Session **解耦**：可以没有活跃 agent session 时仍�
   - WS terminal 保持协议不变，内部 bridge 仅依赖 `StreamHandle`。
 - `server/src/session/SessionManager.js`：只保存 bridge handle 与易失缓存，不假设本地 PTY。
 - `server/src/runtime/Monitor.js`：仅允许 Local 实现内部使用；非 Local metrics 必须由 runtime/provider 提供。
-- `server/src/db/schema.js` + `server/src/db/index.js`：维护 `runtimes / deployments / events` 与 sessions reattach 字段；auto-migrate；默认 agent 数据不变。
+- `server/src/repositories/RepositoryEnvironmentService.js`：repo 绑定、dev profile、repo snapshot、workspace checkpoint 元数据服务；Git provider / snapshot 真实执行后续接入。
+- `server/src/db/schema.js` + `server/src/db/index.js`：维护 `runtimes / deployments / events / dev_environment_profiles / repo_snapshots / workspace_checkpoints` 与 sessions reattach 字段；auto-migrate；默认 agent 数据不变。
 - `server/src/auth/index.js`：不变（Vault 仍由 control 管理）。
 - 前端：Console 增加 Preview 相关状态与调用（具体 UI 严格遵循 Designs.md）；AgentConsole / 终端头可加 Preview 状态徽章。
 
@@ -319,7 +354,7 @@ Preview 与 Agent Session **解耦**：可以没有活跃 agent session 时仍�
 4. **Local Preview + Gateway**（✅）：`LocalPreviewAdapter` + `/preview/:id` 反代 + lifecycle TTL；须经 Deployment 记录（非红线裸绑端口）。
 5. **真实 Provider**：实现第一个云/容器 provider（如本地 Docker 模拟完整云路径，或接 K8s）。此时 Local 仅用于纯单机无容器开发。
 6. **Gateway 与 URL**：生产级子域名 + 反代；支持 iframe 预览与外部打开。
-7. **Git 集成 & Skill**：workspaceRef 支持 git；引入 `.agents/` 目录（preview.skill、deploy.skill）供 Agent 发现启动契约。
+7. **Git 集成 & Dev Environment**：接 GitHub/GitLab App；workspaceRef 支持 repo snapshot/checkpoint；引入 `.agents/` 目录（dev.env、preview、deploy）供 Agent 发现启动契约。
 8. **清理 & 强化**：移除遗留直接 FS 路径；加资源限额、TTL、审计；多实例支持（Session bridge 外置或 sticky session）。
 
 每个步骤必须更新本文档 + 验证 Local 路径 + 云模拟路径均通过。

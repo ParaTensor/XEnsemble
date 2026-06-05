@@ -6,6 +6,7 @@ const { getRuntime } = require('./runtime/registry');
 const { AgentSpawnError, RuntimeError } = require('./runtime/interfaces');
 const { ensureProjectRuntime, formatRuntime } = require('./runtime/RuntimeService');
 const deploymentService = require('./deployments/DeploymentService');
+const repositoryEnvironment = require('./repositories/RepositoryEnvironmentService');
 const { registerPreviewGateway } = require('./preview/gateway');
 const { startPreviewLifecycle } = require('./preview/lifecycle');
 const sessionManager = require('./session/SessionManager');
@@ -150,6 +151,13 @@ fastify.get('/api/v1/projects', { preValidation: [fastify.authenticate] }, async
             name: p.name,
             server_path: p.serverPath,
             default_runtime_id: p.defaultRuntimeId,
+            repo_provider: p.repoProvider || 'none',
+            repo_url: p.repoUrl || null,
+            repo_default_branch: p.repoDefaultBranch || 'main',
+            workspace_mode: p.workspaceMode || 'local',
+            last_sync_sha: p.lastSyncSha || null,
+            last_snapshot_id: p.lastSnapshotId || null,
+            dev_profile_id: p.devProfileId || null,
             created_at: p.createdAt,
         }))
         .sort((a, b) => b.created_at - a.created_at);
@@ -193,6 +201,69 @@ fastify.post('/api/v1/projects', { preValidation: [fastify.authenticate] }, asyn
         default_runtime_id: defaultRuntimeId,
         created_at: createdAt,
     };
+});
+
+// Repository environment — 外部 Git provider 绑定与工程环境元数据
+fastify.get('/api/v1/projects/:projectId/repository', { preValidation: [fastify.authenticate] }, async (request, reply) => {
+    const project = await getProjectForUser(request.user.id, request.params.projectId);
+    if (!project) return reply.code(404).send({ error: 'Project not found' });
+    return repositoryEnvironment.formatRepository(project);
+});
+
+fastify.put('/api/v1/projects/:projectId/repository', { preValidation: [fastify.authenticate] }, async (request, reply) => {
+    const project = await getProjectForUser(request.user.id, request.params.projectId);
+    if (!project) return reply.code(404).send({ error: 'Project not found' });
+    return repositoryEnvironment.updateRepository(project, request.body || {});
+});
+
+fastify.get('/api/v1/projects/:projectId/dev-profile', { preValidation: [fastify.authenticate] }, async (request, reply) => {
+    const project = await getProjectForUser(request.user.id, request.params.projectId);
+    if (!project) return reply.code(404).send({ error: 'Project not found' });
+    return { profile: await repositoryEnvironment.getDevProfile(project) };
+});
+
+fastify.put('/api/v1/projects/:projectId/dev-profile', { preValidation: [fastify.authenticate] }, async (request, reply) => {
+    const project = await getProjectForUser(request.user.id, request.params.projectId);
+    if (!project) return reply.code(404).send({ error: 'Project not found' });
+    return repositoryEnvironment.upsertDevProfile(project, request.body || {});
+});
+
+fastify.get('/api/v1/projects/:projectId/repo-snapshots', { preValidation: [fastify.authenticate] }, async (request, reply) => {
+    const project = await getProjectForUser(request.user.id, request.params.projectId);
+    if (!project) return reply.code(404).send({ error: 'Project not found' });
+    return repositoryEnvironment.listSnapshots(project.id);
+});
+
+fastify.post('/api/v1/projects/:projectId/repo-snapshots', { preValidation: [fastify.authenticate] }, async (request, reply) => {
+    const project = await getProjectForUser(request.user.id, request.params.projectId);
+    if (!project) return reply.code(404).send({ error: 'Project not found' });
+    const snapshot = await repositoryEnvironment.createSnapshot(project, request.body || {});
+    return reply.code(201).send(snapshot);
+});
+
+fastify.get('/api/v1/projects/:projectId/checkpoints', { preValidation: [fastify.authenticate] }, async (request, reply) => {
+    const project = await getProjectForUser(request.user.id, request.params.projectId);
+    if (!project) return reply.code(404).send({ error: 'Project not found' });
+    return repositoryEnvironment.listCheckpoints(project.id);
+});
+
+fastify.post('/api/v1/projects/:projectId/checkpoints', { preValidation: [fastify.authenticate] }, async (request, reply) => {
+    const project = await getProjectForUser(request.user.id, request.params.projectId);
+    if (!project) return reply.code(404).send({ error: 'Project not found' });
+
+    const sessionId = request.body?.session_id || request.body?.sessionId;
+    if (sessionId) {
+        const rows = await db.select().from(schema.sessions)
+            .where(and(
+                eq(schema.sessions.id, sessionId),
+                eq(schema.sessions.userId, request.user.id),
+                eq(schema.sessions.projectId, project.id),
+            ));
+        if (rows.length === 0) return reply.code(404).send({ error: 'Session not found for this project' });
+    }
+
+    const checkpoint = await repositoryEnvironment.createCheckpoint(project, request.body || {}, request.user.id);
+    return reply.code(201).send(checkpoint);
 });
 
 // Sessions — list

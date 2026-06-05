@@ -3,6 +3,9 @@
   "version": "1.0.0",
   "description": "Enterprise-level heterogeneous Agent Web hosting platform (Node.js MVP)",
   "main": "src/server.js",
+  "engines": {
+    "node": ">=20 <21"
+  },
   "scripts": {
     "start": "node src/server.js",
     "dev": "nodemon src/server.js",

@@ -34,6 +34,15 @@ sqlite.exec(`
     name TEXT NOT NULL,
     server_path TEXT NOT NULL,
     default_runtime_id TEXT,
+    repo_provider TEXT DEFAULT 'none',
+    repo_url TEXT,
+    repo_default_branch TEXT DEFAULT 'main',
+    repo_installation_ref TEXT,
+    repo_token_secret_ref TEXT,
+    workspace_mode TEXT DEFAULT 'local',
+    last_sync_sha TEXT,
+    last_snapshot_id TEXT,
+    dev_profile_id TEXT,
     created_at INTEGER NOT NULL,
     FOREIGN KEY(user_id) REFERENCES users(id)
   );
@@ -108,6 +117,48 @@ sqlite.exec(`
     FOREIGN KEY(user_id) REFERENCES users(id),
     FOREIGN KEY(project_id) REFERENCES projects(id)
   );
+
+  CREATE TABLE IF NOT EXISTS dev_environment_profiles (
+    id TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL,
+    source TEXT NOT NULL DEFAULT 'manual',
+    profile_json TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL,
+    FOREIGN KEY(project_id) REFERENCES projects(id)
+  );
+
+  CREATE TABLE IF NOT EXISTS repo_snapshots (
+    id TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL,
+    git_sha TEXT,
+    branch TEXT,
+    status TEXT NOT NULL DEFAULT 'pending',
+    storage_ref TEXT,
+    build_log TEXT,
+    last_error TEXT,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL,
+    expires_at INTEGER,
+    FOREIGN KEY(project_id) REFERENCES projects(id)
+  );
+
+  CREATE TABLE IF NOT EXISTS workspace_checkpoints (
+    id TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL,
+    session_id TEXT,
+    base_snapshot_id TEXT,
+    status TEXT NOT NULL DEFAULT 'pending',
+    storage_ref TEXT,
+    diff_ref TEXT,
+    git_sha TEXT,
+    created_by TEXT,
+    created_at INTEGER NOT NULL,
+    expires_at INTEGER,
+    FOREIGN KEY(project_id) REFERENCES projects(id),
+    FOREIGN KEY(session_id) REFERENCES sessions(id),
+    FOREIGN KEY(base_snapshot_id) REFERENCES repo_snapshots(id)
+  );
 `);
 
 // ─── 增量 ALTER 迁移（向后兼容已有 DB） ───
@@ -120,6 +171,33 @@ if (!sessionCols.some((c) => c.name === 'project_id')) {
 const projectCols = sqlite.prepare(`PRAGMA table_info(projects)`).all();
 if (!projectCols.some((c) => c.name === 'default_runtime_id')) {
     sqlite.exec(`ALTER TABLE projects ADD COLUMN default_runtime_id TEXT`);
+}
+if (!projectCols.some((c) => c.name === 'repo_provider')) {
+    sqlite.exec(`ALTER TABLE projects ADD COLUMN repo_provider TEXT DEFAULT 'none'`);
+}
+if (!projectCols.some((c) => c.name === 'repo_url')) {
+    sqlite.exec(`ALTER TABLE projects ADD COLUMN repo_url TEXT`);
+}
+if (!projectCols.some((c) => c.name === 'repo_default_branch')) {
+    sqlite.exec(`ALTER TABLE projects ADD COLUMN repo_default_branch TEXT DEFAULT 'main'`);
+}
+if (!projectCols.some((c) => c.name === 'repo_installation_ref')) {
+    sqlite.exec(`ALTER TABLE projects ADD COLUMN repo_installation_ref TEXT`);
+}
+if (!projectCols.some((c) => c.name === 'repo_token_secret_ref')) {
+    sqlite.exec(`ALTER TABLE projects ADD COLUMN repo_token_secret_ref TEXT`);
+}
+if (!projectCols.some((c) => c.name === 'workspace_mode')) {
+    sqlite.exec(`ALTER TABLE projects ADD COLUMN workspace_mode TEXT DEFAULT 'local'`);
+}
+if (!projectCols.some((c) => c.name === 'last_sync_sha')) {
+    sqlite.exec(`ALTER TABLE projects ADD COLUMN last_sync_sha TEXT`);
+}
+if (!projectCols.some((c) => c.name === 'last_snapshot_id')) {
+    sqlite.exec(`ALTER TABLE projects ADD COLUMN last_snapshot_id TEXT`);
+}
+if (!projectCols.some((c) => c.name === 'dev_profile_id')) {
+    sqlite.exec(`ALTER TABLE projects ADD COLUMN dev_profile_id TEXT`);
 }
 
 const sessionColsAfter = sqlite.prepare(`PRAGMA table_info(sessions)`).all();

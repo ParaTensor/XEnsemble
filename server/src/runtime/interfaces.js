@@ -38,7 +38,8 @@ class StreamHandle {
 
 class RuntimeProvider {
     /**
-     * 幂等 provision / attach；返回 { runtimeRef, workspacePath }。
+     * 幂等 provision / attach / restore；返回 { runtimeRef, workspacePath }。
+     * opts 可包含 runtimeId、baseSnapshotId、checkpointId。
      * 必须并发安全（singleflight），见 Architecture.md 3.1。
      */
     async ensureReady(project, opts = {}) {

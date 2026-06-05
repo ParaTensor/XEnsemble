@@ -19,6 +19,15 @@ const projects = sqliteTable('projects', {
   name: text('name').notNull(),
   serverPath: text('server_path').notNull(),
   defaultRuntimeId: text('default_runtime_id'),
+  repoProvider: text('repo_provider').default('none'),
+  repoUrl: text('repo_url'),
+  repoDefaultBranch: text('repo_default_branch').default('main'),
+  repoInstallationRef: text('repo_installation_ref'),
+  repoTokenSecretRef: text('repo_token_secret_ref'),
+  workspaceMode: text('workspace_mode').default('local'),
+  lastSyncSha: text('last_sync_sha'),
+  lastSnapshotId: text('last_snapshot_id'),
+  devProfileId: text('dev_profile_id'),
   createdAt: integer('created_at').notNull()
 });
 
@@ -92,6 +101,43 @@ const events = sqliteTable('events', {
   createdAt: integer('created_at').notNull()
 });
 
+const devEnvironmentProfiles = sqliteTable('dev_environment_profiles', {
+  id: text('id').primaryKey(),
+  projectId: text('project_id').notNull().references(() => projects.id),
+  source: text('source').notNull().default('manual'),
+  profileJson: text('profile_json').notNull(),
+  createdAt: integer('created_at').notNull(),
+  updatedAt: integer('updated_at').notNull()
+});
+
+const repoSnapshots = sqliteTable('repo_snapshots', {
+  id: text('id').primaryKey(),
+  projectId: text('project_id').notNull().references(() => projects.id),
+  gitSha: text('git_sha'),
+  branch: text('branch'),
+  status: text('status').notNull().default('pending'),
+  storageRef: text('storage_ref'),
+  buildLog: text('build_log'),
+  lastError: text('last_error'),
+  createdAt: integer('created_at').notNull(),
+  updatedAt: integer('updated_at').notNull(),
+  expiresAt: integer('expires_at')
+});
+
+const workspaceCheckpoints = sqliteTable('workspace_checkpoints', {
+  id: text('id').primaryKey(),
+  projectId: text('project_id').notNull().references(() => projects.id),
+  sessionId: text('session_id').references(() => sessions.id),
+  baseSnapshotId: text('base_snapshot_id').references(() => repoSnapshots.id),
+  status: text('status').notNull().default('pending'),
+  storageRef: text('storage_ref'),
+  diffRef: text('diff_ref'),
+  gitSha: text('git_sha'),
+  createdBy: text('created_by'),
+  createdAt: integer('created_at').notNull(),
+  expiresAt: integer('expires_at')
+});
+
 module.exports = {
   users,
   secrets,
@@ -101,4 +147,7 @@ module.exports = {
   runtimes,
   deployments,
   events,
+  devEnvironmentProfiles,
+  repoSnapshots,
+  workspaceCheckpoints,
 };
