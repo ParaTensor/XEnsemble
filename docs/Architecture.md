@@ -234,8 +234,6 @@ projects.serverPath 在 Local provider 下仍可直接映射；云 provider 下�
    - resize、metrics 通过 `StreamHandle` / runtime adapter 委托；scrollback 的事实来源在 runtime 侧，SessionManager 仅持易失缓存。
    - 协议**完全不变**。
 
-Kimi Code 等特殊 Esc hack 保留在启动后处理层。
-
 ### 5.2 Workspace 文件操作（必须走抽象）
 
 - 现有 `/api/v1/workspace/files?project_id=` 与 `/file?project_id=&path=` **必须改为委托模式**：

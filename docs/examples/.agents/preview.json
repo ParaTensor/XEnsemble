@@ -1,0 +1,5 @@
+{
+  "command": "npx",
+  "args": ["--yes", "serve", ".", "--listen", "$PORT", "--no-clipboard"],
+  "port": 5173
+}

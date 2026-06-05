@@ -1,10 +1,18 @@
 import React, { useState, useEffect, useContext } from 'react';
 import AgentConsole from '../components/AgentConsole';
-import PreviewPanel from '../components/PreviewPanel';
 import SelectMenu from '../components/SelectMenu';
-import { TerminalSquare, Play, Settings2, FolderOpen, FileText, X, RefreshCw, Plus, Trash2, ChevronRight, ChevronDown, FolderPlus } from 'lucide-react';
+import { TerminalSquare, Play, Settings2, FolderOpen, FileText, X, RefreshCw, Plus, Trash2, ChevronRight, ChevronDown, FolderPlus, Pin, Archive, ListFilter } from 'lucide-react';
 import { AuthContext } from '../App';
 import { getSecretLabel, isSecretPasswordField } from '../lib/secretLabels';
+import {
+  loadSidebarPrefs,
+  togglePinnedSession,
+  togglePinnedWorkspace,
+  archiveSession,
+  isPinnedSession,
+  isPinnedWorkspace,
+  isArchivedSession,
+} from '../lib/sidebarPrefs';
 
 const DEFAULT_AGENT_ID = 'kimi-code';
 
@@ -21,31 +29,43 @@ function defaultWorkspaceName() {
   return `${pick()}-${pick()}-${pick()}`;
 }
 
-function formatSessionTime(ts) {
+function formatRelativeTime(ts) {
   if (!ts) return '';
-  return new Date(ts).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+  const diff = Date.now() - ts;
+  const minutes = Math.floor(diff / 60000);
+  if (minutes < 1) return 'now';
+  if (minutes < 60) return `${minutes}m`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h`;
+  const days = Math.floor(hours / 24);
+  if (days < 7) return `${days}d`;
+  const weeks = Math.floor(days / 7);
+  if (weeks < 5) return `${weeks}w`;
+  return new Date(ts).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
 }
 
-function partitionSessions(sessions) {
-  const running = [];
-  const history = [];
-  for (const s of sessions) {
-    if (s.alive === true) running.push(s);
-    else history.push(s);
-  }
-  return { running, history };
+function sortSessions(list, prefs) {
+  return [...list].sort((a, b) => {
+    const aPin = isPinnedSession(prefs, a.id) ? 1 : 0;
+    const bPin = isPinnedSession(prefs, b.id) ? 1 : 0;
+    if (aPin !== bPin) return bPin - aPin;
+    const aLive = a.alive === true ? 1 : 0;
+    const bLive = b.alive === true ? 1 : 0;
+    if (aLive !== bLive) return bLive - aLive;
+    return (b.createdAt || 0) - (a.createdAt || 0);
+  });
 }
 
-function buildWorkspaces(projects, sessions) {
+function buildWorkspaces(projects, sessions, prefs) {
+  const visible = sessions.filter((s) => !isArchivedSession(prefs, s.id));
   const byProject = {};
-  for (const s of sessions) {
+  for (const s of visible) {
     const pid = s.projectId || '_orphan';
     if (!byProject[pid]) byProject[pid] = [];
     byProject[pid].push(s);
   }
-  const sortSessions = (list) => [...list].sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
   const list = projects.map((p) => {
-    const sess = sortSessions(byProject[p.id] || []);
+    const sess = sortSessions(byProject[p.id] || [], prefs);
     const lastActivity = Math.max(
       p.createdAt || 0,
       ...sess.map((s) => s.createdAt || 0),
@@ -53,7 +73,7 @@ function buildWorkspaces(projects, sessions) {
     return { id: p.id, name: p.name, sessions: sess, lastActivity };
   });
   if (byProject._orphan?.length) {
-    const sess = sortSessions(byProject._orphan);
+    const sess = sortSessions(byProject._orphan, prefs);
     list.push({
       id: '_orphan',
       name: 'Unassigned',
@@ -61,7 +81,12 @@ function buildWorkspaces(projects, sessions) {
       lastActivity: Math.max(...sess.map((s) => s.createdAt || 0)),
     });
   }
-  return list.sort((a, b) => b.lastActivity - a.lastActivity);
+  return list.sort((a, b) => {
+    const aPin = isPinnedWorkspace(prefs, a.id) ? 1 : 0;
+    const bPin = isPinnedWorkspace(prefs, b.id) ? 1 : 0;
+    if (aPin !== bPin) return bPin - aPin;
+    return b.lastActivity - a.lastActivity;
+  });
 }
 
 export default function Console() {
@@ -95,8 +120,11 @@ export default function Console() {
   const [configSaving, setConfigSaving] = useState(false);
   const [configLoading, setConfigLoading] = useState(false);
   const [deletingSessionId, setDeletingSessionId] = useState(null);
-  const [expandedHistoryWorkspaces, setExpandedHistoryWorkspaces] = useState(() => new Set());
   const [deleteConfirmSession, setDeleteConfirmSession] = useState(null);
+  const [sidebarPrefs, setSidebarPrefs] = useState(() => loadSidebarPrefs());
+  const [expandedSessionLists, setExpandedSessionLists] = useState(() => new Set());
+
+  const refreshSidebarPrefs = () => setSidebarPrefs(loadSidebarPrefs());
 
   useEffect(() => {
     if (!token) return;
@@ -181,11 +209,11 @@ export default function Console() {
     });
   };
 
-  const toggleHistoryExpanded = (workspaceId) => {
-    setExpandedHistoryWorkspaces((prev) => {
+  const toggleSessionListExpanded = (key) => {
+    setExpandedSessionLists((prev) => {
       const next = new Set(prev);
-      if (next.has(workspaceId)) next.delete(workspaceId);
-      else next.add(workspaceId);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
       return next;
     });
   };
@@ -487,76 +515,138 @@ export default function Console() {
     });
   };
 
-  const renderSessionRow = (s, ws, { isHistory = false } = {}) => {
+  const selectSession = (s, ws) => {
+    setActiveSession({
+      sessionId: s.id,
+      agentName: getAgentLabel(s.agentId),
+      projectId: s.projectId,
+      projectName: s.projectName || ws?.name,
+    });
+    if (s.projectId) {
+      setExpandedWorkspaces((prev) => {
+        const next = new Set(prev);
+        next.add(s.projectId);
+        return next;
+      });
+    }
+  };
+
+  const handlePinSession = (e, sessionId) => {
+    e.stopPropagation();
+    togglePinnedSession(sessionId);
+    refreshSidebarPrefs();
+  };
+
+  const handleArchiveSession = (e, sessionId) => {
+    e.stopPropagation();
+    archiveSession(sessionId);
+    refreshSidebarPrefs();
+    if (activeSession?.sessionId === sessionId) setActiveSession(null);
+  };
+
+  const handlePinWorkspace = (e, workspaceId) => {
+    e.stopPropagation();
+    togglePinnedWorkspace(workspaceId);
+    refreshSidebarPrefs();
+  };
+
+  const SESSION_PREVIEW_LIMIT = 5;
+
+  const renderSessionRow = (s, ws, { compact = false } = {}) => {
     const isActive = activeSession?.sessionId === s.id;
     const isLive = s.alive === true;
     const isDeleting = deletingSessionId === s.id;
-
-    const rowBody = (
-      <>
-        <div className="flex items-center justify-between gap-2">
-          <span className={`font-medium truncate text-xs ${isActive ? 'text-zinc-900' : 'text-zinc-700'}`}>
-            {getAgentLabel(s.agentId)}
-          </span>
-          {isActive && isLive ? (
-            <span className="shrink-0 text-[10px] uppercase tracking-wider font-semibold text-green-600">Live</span>
-          ) : isLive ? (
-            <span className="shrink-0 text-[10px] uppercase tracking-wider font-semibold text-zinc-400">Run</span>
-          ) : (
-            <span className="shrink-0 text-[10px] uppercase tracking-wider font-semibold text-zinc-400">End</span>
-          )}
-        </div>
-        <div className="text-[11px] text-zinc-400 truncate mt-0.5">{formatSessionTime(s.createdAt)}</div>
-      </>
-    );
+    const pinned = isPinnedSession(sidebarPrefs, s.id);
+    const label = getAgentLabel(s.agentId);
 
     return (
       <div
         key={s.id}
-        className={`group/session relative rounded-md border text-sm transition-colors ${
-          isActive
-            ? 'border-black bg-zinc-50 ring-1 ring-black/5'
-            : isLive
-              ? 'border-zinc-200 hover:border-zinc-300 hover:bg-zinc-50'
-              : 'border-zinc-200 opacity-70'
-        }`}
+        className={`group/session relative flex items-center gap-1.5 rounded-md px-1.5 py-1 text-sm transition-colors ${
+          isActive ? 'bg-zinc-100' : 'hover:bg-zinc-50'
+        } ${!isLive ? 'opacity-70' : ''}`}
       >
-        {isHistory ? (
-          <div className="w-full text-left p-2.5 pr-8 cursor-default">{rowBody}</div>
-        ) : (
-          <button
-            type="button"
-            disabled={isDeleting}
-            onClick={() => {
-              setActiveSession({
-                sessionId: s.id,
-                agentName: getAgentLabel(s.agentId),
-                projectId: s.projectId,
-                projectName: s.projectName || ws.name,
-              });
-            }}
-            className="w-full text-left p-2.5 pr-8 disabled:opacity-50"
-          >
-            {rowBody}
-          </button>
-        )}
+        <span className={`shrink-0 w-1 h-1 rounded-full ${isLive ? 'bg-green-500' : 'bg-zinc-300'}`} />
         <button
           type="button"
-          title={isHistory ? 'Remove from history' : 'Stop and remove session'}
           disabled={isDeleting}
-          onClick={(e) => {
-            e.stopPropagation();
-            requestDeleteSession(s, ws);
-          }}
-          className="absolute right-1.5 top-1/2 -translate-y-1/2 p-1 rounded-md text-zinc-400 hover:text-red-600 hover:bg-red-50 opacity-0 group-hover/session:opacity-100 focus:opacity-100 transition-opacity disabled:opacity-50"
+          onClick={() => selectSession(s, ws)}
+          className="flex-1 min-w-0 text-left truncate text-xs text-zinc-700 disabled:opacity-50"
+          title={label}
         >
-          <Trash2 className={`w-3 h-3 ${isDeleting ? 'animate-pulse' : ''}`} />
+          {label}
         </button>
+        <div className="flex items-center gap-0.5 shrink-0">
+          <span className={`text-[11px] text-zinc-400 tabular-nums ${compact ? '' : 'hidden group-hover/session:inline'}`}>
+            {formatRelativeTime(s.createdAt)}
+          </span>
+          <button
+            type="button"
+            title={pinned ? 'Unpin' : 'Pin'}
+            onClick={(e) => handlePinSession(e, s.id)}
+            className={`p-1 rounded-md text-zinc-400 hover:text-zinc-700 hover:bg-zinc-100 transition-opacity ${
+              pinned ? 'opacity-100 text-zinc-600' : 'opacity-0 group-hover/session:opacity-100 focus:opacity-100'
+            }`}
+          >
+            <Pin className={`w-3 h-3 ${pinned ? 'fill-current' : ''}`} />
+          </button>
+          <button
+            type="button"
+            title="Archive"
+            disabled={isDeleting}
+            onClick={(e) => handleArchiveSession(e, s.id)}
+            className="p-1 rounded-md text-zinc-400 hover:text-zinc-700 hover:bg-zinc-100 opacity-0 group-hover/session:opacity-100 focus:opacity-100 transition-opacity disabled:opacity-50"
+          >
+            <Archive className="w-3 h-3" />
+          </button>
+          {!compact && (
+            <button
+              type="button"
+              title={isLive ? 'Stop and remove' : 'Remove'}
+              disabled={isDeleting}
+              onClick={(e) => {
+                e.stopPropagation();
+                requestDeleteSession(s, ws);
+              }}
+              className="p-1 rounded-md text-zinc-400 hover:text-red-600 hover:bg-red-50 opacity-0 group-hover/session:opacity-100 focus:opacity-100 transition-opacity disabled:opacity-50"
+            >
+              <Trash2 className={`w-3 h-3 ${isDeleting ? 'animate-pulse' : ''}`} />
+            </button>
+          )}
+        </div>
       </div>
     );
   };
 
-  const workspaces = buildWorkspaces(projects, sessions);
+  const renderSessionList = (sessionList, ws, listKey) => {
+    if (sessionList.length === 0) {
+      return <p className="text-xs text-zinc-400 py-1 px-1.5">No sessions. Use + to add one.</p>;
+    }
+    const expanded = expandedSessionLists.has(listKey);
+    const visible = expanded ? sessionList : sessionList.slice(0, SESSION_PREVIEW_LIMIT);
+    const hasMore = sessionList.length > SESSION_PREVIEW_LIMIT;
+
+    return (
+      <>
+        {visible.map((s) => renderSessionRow(s, ws))}
+        {hasMore && !expanded && (
+          <button
+            type="button"
+            onClick={() => toggleSessionListExpanded(listKey)}
+            className="text-xs text-zinc-400 hover:text-zinc-600 py-1 px-1.5 text-left"
+          >
+            See more
+          </button>
+        )}
+      </>
+    );
+  };
+
+  const workspaces = buildWorkspaces(projects, sessions, sidebarPrefs);
+  const pinnedSessions = sortSessions(
+    sessions.filter((s) => isPinnedSession(sidebarPrefs, s.id) && !isArchivedSession(sidebarPrefs, s.id)),
+    sidebarPrefs,
+  );
   const runningCount = sessions.filter((s) => s.alive === true).length;
 
   return (
@@ -643,14 +733,14 @@ export default function Console() {
 
       {showNewInstanceModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-          <div className="bg-white rounded-lg shadow-sm w-full max-w-lg overflow-hidden border border-zinc-200">
-            <div className="p-5 border-b border-zinc-100 flex items-center gap-3 bg-zinc-50">
-              <Plus className="w-5 h-5 shrink-0 text-zinc-500" />
+          <div className="bg-white rounded-lg shadow-sm w-full max-w-sm overflow-hidden border border-zinc-200">
+            <div className="p-4 border-b border-zinc-100 flex items-center gap-2.5 bg-zinc-50">
+              <Plus className="w-4 h-4 shrink-0 text-zinc-500" />
               <h3 className="font-semibold text-sm text-zinc-900">
                 {launchModalMode === 'session' ? 'New session in workspace' : 'New workspace & session'}
               </h3>
             </div>
-            <div className="p-5 space-y-4">
+            <div className="p-4 space-y-3">
               {launchModalError && (
                 <p className="text-sm text-red-600 bg-red-50 border border-red-100 rounded-md px-3 py-2">{launchModalError}</p>
               )}
@@ -679,7 +769,18 @@ export default function Console() {
                 </div>
               )}
               <div>
-                <label className="block text-xs font-semibold uppercase tracking-wider text-zinc-500 mb-1">Agent</label>
+                <div className="flex items-center justify-between gap-2 mb-1">
+                  <label className="text-xs font-semibold uppercase tracking-wider text-zinc-500">Agent</label>
+                  {selectedAgent?.env_required?.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => openConfigModal()}
+                      className="text-xs font-medium text-zinc-500 hover:text-zinc-900 flex items-center gap-1 shrink-0"
+                    >
+                      <Settings2 className="w-3.5 h-3.5" /> Configure Keys
+                    </button>
+                  )}
+                </div>
                 {agents.length === 0 ? (
                   <p className="text-sm text-zinc-500">No agents available.</p>
                 ) : (
@@ -692,26 +793,17 @@ export default function Console() {
                 )}
               </div>
             </div>
-            <div className="p-4 border-t border-zinc-100 bg-zinc-50 flex flex-col sm:flex-row justify-end gap-2">
-              {selectedAgent?.env_required?.length > 0 && (
+            <div className="p-3 border-t border-zinc-100 bg-zinc-50 flex justify-end gap-2">
                 <button
                   type="button"
-                  onClick={() => openConfigModal()}
-                  className="h-9 px-4 flex items-center justify-center gap-2 border border-zinc-200 rounded-md text-sm font-medium text-zinc-700 bg-white hover:bg-zinc-50 sm:mr-auto"
+                  onClick={() => {
+                    setShowNewInstanceModal(false);
+                    setLaunchModalError(null);
+                  }}
+                  className="h-9 px-3 bg-white border border-zinc-200 text-zinc-700 rounded-md text-sm font-medium hover:bg-zinc-50"
                 >
-                  <Settings2 className="w-4 h-4" /> Configure Keys
+                  Cancel
                 </button>
-              )}
-              <button
-                type="button"
-                onClick={() => {
-                  setShowNewInstanceModal(false);
-                  setLaunchModalError(null);
-                }}
-                className="h-9 px-4 bg-white border border-zinc-200 text-zinc-700 rounded-md text-sm font-medium hover:bg-zinc-50"
-              >
-                Cancel
-              </button>
               <button
                 type="button"
                 disabled={
@@ -721,7 +813,7 @@ export default function Console() {
                   || (launchModalMode === 'session' && !launchWorkspaceId)
                 }
                 onClick={handleLaunchFromModal}
-                className="h-9 px-4 flex items-center justify-center gap-2 bg-black text-white rounded-md text-sm font-medium hover:bg-zinc-800 disabled:opacity-50"
+                className="h-9 px-3 flex items-center justify-center gap-2 bg-black text-white rounded-md text-sm font-medium hover:bg-zinc-800 disabled:opacity-50"
               >
                 <Play className="w-4 h-4" /> {isLoading || projectCreating ? 'Starting...' : launchModalMode === 'session' ? 'Start session' : 'Create & launch'}
               </button>
@@ -812,99 +904,102 @@ export default function Console() {
           <div className="bg-white border border-zinc-200 rounded-lg shadow-sm flex flex-col flex-1 min-h-0 overflow-hidden">
             <div className="flex items-center justify-between gap-2 border-b border-zinc-100 p-4 shrink-0">
               <div className="flex items-center gap-2 min-w-0">
-                <FolderOpen className="w-4 h-4 text-zinc-500 shrink-0" />
                 <h2 className="text-sm font-semibold text-zinc-900 uppercase tracking-wider">Workspaces</h2>
               </div>
-              {runningCount > 0 && (
-                <span className="text-[10px] uppercase tracking-wider font-semibold text-green-600 shrink-0">
-                  {runningCount} running
-                </span>
-              )}
+              <div className="flex items-center gap-1 shrink-0">
+                {runningCount > 0 && (
+                  <span className="text-[10px] uppercase tracking-wider font-semibold text-green-600 mr-1">
+                    {runningCount} running
+                  </span>
+                )}
+                <button type="button" title="Filter" className="p-1 text-zinc-400 hover:text-zinc-700 rounded-md hover:bg-zinc-100">
+                  <ListFilter className="w-3.5 h-3.5" />
+                </button>
+                <button
+                  type="button"
+                  title="New workspace"
+                  disabled={isLoading || agents.length === 0}
+                  onClick={() => openLaunchModal('workspace')}
+                  className="p-1 text-zinc-400 hover:text-zinc-700 rounded-md hover:bg-zinc-100 disabled:opacity-50"
+                >
+                  <FolderPlus className="w-3.5 h-3.5" />
+                </button>
+              </div>
             </div>
             <div className="flex-1 overflow-auto p-2">
+              {pinnedSessions.length > 0 && (
+                <div className="mb-3">
+                  <h3 className="px-1.5 py-1 text-xs font-medium text-zinc-500">Pinned</h3>
+                  <div className="flex flex-col">
+                    {pinnedSessions.map((s) => {
+                      const ws = workspaces.find((w) => w.id === (s.projectId || '_orphan')) || { name: s.projectName || 'Unassigned' };
+                      return renderSessionRow(s, ws, { compact: true });
+                    })}
+                  </div>
+                </div>
+              )}
               {workspaces.length === 0 ? (
                 <p className="text-sm text-zinc-500 px-2 py-1">No workspaces yet. Create one to start parallel sessions.</p>
               ) : (
                 <div className="flex flex-col gap-0.5">
+                  {pinnedSessions.length > 0 && (
+                    <h3 className="px-1.5 py-1 text-xs font-medium text-zinc-500">Workspaces</h3>
+                  )}
                   {workspaces.map((ws) => {
                     const expanded = expandedWorkspaces.has(ws.id);
-                    const { running: runningSessions, history: historySessions } = partitionSessions(ws.sessions);
-                    const liveInWs = runningSessions.length;
-                    const historyExpanded = expandedHistoryWorkspaces.has(ws.id);
+                    const liveInWs = ws.sessions.filter((s) => s.alive === true).length;
                     const isOrphan = ws.id === '_orphan';
-                    const sessionSummary = (() => {
-                      if (ws.sessions.length === 0) return 'No sessions';
-                      const parts = [];
-                      if (liveInWs > 0) parts.push(`${liveInWs} running`);
-                      if (historySessions.length > 0) parts.push(`${historySessions.length} in history`);
-                      return parts.join(' · ');
-                    })();
+                    const wsPinned = isPinnedWorkspace(sidebarPrefs, ws.id);
                     return (
                       <div key={ws.id} className="rounded-md">
                         <div className="group flex items-center gap-0.5 rounded-md hover:bg-zinc-50">
                           <button
                             type="button"
                             onClick={() => toggleWorkspaceExpanded(ws.id)}
-                            className="p-2 text-zinc-400 hover:text-zinc-700 shrink-0"
+                            className="p-1.5 text-zinc-400 hover:text-zinc-700 shrink-0"
                             aria-expanded={expanded}
                           >
                             {expanded ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
                           </button>
+                          <FolderOpen className="w-3.5 h-3.5 text-zinc-400 shrink-0" />
                           <button
                             type="button"
                             onClick={() => toggleWorkspaceExpanded(ws.id)}
-                            className="flex-1 min-w-0 text-left py-2 pr-1"
+                            className="flex-1 min-w-0 text-left py-1.5 pr-1 truncate text-sm text-zinc-800"
+                            title={ws.name}
                           >
-                            <div className="flex items-center gap-2">
-                              <span className="text-sm font-medium text-zinc-800 truncate">{ws.name}</span>
-                              {liveInWs > 0 && (
-                                <span className="shrink-0 text-[10px] font-semibold text-green-600">{liveInWs}</span>
-                              )}
-                            </div>
-                            <div className="text-[11px] text-zinc-400 truncate">
-                              {sessionSummary}
-                            </div>
+                            {ws.name}
+                            {liveInWs > 0 && (
+                              <span className="ml-1.5 text-[10px] font-semibold text-green-600">{liveInWs}</span>
+                            )}
                           </button>
                           {!isOrphan && (
-                            <button
-                              type="button"
-                              title="New session in this workspace"
-                              disabled={isLoading || agents.length === 0}
-                              onClick={() => openLaunchModal('session', { id: ws.id, name: ws.name })}
-                              className="p-2 mr-1 text-zinc-400 hover:text-zinc-900 hover:bg-zinc-100 rounded-md opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity disabled:opacity-50"
-                            >
-                              <Plus className="w-3.5 h-3.5" />
-                            </button>
+                            <>
+                              <button
+                                type="button"
+                                title={wsPinned ? 'Unpin workspace' : 'Pin workspace'}
+                                onClick={(e) => handlePinWorkspace(e, ws.id)}
+                                className={`p-1.5 rounded-md text-zinc-400 hover:text-zinc-700 hover:bg-zinc-100 transition-opacity ${
+                                  wsPinned ? 'opacity-100 text-zinc-600' : 'opacity-0 group-hover:opacity-100 focus:opacity-100'
+                                }`}
+                              >
+                                <Pin className={`w-3.5 h-3.5 ${wsPinned ? 'fill-current' : ''}`} />
+                              </button>
+                              <button
+                                type="button"
+                                title="New session in this workspace"
+                                disabled={isLoading || agents.length === 0}
+                                onClick={() => openLaunchModal('session', { id: ws.id, name: ws.name })}
+                                className="p-1.5 mr-0.5 text-zinc-400 hover:text-zinc-900 hover:bg-zinc-100 rounded-md opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity disabled:opacity-50"
+                              >
+                                <Plus className="w-3.5 h-3.5" />
+                              </button>
+                            </>
                           )}
                         </div>
                         {expanded && (
-                          <div className="ml-5 pl-2 border-l border-zinc-100 flex flex-col gap-1 pb-1">
-                            {runningSessions.length === 0 && historySessions.length === 0 ? (
-                              <p className="text-xs text-zinc-400 py-2 px-1">No sessions. Use + to add one.</p>
-                            ) : (
-                              <>
-                                {runningSessions.map((s) => renderSessionRow(s, ws))}
-                                {historySessions.length > 0 && (
-                                  <div className="mt-1 flex flex-col gap-1">
-                                    <button
-                                      type="button"
-                                      onClick={() => toggleHistoryExpanded(ws.id)}
-                                      className="flex items-center gap-1.5 py-1.5 px-1 text-xs font-medium text-zinc-500 hover:text-zinc-800 rounded-md hover:bg-zinc-50"
-                                      aria-expanded={historyExpanded}
-                                    >
-                                      {historyExpanded ? (
-                                        <ChevronDown className="w-3 h-3 shrink-0" />
-                                      ) : (
-                                        <ChevronRight className="w-3 h-3 shrink-0" />
-                                      )}
-                                      History
-                                      <span className="text-zinc-400 font-normal">({historySessions.length})</span>
-                                    </button>
-                                    {historyExpanded && historySessions.map((s) => renderSessionRow(s, ws, { isHistory: true }))}
-                                  </div>
-                                )}
-                              </>
-                            )}
+                          <div className="ml-4 pl-2 border-l border-zinc-100 flex flex-col pb-1">
+                            {renderSessionList(ws.sessions, ws, ws.id)}
                           </div>
                         )}
                       </div>
@@ -940,14 +1035,13 @@ export default function Console() {
           {/* Terminal View */}
           <div className="flex flex-1 min-h-0 flex-col overflow-hidden rounded-lg border border-zinc-200 bg-white shadow-sm">
             <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-              {activeSession?.projectId && (
-                <PreviewPanel projectId={activeSession.projectId} token={token} />
-              )}
               {activeSession ? (
                 <AgentConsole
                   key={activeSession.sessionId}
                   sessionId={activeSession.sessionId}
                   agentName={activeSession.agentName}
+                  projectId={activeSession.projectId}
+                  token={token}
                   onSessionEnd={handleSessionEnd}
                   onDisconnect={() => setActiveSession(null)}
                   workspaceOpen={workspaceOpen}

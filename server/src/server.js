@@ -360,12 +360,6 @@ fastify.post('/api/v1/session/start', { preValidation: [fastify.authenticate] },
             .catch((err) => fastify.log.error(err, 'Failed to persist session exit status'));
     });
 
-    if (agent_id === 'kimi-code') {
-        setTimeout(() => {
-            try { handle.write('\x1b'); } catch (_) { /* session may have ended */ }
-        }, 1200);
-    }
-
     const streamRef = handle.streamRef ?? null;
 
     await db.insert(schema.sessions).values({

@@ -52,4 +52,13 @@
     height: 100%;
     width: 100%;
   }
+
+  .xterm-host .xterm-viewport {
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+
+  .xterm-host .xterm-viewport::-webkit-scrollbar {
+    display: none;
+  }
 }

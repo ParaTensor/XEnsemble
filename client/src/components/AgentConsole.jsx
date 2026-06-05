@@ -3,6 +3,7 @@ import { Cpu, HardDrive, Unplug, PanelRightOpen, PanelRightClose } from 'lucide-
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import '@xterm/xterm/css/xterm.css';
+import { usePreview, PreviewControlGroup, PreviewExtras } from './PreviewPanel';
 
 function parseWsMessage(message) {
     const raw = typeof message === 'string' ? message : message.toString();
@@ -23,9 +24,22 @@ function measureTerminalSize(terminal, container) {
     };
 }
 
+function getArrowSequence(key, applicationCursorKeys) {
+    const prefix = applicationCursorKeys ? '\x1bO' : '\x1b[';
+    switch (key) {
+        case 'ArrowUp': return `${prefix}A`;
+        case 'ArrowDown': return `${prefix}B`;
+        case 'ArrowRight': return `${prefix}C`;
+        case 'ArrowLeft': return `${prefix}D`;
+        default: return null;
+    }
+}
+
 export default function AgentConsole({
     sessionId,
     agentName,
+    projectId,
+    token,
     onSessionEnd,
     onDisconnect,
     workspaceOpen,
@@ -33,6 +47,7 @@ export default function AgentConsole({
 }) {
     const [metrics, setMetrics] = useState({ cpu: 0, memory: 0 });
     const [ended, setEnded] = useState(false);
+    const preview = usePreview(projectId, token);
     const containerRef = useRef(null);
     const onSessionEndRef = useRef(onSessionEnd);
     onSessionEndRef.current = onSessionEnd;
@@ -51,6 +66,7 @@ export default function AgentConsole({
             rows: 32,
             scrollback: 10000,
             convertEol: true,
+            scrollOnUserInput: true,
             fontFamily: 'Menlo, Monaco, "Courier New", monospace',
             fontSize: 13,
             lineHeight: 1.2,
@@ -72,6 +88,27 @@ export default function AgentConsole({
         const ws = new WebSocket(
             `${wsProtocol}//${wsHost}:3000/ws/v1/terminal?sessionId=${encodeURIComponent(sessionId)}`
         );
+
+        // xterm attachCustomKeyEventHandler: return false = handled (skip xterm); else let xterm process.
+        terminal.attachCustomKeyEventHandler((ev) => {
+            if (ev.type !== 'keydown') return true;
+            if (serverEndedRef.current) return false;
+
+            const seq = getArrowSequence(ev.key, terminal.modes.applicationCursorKeysMode);
+            if (!seq) return true;
+            if (ev.metaKey || ev.ctrlKey || ev.altKey) return true;
+
+            const buf = terminal.buffer.active;
+            if (buf.viewportY < buf.baseY) {
+                terminal.scrollToBottom();
+            }
+
+            ev.preventDefault();
+            if (ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({ type: 'input', data: seq }));
+            }
+            return false;
+        });
 
         const applySize = () => {
             fitAddon.fit();
@@ -143,6 +180,7 @@ export default function AgentConsole({
         });
 
         container.addEventListener('mousedown', focusTerminal);
+        container.addEventListener('click', focusTerminal);
 
         const resizeObserver = new ResizeObserver(() => applySize());
         resizeObserver.observe(container);
@@ -151,6 +189,7 @@ export default function AgentConsole({
             disposedRef.current = true;
             resizeObserver.disconnect();
             container.removeEventListener('mousedown', focusTerminal);
+            container.removeEventListener('click', focusTerminal);
             ws.close();
             terminal.dispose();
         };
@@ -164,25 +203,28 @@ export default function AgentConsole({
                 <div className="flex items-center gap-2">
                     <div className={`w-2 h-2 rounded-full ${ended ? 'bg-zinc-500' : 'bg-green-500 animate-pulse'}`}></div>
                     <span className="text-xs font-mono font-medium text-zinc-300">
-                        {agentName} <span className="text-zinc-600">[{sessionId}]</span>
+                        {agentName}
                     </span>
                 </div>
-                <div className="flex items-center gap-3 text-xs font-mono text-zinc-400">
-                    {!ended && (
-                        <span className="text-zinc-500 hidden lg:inline">Click terminal to type</span>
-                    )}
-                    <div className="flex items-center gap-1.5" title="CPU Usage">
+                <div className="flex items-center gap-2 text-xs font-mono text-zinc-400 min-w-0">
+                    <div className="flex items-center gap-1.5 shrink-0" title="CPU Usage">
                         <Cpu className="w-3.5 h-3.5 text-zinc-500" />
                         <span className={metrics.cpu > 50 ? 'text-amber-400' : ''}>{metrics.cpu.toFixed(1)}%</span>
                     </div>
-                    <div className="flex items-center gap-1.5" title="Memory (RSS)">
+                    <div className="flex items-center gap-1.5 shrink-0" title="Memory (RSS)">
                         <HardDrive className="w-3.5 h-3.5 text-zinc-500" />
                         <span>{formatMem(metrics.memory)}</span>
                     </div>
+                    {projectId && token && (
+                        <>
+                            <div className="hidden sm:block h-4 w-px bg-zinc-700 shrink-0" aria-hidden />
+                            <PreviewControlGroup {...preview} />
+                        </>
+                    )}
                     {(onDisconnect || onToggleWorkspace) && (
                         <>
-                            <div className="hidden sm:block h-4 w-px bg-zinc-700" aria-hidden />
-                            <div className="flex items-center gap-0.5">
+                            <div className="hidden sm:block h-4 w-px bg-zinc-700 shrink-0" aria-hidden />
+                            <div className="flex items-center gap-0.5 shrink-0">
                                 {onDisconnect && (
                                     <button
                                         type="button"
@@ -212,6 +254,8 @@ export default function AgentConsole({
                     )}
                 </div>
             </div>
+
+            {projectId && token && <PreviewExtras {...preview} />}
 
             <div className="flex-1 p-2 min-h-0 overflow-hidden">
                 <div ref={containerRef} className="xterm-host w-full h-full" />

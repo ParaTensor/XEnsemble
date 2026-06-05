@@ -18,6 +18,8 @@ function createProjectDirectory(userId, projectId) {
     ensureWorkspaceRoot();
     const dir = projectDir(userId, projectId);
     fs.mkdirSync(dir, { recursive: true });
+    const { ensurePreviewContractFile } = require('./runtime/previewContract');
+    ensurePreviewContractFile(dir);
     return dir;
 }
 
