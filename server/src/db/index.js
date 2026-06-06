@@ -264,6 +264,7 @@ if (!userCols.some((c) => c.name === 'updated_at')) {
 sqlite.exec(`UPDATE users SET status = 'active' WHERE status IS NULL`);
 
 const insertSetting = sqlite.prepare('INSERT OR IGNORE INTO platform_settings (key, value) VALUES (?, ?)');
+insertSetting.run('llm_auth_mode', JSON.stringify('byok'));
 insertSetting.run('registration_mode', JSON.stringify('open'));
 insertSetting.run('default_user_quota', JSON.stringify({
     max_projects: 5,
@@ -323,16 +324,26 @@ backfillDefaultRuntimes(sqlite);
 
 // ─── 默认 Agent 数据 ───
 
+const { DEFAULT_AGENTS } = require('../agents/defaultAgents');
 const insertAgent = sqlite.prepare('INSERT OR IGNORE INTO agents (id, name, cmd, args, env_required) VALUES (?, ?, ?, ?, ?)');
-insertAgent.run('kimi-code', 'Kimi Code', 'kimi', JSON.stringify([]), JSON.stringify(['KIMI_API_KEY']));
-insertAgent.run('claude-code', 'Claude Code', 'claude', JSON.stringify(['--not-interactive']), JSON.stringify(['ANTHROPIC_API_KEY']));
-insertAgent.run('xagent', 'XAgent', 'xagent', JSON.stringify(['run']), JSON.stringify(['OPENAI_API_KEY']));
-sqlite.prepare(`UPDATE agents SET args = ? WHERE id = 'kimi-code'`).run(JSON.stringify([]));
-insertAgent.run('cursor', 'Cursor Agent', 'cursor', JSON.stringify(['--headless']), JSON.stringify([]));
-insertAgent.run('amp', 'AMP', 'amp', JSON.stringify([]), JSON.stringify(['AMP_API_KEY']));
-insertAgent.run('droid', 'Droid', 'droid', JSON.stringify(['start']), JSON.stringify([]));
-insertAgent.run('commandcode', 'CommandCode', 'commandcode', JSON.stringify([]), JSON.stringify(['COHERE_API_KEY']));
-insertAgent.run('hermes', 'Hermes', 'hermes', JSON.stringify(['--run']), JSON.stringify(['HERMES_API_KEY']));
-insertAgent.run('openclaw', 'OpenClaw', 'openclaw', JSON.stringify([]), JSON.stringify(['OPENCLAW_KEY']));
+const updateAgent = sqlite.prepare('UPDATE agents SET name = ?, cmd = ?, args = ?, env_required = ? WHERE id = ?');
+for (const agent of DEFAULT_AGENTS) {
+    insertAgent.run(
+        agent.id,
+        agent.name,
+        agent.cmd,
+        JSON.stringify(agent.args || []),
+        JSON.stringify(agent.env_required || []),
+    );
+    updateAgent.run(
+        agent.name,
+        agent.cmd,
+        JSON.stringify(agent.args || []),
+        JSON.stringify(agent.env_required || []),
+        agent.id,
+    );
+}
+sqlite.prepare(`DELETE FROM user_agent_grants WHERE agent_id IN ('xagent', 'xagent-cli')`).run();
+sqlite.prepare(`DELETE FROM agents WHERE id IN ('xagent', 'xagent-cli')`).run();
 
 module.exports = { db, sqlite };

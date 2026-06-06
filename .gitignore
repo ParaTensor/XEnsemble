@@ -2,4 +2,6 @@ node_modules/
 emdash_source/
 .env
 server/data/
+gateway/target/
 client/dist
+.cursor/

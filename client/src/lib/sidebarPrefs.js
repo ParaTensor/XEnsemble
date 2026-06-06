@@ -66,3 +66,10 @@ export function isPinnedWorkspace(prefs, workspaceId) {
 export function isArchivedSession(prefs, sessionId) {
   return prefs.archivedSessions.includes(sessionId);
 }
+
+export function removeWorkspacePrefs(workspaceId) {
+  const prefs = readPrefs();
+  prefs.pinnedWorkspaces = prefs.pinnedWorkspaces.filter((id) => id !== workspaceId);
+  writePrefs(prefs);
+  return prefs;
+}

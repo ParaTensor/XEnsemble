@@ -1,0 +1,741 @@
+use std::collections::HashMap;
+use std::net::SocketAddr;
+use std::path::PathBuf;
+use std::sync::Arc;
+
+use anyhow::{Context, Result};
+use axum::{
+    Json, Router,
+    body::Body,
+    extract::{Path, State},
+    http::{HeaderMap, StatusCode, header},
+    response::{IntoResponse, Response},
+    routing::{delete, get, patch, post},
+};
+use futures_util::StreamExt;
+use serde::Deserialize;
+use serde_json::{Value, json};
+use tokio::sync::mpsc;
+use tower_http::cors::CorsLayer;
+use tower_http::trace::TraceLayer;
+use unigateway_config::core_sync::sync_core_pools;
+use unigateway_config::{GatewayState, ProviderModelOptions, RuntimeLimitError};
+use unigateway_sdk::core::UniGatewayEngine;
+use unigateway_sdk::host::{
+    HostContext, HostDispatchOutcome, HostDispatchTarget, HostFuture, HostProtocol, HostRequest,
+    PoolHost, PoolLookupOutcome, PoolLookupResult, dispatch_request,
+};
+use unigateway_sdk::protocol::{
+    ProtocolHttpResponse, ProtocolResponseBody, anthropic_payload_to_chat_request,
+    openai_payload_to_chat_request, openai_payload_to_embed_request,
+};
+
+#[derive(Clone)]
+struct AppState {
+    gateway: Arc<GatewayState>,
+    engine: Arc<UniGatewayEngine>,
+    pool_host: Arc<EnginePoolHost>,
+    admin_token: Option<String>,
+}
+
+struct EnginePoolHost {
+    engine: Arc<UniGatewayEngine>,
+}
+
+impl PoolHost for EnginePoolHost {
+    fn pool_for_service<'a>(
+        &'a self,
+        service_id: &'a str,
+    ) -> HostFuture<'a, PoolLookupResult<PoolLookupOutcome>> {
+        let engine = self.engine.clone();
+        let service_id = service_id.to_string();
+        Box::pin(async move {
+            Ok(match engine.get_pool(&service_id).await {
+                Some(pool) => PoolLookupOutcome::found(pool),
+                None => PoolLookupOutcome::not_found(),
+            })
+        })
+    }
+}
+
+#[tokio::main]
+async fn main() -> Result<()> {
+    tracing_subscriber::fmt()
+        .with_env_filter(
+            tracing_subscriber::EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info")),
+        )
+        .init();
+
+    let config_path = config_path_from_env();
+    let bind_addr = bind_addr_from_env();
+    let admin_token = std::env::var("UNIGATEWAY_ADMIN_TOKEN")
+        .ok()
+        .filter(|v| !v.trim().is_empty());
+
+    let gateway = GatewayState::load(&config_path)
+        .await
+        .with_context(|| format!("load gateway config at {}", config_path.display()))?;
+
+    let engine = Arc::new(
+        UniGatewayEngine::builder()
+            .with_builtin_http_drivers()
+            .build()
+            .context("build UniGateway engine")?,
+    );
+
+    sync_core_pools(&gateway, engine.as_ref())
+        .await
+        .context("initial core pool sync")?;
+
+    let (sync_tx, mut sync_rx) = mpsc::unbounded_channel();
+    gateway.set_core_sync_notifier(sync_tx).await;
+
+    let gateway_bg = gateway.clone();
+    let engine_bg = engine.clone();
+    tokio::spawn(async move {
+        while sync_rx.recv().await.is_some() {
+            if let Err(error) = sync_core_pools(&gateway_bg, &engine_bg).await {
+                tracing::warn!(%error, "core pool sync failed");
+            }
+            if let Err(error) = gateway_bg.persist_if_dirty().await {
+                tracing::warn!(%error, "config persist failed");
+            }
+        }
+    });
+
+    let pool_host = Arc::new(EnginePoolHost {
+        engine: engine.clone(),
+    });
+
+    let state = AppState {
+        gateway,
+        engine: engine.clone(),
+        pool_host,
+        admin_token,
+    };
+
+    let app = Router::new()
+        .route("/health", get(health))
+        .route("/v1/chat/completions", post(openai_chat))
+        .route("/v1/messages", post(anthropic_messages))
+        .route("/v1/embeddings", post(openai_embeddings))
+        .route("/api/admin/modes", get(admin_modes))
+        .route(
+            "/api/admin/preferences/default-mode",
+            post(admin_set_default_mode),
+        )
+        .route("/api/admin/api-keys", patch(admin_rebind_api_key))
+        .route(
+            "/api/admin/providers",
+            get(admin_list_providers).post(admin_create_provider),
+        )
+        .route(
+            "/api/admin/providers/:name",
+            patch(admin_update_provider).delete(admin_delete_provider),
+        )
+        .layer(CorsLayer::permissive())
+        .layer(TraceLayer::new_for_http())
+        .with_state(state);
+
+    let listener = tokio::net::TcpListener::bind(bind_addr)
+        .await
+        .with_context(|| format!("bind {bind_addr}"))?;
+
+    tracing::info!(
+        config = %config_path.display(),
+        addr = %bind_addr,
+        "xensemble-unigateway listening"
+    );
+
+    axum::serve(listener, app)
+        .with_graceful_shutdown(shutdown_signal())
+        .await
+        .context("serve gateway")?;
+
+    Ok(())
+}
+
+fn config_path_from_env() -> PathBuf {
+    std::env::var("UNIGATEWAY_CONFIG_PATH")
+        .or_else(|_| std::env::var("UNIGATEWAY_CONFIG"))
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| PathBuf::from("unigateway.toml"))
+}
+
+fn bind_addr_from_env() -> SocketAddr {
+    std::env::var("UNIGATEWAY_BIND_ADDR")
+        .or_else(|_| std::env::var("BIND_ADDR"))
+        .unwrap_or_else(|_| "127.0.0.1:8741".to_string())
+        .parse()
+        .expect("valid UNIGATEWAY_BIND_ADDR")
+}
+
+async fn shutdown_signal() {
+    tokio::signal::ctrl_c()
+        .await
+        .expect("install CTRL+C handler");
+    tracing::info!("shutdown signal received");
+}
+
+async fn health() -> Json<Value> {
+    Json(json!({ "status": "ok", "service": "xensemble-unigateway" }))
+}
+
+fn extract_gateway_key(headers: &HeaderMap) -> Option<String> {
+    if let Some(value) = headers.get("x-api-key").and_then(|v| v.to_str().ok()) {
+        let trimmed = value.trim();
+        if !trimmed.is_empty() {
+            return Some(trimmed.to_string());
+        }
+    }
+    if let Some(value) = headers.get("authorization").and_then(|v| v.to_str().ok()) {
+        if let Some(key) = value.strip_prefix("Bearer ") {
+            let trimmed = key.trim();
+            if !trimmed.is_empty() {
+                return Some(trimmed.to_string());
+            }
+        }
+    }
+    None
+}
+
+fn require_admin(headers: &HeaderMap, expected: &Option<String>) -> Result<(), ApiError> {
+    let Some(expected) = expected else {
+        return Ok(());
+    };
+    let provided = headers
+        .get("x-admin-token")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("");
+    if provided == expected {
+        Ok(())
+    } else {
+        Err(ApiError::unauthorized("invalid admin token"))
+    }
+}
+
+async fn authorize_gateway(
+    state: &AppState,
+    headers: &HeaderMap,
+) -> Result<unigateway_config::GatewayApiKey, ApiError> {
+    let raw_key = extract_gateway_key(headers).ok_or_else(|| {
+        ApiError::unauthorized("missing gateway API key (Authorization: Bearer or x-api-key)")
+    })?;
+
+    let gateway_key = state
+        .gateway
+        .find_gateway_api_key(&raw_key)
+        .await
+        .ok_or_else(|| ApiError::unauthorized("invalid gateway API key"))?;
+
+    if gateway_key.is_active == 0 {
+        return Err(ApiError::unauthorized("gateway API key is inactive"));
+    }
+
+    if let Some(limit) = gateway_key.quota_limit
+        && gateway_key.used_quota >= limit
+    {
+        return Err(ApiError::too_many_requests("gateway API key quota exceeded"));
+    }
+
+    state
+        .gateway
+        .acquire_runtime_limit(&gateway_key)
+        .await
+        .map_err(runtime_limit_error)?;
+
+    Ok(gateway_key)
+}
+
+fn runtime_limit_error(error: RuntimeLimitError) -> ApiError {
+    match error {
+        RuntimeLimitError::QpsWaitTooLong
+        | RuntimeLimitError::TooManyQpsSleepers
+        | RuntimeLimitError::QueueDepthExceeded
+        | RuntimeLimitError::QueueTimeout => ApiError::too_many_requests("rate limit exceeded"),
+        RuntimeLimitError::StateLost => {
+            ApiError::internal("gateway rate limiter state lost")
+        }
+    }
+}
+
+fn into_axum_response(response: ProtocolHttpResponse) -> Response {
+    let (status, body) = response.into_parts();
+    match body {
+        ProtocolResponseBody::Json(value) => (status, Json(value)).into_response(),
+        ProtocolResponseBody::ServerSentEvents(stream) => (
+            status,
+            [(header::CONTENT_TYPE, "text/event-stream")],
+            Body::from_stream(stream.map(|chunk| {
+                chunk.map_err(|error| std::io::Error::other(error.to_string()))
+            })),
+        )
+            .into_response(),
+    }
+}
+
+async fn dispatch_for_service(
+    state: &AppState,
+    service_id: &str,
+    protocol: HostProtocol,
+    hint: Option<&str>,
+    request: HostRequest,
+    endpoint: &str,
+) -> Result<Response, ApiError> {
+    let host = HostContext::from_parts(&state.engine, state.pool_host.as_ref());
+    let target = HostDispatchTarget::Service(service_id);
+
+    let started = std::time::Instant::now();
+    let outcome = dispatch_request(&host, target, protocol, hint, request)
+        .await
+        .map_err(|error| ApiError::internal(error.to_string()))?;
+
+    state
+        .gateway
+        .record_stat(endpoint, 200, started.elapsed().as_millis() as i64)
+        .await;
+
+    match outcome {
+        HostDispatchOutcome::Response(response) => Ok(into_axum_response(response)),
+        other => {
+            if matches!(other, HostDispatchOutcome::PoolNotFound) {
+                Err(ApiError::bad_request(format!(
+                    "service '{service_id}' has no configured providers"
+                )))
+            } else {
+                Err(ApiError::internal("unsupported gateway dispatch outcome"))
+            }
+        }
+    }
+}
+
+async fn openai_chat(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(payload): Json<Value>,
+) -> Result<Response, ApiError> {
+    let gateway_key = authorize_gateway(&state, &headers).await?;
+    let service_id = gateway_key.service_id.clone();
+
+    let default_model = payload
+        .get("model")
+        .and_then(Value::as_str)
+        .unwrap_or("gpt-4o-mini")
+        .to_string();
+
+    let request = openai_payload_to_chat_request(&payload, &default_model)
+        .map_err(|error| ApiError::bad_request(error.to_string()))?;
+
+    let response = dispatch_for_service(
+        &state,
+        &service_id,
+        HostProtocol::OpenAiChat,
+        Some(&default_model),
+        HostRequest::Chat(request),
+        "/v1/chat/completions",
+    )
+    .await;
+
+    if response.is_ok() {
+        state
+            .gateway
+            .increment_used_quota(&gateway_key.key)
+            .await;
+        state
+            .gateway
+            .release_api_key_inflight(&gateway_key.key)
+            .await;
+    } else {
+        state
+            .gateway
+            .release_api_key_inflight(&gateway_key.key)
+            .await;
+    }
+
+    response
+}
+
+async fn anthropic_messages(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(payload): Json<Value>,
+) -> Result<Response, ApiError> {
+    let gateway_key = authorize_gateway(&state, &headers).await?;
+    let service_id = gateway_key.service_id.clone();
+
+    let default_model = payload
+        .get("model")
+        .and_then(Value::as_str)
+        .unwrap_or("claude-sonnet-4-20250514")
+        .to_string();
+
+    let request = anthropic_payload_to_chat_request(&payload, &default_model)
+        .map_err(|error| ApiError::bad_request(error.to_string()))?;
+
+    let response = dispatch_for_service(
+        &state,
+        &service_id,
+        HostProtocol::AnthropicMessages,
+        Some(&default_model),
+        HostRequest::Chat(request),
+        "/v1/messages",
+    )
+    .await;
+
+    if response.is_ok() {
+        state
+            .gateway
+            .increment_used_quota(&gateway_key.key)
+            .await;
+    }
+    state
+        .gateway
+        .release_api_key_inflight(&gateway_key.key)
+        .await;
+    response
+}
+
+async fn openai_embeddings(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(payload): Json<Value>,
+) -> Result<Response, ApiError> {
+    let gateway_key = authorize_gateway(&state, &headers).await?;
+    let service_id = gateway_key.service_id.clone();
+
+    let default_model = payload
+        .get("model")
+        .and_then(Value::as_str)
+        .unwrap_or("text-embedding-3-small")
+        .to_string();
+
+    let request = openai_payload_to_embed_request(&payload, &default_model)
+        .map_err(|error| ApiError::bad_request(error.to_string()))?;
+
+    let response = dispatch_for_service(
+        &state,
+        &service_id,
+        HostProtocol::OpenAiEmbeddings,
+        Some(&default_model),
+        HostRequest::Embeddings(request),
+        "/v1/embeddings",
+    )
+    .await;
+
+    if response.is_ok() {
+        state
+            .gateway
+            .increment_used_quota(&gateway_key.key)
+            .await;
+    }
+    state
+        .gateway
+        .release_api_key_inflight(&gateway_key.key)
+        .await;
+    response
+}
+
+async fn admin_modes(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    axum::extract::Query(query): axum::extract::Query<AdminModesQuery>,
+) -> Result<Json<AdminResponse<Value>>, ApiError> {
+    require_admin(&headers, &state.admin_token)?;
+    let detailed = query.detailed.unwrap_or(false);
+    let modes = state.gateway.list_mode_views().await;
+    let data = if detailed {
+        json!(modes)
+    } else {
+        json!(modes.iter().map(|mode| {
+            json!({
+                "id": mode.id,
+                "name": mode.name,
+                "routing_strategy": mode.routing_strategy,
+                "is_default": mode.is_default,
+                "provider_count": mode.providers.len(),
+                "provider_names": mode.providers.iter().map(|p| &p.name).collect::<Vec<_>>(),
+            })
+        }).collect::<Vec<_>>())
+    };
+    Ok(Json(AdminResponse::ok(data)))
+}
+
+#[derive(Debug, Deserialize)]
+struct AdminModesQuery {
+    detailed: Option<bool>,
+}
+
+#[derive(Debug, Deserialize)]
+struct SetDefaultModeBody {
+    mode_id: String,
+}
+
+async fn admin_set_default_mode(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(body): Json<SetDefaultModeBody>,
+) -> Result<Json<AdminResponse<Value>>, ApiError> {
+    require_admin(&headers, &state.admin_token)?;
+    state
+        .gateway
+        .set_default_mode(&body.mode_id)
+        .await
+        .map_err(|error| ApiError::bad_request(error.to_string()))?;
+    state.gateway.persist_if_dirty().await.ok();
+    Ok(Json(AdminResponse::ok(json!({ "mode_id": body.mode_id }))))
+}
+
+#[derive(Debug, Deserialize)]
+struct RebindApiKeyBody {
+    key: String,
+    service_id: String,
+}
+
+async fn admin_rebind_api_key(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(body): Json<RebindApiKeyBody>,
+) -> Result<Json<AdminResponse<Value>>, ApiError> {
+    require_admin(&headers, &state.admin_token)?;
+    state
+        .gateway
+        .rebind_api_key_service(&body.key, &body.service_id)
+        .await
+        .map_err(|error| ApiError::bad_request(error.to_string()))?;
+    state.gateway.persist_if_dirty().await.ok();
+    Ok(Json(AdminResponse::ok(json!({
+        "key": body.key,
+        "service_id": body.service_id,
+    }))))
+}
+
+async fn admin_list_providers(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Json<AdminResponse<Value>>, ApiError> {
+    require_admin(&headers, &state.admin_token)?;
+    let providers = state.gateway.list_provider_views().await;
+    Ok(Json(AdminResponse::ok(json!(providers))))
+}
+
+fn build_model_mapping(models: &[String]) -> String {
+    let map: HashMap<String, String> = models
+        .iter()
+        .map(|m| m.trim())
+        .filter(|m| !m.is_empty())
+        .map(|m| (m.to_string(), m.to_string()))
+        .collect();
+    if map.is_empty() {
+        String::new()
+    } else {
+        serde_json::to_string(&map).unwrap_or_default()
+    }
+}
+
+#[derive(Debug, Deserialize)]
+struct CreateProviderBody {
+    name: String,
+    base_url: String,
+    api_key: String,
+    default_model: Option<String>,
+    models: Option<Vec<String>>,
+    service_id: Option<String>,
+    endpoint_id: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct UpdateProviderBody {
+    base_url: Option<String>,
+    api_key: Option<String>,
+    default_model: Option<String>,
+    models: Option<Vec<String>>,
+}
+
+async fn admin_create_provider(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(body): Json<CreateProviderBody>,
+) -> Result<Json<AdminResponse<Value>>, ApiError> {
+    require_admin(&headers, &state.admin_token)?;
+
+    let name = body.name.trim();
+    if name.is_empty() {
+        return Err(ApiError::bad_request("name is required"));
+    }
+    let base_url = body.base_url.trim();
+    if base_url.is_empty() {
+        return Err(ApiError::bad_request("base_url is required"));
+    }
+    if body.api_key.trim().is_empty() {
+        return Err(ApiError::bad_request("api_key is required"));
+    }
+
+    let endpoint_id = body.endpoint_id.as_deref().unwrap_or("openai");
+    let model_mapping_str = body
+        .models
+        .as_ref()
+        .map(|models| build_model_mapping(models.as_slice()));
+    let default_model = body
+        .default_model
+        .as_deref()
+        .map(str::trim)
+        .filter(|m| !m.is_empty())
+        .or_else(|| {
+            body.models.as_ref().and_then(|models| {
+                models
+                    .iter()
+                    .map(|m| m.trim())
+                    .find(|m| !m.is_empty())
+            })
+        });
+    let provider_id = state
+        .gateway
+        .create_provider_with_models(
+            name,
+            "openai",
+            endpoint_id,
+            Some(base_url),
+            body.api_key.trim(),
+            ProviderModelOptions {
+                default_model,
+                model_mapping: model_mapping_str.as_deref(),
+            },
+        )
+        .await;
+
+    let service_id = body.service_id.as_deref().unwrap_or("default");
+    state
+        .gateway
+        .bind_provider_to_service(service_id, provider_id)
+        .await
+        .map_err(|error| ApiError::bad_request(error.to_string()))?;
+    state.gateway.persist_if_dirty().await.ok();
+
+    Ok(Json(AdminResponse::ok(json!({
+        "id": provider_id,
+        "name": name,
+        "service_id": service_id,
+    }))))
+}
+
+async fn admin_update_provider(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(name): Path<String>,
+    Json(body): Json<UpdateProviderBody>,
+) -> Result<Json<AdminResponse<Value>>, ApiError> {
+    require_admin(&headers, &state.admin_token)?;
+
+    let model_mapping = body
+        .models
+        .as_ref()
+        .map(|models| build_model_mapping(models.as_slice()));
+    let default_model = body
+        .default_model
+        .as_deref()
+        .map(str::trim)
+        .filter(|m| !m.is_empty())
+        .or_else(|| {
+            body.models.as_ref().and_then(|models| {
+                models
+                    .iter()
+                    .map(|m| m.trim())
+                    .find(|m| !m.is_empty())
+            })
+        });
+
+    state
+        .gateway
+        .update_provider_by_name(
+            &name,
+            body.base_url.as_deref().map(|s| s.trim()),
+            body.api_key.as_deref(),
+            default_model,
+            model_mapping.as_deref(),
+        )
+        .await
+        .map_err(|error| ApiError::bad_request(error.to_string()))?;
+    state.gateway.persist_if_dirty().await.ok();
+    Ok(Json(AdminResponse::ok(json!({ "name": name }))))
+}
+
+async fn admin_delete_provider(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(name): Path<String>,
+) -> Result<Json<AdminResponse<Value>>, ApiError> {
+    require_admin(&headers, &state.admin_token)?;
+    state
+        .gateway
+        .delete_provider_by_name(&name)
+        .await
+        .map_err(|error| ApiError::bad_request(error.to_string()))?;
+    state.gateway.persist_if_dirty().await.ok();
+    Ok(Json(AdminResponse::ok(json!({ "name": name }))))
+}
+
+#[derive(Debug, serde::Serialize)]
+struct AdminResponse<T> {
+    success: bool,
+    data: Option<T>,
+    error: Option<String>,
+}
+
+impl<T: serde::Serialize> AdminResponse<T> {
+    fn ok(data: T) -> Self {
+        Self {
+            success: true,
+            data: Some(data),
+            error: None,
+        }
+    }
+}
+
+#[derive(Debug)]
+struct ApiError {
+    status: StatusCode,
+    message: String,
+}
+
+impl ApiError {
+    fn unauthorized(message: impl Into<String>) -> Self {
+        Self {
+            status: StatusCode::UNAUTHORIZED,
+            message: message.into(),
+        }
+    }
+
+    fn bad_request(message: impl Into<String>) -> Self {
+        Self {
+            status: StatusCode::BAD_REQUEST,
+            message: message.into(),
+        }
+    }
+
+    fn too_many_requests(message: impl Into<String>) -> Self {
+        Self {
+            status: StatusCode::TOO_MANY_REQUESTS,
+            message: message.into(),
+        }
+    }
+
+    fn internal(message: impl Into<String>) -> Self {
+        Self {
+            status: StatusCode::INTERNAL_SERVER_ERROR,
+            message: message.into(),
+        }
+    }
+}
+
+impl IntoResponse for ApiError {
+    fn into_response(self) -> Response {
+        let body = Json(json!({
+            "error": {
+                "message": self.message,
+                "type": "gateway_error",
+            }
+        }));
+        (self.status, body).into_response()
+    }
+}

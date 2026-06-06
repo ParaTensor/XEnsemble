@@ -141,4 +141,13 @@
   .xterm-host .xterm-viewport::-webkit-scrollbar {
     display: none;
   }
+
+  .console-scroll-hidden {
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+
+  .console-scroll-hidden::-webkit-scrollbar {
+    display: none;
+  }
 }

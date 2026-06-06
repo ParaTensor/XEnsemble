@@ -4,6 +4,7 @@ const { eq } = require('drizzle-orm');
 const { DEFAULT_QUOTA } = require('../auth/PolicyService');
 
 const DEFAULTS = {
+    llm_auth_mode: 'byok',
     registration_mode: 'open',
     default_user_quota: {
         max_projects: DEFAULT_QUOTA.maxProjects,
@@ -50,7 +51,10 @@ async function getAll() {
 }
 
 async function updateAll(updates) {
-    const allowed = ['registration_mode', 'default_user_quota', 'session_ttl_hours'];
+    const allowed = ['llm_auth_mode', 'registration_mode', 'default_user_quota', 'session_ttl_hours'];
+    if (updates.llm_auth_mode !== undefined && !['gateway', 'byok'].includes(updates.llm_auth_mode)) {
+        throw Object.assign(new Error('Invalid llm_auth_mode'), { statusCode: 400 });
+    }
     for (const key of allowed) {
         if (updates[key] !== undefined) {
             await set(key, updates[key]);
@@ -67,8 +71,14 @@ async function getDefaultUserQuota() {
     return (await get('default_user_quota')) || DEFAULTS.default_user_quota;
 }
 
+async function getLlmAuthMode() {
+    const mode = await get('llm_auth_mode');
+    return mode === 'gateway' ? 'gateway' : 'byok';
+}
+
 async function seedDefaults(sqlite) {
     const insert = sqlite.prepare('INSERT OR IGNORE INTO platform_settings (key, value) VALUES (?, ?)');
+    insert.run('llm_auth_mode', JSON.stringify(DEFAULTS.llm_auth_mode));
     insert.run('registration_mode', JSON.stringify(DEFAULTS.registration_mode));
     insert.run('default_user_quota', JSON.stringify(DEFAULTS.default_user_quota));
     insert.run('session_ttl_hours', JSON.stringify(DEFAULTS.session_ttl_hours));
@@ -80,6 +90,7 @@ module.exports = {
     set,
     getAll,
     updateAll,
+    getLlmAuthMode,
     getRegistrationMode,
     getDefaultUserQuota,
     seedDefaults,

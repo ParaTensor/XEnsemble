@@ -25,7 +25,7 @@ export default function QuotaSettingsPanel() {
   const u = q.usage || {};
 
   const rows = [
-    { label: 'Projects', used: u.projects ?? 0, max: q.max_projects },
+    { label: 'Workspaces', used: u.projects ?? 0, max: q.max_projects },
     { label: 'Concurrent sessions', used: u.sessions ?? 0, max: q.max_sessions },
     { label: 'Concurrent previews', used: u.previews ?? 0, max: q.max_previews },
   ];

@@ -4,23 +4,9 @@ const path = require('path');
 const fs = require('fs');
 const { ExecAdapter, AgentSpawnError, StreamHandle } = require('./interfaces');
 const { getProcessStats } = require('./Monitor');
+const { resolveExecutable, enrichPath, KNOWN_CLI_LOCATIONS } = require('../agents/agentProbe');
 
 // ─── 辅助函数（原 Executor.js） ───
-
-const KNOWN_CLI_LOCATIONS = {
-    kimi: ['.kimi-code/bin/kimi'],
-    cursor: ['.local/bin/cursor'],
-    claude: ['.local/bin/claude'],
-    droid: ['.local/bin/droid'],
-    xagent: ['.local/bin/xagent'],
-};
-
-const HOME_PATH_PREFIXES = [
-    '.kimi-code/bin',
-    '.local/bin',
-    '.opencode/bin',
-    '.amp/bin',
-];
 
 function quotePosixArg(input) {
     if (input.length === 0) return "''";
@@ -35,32 +21,6 @@ function isExecutable(filePath) {
     } catch {
         return fs.existsSync(filePath);
     }
-}
-
-function enrichPath(env) {
-    const home = env.HOME || process.env.HOME;
-    if (!home) return env.PATH || process.env.PATH || '';
-    const extra = HOME_PATH_PREFIXES.map((rel) => path.join(home, rel)).filter(isExecutable);
-    const parts = [...extra, ...(env.PATH || process.env.PATH || '').split(path.delimiter)].filter(Boolean);
-    const seen = new Set();
-    const merged = parts.filter((p) => {
-        if (seen.has(p)) return false;
-        seen.add(p);
-        return true;
-    });
-    return merged.join(path.delimiter);
-}
-
-function resolveExecutable(cmd, env) {
-    if (path.isAbsolute(cmd) || cmd.includes(path.sep)) {
-        return isExecutable(cmd) ? cmd : null;
-    }
-    const pathDirs = (env.PATH || '').split(path.delimiter).filter(Boolean);
-    for (const dir of pathDirs) {
-        const candidate = path.join(dir, cmd);
-        if (isExecutable(candidate)) return candidate;
-    }
-    return null;
 }
 
 function findOffPathInstall(cmd) {

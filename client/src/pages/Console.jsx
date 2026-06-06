@@ -1,9 +1,11 @@
 import React, { useState, useEffect, useContext } from 'react';
 import AgentConsole from '../components/AgentConsole';
 import SelectMenu from '../components/SelectMenu';
+import { ConsoleInlineDialog } from '../components/ConsoleDialog';
 import { TerminalSquare, Play, Settings2, FolderOpen, FileText, X, RefreshCw, Plus, Trash2, ChevronRight, ChevronDown, FolderPlus, Pin, Archive, ListFilter } from 'lucide-react';
 import { AuthContext } from '../App';
 import { getSecretLabel, isSecretPasswordField } from '../lib/secretLabels';
+import { formatQuotaExceeded } from '../lib/quotaLabels';
 import {
   loadSidebarPrefs,
   togglePinnedSession,
@@ -12,6 +14,7 @@ import {
   isPinnedSession,
   isPinnedWorkspace,
   isArchivedSession,
+  removeWorkspacePrefs,
 } from '../lib/sidebarPrefs';
 
 const DEFAULT_AGENT_ID = 'kimi-code';
@@ -90,7 +93,7 @@ function buildWorkspaces(projects, sessions, prefs) {
 }
 
 export default function Console() {
-  const { token } = useContext(AuthContext);
+  const { token, user } = useContext(AuthContext);
   const [agents, setAgents] = useState([]);
   const [sessions, setSessions] = useState([]);
   const [projects, setProjects] = useState([]);
@@ -121,6 +124,8 @@ export default function Console() {
   const [configLoading, setConfigLoading] = useState(false);
   const [deletingSessionId, setDeletingSessionId] = useState(null);
   const [deleteConfirmSession, setDeleteConfirmSession] = useState(null);
+  const [deletingWorkspaceId, setDeletingWorkspaceId] = useState(null);
+  const [deleteConfirmWorkspace, setDeleteConfirmWorkspace] = useState(null);
   const [sidebarPrefs, setSidebarPrefs] = useState(() => loadSidebarPrefs());
   const [expandedSessionLists, setExpandedSessionLists] = useState(() => new Set());
 
@@ -290,7 +295,7 @@ export default function Console() {
 
   const ensureAgentSecrets = async (agent) => {
     const required = agent?.env_required || [];
-    if (required.length === 0) return true;
+    if (required.length === 0 || agent?.llm_auth_mode === 'gateway') return true;
     try {
       const res = await fetch('http://localhost:3000/api/v1/secrets', {
         headers: { 'Authorization': `Bearer ${token}` }
@@ -325,9 +330,9 @@ export default function Console() {
       const data = await res.json();
       if (!res.ok) {
         if (data.error === 'quota_exceeded') {
-          throw new Error(`Project quota exceeded (${data.current}/${data.limit}).`);
+          throw new Error(formatQuotaExceeded(data.dimension || 'max_projects', data.current, data.limit));
         }
-        throw new Error(data.error || 'Failed to create project');
+        throw new Error(data.error || 'Failed to create workspace');
       }
       return { id: data.id, name: data.name || name };
     } catch (err) {
@@ -370,7 +375,7 @@ export default function Console() {
           return false;
         }
         if (data.error === 'quota_exceeded') {
-          setLaunchModalError(`Quota exceeded (${data.dimension}: ${data.current}/${data.limit}).`);
+          setLaunchModalError(formatQuotaExceeded(data.dimension, data.current, data.limit));
           return false;
         }
         if (/Missing required env|Secrets Vault/i.test(msg)) {
@@ -536,6 +541,38 @@ export default function Console() {
     });
   };
 
+  const handleDeleteWorkspace = async (workspaceId) => {
+    setDeletingWorkspaceId(workspaceId);
+    try {
+      const res = await fetch(`http://localhost:3000/api/v1/projects/${encodeURIComponent(workspaceId)}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to delete workspace');
+      if (activeSession?.projectId === workspaceId) setActiveSession(null);
+      removeWorkspacePrefs(workspaceId);
+      refreshSidebarPrefs();
+      setDeleteConfirmWorkspace(null);
+      fetchWorkspaces();
+    } catch (err) {
+      setError(err.message);
+      setShowErrorModal(true);
+    } finally {
+      setDeletingWorkspaceId(null);
+    }
+  };
+
+  const requestDeleteWorkspace = (ws) => {
+    const liveCount = ws.sessions.filter((s) => s.alive === true).length;
+    setDeleteConfirmWorkspace({
+      workspaceId: ws.id,
+      workspaceName: ws.name,
+      sessionCount: ws.sessions.length,
+      liveCount,
+    });
+  };
+
   const selectSession = (s, ws) => {
     setActiveSession({
       sessionId: s.id,
@@ -673,9 +710,55 @@ export default function Console() {
   return (
     <>
       {/* Dialog Modals */}
+      {deleteConfirmWorkspace && (
+        <ConsoleInlineDialog
+          onClose={() => setDeleteConfirmWorkspace(null)}
+          panelClassName="bg-white rounded-lg shadow-sm w-full max-w-md overflow-hidden border border-zinc-200"
+        >
+            <div className="p-5 border-b border-zinc-100 flex items-center gap-3 bg-zinc-50">
+              <Trash2 className="w-5 h-5 shrink-0 text-zinc-500" />
+              <h3 className="font-semibold text-sm text-zinc-900">Delete workspace</h3>
+            </div>
+            <div className="p-5 text-sm text-zinc-600">
+              Permanently delete <span className="font-medium text-zinc-900">{deleteConfirmWorkspace.workspaceName}</span>?
+              {deleteConfirmWorkspace.sessionCount > 0 && (
+                <span>
+                  {' '}
+                  This will remove {deleteConfirmWorkspace.sessionCount} session
+                  {deleteConfirmWorkspace.sessionCount === 1 ? '' : 's'}
+                  {deleteConfirmWorkspace.liveCount > 0 && (
+                    <> (including {deleteConfirmWorkspace.liveCount} running)</>
+                  )}
+                  .
+                </span>
+              )}
+              <p className="mt-2 text-xs text-zinc-500">All workspace files on the server will be deleted. This frees your workspace quota.</p>
+            </div>
+            <div className="p-4 border-t border-zinc-100 bg-zinc-50 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setDeleteConfirmWorkspace(null)}
+                className="h-9 px-4 bg-white border border-zinc-200 text-zinc-700 rounded-md text-sm font-medium hover:bg-zinc-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={deletingWorkspaceId === deleteConfirmWorkspace.workspaceId}
+                onClick={() => handleDeleteWorkspace(deleteConfirmWorkspace.workspaceId)}
+                className="h-9 px-4 bg-red-600 text-white rounded-md text-sm font-medium hover:bg-red-700 disabled:opacity-50"
+              >
+                {deletingWorkspaceId === deleteConfirmWorkspace.workspaceId ? 'Deleting…' : 'Delete workspace'}
+              </button>
+            </div>
+        </ConsoleInlineDialog>
+      )}
+
       {deleteConfirmSession && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4">
-          <div className="bg-white rounded-lg shadow-sm w-full max-w-md overflow-hidden border border-zinc-200">
+        <ConsoleInlineDialog
+          onClose={() => setDeleteConfirmSession(null)}
+          panelClassName="bg-white rounded-lg shadow-sm w-full max-w-md overflow-hidden border border-zinc-200"
+        >
             <div className="p-5 border-b border-zinc-100 flex items-center gap-3 bg-zinc-50">
               <Trash2 className="w-5 h-5 shrink-0 text-zinc-500" />
               <h3 className="font-semibold text-sm text-zinc-900">
@@ -713,13 +796,14 @@ export default function Console() {
                 {deletingSessionId === deleteConfirmSession.sessionId ? 'Removing…' : deleteConfirmSession.isLive ? 'Stop & remove' : 'Remove'}
               </button>
             </div>
-          </div>
-        </div>
+        </ConsoleInlineDialog>
       )}
 
       {showErrorModal && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4">
-          <div className="bg-white rounded-lg shadow-sm w-full max-w-md overflow-hidden border border-zinc-200">
+        <ConsoleInlineDialog
+          onClose={() => setShowErrorModal(false)}
+          panelClassName="bg-white rounded-lg shadow-sm w-full max-w-md overflow-hidden border border-zinc-200"
+        >
             <div className="p-5 border-b border-zinc-100 flex items-center gap-3 bg-red-50 text-red-600">
               <X className="w-5 h-5 shrink-0" />
               <h3 className="font-semibold text-sm">Action Failed</h3>
@@ -728,7 +812,7 @@ export default function Console() {
               {error}
             </div>
             <div className="p-4 border-t border-zinc-100 bg-zinc-50 flex justify-end gap-2">
-              {/Missing required|Secrets Vault/i.test(error || '') && selectedAgent?.env_required?.length > 0 && (
+              {selectedAgent?.llm_auth_mode === 'byok' && /Missing required|Secrets Vault/i.test(error || '') && selectedAgent?.env_required?.length > 0 && (
                 <button
                   type="button"
                   onClick={() => {
@@ -748,13 +832,18 @@ export default function Console() {
                 Close
               </button>
             </div>
-          </div>
-        </div>
+        </ConsoleInlineDialog>
       )}
 
       {showNewInstanceModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-          <div className="bg-white rounded-lg shadow-sm w-full max-w-sm overflow-hidden border border-zinc-200">
+        <ConsoleInlineDialog
+          onClose={() => {
+            setShowNewInstanceModal(false);
+            setLaunchModalError(null);
+          }}
+          overlayClassName="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+          panelClassName="bg-white rounded-lg shadow-sm w-full max-w-sm overflow-hidden border border-zinc-200"
+        >
             <div className="p-4 border-b border-zinc-100 flex items-center gap-2.5 bg-zinc-50">
               <Plus className="w-4 h-4 shrink-0 text-zinc-500" />
               <h3 className="font-semibold text-sm text-zinc-900">
@@ -775,7 +864,7 @@ export default function Console() {
                     placeholder="quiet-forest-door"
                     className="w-full h-9 px-3 border border-zinc-200 rounded-md text-sm focus:border-black focus:ring-1 focus:ring-black"
                   />
-                  <p className="text-xs text-zinc-500 mt-2">Creates an isolated project directory. You can add more parallel sessions later.</p>
+                  <p className="text-xs text-zinc-500 mt-2">Creates an isolated workspace directory. You can add more parallel sessions later.</p>
                 </div>
               ) : (
                 <div>
@@ -792,7 +881,7 @@ export default function Console() {
               <div>
                 <div className="flex items-center justify-between gap-2 mb-1">
                   <label className="text-xs font-semibold uppercase tracking-wider text-zinc-500">Agent</label>
-                  {selectedAgent?.env_required?.length > 0 && (
+                  {selectedAgent?.llm_auth_mode === 'byok' && selectedAgent?.env_required?.length > 0 && (
                     <button
                       type="button"
                       onClick={() => openConfigModal()}
@@ -839,13 +928,17 @@ export default function Console() {
                 <Play className="w-4 h-4" /> {isLoading || projectCreating ? 'Starting...' : launchModalMode === 'session' ? 'Start session' : 'Create & launch'}
               </button>
             </div>
-          </div>
-        </div>
+        </ConsoleInlineDialog>
       )}
 
       {showConfigModal && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4">
-          <div className="bg-white rounded-lg shadow-sm w-full max-w-md overflow-hidden border border-zinc-200">
+        <ConsoleInlineDialog
+          onClose={() => {
+            setShowConfigModal(false);
+            setLaunchModalError(null);
+          }}
+          panelClassName="bg-white rounded-lg shadow-sm w-full max-w-md overflow-hidden border border-zinc-200"
+        >
             <form onSubmit={handleSaveConfig}>
               <div className="p-5 border-b border-zinc-100 flex items-center gap-3 bg-zinc-50">
                 <Settings2 className="w-5 h-5 shrink-0 text-zinc-500" />
@@ -904,8 +997,7 @@ export default function Console() {
                 )}
               </div>
             </form>
-          </div>
-        </div>
+        </ConsoleInlineDialog>
       )}
 
       {/* Main Split Layout */}
@@ -1011,9 +1103,21 @@ export default function Console() {
                                 title="New session in this workspace"
                                 disabled={isLoading || agents.length === 0}
                                 onClick={() => openLaunchModal('session', { id: ws.id, name: ws.name })}
-                                className="p-1.5 mr-0.5 text-zinc-400 hover:text-zinc-900 hover:bg-zinc-100 rounded-md opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity disabled:opacity-50"
+                                className="p-1.5 text-zinc-400 hover:text-zinc-900 hover:bg-zinc-100 rounded-md opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity disabled:opacity-50"
                               >
                                 <Plus className="w-3.5 h-3.5" />
+                              </button>
+                              <button
+                                type="button"
+                                title="Delete workspace"
+                                disabled={deletingWorkspaceId === ws.id}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  requestDeleteWorkspace(ws);
+                                }}
+                                className="p-1.5 mr-0.5 text-zinc-400 hover:text-red-600 hover:bg-red-50 rounded-md opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity disabled:opacity-50"
+                              >
+                                <Trash2 className={`w-3.5 h-3.5 ${deletingWorkspaceId === ws.id ? 'animate-pulse' : ''}`} />
                               </button>
                             </>
                           )}

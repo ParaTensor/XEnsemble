@@ -6,7 +6,7 @@ import Input from '../components/Input';
 import PageHeader from '../components/PageHeader';
 import SelectMenu from '../components/SelectMenu';
 import MultiSelectMenu from '../components/MultiSelectMenu';
-import { ConsoleDialogBackdrop, ConsoleDialogPanel } from '../components/ConsoleDialog';
+import { ConsoleDialogShell } from '../components/ConsoleDialog';
 import { useToast } from '../components/Toast';
 import {
   consoleCardClass,
@@ -297,7 +297,7 @@ export default function UsersAdmin() {
                   </td>
                   <td className={consoleTableBodyCellClass}>
                     <span className="font-mono text-xs text-zinc-600">
-                      P {user.projects_count}/{user.quotas?.max_projects ?? '—'}
+                      W {user.projects_count}/{user.quotas?.max_projects ?? '—'}
                       {' · '}
                       S {user.active_sessions}/{user.quotas?.max_sessions ?? '—'}
                       {' · '}
@@ -355,10 +355,10 @@ export default function UsersAdmin() {
       </div>
 
       {dialogMode && (
-        <>
-          <ConsoleDialogBackdrop className="z-[100]" onClick={closeDialog} />
-          <div className="fixed inset-0 z-[101] flex items-center justify-center p-4 pointer-events-none">
-            <ConsoleDialogPanel className={`pointer-events-auto ${consoleDialogMdClass} max-h-[calc(100vh-2rem)] overflow-y-auto p-6`}>
+        <ConsoleDialogShell
+          onClose={closeDialog}
+          panelClassName={`${consoleDialogMdClass} max-h-[calc(100vh-2rem)] overflow-y-auto p-6`}
+        >
               <h2 className="font-bold text-lg text-zinc-900 mb-4">
                 {dialogMode === 'create' ? 'Create user' : `Edit ${editingUser?.username}`}
               </h2>
@@ -415,7 +415,7 @@ export default function UsersAdmin() {
                   <h3 className={consoleSectionLabelClass}>Quotas</h3>
                   <div className="grid grid-cols-2 gap-3">
                     <div>
-                      <label className="text-xs text-zinc-500">Projects</label>
+                      <label className="text-xs text-zinc-500">Workspaces</label>
                       <Input
                         type="number"
                         min={0}
@@ -495,9 +495,7 @@ export default function UsersAdmin() {
                   </Button>
                 </div>
               </form>
-            </ConsoleDialogPanel>
-          </div>
-        </>
+        </ConsoleDialogShell>
       )}
     </div>
   );

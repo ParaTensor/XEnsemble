@@ -80,7 +80,9 @@ async function getEffectiveQuota(userId) {
     return formatQuota(quotaRow, usage);
 }
 
-async function checkQuota(userId, dimension) {
+async function checkQuota(userId, dimension, role) {
+    if (role === 'admin') return { ok: true };
+
     const limitKey = DIMENSION_LIMIT[dimension];
     if (!limitKey) {
         throw new Error(`Unknown quota dimension: ${dimension}`);

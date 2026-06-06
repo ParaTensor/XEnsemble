@@ -434,7 +434,7 @@ CLI 操作会写入 `events` 表（`subjectType=user`，`data.action` 为 `cli_p
 
 ## 16. 管理台使用说明
 
-管理员登录后，顶栏出现 **Users · Registry · Platform**（见 `docs/Designs.md` 用户管理节）。
+管理员登录后，顶栏出现 **Users · Agents**（见 `docs/Designs.md` 用户管理节）；平台配置在 Settings → Platform。
 
 ### 16.1 Users（`/admin/users`）
 
@@ -459,9 +459,9 @@ CLI 操作会写入 `events` 表（`subjectType=user`，`data.action` 为 `cli_p
 
 生产建议：`registration_mode` 设为 `admin_only` 或 `approval`。
 
-### 16.3 Registry（`/admin/agents`）
+### 16.3 Agents（`/admin/agents`）
 
-维护全局 Agent 注册表；仅 admin 可增删改。普通用户只能看到被授权的 Agent。
+维护全局 Agent 注册表、检测/安装服务器 CLI、配置平台级 API keys；仅 admin 可操作。普通用户只能看到被授权的 Agent，不能配置 API keys。
 
 ### 16.4 普通用户 Console
 

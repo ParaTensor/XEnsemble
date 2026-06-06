@@ -2,30 +2,31 @@ import React, { useState, useContext } from 'react';
 import { AuthContext } from '../../App';
 import { cn } from '../../lib/utils';
 import {
+  consoleSettingsPanelScrollClass,
   consoleSettingsTabActiveClass,
   consoleSettingsTabIdleClass,
 } from '../../lib/consoleTokens';
 import { useSecrets } from '../../hooks/useSecrets';
 import GeneralSettingsPanel from './GeneralSettingsPanel';
-import AgentSettingsPanel from './AgentSettingsPanel';
 import QuotaSettingsPanel from './QuotaSettingsPanel';
-import PlatformSettingsPanel from './PlatformSettingsPanel';
+import GatewaySettingsPanel from './GatewaySettingsPanel';
+import AgentSettingsPanel from './AgentSettingsPanel';
 
-const BASE_SECTIONS = [
-  { id: 'general', label: 'General' },
-  { id: 'agents', label: 'Agents' },
-  { id: 'quota', label: 'Quota' },
-];
-
-const ADMIN_SECTION = { id: 'platform', label: 'Platform' };
-
+const QUOTA_SECTION = { id: 'quota', label: 'Quota' };
+const GENERAL_SECTION = { id: 'general', label: 'General' };
+const BYOK_SECTION = { id: 'byok', label: 'BYOK' };
+const GATEWAY_SECTION = { id: 'gateway', label: 'Gateway' };
 export default function SettingsShell() {
-  const { user } = useContext(AuthContext);
+  const { user, token } = useContext(AuthContext);
   const [section, setSection] = useState('general');
   const secretsState = useSecrets();
-  const sections = user?.role === 'admin'
-    ? [...BASE_SECTIONS, ADMIN_SECTION]
-    : BASE_SECTIONS;
+
+  const sections = [
+    GENERAL_SECTION,
+    ...(user?.role === 'admin' ? [GATEWAY_SECTION] : []),
+    BYOK_SECTION,
+    QUOTA_SECTION,
+  ];
 
   return (
     <div className="flex h-full overflow-hidden rounded-lg border border-zinc-200">
@@ -45,11 +46,11 @@ export default function SettingsShell() {
         ))}
       </nav>
 
-      <div className="flex-1 min-h-0 min-w-0 overflow-y-auto bg-white p-3">
-        {section === 'general' && <GeneralSettingsPanel secretsState={secretsState} />}
-        {section === 'agents' && <AgentSettingsPanel secretsState={secretsState} />}
+      <div className={consoleSettingsPanelScrollClass}>
+        {section === 'general' && <GeneralSettingsPanel />}
+        {section === 'gateway' && user?.role === 'admin' && <GatewaySettingsPanel />}
+        {section === 'byok' && <AgentSettingsPanel secretsState={secretsState} />}
         {section === 'quota' && <QuotaSettingsPanel />}
-        {section === 'platform' && user?.role === 'admin' && <PlatformSettingsPanel />}
       </div>
     </div>
   );

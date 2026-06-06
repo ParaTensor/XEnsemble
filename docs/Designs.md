@@ -16,7 +16,7 @@ Agent 控制台、Settings 弹窗、Registry 等 authenticated 页面均属 Cons
 | 能力 | 文件 |
 |------|------|
 | Token | `client/src/lib/consoleTokens.js` |
-| 按钮 | `Button`、`buttonStyles.js` |
+| 按钮 | `Button`、`buttonStyles.js`；图标按钮 `consoleIconButtonClass` / `consoleIconButtonDangerClass` |
 | 输入 | `Input` |
 | 页头 | `PageHeader` |
 | 弹窗壳 | `ConsoleDialog` + `consoleDialogSmClass` / `Md` / `Lg`（backdrop `bg-black/50`，无 blur） |
@@ -24,6 +24,16 @@ Agent 控制台、Settings 弹窗、Registry 等 authenticated 页面均属 Cons
 | 下拉 | `SelectMenu`（样式同 console input） |
 | 多选下拉 | `MultiSelectMenu`（勾选列表，样式同 `SelectMenu`） |
 | Toast | `Toast` / `useToast`（视觉同 ParaRouter `ActionToast`：顶部居中、图标） |
+
+## 按钮
+
+- **主操作**（Save、Add Agent、Add provider、表单 Submit / Cancel）：`Button` + 文案；`variant="primary"` 或 `secondary`。
+- **图标按钮**（工具栏、Settings 卡片内联、**列表行内操作**、**表单内辅助操作**（Test connection、Fetch models 等）、表格 Actions 列、Preview 控件）：**仅图标**，禁止图标与文字并排（如 ~~Configure~~、~~Edit~~、~~Test connection~~、~~Fetch models~~）。
+- 样式：`consoleIconButtonClass`；**破坏性操作**（删除、卸载等）用 `consoleIconButtonDangerClass`（红色，`Trash2` 图标）。深色终端工具栏（Preview）可用本地变体（如 `text-zinc-400 hover:bg-zinc-800`）。
+- 图标尺寸：表格 / 列表行内 / 表单辅助区 `w-3.5 h-3.5`；Settings 卡片工具条 `w-4 h-4`。
+- 必须同时提供 `title`（hover 提示）与 `aria-label`（读屏）；进行中用 `Loader2` + `animate-spin` 替换图标，`title` 用进行时（如 `Starting…`、`Removing…`）。
+- **常用图标语义**：编辑 `Pencil`、删除 `Trash2`、刷新/重试/测连 `RefreshCw`、拉取列表 `List`、启动 `Play`、停止 `Square`、配置 `Settings2`。
+- **列表行内**（如 Gateway Provider 行的 Test / Edit / Remove）：与 Admin 表格 Actions 同一套规则，禁止文字链或 ghost 文字按钮。
 
 ## Toast
 
@@ -96,39 +106,53 @@ Agent 控制台、Settings 弹窗、Registry 等 authenticated 页面均属 Cons
 ### 壳层
 
 - 组件：`SettingsModal`（`ConsoleDialogBackdrop` + `ConsoleDialogPanel`）+ `SettingsShell`（左侧 Tab + 右侧面板）。
-- 档位：**600px** 宽（`w-[600px]` + `consoleDialogPanelClass`），高度 **480px** 固定（`h-[480px]`，小屏 `max-h-[calc(100vh-2rem)]` 收缩）。
+- 档位：**800px** 宽（`w-[800px]` + `consoleDialogPanelClass`），高度 **600px** 固定（`h-[600px]`，小屏 `max-h-[calc(100vh-2rem)]` 收缩）。
 - 标题栏：左上 **Settings** + 右上关闭（`X`）；`Escape` / 点击 backdrop 关闭。
 - 内层：`SettingsShell` 占满标题栏下方区域，`rounded-lg border` 分隔 Tab 与内容。
 
 ### 左侧 Tab
 
 - 宽 **128px**（`w-32`），`bg-zinc-50` + `border-r`；选中 `consoleSettingsTabActiveClass`（`bg-black text-white`），未选 `consoleSettingsTabIdleClass`。
-- 所有已登录用户：**General** · **Agents** · **Quota**。
-- `role === 'admin'` 额外 **Platform**（平台策略，非普通用户可见）。
+- 所有已登录用户：**General** · **Quota**。
+- 所有用户：**BYOK**（用户自带密钥，供 BYOK 模式 Agent 使用）。
+- `role === 'admin'` 额外 **Gateway**（共享路由器与上游 Provider；按 Agent 在 Agents 页选择 BYOK/Gateway）。
 
 ### 右侧面板
 
 | Tab | 组件 | 内容 |
 |-----|------|------|
-| General | `GeneralSettingsPanel` | Router Base URL 等密钥；`SecretFields` + Save |
-| Agents | `AgentSettingsPanel` | Agent `SelectMenu` + 各 Agent API Key 表单 + Save |
-| Quota | `QuotaSettingsPanel` | 只读用量条（Projects / Sessions / Previews X/Y）+ resource tier；非 admin 且无 Agent 授权时琥珀提示条 |
-| Platform | `PlatformSettingsPanel` | 仅 admin：注册模式、默认用户配额（`grid-cols-2`）、Session TTL + Save |
+| General | `GeneralSettingsPanel` | 普通用户：说明文案；**admin**：注册模式、默认用户配额（`grid-cols-2`）、Session TTL + Save（**无**全局 LLM auth 切换，BYOK/Gateway 仅在 Agents 页按 Agent 配置） |
+| Gateway | `GatewaySettingsPanel` | 仅 admin：Gateway 摘要 + 图标按钮（Configure / Start / Stop / Restart）+ Provider 列表（行内 Test / Edit / Remove 为图标；Add/Edit 弹窗内 Test connection / Fetch models 亦为图标；页级 **Add provider** 与弹窗 Save/Cancel 保留文案）；嵌套 `ConsoleDialogShell`（`z-[110+]`，`fitContent` + `consoleDialogMdClass`），禁止平铺长表单 |
+| BYOK | `AgentSettingsPanel` | 用户自带各 Agent API 密钥 |
+| Quota | `QuotaSettingsPanel` | 只读用量条（Workspaces / Sessions / Previews X/Y）+ resource tier；非 admin 且无 Agent 授权时琥珀提示条 |
 
-- 右区 `flex-1 overflow-y-auto bg-white p-3`；含 Save 的 Tab 表单用 `h-full flex flex-col`，字段区滚动、按钮 `justify-end` 贴底。
+- 右区唯一滚动层：`consoleSettingsPanelScrollClass`（`px-5 py-4`、`overflow-y-auto` + `console-scroll-hidden`，滚动条视觉隐藏）；**子面板禁止**再嵌套 `overflow-y-auto`。
+- 含 Save 的 Tab 表单用 `h-full flex flex-col`，字段区 `flex-1 min-h-0`（不设内层滚动）、按钮 `justify-end` 贴底。
 - 保存成功/失败一律 `useToast`；**禁止**面板内联 banner。
 
-## Agent Registry（Admin）
+## 表格（列表）
 
-实现 `AgentsAdmin.jsx`（路由 `/admin/agents` 或顶栏 Registry）。
+Admin 与 Console 中的数据表格（`consoleTableShellClass` 等）须遵守：
+
+- **一列一项**：每个表头对应单一语义单元（状态、版本、路径、配额 tier 等）；**禁止**在同一单元格内纵向叠放两行及以上独立信息（如 Status 徽章 + 版本号、主标题 + 副标题折行成「折叠」效果）。
+- 复合标识（如 Name + ID）若必须同格展示，主名一行、ID 一行仅作该列的附属标注；其余字段一律拆列。
+- 单元格内容超出列宽时用 `truncate` + `title`，不在格内换行堆叠第二项。
+
+## Agents（Admin）
+
+实现 `AgentsAdmin.jsx`（路由 `/admin/agents` 或顶栏 **Agents**）。
 
 - 布局：`PageHeader` + 表格；**禁止**在页面内平铺新增/编辑表单卡片。
+- **禁止页面级纵向滚动条**：Shell `main` 对 Admin 页使用 `min-h-0 overflow-hidden`（`adminPage`）；页面根 `consoleAdminPageClass`，表格区 `consoleAdminTableShellClass` + `consoleAdminTableScrollClass`（`console-scroll-hidden`）。视口右侧不得出现浏览器/main 滚动条；行数超出时仅在表格容器内滚动且滚动条视觉隐藏。
+- 弹窗表单（Add Agent、Edit executable、Keys）：**禁止**在弹窗面板或表单区域使用 `overflow-y-auto` / 纵向滚动条；内容随弹窗自然展开，不设 `max-h` 限高滚动。面板沿用 `consoleDialogPanelClass` 的 `overflow-hidden`。
 - 新增：页头 **Add Agent** 打开 `ConsoleDialog`（**md** 档）；字段 `grid-cols-2`（ID、Display name、Command、Arguments JSON、Required env JSON）。
+- 表格列：Name/ID、**Status**（Installed / Not installed）、**Version**（已安装 CLI 版本，`v…`；未安装为 `—`）、**Path**、**Executable**、**Auth**（BYOK / Gateway）、**Model**（Gateway 所选模型）、**Ready**（Gateway：Ready / Needs model；BYOK：User keys）、Actions（图标：**Edit** / **Install** 或 **Check & update** · **Uninstall** / **Configure**）。
+- Auth / Model 在 Actions → **Configure** 弹窗设置（`PUT /api/v1/admin/agents/:id/gateway-config` 等）；Gateway 模式下 Session 启动使用平台路由器。
 - 反馈一律 `useToast`。
 
 ## 用户管理（Admin）
 
-规范见 `docs/UserManagement.md`；实现 `UsersAdmin.jsx`；平台配置见上文 Settings → Platform。
+规范见 `docs/UserManagement.md`；实现 `UsersAdmin.jsx`；平台配置见上文 Settings → General（admin）。
 
 ### `/admin/users`
 
@@ -145,7 +169,7 @@ Agent 控制台、Settings 弹窗、Registry 等 authenticated 页面均属 Cons
 
 ### 顶栏导航（admin）
 
-**Users** · **Registry**，与 `UserMenu` 并列；平台配置在 `UserMenu` → Settings → Platform，**不出现在顶栏**。
+**Users** · **Agents**，与 `UserMenu` 并列；平台策略在 `UserMenu` → Settings → **General**（admin），**不出现在顶栏**。
 
 ## 配色
 
@@ -178,7 +202,7 @@ Node 项目常见写法：`{ "command": "npm", "args": ["run", "dev"], "port": 5
 
 - **位置**：有活跃 session 且绑定 workspace 时，控件在终端工具栏右侧（与 Disconnect / Workspace 图标同组）；Embed iframe 在工具栏下方、终端内容上方。
 - **状态徽章**：`pending` / `building` / `amber`、`running` / `green`、`failed` / `red`，字号 `text-[10px] uppercase`。
-- **操作**：Deploy preview（`POST /api/v1/projects/:id/preview`）、Stop、Restart、Open（新标签）、Embed（iframe，`h-48`，`sandbox` 含 scripts/forms）；图标按钮样式与工具栏其他操作一致。
+- **操作**：Deploy preview（`POST /api/v1/projects/:id/preview`）、Stop、Restart、Open（新标签）、Embed（iframe，`h-48`，`sandbox` 含 scripts/forms）；**图标按钮**（见 § 按钮），与工具栏其他操作一致。
 - **TTL**：running 时显示 `expires_at` 倒计时（`font-mono text-[10px]`）。
 - **错误**：遵 Toast 节；部署/操作失败与 `last_error_message` 用 `useToast('error', …)`，不在终端区内联展示。
 - **鉴权 iframe**：`public_url` 追加 `access_token` query（Gateway 校验，见 Architecture 7）。

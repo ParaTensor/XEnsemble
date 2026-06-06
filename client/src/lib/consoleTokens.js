@@ -15,6 +15,10 @@ export const consoleDialogMdClass =
 export const consoleDialogLgClass =
   `${consoleDialogPanelClass} w-[560px] max-w-[calc(100vw-2rem)]`;
 
+/** Admin agent form dialogs: height follows content, no inner scroll — see docs/Designs.md § Agents */
+export const consoleDialogAdminFormPanelClass =
+  'relative bg-white border border-zinc-200 shadow-sm rounded-lg text-left w-[480px] max-w-[calc(100vw-2rem)]';
+
 export const consoleInputClass =
   'w-full bg-white border border-zinc-300 rounded-md px-3 py-2 text-sm text-zinc-900 placeholder:text-zinc-400 focus:outline-none focus:border-black focus:ring-1 focus:ring-black transition-colors';
 
@@ -24,8 +28,16 @@ export const consoleToolbarInputClass = `${consoleInputClass} ${consoleToolbarCo
 
 export const consolePageStackClass = 'space-y-6';
 
+/** Admin registry pages (Agents / Users): fill shell main, no page-level scrollbar */
+export const consoleAdminPageClass = 'flex h-full min-h-0 w-full flex-col gap-6';
+
+export const consoleAdminTableScrollClass = 'min-h-0 flex-1 overflow-auto console-scroll-hidden';
+
 export const consoleTableShellClass =
   'bg-white border border-zinc-200 rounded-lg overflow-hidden shadow-sm';
+
+export const consoleAdminTableShellClass =
+  `${consoleTableShellClass} flex min-h-0 flex-1 flex-col`;
 
 export const consoleTableHeadCellClass =
   'px-4 py-2.5 text-xs font-semibold text-zinc-500 uppercase tracking-wider';
@@ -44,8 +56,19 @@ export const consoleSettingsTabActiveClass =
 export const consoleSettingsTabIdleClass =
   'text-zinc-500 hover:bg-zinc-100 hover:text-zinc-900';
 
+/** Settings 右侧面板：唯一滚动层，滚动条视觉隐藏 — see docs/Designs.md § Settings */
+export const consoleSettingsPanelScrollClass =
+  'flex-1 min-h-0 min-w-0 overflow-y-auto console-scroll-hidden bg-white px-5 py-4';
+
 export const consoleSectionLabelClass =
   'text-xs font-semibold uppercase tracking-wider text-zinc-500';
 
 /** Portal dropdowns — above dialog shell (z-101), below toast (z-200) */
 export const consoleMenuDropdownZClass = 'z-[110]';
+
+/** Icon-only actions — see docs/Designs.md § 图标按钮 */
+export const consoleIconButtonClass =
+  'inline-flex items-center justify-center rounded-md p-1.5 text-zinc-500 hover:bg-zinc-100 hover:text-zinc-900 disabled:opacity-40 disabled:pointer-events-none focus:outline-none focus:ring-2 focus:ring-black focus:ring-offset-1';
+
+export const consoleIconButtonDangerClass =
+  'inline-flex items-center justify-center rounded-md p-1.5 text-red-500 hover:bg-red-50 hover:text-red-700 disabled:opacity-40 disabled:pointer-events-none focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-1';

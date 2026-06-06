@@ -47,7 +47,7 @@ function App() {
       location.pathname === path ? consoleNavActiveClass : consoleNavIdleClass,
     );
 
-  const Shell = ({ children, compactMain = false }) => (
+  const Shell = ({ children, compactMain = false, adminPage = false }) => (
     <div className="h-full flex flex-col bg-zinc-50">
       <header className="sticky top-0 z-50 flex-none border-b border-zinc-200 bg-white">
         <div className={cn('mx-auto flex h-14 items-center justify-between', APP_SHELL_MAX_CLASS, APP_SHELL_PAD_CLASS)}>
@@ -62,7 +62,7 @@ function App() {
                   Users
                 </Link>
                 <Link to="/admin/agents" className={navLinkClass('/admin/agents')}>
-                  Registry
+                  Agents
                 </Link>
                 <div className="h-4 w-px bg-zinc-300" />
               </>
@@ -77,7 +77,8 @@ function App() {
       </header>
       <main
         className={cn(
-          'mx-auto flex w-full flex-1 flex-col overflow-auto',
+          'mx-auto flex w-full flex-1 flex-col',
+          adminPage ? 'min-h-0 overflow-auto console-scroll-hidden' : 'overflow-auto',
           APP_SHELL_MAX_CLASS,
           APP_SHELL_PAD_CLASS,
           compactMain ? APP_SHELL_CONSOLE_PY_CLASS : APP_SHELL_MAIN_PY_CLASS,
@@ -93,6 +94,7 @@ function App() {
 
   return (
     <AuthContext.Provider value={{ token, user, login, logout }}>
+      <div className="h-full">
       <Routes>
         <Route path="/login" element={!token ? <Login /> : <Navigate to="/console" />} />
 
@@ -107,7 +109,7 @@ function App() {
           path="/admin/agents"
           element={
             token && user?.role === 'admin' ? (
-              <Shell><AgentsAdmin /></Shell>
+              <Shell adminPage><AgentsAdmin /></Shell>
             ) : (
               <Navigate to="/console" />
             )
@@ -118,7 +120,7 @@ function App() {
           path="/admin/users"
           element={
             token && user?.role === 'admin' ? (
-              <Shell><UsersAdmin /></Shell>
+              <Shell adminPage><UsersAdmin /></Shell>
             ) : (
               <Navigate to="/console" />
             )
@@ -129,6 +131,7 @@ function App() {
 
         <Route path="*" element={<Navigate to={token ? '/console' : '/login'} />} />
       </Routes>
+      </div>
     </AuthContext.Provider>
   );
 }

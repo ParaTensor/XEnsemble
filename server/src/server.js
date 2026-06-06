@@ -19,6 +19,9 @@ const { registerAuthHooks } = require('./auth/hooks');
 const policy = require('./auth/PolicyService');
 const { registerAuthRoutes } = require('./routes/auth');
 const { registerAdminRoutes } = require('./routes/admin');
+const unigateway = require('./gateway/unigatewayManager');
+const { registerGatewayAdminRoutes } = require('./gateway/adminProxy');
+const { deleteProjectForUser } = require('./projects/deleteProject');
 
 const runtime = getRuntime();
 
@@ -41,13 +44,14 @@ async function getProjectForUser(userId, projectId) {
 
 fastify.register(require('@fastify/cors'), {
     origin: '*',
-    methods: ['GET', 'POST', 'PUT', 'DELETE']
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'],
 });
 fastify.register(require('@fastify/websocket'));
 
 registerAuthHooks(fastify);
 registerAuthRoutes(fastify);
 registerAdminRoutes(fastify);
+registerGatewayAdminRoutes(fastify);
 
 // -- API Routes --
 
@@ -86,6 +90,8 @@ fastify.post('/api/v1/secrets', { preValidation: [fastify.authenticate] }, async
 const DEFAULT_AGENT_ID = 'kimi-code';
 
 fastify.get('/api/v1/agents', { preValidation: [fastify.authenticate] }, async (request) => {
+    const agentGatewayConfig = require('./admin/AgentGatewayConfig');
+    const platformSettings = require('./admin/PlatformSettings');
     const grantedIds = await policy.listGrantedAgentIds(request.user.id, request.user.role);
     const grantedSet = new Set(grantedIds);
     const allAgents = await db.select().from(schema.agents);
@@ -97,7 +103,15 @@ fastify.get('/api/v1/agents', { preValidation: [fastify.authenticate] }, async (
         if (b.id === DEFAULT_AGENT_ID) return 1;
         return a.name.localeCompare(b.name);
     });
-    return filtered.map(formatAgentRow);
+    const gatewayConfigs = await agentGatewayConfig.getAll();
+    return Promise.all(filtered.map(async (a) => {
+        const cfg = gatewayConfigs[a.id];
+        return {
+            ...formatAgentRow(a),
+            llm_auth_mode: await agentGatewayConfig.getAgentAuthMode(a.id),
+            gateway_model: cfg?.model || null,
+        };
+    }));
 });
 
 fastify.post('/api/v1/agents', { preValidation: [fastify.authenticate, fastify.requireAdmin] }, async (request, reply) => {
@@ -159,7 +173,7 @@ fastify.get('/api/v1/projects', { preValidation: [fastify.authenticate] }, async
 
 // Projects — create（通过 RuntimeProvider.ensureReady 创建 workspace）
 fastify.post('/api/v1/projects', { preValidation: [fastify.authenticate] }, async (request, reply) => {
-    const quotaCheck = await policy.checkQuota(request.user.id, 'projects');
+    const quotaCheck = await policy.checkQuota(request.user.id, 'projects', request.user.role);
     if (!quotaCheck.ok) return policy.quotaErrorReply(reply, quotaCheck);
 
     const name = String(request.body?.name || '').trim();
@@ -201,6 +215,19 @@ fastify.post('/api/v1/projects', { preValidation: [fastify.authenticate] }, asyn
 });
 
 // Repository environment — 外部 Git provider 绑定与工程环境元数据
+fastify.delete('/api/v1/projects/:projectId', { preValidation: [fastify.authenticate] }, async (request, reply) => {
+    const project = await getProjectForUser(request.user.id, request.params.projectId);
+    if (!project) return reply.code(404).send({ error: 'Project not found' });
+
+    try {
+        await deleteProjectForUser(request.user.id, project);
+        return { ok: true };
+    } catch (err) {
+        request.log.error(err);
+        return reply.code(500).send({ error: 'Failed to delete project' });
+    }
+});
+
 fastify.get('/api/v1/projects/:projectId/repository', { preValidation: [fastify.authenticate] }, async (request, reply) => {
     const project = await getProjectForUser(request.user.id, request.params.projectId);
     if (!project) return reply.code(404).send({ error: 'Project not found' });
@@ -301,7 +328,7 @@ fastify.post('/api/v1/session/start', { preValidation: [fastify.authenticate] },
     const agentAccess = await policy.checkAgentAccess(request.user.id, agent_id, request.user.role);
     if (!agentAccess.ok) return policy.agentAccessErrorReply(reply, agentAccess);
 
-    const sessionQuota = await policy.checkQuota(request.user.id, 'sessions');
+    const sessionQuota = await policy.checkQuota(request.user.id, 'sessions', request.user.role);
     if (!sessionQuota.ok) return policy.quotaErrorReply(reply, sessionQuota);
 
     let workspacePath;
@@ -328,13 +355,14 @@ fastify.post('/api/v1/session/start', { preValidation: [fastify.authenticate] },
         env_required: JSON.parse(dbAgents[0].envRequired)
     };
 
-    const dbSecrets = await db.select().from(schema.secrets).where(eq(schema.secrets.userId, request.user.id));
-    const userSecrets = dbSecrets.length > 0 ? auth.decryptSecrets(dbSecrets[0].encryptedData) : {};
-
-    for (const reqEnv of agentMeta.env_required) {
-        if (!userSecrets[reqEnv]) {
-            return reply.code(400).send({ error: `Missing required env in your Secrets Vault: ${reqEnv}` });
-        }
+    const { resolveSpawnEnv } = require('./agents/agentEnv');
+    const resolved = await resolveSpawnEnv({
+        userId: request.user.id,
+        agentId: agentMeta.id,
+        envRequired: agentMeta.env_required,
+    });
+    if (!resolved.env) {
+        return reply.code(400).send({ error: resolved.error });
     }
 
     const sessionId = `sess_${crypto.randomBytes(8).toString('hex')}`;
@@ -343,7 +371,7 @@ fastify.post('/api/v1/session/start', { preValidation: [fastify.authenticate] },
         handle = runtime.exec.spawn(
             agentMeta.cmd,
             agentMeta.args,
-            userSecrets,
+            resolved.env,
             { name: agentMeta.name, cwd: workspacePath }
         );
     } catch (err) {
@@ -519,7 +547,7 @@ fastify.post('/api/v1/projects/:projectId/preview', { preValidation: [fastify.au
     const project = await getProjectForUser(request.user.id, request.params.projectId);
     if (!project) return reply.code(404).send({ error: 'Project not found' });
 
-    const previewQuota = await policy.checkQuota(request.user.id, 'previews');
+    const previewQuota = await policy.checkQuota(request.user.id, 'previews', request.user.role);
     if (!previewQuota.ok) return policy.quotaErrorReply(reply, previewQuota);
 
     try {
@@ -540,7 +568,7 @@ fastify.post('/api/v1/deployments', { preValidation: [fastify.authenticate] }, a
     const project = await getProjectForUser(request.user.id, projectId);
     if (!project) return reply.code(404).send({ error: 'Project not found' });
 
-    const previewQuota = await policy.checkQuota(request.user.id, 'previews');
+    const previewQuota = await policy.checkQuota(request.user.id, 'previews', request.user.role);
     if (!previewQuota.ok) return policy.quotaErrorReply(reply, previewQuota);
 
     const dep = await deploymentService.createPreview(request.user.id, project);
@@ -618,6 +646,20 @@ fastify.get('/api/v1/workspace/file', { preValidation: [fastify.authenticate] },
 });
 
 async function startServer() {
+    unigateway.installShutdownHooks(fastify.log);
+    const gatewaySettings = require('./admin/GatewaySettings');
+    const gatewayConfig = await gatewaySettings.getConfig();
+    const gatewayStatus = gatewayConfig.auto_start
+        ? await unigateway.start(fastify.log)
+        : await unigateway.applyRuntimeConfig().then(() => unigateway.getStatus());
+    try {
+        const platformSecrets = require('./admin/PlatformSecrets');
+        await unigateway.syncPlatformRouterSecrets(platformSecrets);
+        fastify.log.info(`[unigateway] agent router -> ${gatewayStatus.baseUrl}`);
+    } catch (err) {
+        fastify.log.warn(err, '[unigateway] failed to sync platform router secrets');
+    }
+
     await registerPreviewGateway(fastify);
     startPreviewLifecycle();
 

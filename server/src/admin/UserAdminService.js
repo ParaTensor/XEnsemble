@@ -362,6 +362,8 @@ async function loginUser(username, password) {
 
     const token = auth.generateToken(user);
     const quotas = await policy.getEffectiveQuota(user.id);
+    const platformSettings = require('./PlatformSettings');
+    const llm_auth_mode = await platformSettings.getLlmAuthMode();
     return {
         token,
         user: {
@@ -369,6 +371,7 @@ async function loginUser(username, password) {
             username: user.username,
             role: user.role,
             status,
+            llm_auth_mode,
         },
         quotas,
     };
@@ -379,6 +382,8 @@ async function getMe(userId) {
     if (!user) return null;
     const quotas = await policy.getEffectiveQuota(userId);
     const granted = await policy.listGrantedAgentIds(userId, user.role);
+    const platformSettings = require('./PlatformSettings');
+    const llm_auth_mode = await platformSettings.getLlmAuthMode();
     return {
         id: user.id,
         username: user.username,
@@ -388,6 +393,7 @@ async function getMe(userId) {
         email: user.email || null,
         quotas,
         granted_agents_count: user.role === 'admin' ? null : granted.length,
+        llm_auth_mode,
     };
 }
 

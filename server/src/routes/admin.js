@@ -1,5 +1,18 @@
+const { eq } = require('drizzle-orm');
 const userAdmin = require('../admin/UserAdminService');
 const platformSettings = require('../admin/PlatformSettings');
+const platformSecrets = require('../admin/PlatformSecrets');
+const agentGatewayConfig = require('../admin/AgentGatewayConfig');
+const { db } = require('../db/index');
+const schema = require('../db/schema');
+const { probeAgent, formatHomePath } = require('../agents/agentProbe');
+const {
+    installAgent,
+    uninstallAgent,
+    updateAgent,
+    checkUpdate,
+    getLocalVersion,
+} = require('../agents/agentLifecycle');
 
 function registerAdminRoutes(fastify) {
     const adminPre = [fastify.authenticate, fastify.requireAdmin];
@@ -122,7 +135,140 @@ function registerAdminRoutes(fastify) {
         if (mode !== undefined && !allowedModes.includes(mode)) {
             return reply.code(400).send({ error: 'Invalid registration_mode' });
         }
-        return platformSettings.updateAll(request.body || {});
+        const llmMode = request.body?.llm_auth_mode;
+        if (llmMode !== undefined && !['gateway', 'byok'].includes(llmMode)) {
+            return reply.code(400).send({ error: 'Invalid llm_auth_mode' });
+        }
+        try {
+            return await platformSettings.updateAll(request.body || {});
+        } catch (err) {
+            return reply.code(err.statusCode || 400).send({ error: err.message });
+        }
+    });
+
+    fastify.get('/api/v1/admin/agents', { preValidation: adminPre }, async () => {
+        const { applyGatewaySynthesis, findMissing } = require('../agents/agentEnv');
+        const rows = await db.select().from(schema.agents);
+        const platformVault = await platformSecrets.getRaw();
+        const platformSynth = applyGatewaySynthesis(platformVault);
+        const secretHints = await platformSecrets.getHints();
+        const gatewayConfigs = await agentGatewayConfig.getAll();
+        const agents = await Promise.all(rows.map(async (row) => {
+            const envRequired = JSON.parse(row.envRequired);
+            const probe = probeAgent(row.cmd);
+            const localVersion = probe.installed ? await getLocalVersion(row.cmd) : null;
+            const cfg = gatewayConfigs[row.id] || null;
+            const llmAuthMode = await agentGatewayConfig.getAgentAuthMode(row.id);
+            let keysReady = true;
+            if (llmAuthMode === 'gateway') {
+                keysReady = Boolean(cfg?.model?.trim())
+                    && (envRequired.length === 0
+                        || findMissing(
+                            Object.fromEntries(envRequired.map((k) => [k, platformSynth[k] || ''])),
+                            envRequired,
+                        ).length === 0);
+            }
+            return {
+                id: row.id,
+                name: row.name,
+                cmd: row.cmd,
+                args: JSON.parse(row.args),
+                env_required: envRequired,
+                installed: probe.installed,
+                executable_path: probe.path,
+                executable_path_display: formatHomePath(probe.path),
+                local_version: localVersion,
+                installable: true,
+                llm_auth_mode: llmAuthMode,
+                keys_ready: keysReady,
+                secrets_configured: Object.fromEntries(
+                    envRequired.map((k) => [k, Boolean(secretHints[k])]),
+                ),
+                gateway_config: cfg,
+            };
+        }));
+        return agents;
+    });
+
+    fastify.get('/api/v1/admin/agent-secrets', { preValidation: adminPre }, async () => {
+        return platformSecrets.getHints();
+    });
+
+    fastify.put('/api/v1/admin/agent-secrets', { preValidation: adminPre }, async (request, reply) => {
+        try {
+            await platformSecrets.merge(request.body || {});
+            return { ok: true, secrets: await platformSecrets.getHints() };
+        } catch (err) {
+            return reply.code(500).send({ error: err.message || 'Failed to save agent secrets' });
+        }
+    });
+
+    fastify.get('/api/v1/admin/gateway/agent-configs', { preValidation: adminPre }, async () => {
+        return agentGatewayConfig.getAll();
+    });
+
+    fastify.put('/api/v1/admin/gateway/agent-configs/:agentId', { preValidation: adminPre }, async (request, reply) => {
+        try {
+            const config = await agentGatewayConfig.setForAgent(request.params.agentId, request.body || {});
+            return { ok: true, config };
+        } catch (err) {
+            return reply.code(500).send({ error: err.message || 'Failed to save agent gateway config' });
+        }
+    });
+
+    function agentFromRow(row) {
+        return { id: row.id, name: row.name, cmd: row.cmd };
+    }
+
+    fastify.post('/api/v1/admin/agents/:id/install', { preValidation: adminPre }, async (request, reply) => {
+        const rows = await db.select().from(schema.agents).where(eq(schema.agents.id, request.params.id));
+        if (rows.length === 0) return reply.code(404).send({ error: 'Agent not found' });
+        const agent = agentFromRow(rows[0]);
+        try {
+            const result = await installAgent(agent);
+            const probe = probeAgent(agent.cmd);
+            const localVersion = probe.installed ? await getLocalVersion(agent.cmd) : null;
+            return { ...result, installed: probe.installed, executable_path: probe.path, local_version: localVersion };
+        } catch (err) {
+            return reply.code(err.statusCode || 500).send({ error: err.message });
+        }
+    });
+
+    fastify.post('/api/v1/admin/agents/:id/uninstall', { preValidation: adminPre }, async (request, reply) => {
+        const rows = await db.select().from(schema.agents).where(eq(schema.agents.id, request.params.id));
+        if (rows.length === 0) return reply.code(404).send({ error: 'Agent not found' });
+        const agent = agentFromRow(rows[0]);
+        try {
+            const result = await uninstallAgent(agent);
+            const probe = probeAgent(agent.cmd);
+            return { ...result, installed: probe.installed };
+        } catch (err) {
+            return reply.code(err.statusCode || 500).send({ error: err.message });
+        }
+    });
+
+    fastify.post('/api/v1/admin/agents/:id/update', { preValidation: adminPre }, async (request, reply) => {
+        const rows = await db.select().from(schema.agents).where(eq(schema.agents.id, request.params.id));
+        if (rows.length === 0) return reply.code(404).send({ error: 'Agent not found' });
+        const agent = agentFromRow(rows[0]);
+        try {
+            const result = await updateAgent(agent);
+            const probe = probeAgent(agent.cmd);
+            return { ...result, installed: probe.installed, executable_path: probe.path };
+        } catch (err) {
+            return reply.code(err.statusCode || 500).send({ error: err.message });
+        }
+    });
+
+    fastify.get('/api/v1/admin/agents/:id/check-update', { preValidation: adminPre }, async (request, reply) => {
+        const rows = await db.select().from(schema.agents).where(eq(schema.agents.id, request.params.id));
+        if (rows.length === 0) return reply.code(404).send({ error: 'Agent not found' });
+        const agent = agentFromRow(rows[0]);
+        try {
+            return await checkUpdate(agent);
+        } catch (err) {
+            return reply.code(err.statusCode || 500).send({ error: err.message });
+        }
     });
 }
 

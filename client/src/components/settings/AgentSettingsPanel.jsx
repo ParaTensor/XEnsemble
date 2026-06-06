@@ -62,7 +62,7 @@ export default function AgentSettingsPanel({ secretsState }) {
     || requiredKeys.every((k) => (secrets[k]?.trim() || savedHints[k]));
 
   return (
-    <div className="h-full flex flex-col gap-5">
+    <div className="space-y-5">
       <div>
         <label className={`block mb-1 ${consoleSectionLabelClass}`}>Agent</label>
         {agentsLoading ? (
@@ -79,35 +79,31 @@ export default function AgentSettingsPanel({ secretsState }) {
         )}
       </div>
 
-      <div className="flex-1 min-h-0 flex flex-col">
-        {loading || agentsLoading ? (
-          <p className="text-sm text-zinc-500">Loading...</p>
-        ) : !selectedAgent ? (
-          <p className="text-sm text-zinc-500">Select an agent.</p>
-        ) : (
-          <form onSubmit={handleSubmit} className="flex-1 min-h-0 flex flex-col">
-            <p className="text-sm text-zinc-500 mb-4 shrink-0">
-              API keys required to launch this agent. Stored encrypted in your vault.
-            </p>
-            <div className="flex-1 min-h-0 overflow-y-auto">
-              <SecretFields
-                keys={requiredKeys}
-                secrets={secrets}
-                savedHints={savedHints}
-                mono
-                onChange={(key, value) => setSecrets((prev) => ({ ...prev, [key]: value }))}
-              />
+      {loading || agentsLoading ? (
+        <p className="text-sm text-zinc-500">Loading...</p>
+      ) : !selectedAgent ? (
+        <p className="text-sm text-zinc-500">Select an agent.</p>
+      ) : (
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <p className="text-sm text-zinc-500">
+            Your personal API keys for this agent. Stored encrypted in your vault and used when the platform is in bring-your-own-key mode.
+          </p>
+          <SecretFields
+            keys={requiredKeys}
+            secrets={secrets}
+            savedHints={savedHints}
+            mono
+            onChange={(key, value) => setSecrets((prev) => ({ ...prev, [key]: value }))}
+          />
+          {requiredKeys.length > 0 && (
+            <div className="pt-2 flex justify-end">
+              <Button type="submit" disabled={saving || !canSave} size="md">
+                {saving ? 'Saving...' : 'Save'}
+              </Button>
             </div>
-            {requiredKeys.length > 0 && (
-              <div className="pt-6 flex justify-end shrink-0">
-                <Button type="submit" disabled={saving || !canSave} size="md">
-                  {saving ? 'Saving...' : 'Save'}
-                </Button>
-              </div>
-            )}
-          </form>
-        )}
-      </div>
+          )}
+        </form>
+      )}
     </div>
   );
 }
