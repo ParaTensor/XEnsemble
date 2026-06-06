@@ -24,7 +24,16 @@ export default function Login() {
         body: JSON.stringify({ username, password }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error);
+      if (!res.ok) {
+        if (data.code === 'account_pending') throw new Error('Your account is pending administrator approval.');
+        if (data.code === 'account_suspended') throw new Error('Your account has been suspended.');
+        throw new Error(data.error);
+      }
+      if (isRegister && !data.token) {
+        setError(data.message || 'Registration submitted. Await administrator approval.');
+        setIsRegister(false);
+        return;
+      }
       login(data.token, data.user);
     } catch (err) {
       setError(err.message);

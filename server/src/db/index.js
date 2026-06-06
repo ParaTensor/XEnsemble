@@ -211,6 +211,113 @@ if (!sessionColsAfter.some((c) => c.name === 'recoverable')) {
     sqlite.exec(`ALTER TABLE sessions ADD COLUMN recoverable INTEGER DEFAULT 0`);
 }
 
+// ─── 用户管理表与 users 扩展字段 ───
+
+sqlite.exec(`
+  CREATE TABLE IF NOT EXISTS user_quotas (
+    user_id TEXT PRIMARY KEY,
+    max_projects INTEGER NOT NULL DEFAULT 5,
+    max_sessions INTEGER NOT NULL DEFAULT 2,
+    max_previews INTEGER NOT NULL DEFAULT 1,
+    max_runtimes INTEGER NOT NULL DEFAULT 1,
+    resource_tier TEXT NOT NULL DEFAULT 'basic',
+    updated_by TEXT,
+    updated_at INTEGER,
+    FOREIGN KEY(user_id) REFERENCES users(id),
+    FOREIGN KEY(updated_by) REFERENCES users(id)
+  );
+
+  CREATE TABLE IF NOT EXISTS user_agent_grants (
+    user_id TEXT NOT NULL,
+    agent_id TEXT NOT NULL,
+    granted_by TEXT,
+    granted_at INTEGER NOT NULL,
+    PRIMARY KEY (user_id, agent_id),
+    FOREIGN KEY(user_id) REFERENCES users(id),
+    FOREIGN KEY(agent_id) REFERENCES agents(id),
+    FOREIGN KEY(granted_by) REFERENCES users(id)
+  );
+
+  CREATE TABLE IF NOT EXISTS platform_settings (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+  );
+`);
+
+const userCols = sqlite.prepare(`PRAGMA table_info(users)`).all();
+if (!userCols.some((c) => c.name === 'status')) {
+    sqlite.exec(`ALTER TABLE users ADD COLUMN status TEXT DEFAULT 'active'`);
+}
+if (!userCols.some((c) => c.name === 'email')) {
+    sqlite.exec(`ALTER TABLE users ADD COLUMN email TEXT`);
+}
+if (!userCols.some((c) => c.name === 'display_name')) {
+    sqlite.exec(`ALTER TABLE users ADD COLUMN display_name TEXT`);
+}
+if (!userCols.some((c) => c.name === 'last_login_at')) {
+    sqlite.exec(`ALTER TABLE users ADD COLUMN last_login_at INTEGER`);
+}
+if (!userCols.some((c) => c.name === 'updated_at')) {
+    sqlite.exec(`ALTER TABLE users ADD COLUMN updated_at INTEGER`);
+}
+
+sqlite.exec(`UPDATE users SET status = 'active' WHERE status IS NULL`);
+
+const insertSetting = sqlite.prepare('INSERT OR IGNORE INTO platform_settings (key, value) VALUES (?, ?)');
+insertSetting.run('registration_mode', JSON.stringify('open'));
+insertSetting.run('default_user_quota', JSON.stringify({
+    max_projects: 5,
+    max_sessions: 2,
+    max_previews: 1,
+    max_runtimes: 1,
+    resource_tier: 'basic',
+}));
+insertSetting.run('session_ttl_hours', JSON.stringify(24));
+
+const defaultQuotaJson = sqlite.prepare(`SELECT value FROM platform_settings WHERE key = 'default_user_quota'`).get();
+const defaultQuota = defaultQuotaJson ? JSON.parse(defaultQuotaJson.value) : {
+    max_projects: 5,
+    max_sessions: 2,
+    max_previews: 1,
+    max_runtimes: 1,
+    resource_tier: 'basic',
+};
+
+const allUsers = sqlite.prepare('SELECT id, role FROM users').all();
+const insertQuota = sqlite.prepare(`
+  INSERT OR IGNORE INTO user_quotas (user_id, max_projects, max_sessions, max_previews, max_runtimes, resource_tier, updated_at)
+  VALUES (?, ?, ?, ?, ?, ?, ?)
+`);
+const now = Date.now();
+for (const u of allUsers) {
+    insertQuota.run(
+        u.id,
+        defaultQuota.max_projects ?? 5,
+        defaultQuota.max_sessions ?? 2,
+        defaultQuota.max_previews ?? 1,
+        defaultQuota.max_runtimes ?? 1,
+        defaultQuota.resource_tier ?? 'basic',
+        now,
+    );
+}
+
+// 已有普通用户：回填全部 Agent 授权，避免升级后无法启动 session
+const agentIds = sqlite.prepare('SELECT id FROM agents').all().map((r) => r.id);
+if (agentIds.length > 0) {
+    const insertGrant = sqlite.prepare(`
+      INSERT OR IGNORE INTO user_agent_grants (user_id, agent_id, granted_at)
+      VALUES (?, ?, ?)
+    `);
+    for (const u of allUsers) {
+        if (u.role === 'admin') continue;
+        const grantCount = sqlite.prepare('SELECT COUNT(*) AS c FROM user_agent_grants WHERE user_id = ?').get(u.id).c;
+        if (grantCount > 0) continue;
+        for (const agentId of agentIds) {
+            insertGrant.run(u.id, agentId, now);
+        }
+    }
+}
+
 const { backfillDefaultRuntimes } = require('./backfillRuntimes');
 backfillDefaultRuntimes(sqlite);
 

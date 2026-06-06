@@ -128,13 +128,21 @@ export default function Console() {
 
   useEffect(() => {
     if (!token) return;
-    fetch('http://localhost:3000/api/v1/agents')
+    fetch('http://localhost:3000/api/v1/agents', {
+      headers: { Authorization: `Bearer ${token}` },
+    })
       .then(res => res.json())
       .then(data => {
+        if (!Array.isArray(data)) {
+          setAgents([]);
+          return;
+        }
         setAgents(data);
         if (data.length > 0) {
           const preferred = data.find((a) => a.id === DEFAULT_AGENT_ID) || data[0];
           setSelectedAgentId(preferred.id);
+        } else {
+          setSelectedAgentId('');
         }
       })
       .catch(() => setError('Could not connect to backend server.'));
@@ -315,7 +323,12 @@ export default function Console() {
         body: JSON.stringify({ name })
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Failed to create project');
+      if (!res.ok) {
+        if (data.error === 'quota_exceeded') {
+          throw new Error(`Project quota exceeded (${data.current}/${data.limit}).`);
+        }
+        throw new Error(data.error || 'Failed to create project');
+      }
       return { id: data.id, name: data.name || name };
     } catch (err) {
       setLaunchModalError(err.message);
@@ -352,6 +365,14 @@ export default function Console() {
       const data = await response.json();
       if (!response.ok) {
         const msg = data.error || data.message || 'Failed to start session';
+        if (data.error === 'agent_not_granted') {
+          setLaunchModalError('You do not have permission to use this agent. Contact an administrator.');
+          return false;
+        }
+        if (data.error === 'quota_exceeded') {
+          setLaunchModalError(`Quota exceeded (${data.dimension}: ${data.current}/${data.limit}).`);
+          return false;
+        }
         if (/Missing required env|Secrets Vault/i.test(msg)) {
           setLaunchModalError(msg);
           openConfigModal();

@@ -17,7 +17,12 @@ function verifyPassword(password, storedHash) {
 }
 
 function generateToken(user) {
-    return jwt.sign({ id: user.id, username: user.username, role: user.role }, JWT_SECRET, { expiresIn: '7d' });
+    return jwt.sign({
+        id: user.id,
+        username: user.username,
+        role: user.role,
+        status: user.status || 'active',
+    }, JWT_SECRET, { expiresIn: '7d' });
 }
 
 function verifyToken(token) {

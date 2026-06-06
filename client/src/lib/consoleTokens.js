@@ -3,7 +3,17 @@
 export const consoleBackdropClass = 'fixed inset-0 bg-black/50';
 
 export const consoleDialogPanelClass =
-  'relative w-full bg-white border border-zinc-200 shadow-sm rounded-lg text-left flex flex-col overflow-hidden';
+  'relative bg-white border border-zinc-200 shadow-sm rounded-lg text-left flex flex-col overflow-hidden';
+
+/** Dialog width tiers — see docs/Designs.md § 弹窗 */
+export const consoleDialogSmClass =
+  `${consoleDialogPanelClass} w-full max-w-sm max-w-[calc(100vw-2rem)]`;
+
+export const consoleDialogMdClass =
+  `${consoleDialogPanelClass} w-[480px] max-w-[calc(100vw-2rem)]`;
+
+export const consoleDialogLgClass =
+  `${consoleDialogPanelClass} w-[560px] max-w-[calc(100vw-2rem)]`;
 
 export const consoleInputClass =
   'w-full bg-white border border-zinc-300 rounded-md px-3 py-2 text-sm text-zinc-900 placeholder:text-zinc-400 focus:outline-none focus:border-black focus:ring-1 focus:ring-black transition-colors';
@@ -36,3 +46,6 @@ export const consoleSettingsTabIdleClass =
 
 export const consoleSectionLabelClass =
   'text-xs font-semibold uppercase tracking-wider text-zinc-500';
+
+/** Portal dropdowns — above dialog shell (z-101), below toast (z-200) */
+export const consoleMenuDropdownZClass = 'z-[110]';

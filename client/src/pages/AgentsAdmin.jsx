@@ -4,9 +4,10 @@ import { AuthContext } from '../App';
 import Button from '../components/Button';
 import Input from '../components/Input';
 import PageHeader from '../components/PageHeader';
+import { ConsoleDialogBackdrop, ConsoleDialogPanel } from '../components/ConsoleDialog';
 import { useToast } from '../components/Toast';
 import {
-  consoleCardClass,
+  consoleDialogMdClass,
   consolePageStackClass,
   consoleSectionLabelClass,
   consoleTableBodyCellClass,
@@ -18,7 +19,7 @@ export default function AgentsAdmin() {
   const { token } = useContext(AuthContext);
   const { showToast } = useToast();
   const [agents, setAgents] = useState([]);
-  const [showForm, setShowForm] = useState(false);
+  const [dialogOpen, setDialogOpen] = useState(false);
   const [newAgent, setNewAgent] = useState({
     id: '',
     name: '',
@@ -28,7 +29,9 @@ export default function AgentsAdmin() {
   });
 
   const fetchAgents = () => {
-    fetch('http://localhost:3000/api/v1/agents')
+    fetch('http://localhost:3000/api/v1/agents', {
+      headers: { Authorization: `Bearer ${token}` },
+    })
       .then((res) => res.json())
       .then((data) => setAgents(data));
   };
@@ -59,7 +62,7 @@ export default function AgentsAdmin() {
       if (!res.ok) throw new Error(data.error);
 
       showToast('success', 'Agent registered.');
-      setShowForm(false);
+      setDialogOpen(false);
       setNewAgent({ id: '', name: '', cmd: '', args: '[]', env_required: '[]' });
       fetchAgents();
     } catch (err) {
@@ -73,75 +76,82 @@ export default function AgentsAdmin() {
         title="Agent Registry"
         description="Register tools and LLM agents in the database."
         actions={(
-          <Button type="button" onClick={() => setShowForm(!showForm)} size="md" className="shrink-0">
+          <Button type="button" onClick={() => setDialogOpen(true)} size="md" className="shrink-0">
             <Plus className="w-4 h-4" />
             Add Agent
           </Button>
         )}
       />
 
-      {showForm && (
-        <form onSubmit={handleSubmit} className={`${consoleCardClass} p-5 space-y-4`}>
-          <h2 className={consoleSectionLabelClass}>Register new agent</h2>
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <div>
-              <label className={`block mb-1 ${consoleSectionLabelClass}`}>ID</label>
-              <Input
-                required
-                value={newAgent.id}
-                onChange={(e) => setNewAgent({ ...newAgent, id: e.target.value })}
-                className="h-9 py-1.5"
-              />
-            </div>
-            <div>
-              <label className={`block mb-1 ${consoleSectionLabelClass}`}>Display name</label>
-              <Input
-                required
-                value={newAgent.name}
-                onChange={(e) => setNewAgent({ ...newAgent, name: e.target.value })}
-                className="h-9 py-1.5"
-              />
-            </div>
-            <div>
-              <label className={`block mb-1 ${consoleSectionLabelClass}`}>Command</label>
-              <Input
-                required
-                value={newAgent.cmd}
-                onChange={(e) => setNewAgent({ ...newAgent, cmd: e.target.value })}
-                className="h-9 py-1.5"
-              />
-            </div>
-            <div>
-              <label className={`block mb-1 ${consoleSectionLabelClass}`}>Arguments (JSON)</label>
-              <Input
-                required
-                value={newAgent.args}
-                onChange={(e) => setNewAgent({ ...newAgent, args: e.target.value })}
-                className="h-9 py-1.5 font-mono"
-              />
-            </div>
-            <div className="sm:col-span-2">
-              <label className={`block mb-1 ${consoleSectionLabelClass}`}>Required env (JSON)</label>
-              <Input
-                required
-                value={newAgent.env_required}
-                onChange={(e) => setNewAgent({ ...newAgent, env_required: e.target.value })}
-                className="h-9 py-1.5 font-mono"
-              />
-              <p className="mt-1 text-xs text-zinc-400">
-                Users configure these keys under Settings → Agents.
-              </p>
-            </div>
+      {dialogOpen && (
+        <>
+          <ConsoleDialogBackdrop className="z-[100]" onClick={() => setDialogOpen(false)} />
+          <div className="fixed inset-0 z-[101] flex items-center justify-center p-4 pointer-events-none">
+            <ConsoleDialogPanel className={`pointer-events-auto ${consoleDialogMdClass} max-h-[calc(100vh-2rem)] overflow-y-auto p-6`}>
+              <h2 className="font-bold text-lg text-zinc-900 mb-4">Register new agent</h2>
+              <form onSubmit={handleSubmit} className="space-y-4">
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                  <div>
+                    <label className={`block mb-1 ${consoleSectionLabelClass}`}>ID</label>
+                    <Input
+                      required
+                      value={newAgent.id}
+                      onChange={(e) => setNewAgent({ ...newAgent, id: e.target.value })}
+                      className="h-9 py-1.5"
+                    />
+                  </div>
+                  <div>
+                    <label className={`block mb-1 ${consoleSectionLabelClass}`}>Display name</label>
+                    <Input
+                      required
+                      value={newAgent.name}
+                      onChange={(e) => setNewAgent({ ...newAgent, name: e.target.value })}
+                      className="h-9 py-1.5"
+                    />
+                  </div>
+                  <div>
+                    <label className={`block mb-1 ${consoleSectionLabelClass}`}>Command</label>
+                    <Input
+                      required
+                      value={newAgent.cmd}
+                      onChange={(e) => setNewAgent({ ...newAgent, cmd: e.target.value })}
+                      className="h-9 py-1.5"
+                    />
+                  </div>
+                  <div>
+                    <label className={`block mb-1 ${consoleSectionLabelClass}`}>Arguments (JSON)</label>
+                    <Input
+                      required
+                      value={newAgent.args}
+                      onChange={(e) => setNewAgent({ ...newAgent, args: e.target.value })}
+                      className="h-9 py-1.5 font-mono"
+                    />
+                  </div>
+                  <div className="sm:col-span-2">
+                    <label className={`block mb-1 ${consoleSectionLabelClass}`}>Required env (JSON)</label>
+                    <Input
+                      required
+                      value={newAgent.env_required}
+                      onChange={(e) => setNewAgent({ ...newAgent, env_required: e.target.value })}
+                      className="h-9 py-1.5 font-mono"
+                    />
+                    <p className="mt-1 text-xs text-zinc-400">
+                      Users configure these keys under Settings → Agents.
+                    </p>
+                  </div>
+                </div>
+                <div className="flex justify-end gap-2 pt-2">
+                  <Button type="button" variant="secondary" size="md" onClick={() => setDialogOpen(false)}>
+                    Cancel
+                  </Button>
+                  <Button type="submit" size="md">
+                    Save to registry
+                  </Button>
+                </div>
+              </form>
+            </ConsoleDialogPanel>
           </div>
-          <div className="flex justify-end gap-2 pt-2">
-            <Button type="button" variant="secondary" size="md" onClick={() => setShowForm(false)}>
-              Cancel
-            </Button>
-            <Button type="submit" size="md">
-              Save to registry
-            </Button>
-          </div>
-        </form>
+        </>
       )}
 
       <div className={consoleTableShellClass}>

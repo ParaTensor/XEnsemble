@@ -15,8 +15,22 @@ const { db } = require('./db/index');
 const schema = require('./db/schema');
 const { eq, and, sql } = require('drizzle-orm');
 const auth = require('./auth/index');
+const { registerAuthHooks } = require('./auth/hooks');
+const policy = require('./auth/PolicyService');
+const { registerAuthRoutes } = require('./routes/auth');
+const { registerAdminRoutes } = require('./routes/admin');
 
 const runtime = getRuntime();
+
+function formatAgentRow(a) {
+    return {
+        id: a.id,
+        name: a.name,
+        cmd: a.cmd,
+        args: JSON.parse(a.args),
+        env_required: JSON.parse(a.envRequired),
+    };
+}
 
 async function getProjectForUser(userId, projectId) {
     const rows = await db.select().from(schema.projects)
@@ -31,51 +45,11 @@ fastify.register(require('@fastify/cors'), {
 });
 fastify.register(require('@fastify/websocket'));
 
-// Auth Hook
-fastify.decorate('authenticate', async function (request, reply) {
-    try {
-        const token = request.headers.authorization?.replace('Bearer ', '');
-        if (!token) throw new Error('Missing token');
-        const user = auth.verifyToken(token);
-        if (!user) throw new Error('Invalid token');
-        request.user = user;
-    } catch (err) {
-        reply.code(401).send({ error: 'Unauthorized' });
-    }
-});
+registerAuthHooks(fastify);
+registerAuthRoutes(fastify);
+registerAdminRoutes(fastify);
 
 // -- API Routes --
-
-fastify.post('/api/v1/auth/register', async (request, reply) => {
-    const { username, password } = request.body;
-    try {
-        const userId = `usr_${crypto.randomBytes(6).toString('hex')}`;
-        const usersCount = await db.select({ count: sql`count(*)` }).from(schema.users);
-        const role = usersCount[0].count === 0 ? 'admin' : 'user';
-
-        await db.insert(schema.users).values({
-            id: userId,
-            username,
-            passwordHash: auth.hashPassword(password),
-            role: role,
-            createdAt: Date.now()
-        });
-        const token = auth.generateToken({ id: userId, username, role });
-        return { token, user: { id: userId, username, role } };
-    } catch (e) {
-        return reply.code(400).send({ error: 'Username already exists' });
-    }
-});
-
-fastify.post('/api/v1/auth/login', async (request, reply) => {
-    const { username, password } = request.body;
-    const users = await db.select().from(schema.users).where(eq(schema.users.username, username));
-    if (users.length === 0 || !auth.verifyPassword(password, users[0].passwordHash)) {
-        return reply.code(401).send({ error: 'Invalid credentials' });
-    }
-    const token = auth.generateToken(users[0]);
-    return { token, user: { id: users[0].id, username: users[0].username, role: users[0].role } };
-});
 
 fastify.get('/api/v1/secrets', { preValidation: [fastify.authenticate] }, async (request, reply) => {
     const result = await db.select().from(schema.secrets).where(eq(schema.secrets.userId, request.user.id));
@@ -111,23 +85,22 @@ fastify.post('/api/v1/secrets', { preValidation: [fastify.authenticate] }, async
 
 const DEFAULT_AGENT_ID = 'kimi-code';
 
-fastify.get('/api/v1/agents', async () => {
+fastify.get('/api/v1/agents', { preValidation: [fastify.authenticate] }, async (request) => {
+    const grantedIds = await policy.listGrantedAgentIds(request.user.id, request.user.role);
+    const grantedSet = new Set(grantedIds);
     const allAgents = await db.select().from(schema.agents);
-    allAgents.sort((a, b) => {
+    const filtered = request.user.role === 'admin'
+        ? allAgents
+        : allAgents.filter((a) => grantedSet.has(a.id));
+    filtered.sort((a, b) => {
         if (a.id === DEFAULT_AGENT_ID) return -1;
         if (b.id === DEFAULT_AGENT_ID) return 1;
         return a.name.localeCompare(b.name);
     });
-    return allAgents.map(a => ({
-        id: a.id,
-        name: a.name,
-        cmd: a.cmd,
-        args: JSON.parse(a.args),
-        env_required: JSON.parse(a.envRequired)
-    }));
+    return filtered.map(formatAgentRow);
 });
 
-fastify.post('/api/v1/agents', { preValidation: [fastify.authenticate] }, async (request, reply) => {
+fastify.post('/api/v1/agents', { preValidation: [fastify.authenticate, fastify.requireAdmin] }, async (request, reply) => {
     const { id, name, cmd, args, env_required } = request.body;
     try {
         await db.insert(schema.agents).values({
@@ -139,6 +112,27 @@ fastify.post('/api/v1/agents', { preValidation: [fastify.authenticate] }, async 
     } catch (e) {
         return reply.code(400).send({ error: 'Failed to insert agent or ID already exists' });
     }
+});
+
+fastify.put('/api/v1/agents/:id', { preValidation: [fastify.authenticate, fastify.requireAdmin] }, async (request, reply) => {
+    const { name, cmd, args, env_required } = request.body || {};
+    const rows = await db.select().from(schema.agents).where(eq(schema.agents.id, request.params.id));
+    if (rows.length === 0) return reply.code(404).send({ error: 'Agent not found' });
+    await db.update(schema.agents).set({
+        ...(name !== undefined && { name }),
+        ...(cmd !== undefined && { cmd }),
+        ...(args !== undefined && { args: JSON.stringify(args) }),
+        ...(env_required !== undefined && { envRequired: JSON.stringify(env_required) }),
+    }).where(eq(schema.agents.id, request.params.id));
+    return { success: true };
+});
+
+fastify.delete('/api/v1/agents/:id', { preValidation: [fastify.authenticate, fastify.requireAdmin] }, async (request, reply) => {
+    const rows = await db.select().from(schema.agents).where(eq(schema.agents.id, request.params.id));
+    if (rows.length === 0) return reply.code(404).send({ error: 'Agent not found' });
+    await db.delete(schema.userAgentGrants).where(eq(schema.userAgentGrants.agentId, request.params.id));
+    await db.delete(schema.agents).where(eq(schema.agents.id, request.params.id));
+    return { ok: true };
 });
 
 // Projects — list
@@ -165,6 +159,9 @@ fastify.get('/api/v1/projects', { preValidation: [fastify.authenticate] }, async
 
 // Projects — create（通过 RuntimeProvider.ensureReady 创建 workspace）
 fastify.post('/api/v1/projects', { preValidation: [fastify.authenticate] }, async (request, reply) => {
+    const quotaCheck = await policy.checkQuota(request.user.id, 'projects');
+    if (!quotaCheck.ok) return policy.quotaErrorReply(reply, quotaCheck);
+
     const name = String(request.body?.name || '').trim();
     if (!name) return reply.code(400).send({ error: 'Project name is required' });
     if (name.length > 120) return reply.code(400).send({ error: 'Project name is too long' });
@@ -300,6 +297,12 @@ fastify.post('/api/v1/session/start', { preValidation: [fastify.authenticate] },
 
     const project = await getProjectForUser(request.user.id, project_id);
     if (!project) return reply.code(404).send({ error: 'Project not found' });
+
+    const agentAccess = await policy.checkAgentAccess(request.user.id, agent_id, request.user.role);
+    if (!agentAccess.ok) return policy.agentAccessErrorReply(reply, agentAccess);
+
+    const sessionQuota = await policy.checkQuota(request.user.id, 'sessions');
+    if (!sessionQuota.ok) return policy.quotaErrorReply(reply, sessionQuota);
 
     let workspacePath;
     let runtimeId;
@@ -516,6 +519,9 @@ fastify.post('/api/v1/projects/:projectId/preview', { preValidation: [fastify.au
     const project = await getProjectForUser(request.user.id, request.params.projectId);
     if (!project) return reply.code(404).send({ error: 'Project not found' });
 
+    const previewQuota = await policy.checkQuota(request.user.id, 'previews');
+    if (!previewQuota.ok) return policy.quotaErrorReply(reply, previewQuota);
+
     try {
         const dep = await deploymentService.deployAndStartPreview(request.user.id, project);
         return reply.code(201).send(dep);
@@ -533,6 +539,9 @@ fastify.post('/api/v1/deployments', { preValidation: [fastify.authenticate] }, a
 
     const project = await getProjectForUser(request.user.id, projectId);
     if (!project) return reply.code(404).send({ error: 'Project not found' });
+
+    const previewQuota = await policy.checkQuota(request.user.id, 'previews');
+    if (!previewQuota.ok) return policy.quotaErrorReply(reply, previewQuota);
 
     const dep = await deploymentService.createPreview(request.user.id, project);
     return reply.code(201).send(dep);

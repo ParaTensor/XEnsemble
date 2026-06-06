@@ -5,7 +5,28 @@ const users = sqliteTable('users', {
   username: text('username').notNull().unique(),
   passwordHash: text('password_hash').notNull(),
   role: text('role').default('user'),
-  createdAt: integer('created_at').notNull()
+  status: text('status').default('active'),
+  email: text('email'),
+  displayName: text('display_name'),
+  lastLoginAt: integer('last_login_at'),
+  createdAt: integer('created_at').notNull(),
+  updatedAt: integer('updated_at'),
+});
+
+const userQuotas = sqliteTable('user_quotas', {
+  userId: text('user_id').primaryKey().references(() => users.id),
+  maxProjects: integer('max_projects').notNull().default(5),
+  maxSessions: integer('max_sessions').notNull().default(2),
+  maxPreviews: integer('max_previews').notNull().default(1),
+  maxRuntimes: integer('max_runtimes').notNull().default(1),
+  resourceTier: text('resource_tier').notNull().default('basic'),
+  updatedBy: text('updated_by').references(() => users.id),
+  updatedAt: integer('updated_at'),
+});
+
+const platformSettings = sqliteTable('platform_settings', {
+  key: text('key').primaryKey(),
+  value: text('value').notNull(),
 });
 
 const secrets = sqliteTable('secrets', {
@@ -50,6 +71,13 @@ const agents = sqliteTable('agents', {
   cmd: text('cmd').notNull(),
   args: text('args').notNull(),
   envRequired: text('env_required').notNull()
+});
+
+const userAgentGrants = sqliteTable('user_agent_grants', {
+  userId: text('user_id').notNull().references(() => users.id),
+  agentId: text('agent_id').notNull().references(() => agents.id),
+  grantedBy: text('granted_by').references(() => users.id),
+  grantedAt: integer('granted_at').notNull(),
 });
 
 // ─── 新增表（对齐 Architecture.md 第 4 节） ───
@@ -140,6 +168,9 @@ const workspaceCheckpoints = sqliteTable('workspace_checkpoints', {
 
 module.exports = {
   users,
+  userQuotas,
+  userAgentGrants,
+  platformSettings,
   secrets,
   projects,
   sessions,

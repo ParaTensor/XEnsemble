@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect, useId, useLayoutEffect } from 'reac
 import { createPortal } from 'react-dom';
 import { Check, ChevronDown } from 'lucide-react';
 import { cn } from '../lib/utils';
-import { consoleToolbarInputClass } from '../lib/consoleTokens';
+import { consoleMenuDropdownZClass, consoleToolbarInputClass } from '../lib/consoleTokens';
 
 export default function SelectMenu({
   value,
@@ -79,7 +79,7 @@ export default function SelectMenu({
           left: menuRect.left,
           width: menuRect.width,
         }}
-        className="z-[100] max-h-60 overflow-auto rounded-lg border border-zinc-200 bg-white py-1 shadow-lg"
+        className={`${consoleMenuDropdownZClass} max-h-60 overflow-auto rounded-lg border border-zinc-200 bg-white py-1 shadow-lg`}
       >
         {options.map((opt) => {
           const isSelected = opt.value === value;

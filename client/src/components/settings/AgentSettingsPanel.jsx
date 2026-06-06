@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useContext } from 'react';
+import { AuthContext } from '../../App';
 import Button from '../Button';
 import SelectMenu from '../SelectMenu';
 import { useToast } from '../Toast';
@@ -6,6 +7,7 @@ import { consoleSectionLabelClass } from '../../lib/consoleTokens';
 import SecretFields from './SecretFields';
 
 export default function AgentSettingsPanel({ secretsState }) {
+  const { token } = useContext(AuthContext);
   const { showToast } = useToast();
   const [agents, setAgents] = useState([]);
   const [agentsLoading, setAgentsLoading] = useState(true);
@@ -13,7 +15,10 @@ export default function AgentSettingsPanel({ secretsState }) {
   const { secrets, setSecrets, loading, saving, saveSecrets } = secretsState;
 
   useEffect(() => {
-    fetch('http://localhost:3000/api/v1/agents')
+    if (!token) return;
+    fetch('http://localhost:3000/api/v1/agents', {
+      headers: { Authorization: `Bearer ${token}` },
+    })
       .then((res) => res.json())
       .then((data) => {
         if (Array.isArray(data)) {
@@ -22,7 +27,7 @@ export default function AgentSettingsPanel({ secretsState }) {
         }
       })
       .finally(() => setAgentsLoading(false));
-  }, []);
+  }, [token]);
 
   const selectedAgent = agents.find((a) => a.id === selectedAgentId);
   const requiredKeys = selectedAgent?.env_required || [];

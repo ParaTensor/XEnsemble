@@ -3,6 +3,7 @@ import { Routes, Route, Link, useNavigate, useLocation, Navigate } from 'react-r
 import Login from './pages/Login';
 import Console from './pages/Console';
 import AgentsAdmin from './pages/AgentsAdmin';
+import UsersAdmin from './pages/UsersAdmin';
 import UserMenu from './components/UserMenu';
 import BrandMark from './components/BrandMark';
 import SettingsModal from './components/SettingsModal';
@@ -57,6 +58,9 @@ function App() {
           <nav className="flex items-center gap-6">
             {user?.role === 'admin' && (
               <>
+                <Link to="/admin/users" className={navLinkClass('/admin/users')}>
+                  Users
+                </Link>
                 <Link to="/admin/agents" className={navLinkClass('/admin/agents')}>
                   Registry
                 </Link>
@@ -109,6 +113,19 @@ function App() {
             )
           }
         />
+
+        <Route
+          path="/admin/users"
+          element={
+            token && user?.role === 'admin' ? (
+              <Shell><UsersAdmin /></Shell>
+            ) : (
+              <Navigate to="/console" />
+            )
+          }
+        />
+
+        <Route path="/admin/platform" element={<Navigate to="/console" replace />} />
 
         <Route path="*" element={<Navigate to={token ? '/console' : '/login'} />} />
       </Routes>
