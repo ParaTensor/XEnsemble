@@ -15,6 +15,7 @@ import {
   consoleTableHeadCellClass,
   consoleTableShellClass,
 } from '../lib/consoleTokens';
+import { loadAdminAgentsCache, saveAdminAgentsCache } from '../lib/adminAgentsCache';
 
 const API = 'http://localhost:3000';
 
@@ -27,9 +28,10 @@ function statusBadge(installed) {
 export default function AgentsAdmin() {
   const { token } = useContext(AuthContext);
   const { showToast } = useToast();
-  const [agents, setAgents] = useState([]);
+  const [agents, setAgents] = useState(() => loadAdminAgentsCache());
   const [gatewayProviders, setGatewayProviders] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(() => loadAdminAgentsCache().length === 0);
+  const [refreshing, setRefreshing] = useState(false);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [keysAgent, setKeysAgent] = useState(null);
   const [authDraft, setAuthDraft] = useState({ llm_auth_mode: 'byok', provider: '', model: '' });
@@ -51,18 +53,25 @@ export default function AgentsAdmin() {
     Authorization: `Bearer ${token}`,
   }), [token]);
 
-  const fetchAgents = useCallback(() => {
-    setLoading(true);
-    fetch(`${API}/api/v1/admin/agents`, { headers: authHeaders })
+  const fetchAgents = useCallback(({ silent = false } = {}) => {
+    if (silent) setRefreshing(true);
+    else setLoading(true);
+    return fetch(`${API}/api/v1/admin/agents`, { headers: authHeaders })
       .then((res) => res.json())
       .then((data) => {
-        if (Array.isArray(data)) setAgents(data);
+        if (Array.isArray(data)) {
+          setAgents(data);
+          saveAdminAgentsCache(data);
+        }
       })
-      .finally(() => setLoading(false));
+      .finally(() => {
+        setLoading(false);
+        setRefreshing(false);
+      });
   }, [authHeaders]);
 
   useEffect(() => {
-    fetchAgents();
+    fetchAgents({ silent: agents.length > 0 });
   }, [fetchAgents]);
 
   useEffect(() => {
@@ -94,7 +103,7 @@ export default function AgentsAdmin() {
       showToast('success', 'Agent registered.');
       setDialogOpen(false);
       setNewAgent({ id: '', name: '', cmd: '', args: '[]', env_required: '[]' });
-      fetchAgents();
+      fetchAgents({ silent: true });
     } catch (err) {
       showToast('error', err.message || 'Invalid JSON in Args or Env Required');
     }
@@ -137,7 +146,7 @@ export default function AgentsAdmin() {
       if (!res.ok) throw new Error(data.error);
       showToast('success', 'Agent configuration saved.');
       closeKeysDialog();
-      fetchAgents();
+      fetchAgents({ silent: true });
     } catch (err) {
       showToast('error', err.message || 'Failed to save configuration.');
     } finally {
@@ -178,7 +187,7 @@ export default function AgentsAdmin() {
       if (!res.ok) throw new Error(data.error);
       showToast('success', 'Executable updated.');
       closeEditDialog();
-      fetchAgents();
+      fetchAgents({ silent: true });
     } catch (err) {
       showToast('error', err.message || 'Failed to update executable.');
     } finally {
@@ -197,7 +206,7 @@ export default function AgentsAdmin() {
       if (!res.ok) throw new Error(data.error);
       if (onSuccess) onSuccess(data);
       else if (successMsg) showToast('success', successMsg);
-      fetchAgents();
+      fetchAgents({ silent: true });
       return data;
     } catch (err) {
       showToast('error', err.message || 'Action failed.');
@@ -251,7 +260,7 @@ export default function AgentsAdmin() {
       } else {
         showToast('success', newVersion ? `Updated to ${newVersion}` : 'Agent updated.');
       }
-      fetchAgents();
+      fetchAgents({ silent: true });
     } catch (err) {
       showToast('error', err.message || 'Update failed.');
     } finally {
@@ -288,7 +297,11 @@ export default function AgentsAdmin() {
     <div className={`w-full ${consolePageStackClass}`}>
       <PageHeader
         title="Agents"
-        description="Install agents on the server, configure platform API keys, and manage the registry."
+        description={
+          refreshing
+            ? 'Refreshing agent status…'
+            : 'Install agents on the server, configure platform API keys, and manage the registry.'
+        }
         actions={(
           <Button type="button" onClick={() => setDialogOpen(true)} size="md" className="shrink-0">
             <Plus className="w-4 h-4" />
@@ -496,10 +509,16 @@ export default function AgentsAdmin() {
               </tr>
             </thead>
             <tbody className="divide-y divide-zinc-100">
-              {loading ? (
+              {loading && agents.length === 0 ? (
                 <tr>
                   <td colSpan={9} className={`${consoleTableBodyCellClass} text-zinc-500`}>
                     Loading...
+                  </td>
+                </tr>
+              ) : agents.length === 0 ? (
+                <tr>
+                  <td colSpan={9} className={`${consoleTableBodyCellClass} text-zinc-500`}>
+                    No agents registered yet.
                   </td>
                 </tr>
               ) : agents.map((agent) => {

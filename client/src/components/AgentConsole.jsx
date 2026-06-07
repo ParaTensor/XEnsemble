@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Cpu, HardDrive, Unplug, PanelRightOpen, PanelRightClose } from 'lucide-react';
+import { Cpu, HardDrive, Loader2, Play, Square, Unplug, PanelRightOpen, PanelRightClose } from 'lucide-react';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import '@xterm/xterm/css/xterm.css';
@@ -41,22 +41,32 @@ export default function AgentConsole({
     projectId,
     token,
     onSessionEnd,
+    onStart,
+    onStop,
+    sessionControlPending = false,
+    sessionLive = true,
     onDisconnect,
     workspaceOpen,
     onToggleWorkspace,
 }) {
     const [metrics, setMetrics] = useState({ cpu: 0, memory: 0 });
-    const [ended, setEnded] = useState(false);
+    const [ended, setEnded] = useState(!sessionLive);
     const preview = usePreview(projectId, token);
     const containerRef = useRef(null);
     const onSessionEndRef = useRef(onSessionEnd);
+    const sessionLiveRef = useRef(sessionLive);
     onSessionEndRef.current = onSessionEnd;
+    sessionLiveRef.current = sessionLive;
+
+    useEffect(() => {
+        if (!sessionLive) setEnded(true);
+    }, [sessionLive]);
 
     useEffect(() => {
         const container = containerRef.current;
         if (!container) return undefined;
 
-        setEnded(false);
+        setEnded(!sessionLiveRef.current);
         const disposedRef = { current: false };
         const serverEndedRef = { current: false };
         const openedRef = { current: false };
@@ -131,6 +141,7 @@ export default function AgentConsole({
 
         ws.onopen = () => {
             openedRef.current = true;
+            if (sessionLiveRef.current) setEnded(false);
             let attempts = 0;
             const tryFit = () => {
                 applySize();
@@ -172,11 +183,13 @@ export default function AgentConsole({
             if (!openedRef.current) {
                 if (!disposedRef.current && !serverEndedRef.current) {
                     terminal.write('\r\n\x1b[31m[System] Terminal connection failed. Is the backend running on port 3000?\x1b[0m\r\n');
+                    setEnded(true);
                 }
                 return;
             }
             if (event.wasClean) return;
             terminal.write('\r\n\x1b[33m[System] Disconnected from terminal.\x1b[0m\r\n');
+            setEnded(true);
         };
 
         terminal.onData((data) => {
@@ -187,18 +200,30 @@ export default function AgentConsole({
         container.addEventListener('mousedown', focusTerminal);
         container.addEventListener('click', focusTerminal);
 
-        const resizeObserver = new ResizeObserver(() => applySize());
+        let resizeFrame = null;
+        const scheduleApplySize = () => {
+            if (resizeFrame !== null) cancelAnimationFrame(resizeFrame);
+            resizeFrame = requestAnimationFrame(() => {
+                resizeFrame = null;
+                applySize();
+            });
+        };
+
+        const resizeObserver = new ResizeObserver(() => scheduleApplySize());
         resizeObserver.observe(container);
 
         const visibilityObserver = new IntersectionObserver((entries) => {
             if (entries[0]?.isIntersecting) {
-                requestAnimationFrame(() => applySize());
+                requestAnimationFrame(() => {
+                    requestAnimationFrame(() => scheduleApplySize());
+                });
             }
         });
         visibilityObserver.observe(container);
 
         return () => {
             disposedRef.current = true;
+            if (resizeFrame !== null) cancelAnimationFrame(resizeFrame);
             visibilityObserver.disconnect();
             resizeObserver.disconnect();
             container.removeEventListener('mousedown', focusTerminal);
@@ -234,10 +259,36 @@ export default function AgentConsole({
                             <PreviewControlGroup {...preview} />
                         </>
                     )}
-                    {(onDisconnect || onToggleWorkspace) && (
+                    {(onStart || onStop || onDisconnect || onToggleWorkspace) && (
                         <>
                             <div className="hidden sm:block h-4 w-px bg-zinc-700 shrink-0" aria-hidden />
                             <div className="flex items-center gap-0.5 shrink-0">
+                                {(onStart || onStop) && (
+                                    <button
+                                        type="button"
+                                        disabled={sessionControlPending || (!ended && !onStop) || (ended && !onStart)}
+                                        onClick={ended ? onStart : onStop}
+                                        title={
+                                            sessionControlPending
+                                                ? (ended ? 'Starting…' : 'Stopping…')
+                                                : (ended ? 'Start session' : 'Stop session')
+                                        }
+                                        aria-label={
+                                            sessionControlPending
+                                                ? (ended ? 'Starting session' : 'Stopping session')
+                                                : (ended ? 'Start session' : 'Stop session')
+                                        }
+                                        className="rounded-md p-1.5 text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200 disabled:opacity-50"
+                                    >
+                                        {sessionControlPending ? (
+                                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                        ) : ended ? (
+                                            <Play className="w-3.5 h-3.5" />
+                                        ) : (
+                                            <Square className="w-3.5 h-3.5" />
+                                        )}
+                                    </button>
+                                )}
                                 {onDisconnect && (
                                     <button
                                         type="button"

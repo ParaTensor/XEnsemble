@@ -3,7 +3,7 @@ import { useLocation } from 'react-router-dom';
 import AgentConsole from '../components/AgentConsole';
 import WorkspaceFileTree from '../components/WorkspaceFileTree';
 import SelectMenu from '../components/SelectMenu';
-import { ConsoleDialogShell, ConsoleInlineDialog } from '../components/ConsoleDialog';
+import { ConsoleAnchoredDialog, ConsoleDialogShell, ConsoleInlineDialog } from '../components/ConsoleDialog';
 import SecretFields from '../components/settings/SecretFields';
 import { useToast } from '../components/Toast';
 import { TerminalSquare, Play, Settings2, FolderOpen, FileText, X, RefreshCw, Plus, Trash2, ChevronRight, ChevronDown, FolderPlus, Pin, Archive, ListFilter } from 'lucide-react';
@@ -19,14 +19,27 @@ import {
   isPinnedWorkspace,
   isArchivedSession,
   removeWorkspacePrefs,
-  setLastActiveSession,
-  clearLastActiveSession,
+  rememberRecentSession,
+  selectActiveSession,
+  replaceRecentSessionId,
+  removeRecentSession,
   pickSessionToRestore,
   getRecentSessions,
 } from '../lib/sidebarPrefs';
 import { consoleDialogPanelClass, consoleToolPageClass } from '../lib/consoleTokens';
+import {
+  getCacheUserId,
+  readBootstrapConsoleState,
+  saveConsoleCache,
+} from '../lib/consoleCache';
 
 const DEFAULT_AGENT_ID = 'kimi-code';
+
+function pickDefaultAgentId(agents, preferredId) {
+  if (preferredId && agents.some((a) => a.id === preferredId)) return preferredId;
+  const preferred = agents.find((a) => a.id === DEFAULT_AGENT_ID) || agents[0];
+  return preferred?.id || '';
+}
 
 const SLUG_WORDS = [
   'small', 'heavy', 'many', 'quiet', 'swift', 'bright', 'calm', 'bold', 'brave', 'clear',
@@ -105,18 +118,22 @@ export default function Console() {
   const { token, user } = useContext(AuthContext);
   const location = useLocation();
   const prevPathRef = useRef(location.pathname);
-  const initialRestoreDoneRef = useRef(false);
-  const [agents, setAgents] = useState([]);
-  const [sessions, setSessions] = useState([]);
-  const [projects, setProjects] = useState([]);
-  const [expandedWorkspaces, setExpandedWorkspaces] = useState(() => new Set());
-  const [selectedAgentId, setSelectedAgentId] = useState('');
+  const [agents, setAgents] = useState(() => readBootstrapConsoleState(null).agents);
+  const [sessions, setSessions] = useState(() => readBootstrapConsoleState(null).sessions);
+  const [projects, setProjects] = useState(() => readBootstrapConsoleState(null).projects);
+  const [expandedWorkspaces, setExpandedWorkspaces] = useState(() => {
+    const ids = new Set();
+    const cached = readBootstrapConsoleState(null).activeSession;
+    if (cached?.projectId) ids.add(cached.projectId);
+    return ids;
+  });
+  const [selectedAgentId, setSelectedAgentId] = useState(() => readBootstrapConsoleState(null).selectedAgentId);
   const [newProjectName, setNewProjectName] = useState('');
   const [launchModalMode, setLaunchModalMode] = useState('workspace');
   const [launchWorkspaceId, setLaunchWorkspaceId] = useState('');
   const [projectCreating, setProjectCreating] = useState(false);
   const [launchModalError, setLaunchModalError] = useState(null);
-  const [activeSession, setActiveSession] = useState(null);
+  const [activeSession, setActiveSession] = useState(() => readBootstrapConsoleState(null).activeSession);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
 
@@ -137,6 +154,8 @@ export default function Console() {
   const [configError, setConfigError] = useState(null);
   const { showToast } = useToast();
   const [deletingSessionId, setDeletingSessionId] = useState(null);
+  const [restartingSession, setRestartingSession] = useState(false);
+  const [stoppingSession, setStoppingSession] = useState(false);
   const [deleteConfirmSession, setDeleteConfirmSession] = useState(null);
   const [deletingWorkspaceId, setDeletingWorkspaceId] = useState(null);
   const [deleteConfirmWorkspace, setDeleteConfirmWorkspace] = useState(null);
@@ -152,13 +171,20 @@ export default function Console() {
 
   const applyActiveSession = useCallback((session) => {
     if (!session) return;
-    setLastActiveSession(session.id);
+    const projectName = session.projectName || projects.find((p) => p.id === session.projectId)?.name;
+    selectActiveSession(session.id, {
+      agentId: session.agentId ?? null,
+      projectId: session.projectId ?? null,
+      projectName: projectName ?? null,
+      createdAt: session.createdAt ?? Date.now(),
+    });
     refreshSidebarPrefs();
     setActiveSession({
       sessionId: session.id,
+      agentId: session.agentId,
       agentName: getAgentLabel(session.agentId),
       projectId: session.projectId,
-      projectName: session.projectName || projects.find((p) => p.id === session.projectId)?.name,
+      projectName,
     });
     if (session.projectId) {
       setExpandedWorkspaces((prev) => {
@@ -173,9 +199,8 @@ export default function Console() {
     if (!token || sessions.length === 0) return;
 
     const prefs = loadSidebarPrefs();
-    if (activeSession?.sessionId) {
-      const current = sessions.find((s) => s.id === activeSession.sessionId);
-      if (current && !isArchivedSession(prefs, current.id)) return;
+    if (activeSession?.sessionId && !isArchivedSession(prefs, activeSession.sessionId)) {
+      return;
     }
 
     const candidate = pickSessionToRestore(sessions, prefs);
@@ -186,16 +211,35 @@ export default function Console() {
   useEffect(() => {
     const prev = prevPathRef.current;
     prevPathRef.current = location.pathname;
-    if (location.pathname === '/console' && prev !== '/console') {
+    if (location.pathname === '/sessions' && prev !== '/sessions') {
       tryRestoreActiveSession();
     }
   }, [location.pathname, tryRestoreActiveSession]);
 
   useEffect(() => {
-    if (!token || sessions.length === 0 || activeSession || initialRestoreDoneRef.current) return;
+    if (!token || sessions.length === 0 || activeSession) return;
     tryRestoreActiveSession();
-    initialRestoreDoneRef.current = true;
   }, [token, sessions, activeSession, tryRestoreActiveSession]);
+
+  useEffect(() => {
+    const userId = getCacheUserId(user);
+    if (!userId || !token) return;
+    saveConsoleCache(userId, {
+      agents,
+      sessions,
+      projects,
+      selectedAgentId,
+      activeSession,
+    });
+  }, [user, token, agents, sessions, projects, selectedAgentId, activeSession]);
+
+  useEffect(() => {
+    if (!activeSession?.agentId || agents.length === 0) return;
+    const name = agents.find((a) => a.id === activeSession.agentId)?.name;
+    if (name && name !== activeSession.agentName) {
+      setActiveSession((prev) => (prev ? { ...prev, agentName: name } : prev));
+    }
+  }, [agents, activeSession?.agentId, activeSession?.agentName]);
 
   useEffect(() => {
     if (!token) return;
@@ -206,15 +250,11 @@ export default function Console() {
       .then(data => {
         if (!Array.isArray(data)) {
           setAgents([]);
+          setSelectedAgentId('');
           return;
         }
         setAgents(data);
-        if (data.length > 0) {
-          const preferred = data.find((a) => a.id === DEFAULT_AGENT_ID) || data[0];
-          setSelectedAgentId(preferred.id);
-        } else {
-          setSelectedAgentId('');
-        }
+        setSelectedAgentId((prev) => pickDefaultAgentId(data, prev));
       })
       .catch(() => setError('Could not connect to backend server.'));
 
@@ -454,10 +494,17 @@ export default function Console() {
         throw new Error(msg);
       }
 
-      setLastActiveSession(data.session_id);
+      rememberRecentSession({
+        id: data.session_id,
+        agentId: selectedAgentId,
+        projectId,
+        projectName: projectName || projectId,
+        createdAt: Date.now(),
+      });
       refreshSidebarPrefs();
       setActiveSession({
         sessionId: data.session_id,
+        agentId: selectedAgentId,
         agentName: selectedAgent.name,
         projectId,
         projectName: projectName || projectId,
@@ -592,6 +639,112 @@ export default function Console() {
     fetchSessions();
   };
 
+  const handleRestartSession = async () => {
+    if (!activeSession) return;
+
+    const agentId =
+      activeSession.agentId ||
+      sessions.find((s) => s.id === activeSession.sessionId)?.agentId;
+    if (!agentId || !activeSession.projectId) {
+      showToast('error', 'Cannot start: missing agent or workspace.');
+      return;
+    }
+
+    const agent = agents.find((a) => a.id === agentId);
+    const oldSessionId = activeSession.sessionId;
+
+    setRestartingSession(true);
+    try {
+      const ready = await ensureAgentSecrets(agent);
+      if (!ready) {
+        showToast('error', 'Configure required API keys before starting.');
+        return;
+      }
+
+      await fetch(`http://localhost:3000/api/v1/sessions/${encodeURIComponent(oldSessionId)}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` },
+      }).catch(() => {});
+
+      const response = await fetch('http://localhost:3000/api/v1/session/start', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ agent_id: agentId, project_id: activeSession.projectId }),
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        const msg = data.error || data.message || 'Failed to start session';
+        if (data.error === 'agent_not_granted') {
+          showToast('error', 'You do not have permission to use this agent.');
+          return;
+        }
+        if (data.error === 'quota_exceeded') {
+          showToast('error', formatQuotaExceeded(data.dimension, data.current, data.limit));
+          return;
+        }
+        if (/Missing required env|Secrets Vault/i.test(msg)) {
+          showToast('error', msg);
+          openConfigModal();
+          return;
+        }
+        throw new Error(msg);
+      }
+
+      replaceRecentSessionId(oldSessionId, data.session_id, {
+        agentId,
+        projectId: activeSession.projectId,
+        projectName: activeSession.projectName,
+        createdAt: Date.now(),
+      });
+      refreshSidebarPrefs();
+      setActiveSession({
+        sessionId: data.session_id,
+        agentId,
+        agentName: agent?.name || activeSession.agentName,
+        projectId: activeSession.projectId,
+        projectName: activeSession.projectName,
+      });
+      fetchWorkspaces();
+      showToast('success', 'Session started.');
+    } catch (err) {
+      showToast('error', err.message);
+    } finally {
+      setRestartingSession(false);
+    }
+  };
+
+  const handleStopSession = async () => {
+    if (!activeSession?.sessionId) return;
+
+    setStoppingSession(true);
+    try {
+      const res = await fetch(`http://localhost:3000/api/v1/sessions/${encodeURIComponent(activeSession.sessionId)}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to stop session');
+      rememberRecentSession({
+        id: activeSession.sessionId,
+        agentId: activeSession.agentId,
+        projectId: activeSession.projectId,
+        projectName: activeSession.projectName,
+        createdAt: sessions.find((s) => s.id === activeSession.sessionId)?.createdAt,
+      });
+      refreshSidebarPrefs();
+      handleSessionEnd(activeSession.sessionId);
+      fetchWorkspaces();
+      showToast('success', 'Session stopped.');
+    } catch (err) {
+      showToast('error', err.message);
+    } finally {
+      setStoppingSession(false);
+    }
+  };
+
   const handleDeleteSession = async (sessionId) => {
     setDeletingSessionId(sessionId);
     try {
@@ -601,7 +754,7 @@ export default function Console() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed to delete session');
-      clearLastActiveSession(sessionId);
+      removeRecentSession(sessionId);
       refreshSidebarPrefs();
       if (activeSession?.sessionId === sessionId) setActiveSession(null);
       setDeleteConfirmSession(null);
@@ -658,14 +811,23 @@ export default function Console() {
     }
   };
 
-  const requestDeleteWorkspace = (ws) => {
+  const requestDeleteWorkspace = (ws, anchorEl) => {
     const liveCount = ws.sessions.filter((s) => s.alive === true).length;
+    const rect = anchorEl.getBoundingClientRect();
     setDeleteConfirmWorkspace({
       workspaceId: ws.id,
       workspaceName: ws.name,
       sessionCount: ws.sessions.length,
       liveCount,
       isOrphan: ws.id === '_orphan',
+      anchorRect: {
+        top: rect.top,
+        left: rect.left,
+        right: rect.right,
+        bottom: rect.bottom,
+        width: rect.width,
+        height: rect.height,
+      },
     });
   };
 
@@ -682,7 +844,6 @@ export default function Console() {
   const handleArchiveSession = (e, sessionId) => {
     e.stopPropagation();
     archiveSession(sessionId);
-    clearLastActiveSession(sessionId);
     refreshSidebarPrefs();
     if (activeSession?.sessionId === sessionId) setActiveSession(null);
   };
@@ -798,8 +959,9 @@ export default function Console() {
     sidebarPrefs,
   );
   const recentSessions = getRecentSessions(sessions, sidebarPrefs);
+  const hasRecentSection = (sidebarPrefs.recentSessionIds?.length ?? 0) > 0;
   const runningCount = sessions.filter((s) => s.alive === true).length;
-  const hasSidebarSectionsAboveWorkspaces = recentSessions.length > 0 || pinnedSessions.length > 0;
+  const hasSidebarSectionsAboveWorkspaces = hasRecentSection || pinnedSessions.length > 0;
 
   return (
     <div className={consoleToolPageClass}>
@@ -831,9 +993,10 @@ export default function Console() {
       )}
 
       {deleteConfirmWorkspace && (
-        <ConsoleInlineDialog
+        <ConsoleAnchoredDialog
           onClose={() => setDeleteConfirmWorkspace(null)}
-          panelClassName="bg-white rounded-lg shadow-sm w-full max-w-md overflow-hidden border border-zinc-200"
+          anchorRect={deleteConfirmWorkspace.anchorRect}
+          panelClassName="bg-white rounded-lg shadow-lg w-72 max-w-[calc(100vw-1.5rem)] overflow-hidden border border-zinc-200"
         >
             <div className="p-5 border-b border-zinc-100 flex items-center gap-3 bg-zinc-50">
               <Trash2 className="w-5 h-5 shrink-0 text-zinc-500" />
@@ -897,7 +1060,7 @@ export default function Console() {
                     : 'Delete workspace'}
               </button>
             </div>
-        </ConsoleInlineDialog>
+        </ConsoleAnchoredDialog>
       )}
 
       {deleteConfirmSession && (
@@ -1178,7 +1341,7 @@ export default function Console() {
               </div>
             </div>
             <div className="flex-1 min-h-0 overflow-auto p-2 console-scroll-hidden">
-              {recentSessions.length > 0 && (
+              {hasRecentSection && (
                 <div className="mb-3">
                   <h3 className="px-1.5 py-1 text-xs font-medium text-zinc-500">Recently</h3>
                   <div className="flex flex-col">
@@ -1265,7 +1428,7 @@ export default function Console() {
                             disabled={deletingWorkspaceId === ws.id}
                             onClick={(e) => {
                               e.stopPropagation();
-                              requestDeleteWorkspace(ws);
+                              requestDeleteWorkspace(ws, e.currentTarget);
                             }}
                             className="p-1.5 mr-0.5 text-zinc-400 hover:text-red-600 hover:bg-red-50 rounded-md opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity disabled:opacity-50"
                           >
@@ -1296,7 +1459,11 @@ export default function Console() {
                   agentName={activeSession.agentName}
                   projectId={activeSession.projectId}
                   token={token}
+                  sessionLive={sessions.find((s) => s.id === activeSession.sessionId)?.alive === true}
                   onSessionEnd={handleSessionEnd}
+                  onStart={handleRestartSession}
+                  onStop={handleStopSession}
+                  sessionControlPending={restartingSession || stoppingSession}
                   onDisconnect={() => setActiveSession(null)}
                   workspaceOpen={workspaceOpen}
                   onToggleWorkspace={() => setWorkspaceOpen((v) => !v)}

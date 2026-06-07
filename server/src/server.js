@@ -438,7 +438,7 @@ fastify.register(async function terminalWsRoutes(app) {
         if (!session) {
             sendJson({
                 type: 'error',
-                data: 'Session not found. The backend may have restarted — launch a new agent.',
+                data: 'Session not found. The backend may have restarted — use Restart to reconnect.',
             });
             ws.close();
             return;
