@@ -31,6 +31,9 @@ export const consolePageStackClass = 'space-y-6';
 /** Admin registry pages (Agents / Users): fill shell main, no page-level scrollbar */
 export const consoleAdminPageClass = 'flex h-full min-h-0 w-full flex-col gap-6';
 
+/** Console tool surface: workspace sidebar + terminal fill the shell main */
+export const consoleToolPageClass = 'flex h-full min-h-0 w-full flex-col';
+
 export const consoleAdminTableScrollClass = 'min-h-0 flex-1 overflow-auto console-scroll-hidden';
 
 export const consoleTableShellClass =

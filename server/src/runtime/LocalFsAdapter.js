@@ -24,7 +24,7 @@ class LocalFsAdapter extends FsAdapter {
                 const rel = path.relative(root, fullPath);
                 results.push({
                     name,
-                    path: rel.startsWith('..') ? name : `/${rel}`.replace(/\\/g, '/'),
+                    path: rel.startsWith('..') ? name : rel.replace(/\\/g, '/'),
                     type: stat.isDirectory() ? 'directory' : 'file',
                 });
                 if (stat.isDirectory()) walk(fullPath);

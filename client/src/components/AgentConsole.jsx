@@ -3,7 +3,7 @@ import { Cpu, HardDrive, Unplug, PanelRightOpen, PanelRightClose } from 'lucide-
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import '@xterm/xterm/css/xterm.css';
-import { usePreview, PreviewControlGroup, PreviewExtras } from './PreviewPanel';
+import { usePreview, PreviewControlGroup } from './PreviewPanel';
 
 function parseWsMessage(message) {
     const raw = typeof message === 'string' ? message : message.toString();
@@ -144,9 +144,8 @@ export default function AgentConsole({
         };
 
         ws.onerror = () => {
-            if (!serverEndedRef.current && !disposedRef.current) {
-                terminal.write('\r\n\x1b[31m[System] Terminal connection failed. Is the backend running on port 3000?\x1b[0m\r\n');
-            }
+            // Transient errors during intentional close or reconnect are ignored.
+            if (serverEndedRef.current || disposedRef.current) return;
         };
 
         ws.onmessage = (event) => {
@@ -168,9 +167,15 @@ export default function AgentConsole({
             }
         };
 
-        ws.onclose = () => {
+        ws.onclose = (event) => {
             if (disposedRef.current || serverEndedRef.current) return;
-            if (!openedRef.current) return;
+            if (!openedRef.current) {
+                if (!disposedRef.current && !serverEndedRef.current) {
+                    terminal.write('\r\n\x1b[31m[System] Terminal connection failed. Is the backend running on port 3000?\x1b[0m\r\n');
+                }
+                return;
+            }
+            if (event.wasClean) return;
             terminal.write('\r\n\x1b[33m[System] Disconnected from terminal.\x1b[0m\r\n');
         };
 
@@ -185,8 +190,16 @@ export default function AgentConsole({
         const resizeObserver = new ResizeObserver(() => applySize());
         resizeObserver.observe(container);
 
+        const visibilityObserver = new IntersectionObserver((entries) => {
+            if (entries[0]?.isIntersecting) {
+                requestAnimationFrame(() => applySize());
+            }
+        });
+        visibilityObserver.observe(container);
+
         return () => {
             disposedRef.current = true;
+            visibilityObserver.disconnect();
             resizeObserver.disconnect();
             container.removeEventListener('mousedown', focusTerminal);
             container.removeEventListener('click', focusTerminal);
@@ -254,8 +267,6 @@ export default function AgentConsole({
                     )}
                 </div>
             </div>
-
-            {projectId && token && <PreviewExtras {...preview} />}
 
             <div className="flex-1 p-2 min-h-0 overflow-hidden">
                 <div ref={containerRef} className="xterm-host w-full h-full" />

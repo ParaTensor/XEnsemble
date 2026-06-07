@@ -1,11 +1,10 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
-  ExternalLink,
+  AppWindow,
   Loader2,
   RefreshCw,
   Rocket,
   Square,
-  PanelTop,
 } from 'lucide-react';
 import { apiFetch } from '../lib/api';
 import { useToast } from './Toast';
@@ -37,16 +36,47 @@ function formatTtl(expiresAt) {
   return h > 0 ? `${h}h ${m}m` : `${m}m`;
 }
 
+const PREVIEW_WINDOW_NAME = 'xensemble-preview';
+const PREVIEW_WINDOW_FEATURES = 'noopener,noreferrer,width=1280,height=840,menubar=no,toolbar=no,location=yes,status=no';
+
+function openPreviewWindow(url, winRef) {
+  if (!url) return false;
+  let win = winRef?.current;
+  if (win && !win.closed) {
+    try {
+      win.location.href = url;
+      win.focus();
+      return true;
+    } catch {
+      winRef.current = null;
+    }
+  }
+  win = window.open(url, PREVIEW_WINDOW_NAME, PREVIEW_WINDOW_FEATURES);
+  if (!win) return false;
+  if (winRef) winRef.current = win;
+  win.focus();
+  return true;
+}
+
+function closePreviewWindow(winRef) {
+  const win = winRef?.current;
+  if (win && !win.closed) win.close();
+  if (winRef) winRef.current = null;
+}
+
 export function usePreview(projectId, token) {
   const { showToast } = useToast();
   const lastFailedToastRef = useRef(null);
   const [deployment, setDeployment] = useState(null);
   const [loading, setLoading] = useState(false);
-  const [showIframe, setShowIframe] = useState(false);
+  const previewWindowRef = useRef(null);
 
   useEffect(() => {
     lastFailedToastRef.current = null;
+    closePreviewWindow(previewWindowRef);
   }, [projectId]);
+
+  useEffect(() => () => closePreviewWindow(previewWindowRef), []);
 
   const loadDeployments = useCallback(async () => {
     if (!projectId || !token) return;
@@ -79,7 +109,14 @@ export function usePreview(projectId, token) {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Preview deploy failed');
       setDeployment(data);
-      if (data.status === 'running') setShowIframe(true);
+      if (data.status === 'running') {
+        const url = data.public_url && token
+          ? `${data.public_url}${data.public_url.includes('?') ? '&' : '?'}access_token=${encodeURIComponent(token)}`
+          : null;
+        if (url && !openPreviewWindow(url, previewWindowRef)) {
+          showToast('error', 'Preview is running. Allow pop-ups to open the preview window.');
+        }
+      }
     } catch (e) {
       showToast('error', e.message);
     } finally {
@@ -99,7 +136,7 @@ export function usePreview(projectId, token) {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Stop failed');
       setDeployment(data);
-      setShowIframe(false);
+      closePreviewWindow(previewWindowRef);
     } catch (e) {
       showToast('error', e.message);
     } finally {
@@ -120,7 +157,14 @@ export function usePreview(projectId, token) {
       if (!res.ok) throw new Error(data.error || data.deployment?.last_error_message || 'Restart failed');
       const next = data.deployment || data;
       setDeployment(next);
-      if (next.status === 'running') setShowIframe(true);
+      if (next.status === 'running') {
+        const url = next.public_url && token
+          ? `${next.public_url}${next.public_url.includes('?') ? '&' : '?'}access_token=${encodeURIComponent(token)}`
+          : null;
+        if (url && !openPreviewWindow(url, previewWindowRef)) {
+          showToast('error', 'Preview restarted. Allow pop-ups to open the preview window.');
+        }
+      }
     } catch (e) {
       showToast('error', e.message);
       await loadDeployments();
@@ -145,18 +189,24 @@ export function usePreview(projectId, token) {
     showToast('error', deployment.last_error_message);
   }, [deployment?.id, deployment?.last_error_message, showToast, status]);
 
+  const openPreview = () => {
+    if (!previewUrl) return;
+    if (!openPreviewWindow(previewUrl, previewWindowRef)) {
+      showToast('error', 'Allow pop-ups to open the preview window.');
+    }
+  };
+
   return {
     deployment,
     status,
     loading,
-    showIframe,
-    setShowIframe,
     previewUrl,
     isBusy,
     loadDeployments,
     deployPreview,
     stopPreview,
     restartPreview,
+    openPreview,
   };
 }
 
@@ -196,8 +246,7 @@ export function PreviewActions({
   status,
   isBusy,
   previewUrl,
-  showIframe,
-  setShowIframe,
+  openPreview,
   deployPreview,
   stopPreview,
   restartPreview,
@@ -205,24 +254,15 @@ export function PreviewActions({
   if (status === 'running') {
     return (
       <>
-        <button
-          type="button"
-          title={showIframe ? 'Hide embed' : 'Embed preview'}
-          onClick={() => setShowIframe((v) => !v)}
-          className={ICON_BTN}
-        >
-          <PanelTop className="w-3.5 h-3.5" />
-        </button>
         {previewUrl && (
-          <a
-            href={previewUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            title="Open preview"
+          <button
+            type="button"
+            title="Open preview window"
+            onClick={openPreview}
             className={ICON_BTN}
           >
-            <ExternalLink className="w-3.5 h-3.5" />
-          </a>
+            <AppWindow className="w-3.5 h-3.5" />
+          </button>
         )}
         <button
           type="button"
@@ -259,18 +299,3 @@ export function PreviewActions({
   );
 }
 
-export function PreviewExtras({ status, showIframe, previewUrl }) {
-  const showEmbed = showIframe && previewUrl && status === 'running';
-  if (!showEmbed) return null;
-
-  return (
-    <div className="shrink-0 border-b border-zinc-800 bg-zinc-900 px-3 py-1.5">
-      <iframe
-        title="Preview"
-        src={previewUrl}
-        className="w-full h-48 rounded border border-zinc-700 bg-zinc-950"
-        sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
-      />
-    </div>
-  );
-}

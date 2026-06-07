@@ -1,7 +1,11 @@
-import React, { useState, useEffect, useContext } from 'react';
+import React, { useState, useEffect, useContext, useMemo, useRef, useCallback } from 'react';
+import { useLocation } from 'react-router-dom';
 import AgentConsole from '../components/AgentConsole';
+import WorkspaceFileTree from '../components/WorkspaceFileTree';
 import SelectMenu from '../components/SelectMenu';
-import { ConsoleInlineDialog } from '../components/ConsoleDialog';
+import { ConsoleDialogShell, ConsoleInlineDialog } from '../components/ConsoleDialog';
+import SecretFields from '../components/settings/SecretFields';
+import { useToast } from '../components/Toast';
 import { TerminalSquare, Play, Settings2, FolderOpen, FileText, X, RefreshCw, Plus, Trash2, ChevronRight, ChevronDown, FolderPlus, Pin, Archive, ListFilter } from 'lucide-react';
 import { AuthContext } from '../App';
 import { getSecretLabel, isSecretPasswordField } from '../lib/secretLabels';
@@ -15,7 +19,12 @@ import {
   isPinnedWorkspace,
   isArchivedSession,
   removeWorkspacePrefs,
+  setLastActiveSession,
+  clearLastActiveSession,
+  pickSessionToRestore,
+  getRecentSessions,
 } from '../lib/sidebarPrefs';
+import { consoleDialogPanelClass, consoleToolPageClass } from '../lib/consoleTokens';
 
 const DEFAULT_AGENT_ID = 'kimi-code';
 
@@ -94,6 +103,9 @@ function buildWorkspaces(projects, sessions, prefs) {
 
 export default function Console() {
   const { token, user } = useContext(AuthContext);
+  const location = useLocation();
+  const prevPathRef = useRef(location.pathname);
+  const initialRestoreDoneRef = useRef(false);
   const [agents, setAgents] = useState([]);
   const [sessions, setSessions] = useState([]);
   const [projects, setProjects] = useState([]);
@@ -122,6 +134,8 @@ export default function Console() {
   const [savedConfigKeys, setSavedConfigKeys] = useState({});
   const [configSaving, setConfigSaving] = useState(false);
   const [configLoading, setConfigLoading] = useState(false);
+  const [configError, setConfigError] = useState(null);
+  const { showToast } = useToast();
   const [deletingSessionId, setDeletingSessionId] = useState(null);
   const [deleteConfirmSession, setDeleteConfirmSession] = useState(null);
   const [deletingWorkspaceId, setDeletingWorkspaceId] = useState(null);
@@ -130,6 +144,58 @@ export default function Console() {
   const [expandedSessionLists, setExpandedSessionLists] = useState(() => new Set());
 
   const refreshSidebarPrefs = () => setSidebarPrefs(loadSidebarPrefs());
+
+  const getAgentLabel = useCallback(
+    (agentId) => agents.find((a) => a.id === agentId)?.name || agentId,
+    [agents],
+  );
+
+  const applyActiveSession = useCallback((session) => {
+    if (!session) return;
+    setLastActiveSession(session.id);
+    refreshSidebarPrefs();
+    setActiveSession({
+      sessionId: session.id,
+      agentName: getAgentLabel(session.agentId),
+      projectId: session.projectId,
+      projectName: session.projectName || projects.find((p) => p.id === session.projectId)?.name,
+    });
+    if (session.projectId) {
+      setExpandedWorkspaces((prev) => {
+        const next = new Set(prev);
+        next.add(session.projectId);
+        return next;
+      });
+    }
+  }, [getAgentLabel, projects]);
+
+  const tryRestoreActiveSession = useCallback(() => {
+    if (!token || sessions.length === 0) return;
+
+    const prefs = loadSidebarPrefs();
+    if (activeSession?.sessionId) {
+      const current = sessions.find((s) => s.id === activeSession.sessionId);
+      if (current && !isArchivedSession(prefs, current.id)) return;
+    }
+
+    const candidate = pickSessionToRestore(sessions, prefs);
+    if (!candidate) return;
+    applyActiveSession(candidate);
+  }, [token, sessions, activeSession, applyActiveSession]);
+
+  useEffect(() => {
+    const prev = prevPathRef.current;
+    prevPathRef.current = location.pathname;
+    if (location.pathname === '/console' && prev !== '/console') {
+      tryRestoreActiveSession();
+    }
+  }, [location.pathname, tryRestoreActiveSession]);
+
+  useEffect(() => {
+    if (!token || sessions.length === 0 || activeSession || initialRestoreDoneRef.current) return;
+    tryRestoreActiveSession();
+    initialRestoreDoneRef.current = true;
+  }, [token, sessions, activeSession, tryRestoreActiveSession]);
 
   useEffect(() => {
     if (!token) return;
@@ -262,37 +328,41 @@ export default function Console() {
   const openConfigModal = async () => {
     const required = selectedAgent?.env_required || [];
     const initialKeys = {};
-    required.forEach(k => { initialKeys[k] = ''; });
+    required.forEach((k) => { initialKeys[k] = ''; });
     setConfigKeys(initialKeys);
     setSavedConfigKeys({});
+    setConfigError(null);
+    setError(null);
     setShowConfigModal(true);
     setConfigLoading(true);
     try {
       const res = await fetch('http://localhost:3000/api/v1/secrets', {
-        headers: { 'Authorization': `Bearer ${token}` }
+        headers: { Authorization: `Bearer ${token}` },
       });
       const data = await res.json();
       if (res.ok) {
         const saved = {};
-        required.forEach(k => {
-          if (data[k]) saved[k] = data[k];
+        const loaded = {};
+        required.forEach((k) => {
+          if (data[k]) saved[k] = true;
+          if (data[k] && !isSecretPasswordField(k)) loaded[k] = data[k];
+          else loaded[k] = '';
         });
         setSavedConfigKeys(saved);
-        setConfigKeys(prev => {
-          const next = { ...prev };
-          required.forEach(k => {
-            if (saved[k]) next[k] = saved[k];
-          });
-          return next;
-        });
+        setConfigKeys(loaded);
       }
     } catch {
-      // Modal still opens; user can enter keys manually
+      setConfigError('Could not load saved keys. You can still enter them below.');
     } finally {
       setConfigLoading(false);
     }
   };
 
+  const configRequiredKeys = selectedAgent?.env_required || [];
+  const configMissingKeys = useMemo(
+    () => configRequiredKeys.filter((k) => !savedConfigKeys[k] && !configKeys[k]?.trim()),
+    [configRequiredKeys, savedConfigKeys, configKeys],
+  );
   const ensureAgentSecrets = async (agent) => {
     const required = agent?.env_required || [];
     if (required.length === 0 || agent?.llm_auth_mode === 'gateway') return true;
@@ -302,13 +372,11 @@ export default function Console() {
       });
       const data = await res.json();
       if (!res.ok) return false;
-      const missing = required.filter(k => !data[k]);
+      const missing = required.filter((k) => !data[k]);
       if (missing.length === 0) return true;
-      setError(`Missing required keys: ${missing.join(', ')}`);
       openConfigModal();
       return false;
     } catch {
-      setError('Could not verify API keys. Open Settings from the account menu to configure them.');
       openConfigModal();
       return false;
     }
@@ -386,6 +454,8 @@ export default function Console() {
         throw new Error(msg);
       }
 
+      setLastActiveSession(data.session_id);
+      refreshSidebarPrefs();
       setActiveSession({
         sessionId: data.session_id,
         agentName: selectedAgent.name,
@@ -441,42 +511,54 @@ export default function Console() {
 
   const handleSaveConfig = async (e) => {
     e.preventDefault();
+    setConfigError(null);
     const required = selectedAgent?.env_required || [];
     const payload = {};
-    required.forEach(k => {
+    required.forEach((k) => {
       const value = configKeys[k]?.trim();
       if (value) payload[k] = value;
     });
-    const missing = required.filter(k => !payload[k] && !savedConfigKeys[k]);
+    const missing = required.filter((k) => !payload[k] && !savedConfigKeys[k]);
     if (missing.length > 0) {
-      setError(`Missing required keys: ${missing.join(', ')}`);
-      setShowErrorModal(true);
+      setConfigError(`Missing: ${missing.map(getSecretLabel).join(', ')}`);
       return;
     }
     if (Object.keys(payload).length === 0) {
       setShowConfigModal(false);
+      setLaunchModalError(null);
       return;
     }
     setConfigSaving(true);
     try {
       const res = await fetch('http://localhost:3000/api/v1/secrets', {
         method: 'POST',
-        headers: { 
+        headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}` 
+          Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify(payload)
+        body: JSON.stringify(payload),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed to save keys');
-      setSavedConfigKeys(prev => ({ ...prev, ...payload }));
+      setSavedConfigKeys((prev) => {
+        const next = { ...prev };
+        required.forEach((k) => {
+          if (payload[k] || prev[k]) next[k] = true;
+        });
+        return next;
+      });
+      setConfigKeys((prev) => {
+        const next = { ...prev };
+        required.forEach((k) => {
+          if (isSecretPasswordField(k)) next[k] = '';
+        });
+        return next;
+      });
+      showToast('success', 'API keys saved.');
       setShowConfigModal(false);
       setLaunchModalError(null);
-      // Optional: immediately launch the agent after saving keys
-      // handleStartSession();
     } catch (err) {
-      setError(err.message);
-      setShowErrorModal(true);
+      setConfigError(err.message);
     } finally {
       setConfigSaving(false);
     }
@@ -510,8 +592,6 @@ export default function Console() {
     fetchSessions();
   };
 
-  const getAgentLabel = (agentId) => agents.find((a) => a.id === agentId)?.name || agentId;
-
   const handleDeleteSession = async (sessionId) => {
     setDeletingSessionId(sessionId);
     try {
@@ -521,6 +601,8 @@ export default function Console() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed to delete session');
+      clearLastActiveSession(sessionId);
+      refreshSidebarPrefs();
       if (activeSession?.sessionId === sessionId) setActiveSession(null);
       setDeleteConfirmSession(null);
       fetchWorkspaces();
@@ -544,13 +626,26 @@ export default function Console() {
   const handleDeleteWorkspace = async (workspaceId) => {
     setDeletingWorkspaceId(workspaceId);
     try {
-      const res = await fetch(`http://localhost:3000/api/v1/projects/${encodeURIComponent(workspaceId)}`, {
-        method: 'DELETE',
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Failed to delete workspace');
-      if (activeSession?.projectId === workspaceId) setActiveSession(null);
+      if (workspaceId === '_orphan') {
+        const orphanSessions = sessions.filter((s) => !s.projectId);
+        for (const s of orphanSessions) {
+          const res = await fetch(`http://localhost:3000/api/v1/sessions/${encodeURIComponent(s.id)}`, {
+            method: 'DELETE',
+            headers: { Authorization: `Bearer ${token}` },
+          });
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.error || 'Failed to delete session');
+        }
+        if (activeSession && !activeSession.projectId) setActiveSession(null);
+      } else {
+        const res = await fetch(`http://localhost:3000/api/v1/projects/${encodeURIComponent(workspaceId)}`, {
+          method: 'DELETE',
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Failed to delete workspace');
+        if (activeSession?.projectId === workspaceId) setActiveSession(null);
+      }
       removeWorkspacePrefs(workspaceId);
       refreshSidebarPrefs();
       setDeleteConfirmWorkspace(null);
@@ -570,23 +665,12 @@ export default function Console() {
       workspaceName: ws.name,
       sessionCount: ws.sessions.length,
       liveCount,
+      isOrphan: ws.id === '_orphan',
     });
   };
 
   const selectSession = (s, ws) => {
-    setActiveSession({
-      sessionId: s.id,
-      agentName: getAgentLabel(s.agentId),
-      projectId: s.projectId,
-      projectName: s.projectName || ws?.name,
-    });
-    if (s.projectId) {
-      setExpandedWorkspaces((prev) => {
-        const next = new Set(prev);
-        next.add(s.projectId);
-        return next;
-      });
-    }
+    applyActiveSession({ ...s, projectName: s.projectName || ws?.name });
   };
 
   const handlePinSession = (e, sessionId) => {
@@ -598,6 +682,7 @@ export default function Console() {
   const handleArchiveSession = (e, sessionId) => {
     e.stopPropagation();
     archiveSession(sessionId);
+    clearLastActiveSession(sessionId);
     refreshSidebarPrefs();
     if (activeSession?.sessionId === sessionId) setActiveSession(null);
   };
@@ -610,7 +695,7 @@ export default function Console() {
 
   const SESSION_PREVIEW_LIMIT = 5;
 
-  const renderSessionRow = (s, ws, { compact = false } = {}) => {
+  const renderSessionRow = (s, ws, { compact = false, showWorkspace = false } = {}) => {
     const isActive = activeSession?.sessionId === s.id;
     const isLive = s.alive === true;
     const isDeleting = deletingSessionId === s.id;
@@ -629,10 +714,17 @@ export default function Console() {
           type="button"
           disabled={isDeleting}
           onClick={() => selectSession(s, ws)}
-          className="flex-1 min-w-0 text-left truncate text-xs text-zinc-700 disabled:opacity-50"
-          title={label}
+          className="flex-1 min-w-0 text-left text-xs text-zinc-700 disabled:opacity-50"
+          title={showWorkspace ? `${label} · ${ws?.name || ''}` : label}
         >
-          {label}
+          {showWorkspace ? (
+            <span className="flex min-w-0 flex-col">
+              <span className="truncate">{label}</span>
+              <span className="truncate text-[10px] text-zinc-400">{ws?.name}</span>
+            </span>
+          ) : (
+            <span className="truncate">{label}</span>
+          )}
         </button>
         <div className="flex items-center gap-0.5 shrink-0">
           <span className={`text-[11px] text-zinc-400 tabular-nums ${compact ? '' : 'hidden group-hover/session:inline'}`}>
@@ -705,11 +797,39 @@ export default function Console() {
     sessions.filter((s) => isPinnedSession(sidebarPrefs, s.id) && !isArchivedSession(sidebarPrefs, s.id)),
     sidebarPrefs,
   );
+  const recentSessions = getRecentSessions(sessions, sidebarPrefs);
   const runningCount = sessions.filter((s) => s.alive === true).length;
+  const hasSidebarSectionsAboveWorkspaces = recentSessions.length > 0 || pinnedSessions.length > 0;
 
   return (
-    <>
+    <div className={consoleToolPageClass}>
       {/* Dialog Modals */}
+      {viewingFile && (
+        <ConsoleDialogShell
+          onClose={() => setViewingFile(null)}
+          panelClassName={`${consoleDialogPanelClass} w-[min(900px,calc(100vw-2rem))] h-[min(80vh,calc(100vh-2rem))]`}
+        >
+          <div className="flex items-center justify-between border-b border-zinc-200 bg-zinc-50 px-4 py-3 shrink-0">
+            <div className="flex min-w-0 items-center gap-2">
+              <FileText className="w-4 h-4 shrink-0 text-zinc-500" />
+              <span className="truncate text-sm font-semibold text-zinc-900">{viewingFile.name}</span>
+              <span className="truncate text-xs font-mono text-zinc-400">{viewingFile.path}</span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setViewingFile(null)}
+              className="shrink-0 rounded-md p-1.5 text-zinc-400 hover:bg-zinc-100 hover:text-black"
+              aria-label="Close"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+          <div className="min-h-0 flex-1 overflow-auto p-4 bg-zinc-50/30 text-sm font-mono text-zinc-800 whitespace-pre">
+            {fileContent}
+          </div>
+        </ConsoleDialogShell>
+      )}
+
       {deleteConfirmWorkspace && (
         <ConsoleInlineDialog
           onClose={() => setDeleteConfirmWorkspace(null)}
@@ -717,22 +837,44 @@ export default function Console() {
         >
             <div className="p-5 border-b border-zinc-100 flex items-center gap-3 bg-zinc-50">
               <Trash2 className="w-5 h-5 shrink-0 text-zinc-500" />
-              <h3 className="font-semibold text-sm text-zinc-900">Delete workspace</h3>
+              <h3 className="font-semibold text-sm text-zinc-900">
+                {deleteConfirmWorkspace.isOrphan ? 'Clear unassigned sessions' : 'Delete workspace'}
+              </h3>
             </div>
             <div className="p-5 text-sm text-zinc-600">
-              Permanently delete <span className="font-medium text-zinc-900">{deleteConfirmWorkspace.workspaceName}</span>?
-              {deleteConfirmWorkspace.sessionCount > 0 && (
-                <span>
-                  {' '}
-                  This will remove {deleteConfirmWorkspace.sessionCount} session
-                  {deleteConfirmWorkspace.sessionCount === 1 ? '' : 's'}
-                  {deleteConfirmWorkspace.liveCount > 0 && (
-                    <> (including {deleteConfirmWorkspace.liveCount} running)</>
+              {deleteConfirmWorkspace.isOrphan ? (
+                <>
+                  Remove all sessions in <span className="font-medium text-zinc-900">Unassigned</span>?
+                  {deleteConfirmWorkspace.sessionCount > 0 && (
+                    <span>
+                      {' '}
+                      This will remove {deleteConfirmWorkspace.sessionCount} session
+                      {deleteConfirmWorkspace.sessionCount === 1 ? '' : 's'}
+                      {deleteConfirmWorkspace.liveCount > 0 && (
+                        <> (including {deleteConfirmWorkspace.liveCount} running)</>
+                      )}
+                      .
+                    </span>
                   )}
-                  .
-                </span>
+                  <p className="mt-2 text-xs text-zinc-500">Unassigned is not a workspace — it groups sessions without a project. Clearing it removes those sessions from history.</p>
+                </>
+              ) : (
+                <>
+                  Permanently delete <span className="font-medium text-zinc-900">{deleteConfirmWorkspace.workspaceName}</span>?
+                  {deleteConfirmWorkspace.sessionCount > 0 && (
+                    <span>
+                      {' '}
+                      This will remove {deleteConfirmWorkspace.sessionCount} session
+                      {deleteConfirmWorkspace.sessionCount === 1 ? '' : 's'}
+                      {deleteConfirmWorkspace.liveCount > 0 && (
+                        <> (including {deleteConfirmWorkspace.liveCount} running)</>
+                      )}
+                      .
+                    </span>
+                  )}
+                  <p className="mt-2 text-xs text-zinc-500">All workspace files on the server will be deleted. This frees your workspace quota.</p>
+                </>
               )}
-              <p className="mt-2 text-xs text-zinc-500">All workspace files on the server will be deleted. This frees your workspace quota.</p>
             </div>
             <div className="p-4 border-t border-zinc-100 bg-zinc-50 flex justify-end gap-2">
               <button
@@ -748,7 +890,11 @@ export default function Console() {
                 onClick={() => handleDeleteWorkspace(deleteConfirmWorkspace.workspaceId)}
                 className="h-9 px-4 bg-red-600 text-white rounded-md text-sm font-medium hover:bg-red-700 disabled:opacity-50"
               >
-                {deletingWorkspaceId === deleteConfirmWorkspace.workspaceId ? 'Deleting…' : 'Delete workspace'}
+                {deletingWorkspaceId === deleteConfirmWorkspace.workspaceId
+                  ? 'Removing…'
+                  : deleteConfirmWorkspace.isOrphan
+                    ? 'Clear all'
+                    : 'Delete workspace'}
               </button>
             </div>
         </ConsoleInlineDialog>
@@ -935,6 +1081,7 @@ export default function Console() {
         <ConsoleInlineDialog
           onClose={() => {
             setShowConfigModal(false);
+            setConfigError(null);
             setLaunchModalError(null);
           }}
           panelClassName="bg-white rounded-lg shadow-sm w-full max-w-md overflow-hidden border border-zinc-200"
@@ -945,51 +1092,42 @@ export default function Console() {
                 <h3 className="font-semibold text-sm text-zinc-900">Configure {selectedAgent?.name}</h3>
               </div>
               <div className="p-5 space-y-4">
-                {error && (
-                  <p className="text-sm text-red-600 bg-red-50 border border-red-100 rounded-md px-3 py-2">{error}</p>
-                )}
-                <p className="text-sm text-zinc-500 mb-4">
-                  Please provide the required API keys for this agent. They will be securely saved to your personal vault.
-                </p>
                 {configLoading ? (
-                  <p className="text-sm text-zinc-500">Loading saved keys...</p>
-                ) : selectedAgent?.env_required?.length === 0 ? (
-                  <p className="text-sm font-medium text-zinc-900">No special API keys required for this agent.</p>
+                  <p className="text-sm text-zinc-500">Loading...</p>
+                ) : configRequiredKeys.length === 0 ? (
+                  <p className="text-sm text-zinc-500">No API keys required.</p>
                 ) : (
-                  selectedAgent?.env_required?.map(key => (
-                    <div key={key}>
-                      <div className="flex items-center justify-between mb-1">
-                        <label className="block text-sm font-medium text-zinc-900">{getSecretLabel(key)}</label>
-                        {savedConfigKeys[key] && (
-                          <span className="text-xs text-green-600 font-medium">Saved</span>
-                        )}
-                      </div>
-                      <input 
-                        type={isSecretPasswordField(key) ? 'password' : 'text'}
-                        className="w-full h-9 px-3 border border-zinc-200 rounded-md focus:border-black focus:ring-1 focus:ring-black text-sm font-mono"
-                        value={configKeys[key] || ''}
-                        onChange={e => setConfigKeys({...configKeys, [key]: e.target.value})}
-                        placeholder={savedConfigKeys[key] ? 'Leave unchanged or enter new value' : `Enter ${getSecretLabel(key)}`}
-                      />
-                    </div>
-                  ))
+                  <>
+                    <SecretFields
+                      keys={configRequiredKeys}
+                      secrets={configKeys}
+                      savedHints={savedConfigKeys}
+                      missingKeys={configMissingKeys}
+                      mono
+                      onChange={(key, value) => setConfigKeys((prev) => ({ ...prev, [key]: value }))}
+                    />
+                  </>
+                )}
+                {configError && (
+                  <p className="text-sm text-red-600 bg-red-50 border border-red-100 rounded-md px-3 py-2">{configError}</p>
                 )}
               </div>
               <div className="p-4 border-t border-zinc-100 bg-zinc-50 flex justify-end gap-2">
-                <button 
+                <button
                   type="button"
                   onClick={() => {
                     setShowConfigModal(false);
+                    setConfigError(null);
                     setLaunchModalError(null);
                   }}
                   className="h-9 px-4 bg-white border border-zinc-200 text-zinc-700 rounded-md text-sm font-medium hover:bg-zinc-50"
                 >
                   {showNewInstanceModal ? 'Back' : 'Cancel'}
                 </button>
-                {selectedAgent?.env_required?.length > 0 && (
-                  <button 
+                {configRequiredKeys.length > 0 && (
+                  <button
                     type="submit"
-                    disabled={configSaving}
+                    disabled={configSaving || configMissingKeys.length > 0}
                     className="h-9 px-4 bg-black text-white rounded-md text-sm font-medium hover:bg-zinc-800 disabled:opacity-50"
                   >
                     {configSaving ? 'Saving...' : 'Save Keys'}
@@ -1001,9 +1139,9 @@ export default function Console() {
       )}
 
       {/* Main Split Layout */}
-      <div className="flex min-h-0 flex-1 flex-col gap-6 lg:flex-row lg:items-start">
+      <div className="flex min-h-0 flex-1 flex-col gap-4 lg:flex-row lg:items-stretch">
         {/* Left Panel: Workspaces + Sessions */}
-        <div className="flex w-full shrink-0 flex-col gap-3 min-h-0 lg:w-80">
+        <div className="flex w-full shrink-0 flex-col gap-3 min-h-0 lg:w-80 lg:min-h-0">
           <div className="flex gap-2 shrink-0">
             <button
               type="button"
@@ -1039,7 +1177,19 @@ export default function Console() {
                 </button>
               </div>
             </div>
-            <div className="flex-1 overflow-auto p-2">
+            <div className="flex-1 min-h-0 overflow-auto p-2 console-scroll-hidden">
+              {recentSessions.length > 0 && (
+                <div className="mb-3">
+                  <h3 className="px-1.5 py-1 text-xs font-medium text-zinc-500">Recently</h3>
+                  <div className="flex flex-col">
+                    {recentSessions.map((s) => {
+                      const ws = workspaces.find((w) => w.id === (s.projectId || '_orphan'))
+                        || { name: s.projectName || 'Unassigned' };
+                      return renderSessionRow(s, ws, { compact: true, showWorkspace: true });
+                    })}
+                  </div>
+                </div>
+              )}
               {pinnedSessions.length > 0 && (
                 <div className="mb-3">
                   <h3 className="px-1.5 py-1 text-xs font-medium text-zinc-500">Pinned</h3>
@@ -1055,7 +1205,7 @@ export default function Console() {
                 <p className="text-sm text-zinc-500 px-2 py-1">No workspaces yet. Create one to start parallel sessions.</p>
               ) : (
                 <div className="flex flex-col gap-0.5">
-                  {pinnedSessions.length > 0 && (
+                  {hasSidebarSectionsAboveWorkspaces && (
                     <h3 className="px-1.5 py-1 text-xs font-medium text-zinc-500">Workspaces</h3>
                   )}
                   {workspaces.map((ws) => {
@@ -1107,20 +1257,20 @@ export default function Console() {
                               >
                                 <Plus className="w-3.5 h-3.5" />
                               </button>
-                              <button
-                                type="button"
-                                title="Delete workspace"
-                                disabled={deletingWorkspaceId === ws.id}
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  requestDeleteWorkspace(ws);
-                                }}
-                                className="p-1.5 mr-0.5 text-zinc-400 hover:text-red-600 hover:bg-red-50 rounded-md opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity disabled:opacity-50"
-                              >
-                                <Trash2 className={`w-3.5 h-3.5 ${deletingWorkspaceId === ws.id ? 'animate-pulse' : ''}`} />
-                              </button>
                             </>
                           )}
+                          <button
+                            type="button"
+                            title={isOrphan ? 'Clear unassigned sessions' : 'Delete workspace'}
+                            disabled={deletingWorkspaceId === ws.id}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              requestDeleteWorkspace(ws);
+                            }}
+                            className="p-1.5 mr-0.5 text-zinc-400 hover:text-red-600 hover:bg-red-50 rounded-md opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity disabled:opacity-50"
+                          >
+                            <Trash2 className={`w-3.5 h-3.5 ${deletingWorkspaceId === ws.id ? 'animate-pulse' : ''}`} />
+                          </button>
                         </div>
                         {expanded && (
                           <div className="ml-4 pl-2 border-l border-zinc-100 flex flex-col pb-1">
@@ -1136,30 +1286,9 @@ export default function Console() {
           </div>
         </div>
 
-        {/* Center: Terminal and File Viewer */}
-        <div className="flex-1 min-w-0 flex flex-col gap-6 min-h-0">
-          {/* File Viewer Modal / Inline Panel */}
-          {viewingFile && (
-            <div className="h-1/2 bg-white border border-zinc-200 rounded-lg shadow-sm flex flex-col overflow-hidden shrink-0">
-              <div className="flex items-center justify-between border-b border-zinc-200 bg-zinc-50 px-4 py-2">
-                <div className="flex items-center gap-2">
-                  <FileText className="w-4 h-4 text-zinc-500" />
-                  <span className="text-sm font-semibold text-zinc-900">{viewingFile.name}</span>
-                  <span className="text-xs text-zinc-400 font-mono">{viewingFile.path}</span>
-                </div>
-                <button onClick={() => setViewingFile(null)} className="text-zinc-400 hover:text-black p-1">
-                  <X className="w-4 h-4" />
-                </button>
-              </div>
-              <div className="flex-1 overflow-auto p-4 bg-zinc-50/30 text-sm font-mono text-zinc-800 whitespace-pre">
-                {fileContent}
-              </div>
-            </div>
-          )}
-
-          {/* Terminal View */}
-          <div className="flex flex-1 min-h-0 flex-col overflow-hidden rounded-lg border border-zinc-200 bg-white shadow-sm">
-            <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+        {/* Center: Terminal */}
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+          <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
               {activeSession ? (
                 <AgentConsole
                   key={activeSession.sessionId}
@@ -1173,24 +1302,23 @@ export default function Console() {
                   onToggleWorkspace={() => setWorkspaceOpen((v) => !v)}
                 />
               ) : (
-                <div className="flex-1 flex flex-col items-center justify-center text-zinc-400 p-8 text-center bg-zinc-50/50">
+                <div className="flex min-h-0 flex-1 flex-col items-center justify-center rounded-lg border border-zinc-200 bg-white p-8 text-center text-zinc-400 shadow-sm">
                   <TerminalSquare className="w-12 h-12 mb-4 text-zinc-300" strokeWidth={1} />
                   <h3 className="text-base font-medium text-zinc-900 mb-1">No Active Session</h3>
                   <p className="text-sm">Expand a workspace and select a session, or create a new workspace.</p>
                 </div>
               )}
-            </div>
           </div>
         </div>
 
-        {/* Right Panel: Workspace */}
+        {/* Right Panel: Files */}
         {activeSession && workspaceOpen && (
-            <div className="w-full lg:w-72 shrink-0 flex flex-col min-h-0 bg-white border border-zinc-200 rounded-lg shadow-sm overflow-hidden">
+            <div className="flex w-full shrink-0 flex-col min-h-0 overflow-hidden rounded-lg border border-zinc-200 bg-white shadow-sm lg:w-72 lg:min-h-0">
               <div className="flex items-center justify-between border-b border-zinc-100 px-3 py-3 shrink-0">
                 <div className="flex items-center gap-2 min-w-0">
                   <FolderOpen className="w-4 h-4 text-zinc-500 shrink-0" />
                   <h2 className="text-sm font-semibold text-zinc-900 uppercase tracking-wider truncate" title={activeSession.projectName}>
-                    {activeSession.projectName || 'Workspace'}
+                    Files
                   </h2>
                 </div>
                 <button
@@ -1203,28 +1331,20 @@ export default function Console() {
                 </button>
               </div>
               <div className="flex-1 overflow-auto p-2 min-h-0">
-                {workspaceFiles.filter(f => f.type === 'file').length === 0 ? (
+                {workspaceFiles.filter((f) => f.type === 'file').length === 0 ? (
                   <div className="p-4 text-center text-xs text-zinc-500">No files generated yet.</div>
                 ) : (
-                  <div className="flex flex-col gap-1">
-                    {workspaceFiles.filter(f => f.type === 'file').map((file, idx) => (
-                      <button
-                        key={idx}
-                        type="button"
-                        onClick={() => handleOpenFile(file)}
-                        className={`flex items-center gap-2 px-3 py-2 rounded-md text-sm text-left truncate transition-colors ${viewingFile?.path === file.path ? 'bg-zinc-100 text-black font-medium' : 'text-zinc-600 hover:bg-zinc-50'}`}
-                      >
-                        <FileText className="w-3.5 h-3.5 shrink-0 text-zinc-400" />
-                        <span className="truncate">{file.path}</span>
-                      </button>
-                    ))}
-                  </div>
+                  <WorkspaceFileTree
+                    items={workspaceFiles}
+                    selectedPath={viewingFile?.path}
+                    onOpenFile={handleOpenFile}
+                  />
                 )}
               </div>
             </div>
         )}
 
       </div>
-    </>
+    </div>
   );
 }

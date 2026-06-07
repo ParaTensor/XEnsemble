@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { Routes, Route, Link, useNavigate, useLocation, Navigate } from 'react-router-dom';
+import React, { useState, useContext } from 'react';
+import { Routes, Route, Link, useNavigate, useLocation, Navigate, Outlet } from 'react-router-dom';
 import Login from './pages/Login';
 import Console from './pages/Console';
 import AgentsAdmin from './pages/AgentsAdmin';
@@ -47,6 +47,29 @@ function App() {
       location.pathname === path ? consoleNavActiveClass : consoleNavIdleClass,
     );
 
+  /** Keeps Console mounted (hidden off-route) so terminal WebSocket sessions stay alive. */
+  function AuthenticatedLayout() {
+    const { user: authUser } = useContext(AuthContext);
+    const isConsole = location.pathname === '/console';
+    const isAdminRoute = location.pathname.startsWith('/admin');
+
+    return (
+      <Shell compactMain={isConsole} adminPage={isAdminRoute && !isConsole}>
+        <div
+          className={cn('flex min-h-0 flex-1 flex-col', !isConsole && 'hidden')}
+          aria-hidden={!isConsole}
+        >
+          <Console />
+        </div>
+        {!isConsole && (
+          <div className="flex min-h-0 flex-1 flex-col">
+            <Outlet context={{ user: authUser }} />
+          </div>
+        )}
+      </Shell>
+    );
+  }
+
   const Shell = ({ children, compactMain = false, adminPage = false }) => (
     <div className="h-full flex flex-col bg-zinc-50">
       <header className="sticky top-0 z-50 flex-none border-b border-zinc-200 bg-white">
@@ -78,7 +101,11 @@ function App() {
       <main
         className={cn(
           'mx-auto flex w-full flex-1 flex-col',
-          adminPage ? 'min-h-0 overflow-auto console-scroll-hidden' : 'overflow-auto',
+          adminPage
+            ? 'min-h-0 overflow-auto console-scroll-hidden'
+            : compactMain
+              ? 'min-h-0 overflow-hidden'
+              : 'overflow-auto',
           APP_SHELL_MAX_CLASS,
           APP_SHELL_PAD_CLASS,
           compactMain ? APP_SHELL_CONSOLE_PY_CLASS : APP_SHELL_MAIN_PY_CLASS,
@@ -99,33 +126,20 @@ function App() {
         <Route path="/login" element={!token ? <Login /> : <Navigate to="/console" />} />
 
         <Route
-          path="/console"
-          element={token ? <Shell compactMain><Console /></Shell> : <Navigate to="/login" />}
-        />
+          element={token ? <AuthenticatedLayout /> : <Navigate to="/login" replace />}
+        >
+          <Route path="/console" element={null} />
+          <Route
+            path="/admin/agents"
+            element={user?.role === 'admin' ? <AgentsAdmin /> : <Navigate to="/console" replace />}
+          />
+          <Route
+            path="/admin/users"
+            element={user?.role === 'admin' ? <UsersAdmin /> : <Navigate to="/console" replace />}
+          />
+        </Route>
 
         <Route path="/settings" element={<Navigate to="/console" replace />} />
-
-        <Route
-          path="/admin/agents"
-          element={
-            token && user?.role === 'admin' ? (
-              <Shell adminPage><AgentsAdmin /></Shell>
-            ) : (
-              <Navigate to="/console" />
-            )
-          }
-        />
-
-        <Route
-          path="/admin/users"
-          element={
-            token && user?.role === 'admin' ? (
-              <Shell adminPage><UsersAdmin /></Shell>
-            ) : (
-              <Navigate to="/console" />
-            )
-          }
-        />
 
         <Route path="/admin/platform" element={<Navigate to="/console" replace />} />
 

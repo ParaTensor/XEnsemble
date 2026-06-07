@@ -21,12 +21,24 @@ export const SECRET_LABELS = {
   MINIMAX_API_KEY: 'MiniMax API Key',
 };
 
+export const SECRET_PLACEHOLDERS = {
+  KIMI_BASE_URL: 'https://api.moonshot.cn/v1',
+  ANTHROPIC_BASE_URL: 'https://api.anthropic.com',
+  OPENAI_BASE_URL: 'https://api.openai.com/v1',
+};
+
 export function getSecretLabel(key) {
   if (SECRET_LABELS[key]) return SECRET_LABELS[key];
   return key
     .split('_')
     .map((w) => w.charAt(0) + w.slice(1).toLowerCase())
     .join(' ');
+}
+
+export function getSecretPlaceholder(key, { saved = false } = {}) {
+  if (saved) return 'Unchanged if blank';
+  if (SECRET_PLACEHOLDERS[key]) return SECRET_PLACEHOLDERS[key];
+  return `Enter ${getSecretLabel(key)}`;
 }
 
 export function isSecretPasswordField(key) {

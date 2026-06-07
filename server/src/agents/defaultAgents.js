@@ -6,14 +6,15 @@ const DEFAULT_AGENTS = [
         name: 'Kimi Code',
         cmd: 'kimi',
         args: [],
-        env_required: ['KIMI_API_KEY', 'KIMI_BASE_URL'],
+        // Kimi Code authenticates via `kimi login` / config.toml — no BYOK env injection.
+        env_required: [],
     },
     {
         id: 'claude-code',
         name: 'Claude Code',
         cmd: 'claude',
         args: ['--not-interactive'],
-        env_required: ['ANTHROPIC_API_KEY', 'ANTHROPIC_BASE_URL'],
+        env_required: ['ANTHROPIC_API_KEY'],
     },
     {
         id: 'cursor',

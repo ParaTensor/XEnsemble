@@ -26,7 +26,8 @@ function createProjectDirectory(userId, projectId) {
 /** Resolve a relative path inside project root; returns null if traversal escapes jail. */
 function resolveSafePath(rootDir, relativePath) {
     const root = path.resolve(rootDir);
-    const safe = path.normalize(relativePath || '').replace(/^(\.\.(\/|\\|$))+/, '');
+    const trimmed = String(relativePath || '').replace(/^[/\\]+/, '');
+    const safe = path.normalize(trimmed).replace(/^(\.\.(\/|\\|$))+/, '');
     const absolute = path.resolve(root, safe === '.' ? '' : safe);
     if (absolute !== root && !absolute.startsWith(root + path.sep)) {
         return null;

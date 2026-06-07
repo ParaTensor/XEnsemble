@@ -13,6 +13,12 @@ const GATEWAY_BASE_URL_KEYS = [
     'KIMI_BASE_URL',
 ];
 
+/** Injected at spawn when not in the user/platform vault (official CLI defaults). */
+const SPAWN_ENV_DEFAULTS = {
+    ANTHROPIC_BASE_URL: 'https://api.anthropic.com',
+    OPENAI_BASE_URL: 'https://api.openai.com/v1',
+};
+
 const GATEWAY_MODEL_ENV_KEYS = [
     'OPENAI_MODEL',
     'ANTHROPIC_MODEL',
@@ -85,6 +91,17 @@ function pickEnvRequired(env, envRequired) {
     return picked;
 }
 
+function applySpawnDefaults(env, envRequired) {
+    const out = { ...env };
+    if (envRequired.includes('ANTHROPIC_API_KEY') && !out.ANTHROPIC_BASE_URL?.trim()) {
+        out.ANTHROPIC_BASE_URL = SPAWN_ENV_DEFAULTS.ANTHROPIC_BASE_URL;
+    }
+    if (envRequired.includes('OPENAI_API_KEY') && !out.OPENAI_BASE_URL?.trim()) {
+        out.OPENAI_BASE_URL = SPAWN_ENV_DEFAULTS.OPENAI_BASE_URL;
+    }
+    return out;
+}
+
 function findMissing(env, envRequired) {
     return envRequired.filter((k) => !env[k]?.trim());
 }
@@ -134,12 +151,12 @@ async function resolveSpawnEnv({ userId, agentId, envRequired }) {
                 error: `Missing platform API key: ${missing[0]}. Ask an admin to configure gateway keys under Agents → Keys.`,
             };
         }
-        env = await applyAgentGatewayModel(agentId, { ...platform, ...env });
+        env = await applyAgentGatewayModel(agentId, applySpawnDefaults({ ...platform, ...env }, envRequired));
         return { mode, env, missing: [] };
     }
 
     const user = await getUserSecrets(userId);
-    const env = pickEnvRequired(user, envRequired);
+    const env = applySpawnDefaults(pickEnvRequired(user, envRequired), envRequired);
     const missing = findMissing(env, envRequired);
     if (missing.length > 0) {
         return {
