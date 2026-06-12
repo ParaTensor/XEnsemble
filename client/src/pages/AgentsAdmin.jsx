@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useContext, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useContext, useCallback, useMemo, useRef } from 'react';
 import { Plus, Download, KeyRound, Pencil, Trash2, RefreshCw } from 'lucide-react';
 import { AuthContext } from '../App';
 import Button from '../components/Button';
@@ -16,6 +16,13 @@ import {
   consoleTableShellClass,
 } from '../lib/consoleTokens';
 import { loadAdminAgentsCache, saveAdminAgentsCache } from '../lib/adminAgentsCache';
+import { getSecretLabel, isSecretPasswordField } from '../lib/secretLabels';
+
+const EMPTY_SPAWN_DRAFT = {
+  OPENROUTER_API_KEY: '',
+  OPENROUTER_BASE_URL: '',
+  launch_command: '',
+};
 
 const API = 'http://localhost:3000';
 
@@ -23,6 +30,51 @@ function statusBadge(installed) {
   return installed
     ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
     : 'bg-amber-50 text-amber-700 border-amber-200';
+}
+
+const ACTION_PROGRESS_LABEL = {
+  install: 'Installing',
+  uninstall: 'Removing',
+  update: 'Updating',
+};
+
+const ACTION_LOADING_HINT = {
+  install: 'This may take several minutes.',
+};
+
+function formatLifecycleTime(ts) {
+  if (!ts) return '';
+  return new Date(ts).toLocaleString();
+}
+
+function patchAgentLifecycle(agents, agentId, lastLifecycle) {
+  if (!lastLifecycle) return agents;
+  return agents.map((agent) => (
+    agent.id === agentId ? { ...agent, last_lifecycle: lastLifecycle } : agent
+  ));
+}
+
+function getGatewaySpawnFieldDefs(agent) {
+  if (!agent) return [];
+  const envRequired = agent.env_required || [];
+  const usesOpenRouter = agent.id === 'hermes'
+    || envRequired.includes('OPENROUTER_API_KEY')
+    || envRequired.includes('HERMES_API_KEY');
+  if (!usesOpenRouter) return [];
+  return [
+    {
+      key: 'OPENROUTER_API_KEY',
+      label: 'OpenRouter API Key',
+      source: 'Router API Key',
+      password: true,
+    },
+    {
+      key: 'OPENROUTER_BASE_URL',
+      label: 'OpenRouter Base URL',
+      source: 'Router Base URL (+ /v1)',
+      password: false,
+    },
+  ];
 }
 
 export default function AgentsAdmin() {
@@ -36,6 +88,10 @@ export default function AgentsAdmin() {
   const [keysAgent, setKeysAgent] = useState(null);
   const [authDraft, setAuthDraft] = useState({ llm_auth_mode: 'byok', provider: '', model: '' });
   const [savingKeys, setSavingKeys] = useState(false);
+  const [gatewayPreview, setGatewayPreview] = useState(null);
+  const [gatewayPreviewLoading, setGatewayPreviewLoading] = useState(false);
+  const [spawnDraft, setSpawnDraft] = useState(EMPTY_SPAWN_DRAFT);
+  const spawnHydratedRef = useRef(false);
   const [actionLoading, setActionLoading] = useState(null);
   const [editAgent, setEditAgent] = useState(null);
   const [editDraft, setEditDraft] = useState({ cmd: '', args: '' });
@@ -110,6 +166,13 @@ export default function AgentsAdmin() {
   };
 
   const openKeysDialog = (agent) => {
+    spawnHydratedRef.current = false;
+    const overrides = agent.gateway_config?.env_overrides || {};
+    setSpawnDraft({
+      OPENROUTER_API_KEY: overrides.OPENROUTER_API_KEY || '',
+      OPENROUTER_BASE_URL: overrides.OPENROUTER_BASE_URL || '',
+      launch_command: [agent.cmd, ...(agent.args || [])].filter(Boolean).join(' '),
+    });
     setKeysAgent(agent);
     setAuthDraft({
       llm_auth_mode: agent.llm_auth_mode || agent.gateway_config?.llm_auth_mode || 'byok',
@@ -121,6 +184,72 @@ export default function AgentsAdmin() {
   const closeKeysDialog = () => {
     setKeysAgent(null);
     setAuthDraft({ llm_auth_mode: 'byok', provider: '', model: '' });
+    setGatewayPreview(null);
+    setSpawnDraft(EMPTY_SPAWN_DRAFT);
+    spawnHydratedRef.current = false;
+  };
+
+  const fetchGatewayPreview = useCallback(async (agentId, model, llmAuthMode) => {
+    setGatewayPreviewLoading(true);
+    try {
+      const params = new URLSearchParams();
+      if (model?.trim()) params.set('model', model.trim());
+      if (llmAuthMode) params.set('llm_auth_mode', llmAuthMode);
+      const qs = params.toString();
+      const res = await fetch(`${API}/api/v1/admin/agents/${agentId}/gateway-spawn-preview${qs ? `?${qs}` : ''}`, {
+        headers: authHeaders,
+      });
+      const data = await res.json();
+      setGatewayPreview(res.ok ? data : null);
+    } catch {
+      setGatewayPreview(null);
+    } finally {
+      setGatewayPreviewLoading(false);
+    }
+  }, [authHeaders]);
+
+  useEffect(() => {
+    if (!keysAgent || authDraft.llm_auth_mode !== 'gateway') {
+      setGatewayPreview(null);
+      return undefined;
+    }
+    fetchGatewayPreview(keysAgent.id, authDraft.model, authDraft.llm_auth_mode);
+    return undefined;
+  }, [keysAgent, authDraft.llm_auth_mode, authDraft.model, fetchGatewayPreview]);
+
+  const gatewaySpawnFields = useMemo(
+    () => getGatewaySpawnFieldDefs(keysAgent),
+    [keysAgent],
+  );
+
+  useEffect(() => {
+    if (!gatewayPreview || spawnHydratedRef.current) return;
+    spawnHydratedRef.current = true;
+    setSpawnDraft((prev) => ({
+      OPENROUTER_API_KEY: prev.OPENROUTER_API_KEY
+        || gatewayPreview.fields?.find((f) => f.key === 'OPENROUTER_API_KEY')?.value
+        || gatewayPreview.defaults?.OPENROUTER_API_KEY
+        || '',
+      OPENROUTER_BASE_URL: prev.OPENROUTER_BASE_URL
+        || gatewayPreview.fields?.find((f) => f.key === 'OPENROUTER_BASE_URL')?.value
+        || gatewayPreview.defaults?.OPENROUTER_BASE_URL
+        || '',
+      launch_command: prev.launch_command || gatewayPreview.launch?.command_line || '',
+    }));
+  }, [gatewayPreview]);
+
+  const buildEnvOverridesPayload = () => {
+    const defaults = gatewayPreview?.defaults || {};
+    const out = {};
+    const apiKey = spawnDraft.OPENROUTER_API_KEY.trim();
+    const baseUrl = spawnDraft.OPENROUTER_BASE_URL.trim();
+    if (apiKey && apiKey !== (defaults.OPENROUTER_API_KEY || '').trim()) {
+      out.OPENROUTER_API_KEY = apiKey;
+    }
+    if (baseUrl && baseUrl !== (defaults.OPENROUTER_BASE_URL || '').trim()) {
+      out.OPENROUTER_BASE_URL = baseUrl;
+    }
+    return out;
   };
 
   const handleSaveKeys = async (e) => {
@@ -129,6 +258,11 @@ export default function AgentsAdmin() {
     const mode = authDraft.llm_auth_mode;
     if (mode === 'gateway' && !authDraft.model?.trim()) {
       showToast('error', 'Select a model for gateway mode.');
+      return;
+    }
+    const launchLine = spawnDraft.launch_command.trim();
+    if (mode === 'gateway' && !launchLine) {
+      showToast('error', 'Launch command is required.');
       return;
     }
     setSavingKeys(true);
@@ -140,10 +274,28 @@ export default function AgentsAdmin() {
           llm_auth_mode: mode,
           provider: mode === 'gateway' ? (authDraft.provider || undefined) : undefined,
           model: mode === 'gateway' ? authDraft.model.trim() : undefined,
+          env_overrides: mode === 'gateway' ? buildEnvOverridesPayload() : undefined,
         }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
+
+      if (mode === 'gateway') {
+        const parts = launchLine.split(/\s+/);
+        const cmd = parts[0];
+        const args = parts.slice(1);
+        const currentLine = [keysAgent.cmd, ...(keysAgent.args || [])].filter(Boolean).join(' ');
+        if (launchLine !== currentLine) {
+          const execRes = await fetch(`${API}/api/v1/agents/${keysAgent.id}`, {
+            method: 'PUT',
+            headers: authHeaders,
+            body: JSON.stringify({ cmd, args }),
+          });
+          const execData = await execRes.json();
+          if (!execRes.ok) throw new Error(execData.error);
+        }
+      }
+
       showToast('success', 'Agent configuration saved.');
       closeKeysDialog();
       fetchAgents({ silent: true });
@@ -195,14 +347,26 @@ export default function AgentsAdmin() {
     }
   };
 
-  const runAgentAction = async (agentId, action, { method = 'POST', successMsg, onSuccess } = {}) => {
+  const runAgentAction = async (agentId, action, { agentName, method = 'POST', successMsg, onSuccess } = {}) => {
+    const label = ACTION_PROGRESS_LABEL[action] || 'Processing';
+    const name = agentName || agentId;
+    const hint = ACTION_LOADING_HINT[action];
+    showToast('loading', hint ? `${label} ${name}… ${hint}` : `${label} ${name}…`);
     setActionLoading(`${agentId}:${action}`);
     try {
       const res = await fetch(`${API}/api/v1/admin/agents/${agentId}/${action}`, {
         method,
         headers: authHeaders,
+        ...(method !== 'GET' ? { body: '{}' } : {}),
       });
       const data = await res.json();
+      if (data.last_lifecycle) {
+        setAgents((prev) => {
+          const next = patchAgentLifecycle(prev, agentId, data.last_lifecycle);
+          saveAdminAgentsCache(next);
+          return next;
+        });
+      }
       if (!res.ok) throw new Error(data.error);
       if (onSuccess) onSuccess(data);
       else if (successMsg) showToast('success', successMsg);
@@ -217,14 +381,21 @@ export default function AgentsAdmin() {
   };
 
   const handleInstall = (agent) => runAgentAction(agent.id, 'install', {
-    successMsg: 'Agent installed.',
-    onSuccess: (data) => showToast('success', data.already_installed ? 'Already installed.' : 'Agent installed.'),
+    agentName: agent.name,
+    onSuccess: (data) => showToast(
+      'success',
+      data.already_installed ? `${agent.name} is already installed.` : `${agent.name} installed.`,
+    ),
   });
 
   const handleUninstall = async (agent) => {
     if (!window.confirm(`Uninstall ${agent.name} from this server?`)) return;
     await runAgentAction(agent.id, 'uninstall', {
-      onSuccess: (data) => showToast('success', data.already_removed ? 'Already removed.' : 'Agent uninstalled.'),
+      agentName: agent.name,
+      onSuccess: (data) => showToast(
+        'success',
+        data.already_removed ? `${agent.name} is already removed.` : `${agent.name} uninstalled.`,
+      ),
     });
   };
 
@@ -237,28 +408,37 @@ export default function AgentsAdmin() {
       const check = await checkRes.json();
       if (!checkRes.ok) throw new Error(check.error);
       if (!check.installed) {
-        showToast('error', 'Agent is not installed.');
+        showToast('error', `${agent.name} is not installed.`);
         return;
       }
 
       const shouldUpdate = check.update_available || !check.latest_version;
       if (!shouldUpdate) {
-        showToast('success', `Up to date (${check.local_version})`);
+        showToast('success', `${agent.name} is up to date (${check.local_version}).`);
         return;
       }
 
+      showToast('loading', `Updating ${agent.name}…`);
       const updateRes = await fetch(`${API}/api/v1/admin/agents/${agent.id}/update`, {
         method: 'POST',
         headers: authHeaders,
+        body: '{}',
       });
       const updated = await updateRes.json();
+      if (updated.last_lifecycle) {
+        setAgents((prev) => {
+          const next = patchAgentLifecycle(prev, agent.id, updated.last_lifecycle);
+          saveAdminAgentsCache(next);
+          return next;
+        });
+      }
       if (!updateRes.ok) throw new Error(updated.error);
 
       const newVersion = updated.local_version || check.latest_version;
       if (check.update_available && check.local_version && newVersion) {
-        showToast('success', `Updated ${check.local_version} → ${newVersion}`);
+        showToast('success', `${agent.name} updated (${check.local_version} → ${newVersion}).`);
       } else {
-        showToast('success', newVersion ? `Updated to ${newVersion}` : 'Agent updated.');
+        showToast('success', newVersion ? `${agent.name} updated to ${newVersion}.` : `${agent.name} updated.`);
       }
       fetchAgents({ silent: true });
     } catch (err) {
@@ -473,6 +653,42 @@ export default function AgentsAdmin() {
                         disabled={modelOptions.length === 0}
                       />
                     </div>
+                    <div className="space-y-4 border-t border-zinc-100 pt-4">
+                      <p className={`${consoleSectionLabelClass}`}>Injected at session start</p>
+                      {gatewayPreviewLoading && !gatewayPreview ? (
+                        <p className="text-sm text-zinc-500">Loading defaults…</p>
+                      ) : null}
+                      {!gatewayPreviewLoading && gatewayPreview && !gatewayPreview.gateway_running && (
+                        <p className="text-sm text-amber-700">
+                          UniGateway is not running. Start it under Settings → Gateway.
+                        </p>
+                      )}
+                      {(gatewaySpawnFields).map((field) => (
+                        <div key={field.key}>
+                          <label className={`block mb-1 ${consoleSectionLabelClass}`}>
+                            {field.label || getSecretLabel(field.key)}
+                          </label>
+                          <Input
+                            type={field.password || isSecretPasswordField(field.key) ? 'password' : 'text'}
+                            value={spawnDraft[field.key] || ''}
+                            onChange={(ev) => setSpawnDraft((d) => ({ ...d, [field.key]: ev.target.value }))}
+                            className="h-9 py-1.5 font-mono"
+                            placeholder={field.key === 'OPENROUTER_BASE_URL' ? 'http://127.0.0.1:8741/v1' : 'From Router API Key'}
+                          />
+                          <p className="mt-1 text-xs text-zinc-400">{field.source}</p>
+                        </div>
+                      ))}
+                      <div>
+                        <label className={`block mb-1 ${consoleSectionLabelClass}`}>Launch command</label>
+                        <Input
+                          value={spawnDraft.launch_command}
+                          onChange={(ev) => setSpawnDraft((d) => ({ ...d, launch_command: ev.target.value }))}
+                          className="h-9 py-1.5 font-mono"
+                          placeholder="hermes chat --ignore-user-config --provider openrouter"
+                        />
+                        <p className="mt-1 text-xs text-zinc-400">Command and arguments used when launching this agent.</p>
+                      </div>
+                    </div>
                   </>
                 )}
                 {authDraft.llm_auth_mode === 'byok' && (
@@ -531,9 +747,23 @@ export default function AgentsAdmin() {
                       <div className="font-mono text-xs text-zinc-400">{agent.id}</div>
                     </td>
                     <td className={consoleTableBodyCellClass}>
-                      <span className={`inline-flex rounded border px-1.5 py-0.5 text-xs font-medium ${statusBadge(agent.installed)}`}>
-                        {agent.installed ? 'Installed' : 'Not installed'}
-                      </span>
+                      <div className="space-y-1">
+                        <span className={`inline-flex rounded border px-1.5 py-0.5 text-xs font-medium ${statusBadge(agent.installed)}`}>
+                          {agent.installed ? 'Installed' : 'Not installed'}
+                        </span>
+                        {agent.last_lifecycle && (
+                          <p
+                            className={`max-w-[12rem] truncate text-xs ${
+                              agent.last_lifecycle.ok ? 'text-zinc-500' : 'text-red-600'
+                            }`}
+                            title={`${agent.last_lifecycle.message} (${formatLifecycleTime(agent.last_lifecycle.finished_at)})`}
+                          >
+                            {agent.last_lifecycle.ok
+                              ? `${agent.last_lifecycle.action} OK · ${formatLifecycleTime(agent.last_lifecycle.finished_at)}`
+                              : `${agent.last_lifecycle.action} failed · ${agent.last_lifecycle.message}`}
+                          </p>
+                        )}
+                      </div>
                     </td>
                     <td className={consoleTableBodyCellClass}>
                       {agent.local_version ? (
@@ -601,7 +831,7 @@ export default function AgentsAdmin() {
                             disabled={isActionLoading(agent.id, 'install')}
                             onClick={() => handleInstall(agent)}
                             className="p-1.5 rounded-md text-zinc-500 hover:bg-zinc-100 hover:text-zinc-900 disabled:opacity-40 disabled:pointer-events-none"
-                            title={isActionLoading(agent.id, 'install') ? 'Installing...' : 'Install on server'}
+                            title="Install on server"
                           >
                             <Download className="w-3.5 h-3.5" />
                           </button>
@@ -612,7 +842,7 @@ export default function AgentsAdmin() {
                               disabled={isActionLoading(agent.id, 'update')}
                               onClick={() => handleCheckAndUpdate(agent)}
                               className="p-1.5 rounded-md text-zinc-500 hover:bg-zinc-100 hover:text-zinc-900 disabled:opacity-40 disabled:pointer-events-none"
-                              title={isActionLoading(agent.id, 'update') ? 'Updating...' : 'Check and update'}
+                              title="Check and update"
                             >
                               <RefreshCw className={`w-3.5 h-3.5 ${isActionLoading(agent.id, 'update') ? 'animate-spin' : ''}`} />
                             </button>

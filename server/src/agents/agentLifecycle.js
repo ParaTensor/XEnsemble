@@ -43,6 +43,7 @@ const AGENT_LIFECYCLE = {
         npmPackage: 'command-code',
     },
     'hermes': {
+        preInstall: 'rm -rf "$HOME/.hermes/hermes-agent" "$HOME/.hermes"/hermes-agent.broken-* 2>/dev/null; true',
         install: 'curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash -s -- --skip-setup',
         uninstall: 'rm -rf "$HOME/.hermes"; rm -f "$HOME/.local/bin/hermes"',
         update: 'hermes update',
@@ -195,6 +196,9 @@ async function installAgent(agent) {
     }
 
     try {
+        if (manifest.preInstall) {
+            await runCommand(manifest.preInstall, 60000);
+        }
         const { stdout, stderr } = await runCommand(manifest.install);
         const after = probeAgent(agent.cmd);
         if (!after.installed) {
@@ -207,7 +211,9 @@ async function installAgent(agent) {
         return { ok: true, path: after.path, stdout: stdout?.slice(0, 2000), stderr: stderr?.slice(0, 2000) };
     } catch (err) {
         if (err.statusCode) throw err;
-        const wrapped = new Error(`Install failed: ${err.message}`);
+        const detail = [err.stderr, err.stdout].filter(Boolean).join('\n').trim();
+        const suffix = detail ? `: ${detail.slice(-500)}` : '';
+        const wrapped = new Error(`Install failed${suffix}`);
         wrapped.statusCode = 500;
         throw wrapped;
     }

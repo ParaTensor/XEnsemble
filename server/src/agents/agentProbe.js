@@ -3,7 +3,8 @@ const fs = require('fs');
 
 const KNOWN_CLI_LOCATIONS = {
     kimi: ['.kimi-code/bin/kimi'],
-    cursor: ['.local/bin/cursor', '.local/bin/cursor-agent'],
+    agent: ['.local/bin/agent', '.local/bin/cursor-agent'],
+    cursor: ['.local/bin/agent', '.local/bin/cursor-agent', '.local/bin/cursor'],
     claude: ['.local/bin/claude'],
     droid: ['.local/bin/droid', '.local/bin/factoryd'],
     hermes: ['.local/bin/hermes'],

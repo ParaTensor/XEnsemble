@@ -150,4 +150,40 @@
   .console-scroll-hidden::-webkit-scrollbar {
     display: none;
   }
+
+  /* ParaRouter DESIGN.md — reveal scrollbar thumb on hover/focus */
+  .scrollbar-hover {
+    scrollbar-gutter: stable both-edges;
+    scrollbar-width: thin;
+    scrollbar-color: transparent transparent;
+  }
+
+  .scrollbar-hover:hover,
+  .scrollbar-hover:focus-within {
+    scrollbar-color: #d4d4d8 transparent;
+  }
+
+  .scrollbar-hover::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+
+  .scrollbar-hover::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .scrollbar-hover::-webkit-scrollbar-thumb {
+    background: transparent;
+    border-radius: 9999px;
+  }
+
+  .scrollbar-hover:hover::-webkit-scrollbar-thumb,
+  .scrollbar-hover:focus-within::-webkit-scrollbar-thumb {
+    background: #d4d4d8;
+  }
+
+  .scrollbar-hover:hover::-webkit-scrollbar-thumb:hover,
+  .scrollbar-hover:focus-within::-webkit-scrollbar-thumb:hover {
+    background: #a1a1aa;
+  }
 }

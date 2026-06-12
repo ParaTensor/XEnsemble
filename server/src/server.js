@@ -8,6 +8,9 @@ const { ensureProjectRuntime, formatRuntime } = require('./runtime/RuntimeServic
 const deploymentService = require('./deployments/DeploymentService');
 const repositoryEnvironment = require('./repositories/RepositoryEnvironmentService');
 const { registerPreviewGateway } = require('./preview/gateway');
+const { registerLlmProxy } = require('./llm/proxy');
+const { issueSessionToken } = require('./llm/sessionToken');
+const agentGatewayConfig = require('./admin/AgentGatewayConfig');
 const { startPreviewLifecycle } = require('./preview/lifecycle');
 const sessionManager = require('./session/SessionManager');
 
@@ -311,7 +314,9 @@ fastify.delete('/api/v1/sessions/:sessionId', { preValidation: [fastify.authenti
     if (rows.length === 0) return reply.code(404).send({ error: 'Session not found' });
 
     sessionManager.deleteSession(sessionId);
-    await db.delete(schema.sessions).where(eq(schema.sessions.id, sessionId));
+    await db.update(schema.sessions)
+        .set({ status: 'exited' })
+        .where(eq(schema.sessions.id, sessionId));
     return { ok: true };
 });
 
@@ -355,17 +360,47 @@ fastify.post('/api/v1/session/start', { preValidation: [fastify.authenticate] },
         env_required: JSON.parse(dbAgents[0].envRequired)
     };
 
+    const sessionId = `sess_${crypto.randomBytes(8).toString('hex')}`;
+
+    const authMode = await agentGatewayConfig.getAgentAuthMode(agentMeta.id);
+    let sessionToken = null;
+    if (authMode === 'gateway') {
+        const gwCfg = await agentGatewayConfig.getForAgent(agentMeta.id);
+        sessionToken = issueSessionToken({
+            sessionId,
+            userId: request.user.id,
+            projectId: project_id,
+            agentId: agentMeta.id,
+            model: gwCfg?.model,
+            role: request.user.role,
+        });
+    }
+
     const { resolveSpawnEnv } = require('./agents/agentEnv');
     const resolved = await resolveSpawnEnv({
         userId: request.user.id,
         agentId: agentMeta.id,
         envRequired: agentMeta.env_required,
+        sessionToken,
+        projectId: project_id,
     });
     if (!resolved.env) {
         return reply.code(400).send({ error: resolved.error });
     }
 
-    const sessionId = `sess_${crypto.randomBytes(8).toString('hex')}`;
+    await db.insert(schema.sessions).values({
+        id: sessionId,
+        userId: request.user.id,
+        projectId: project_id,
+        runtimeId,
+        agentId: agent_id,
+        cwd: workspacePath,
+        streamRef: null,
+        recoverable,
+        status: 'running',
+        createdAt: Date.now(),
+    });
+
     let handle;
     try {
         handle = runtime.exec.spawn(
@@ -375,6 +410,7 @@ fastify.post('/api/v1/session/start', { preValidation: [fastify.authenticate] },
             { name: agentMeta.name, cwd: workspacePath }
         );
     } catch (err) {
+        await db.delete(schema.sessions).where(eq(schema.sessions.id, sessionId));
         if (err instanceof AgentSpawnError) {
             return reply.code(err.statusCode).send({ error: err.message });
         }
@@ -392,18 +428,11 @@ fastify.post('/api/v1/session/start', { preValidation: [fastify.authenticate] },
     });
 
     const streamRef = handle.streamRef ?? null;
-
-    await db.insert(schema.sessions).values({
-        id: sessionId,
-        userId: request.user.id,
-        projectId: project_id,
-        runtimeId,
-        agentId: agent_id,
-        cwd: workspacePath,
-        streamRef,
-        recoverable,
-        createdAt: Date.now(),
-    });
+    if (streamRef) {
+        await db.update(schema.sessions)
+            .set({ streamRef })
+            .where(eq(schema.sessions.id, sessionId));
+    }
 
     return {
         session_id: sessionId,
@@ -661,6 +690,7 @@ async function startServer() {
     }
 
     await registerPreviewGateway(fastify);
+    await registerLlmProxy(fastify);
     startPreviewLifecycle();
 
     const port = Number(process.env.PORT) || 3000;

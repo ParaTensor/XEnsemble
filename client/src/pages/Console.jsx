@@ -25,6 +25,9 @@ import {
   removeRecentSession,
   pickSessionToRestore,
   getRecentSessions,
+  sortAgentsByRecentUsage,
+  rememberRecentAgent,
+  getRecentAgentIds,
 } from '../lib/sidebarPrefs';
 import { consoleDialogPanelClass, consoleToolPageClass } from '../lib/consoleTokens';
 import {
@@ -501,6 +504,7 @@ export default function Console() {
         projectName: projectName || projectId,
         createdAt: Date.now(),
       });
+      rememberRecentAgent(selectedAgentId);
       refreshSidebarPrefs();
       setActiveSession({
         sessionId: data.session_id,
@@ -535,6 +539,11 @@ export default function Console() {
     } else {
       setLaunchWorkspaceId('');
       setNewProjectName(defaultWorkspaceName());
+    }
+    const prefs = loadSidebarPrefs();
+    const sorted = sortAgentsByRecentUsage(agents, prefs);
+    if (sorted.length > 0) {
+      setSelectedAgentId(sorted[0].id);
     }
     setShowNewInstanceModal(true);
   };
@@ -699,6 +708,7 @@ export default function Console() {
         projectName: activeSession.projectName,
         createdAt: Date.now(),
       });
+      rememberRecentAgent(agentId);
       refreshSidebarPrefs();
       setActiveSession({
         sessionId: data.session_id,
@@ -962,6 +972,11 @@ export default function Console() {
   const hasRecentSection = (sidebarPrefs.recentSessionIds?.length ?? 0) > 0;
   const runningCount = sessions.filter((s) => s.alive === true).length;
   const hasSidebarSectionsAboveWorkspaces = hasRecentSection || pinnedSessions.length > 0;
+  const agentSelectOptions = sortAgentsByRecentUsage(agents, sidebarPrefs).map((agent) => ({
+    value: agent.id,
+    label: agent.name,
+  }));
+  const recentAgentIds = getRecentAgentIds(agents, sidebarPrefs);
 
   return (
     <div className={consoleToolPageClass}>
@@ -1207,7 +1222,10 @@ export default function Console() {
                     value={selectedAgentId}
                     onChange={setSelectedAgentId}
                     placeholder="Select agent"
-                    options={agents.map((agent) => ({ value: agent.id, label: agent.name }))}
+                    options={agentSelectOptions}
+                    searchable
+                    searchPlaceholder="Search agents…"
+                    recentValues={recentAgentIds}
                   />
                 )}
               </div>

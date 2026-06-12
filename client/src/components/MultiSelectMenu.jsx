@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect, useId, useLayoutEffect, useMemo } f
 import { createPortal } from 'react-dom';
 import { Check, ChevronDown } from 'lucide-react';
 import { cn } from '../lib/utils';
-import { consoleMenuDropdownZClass, consoleSectionLabelClass, consoleToolbarInputClass } from '../lib/consoleTokens';
+import { consoleMenuDropdownZClass, consoleSectionLabelClass, consoleToolbarInputClass, consoleDropdownPanelClass } from '../lib/consoleTokens';
 
 function formatSummary(options, value, placeholder) {
   if (!value.length) return placeholder;
@@ -138,7 +138,7 @@ export default function MultiSelectMenu({
           left: menuRect.left,
           width: menuRect.width,
         }}
-        className={`${consoleMenuDropdownZClass} max-h-60 overflow-auto rounded-lg border border-zinc-200 bg-white py-1 shadow-lg`}
+        className={`${consoleMenuDropdownZClass} ${consoleDropdownPanelClass} max-h-60 overflow-auto py-1 shadow-md`}
       >
         {options.map((opt) => {
           const isSelected = selected.has(opt.value);

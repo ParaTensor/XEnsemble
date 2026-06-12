@@ -1,6 +1,7 @@
 const { db } = require('../db/index');
 const schema = require('../db/schema');
 const { eq } = require('drizzle-orm');
+const { syncAgentServiceBinding } = require('../llm/agentServiceSync');
 const DEFAULT_AUTH_MODE = 'byok';
 
 const CONFIG_KEY = 'agent_gateway_config';
@@ -28,7 +29,7 @@ async function getAgentAuthMode(agentId) {
     return DEFAULT_AUTH_MODE;
 }
 
-async function setForAgent(agentId, { llm_auth_mode, provider, model } = {}) {
+async function setForAgent(agentId, { llm_auth_mode, provider, model, env_overrides } = {}) {
     const all = await getAll();
     const next = { ...(all[agentId] || {}) };
 
@@ -48,6 +49,18 @@ async function setForAgent(agentId, { llm_auth_mode, provider, model } = {}) {
         else delete next.model;
     }
 
+    if (env_overrides !== undefined) {
+        const cleaned = {};
+        if (env_overrides && typeof env_overrides === 'object') {
+            for (const [key, raw] of Object.entries(env_overrides)) {
+                const trimmed = raw != null ? String(raw).trim() : '';
+                if (trimmed) cleaned[key] = trimmed;
+            }
+        }
+        if (Object.keys(cleaned).length > 0) next.env_overrides = cleaned;
+        else delete next.env_overrides;
+    }
+
     if (Object.keys(next).length === 0) {
         delete all[agentId];
     } else {
@@ -61,7 +74,16 @@ async function setForAgent(agentId, { llm_auth_mode, provider, model } = {}) {
     } else {
         await db.insert(schema.platformSettings).values({ key: CONFIG_KEY, value });
     }
-    return all[agentId] || null;
+
+    const saved = all[agentId] || null;
+    if (saved?.llm_auth_mode === 'gateway' && saved.provider) {
+        try {
+            await syncAgentServiceBinding(agentId);
+        } catch {
+            /* binding sync is best-effort; admin can restart gateway manually */
+        }
+    }
+    return saved;
 }
 
 module.exports = {

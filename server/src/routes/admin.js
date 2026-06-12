@@ -13,6 +13,46 @@ const {
     checkUpdate,
     getLocalVersion,
 } = require('../agents/agentLifecycle');
+const agentLifecycleState = require('../agents/agentLifecycleState');
+
+function lifecycleSuccessMessage(action, agent, result) {
+    if (action === 'install') {
+        return result.already_installed ? `${agent.name} was already installed.` : `${agent.name} installed.`;
+    }
+    if (action === 'uninstall') {
+        return result.already_removed ? `${agent.name} was already removed.` : `${agent.name} uninstalled.`;
+    }
+    if (action === 'update') {
+        return result.local_version ? `${agent.name} updated to ${result.local_version}.` : `${agent.name} updated.`;
+    }
+    return `${agent.name} ${action} completed.`;
+}
+
+async function runRecordedLifecycle(agent, action, fn) {
+    const startedAt = Date.now();
+    try {
+        const result = await fn();
+        agentLifecycleState.record(agent.id, {
+            action,
+            ok: true,
+            message: lifecycleSuccessMessage(action, agent, result),
+            started_at: startedAt,
+            finished_at: Date.now(),
+            duration_ms: Date.now() - startedAt,
+        });
+        return result;
+    } catch (err) {
+        agentLifecycleState.record(agent.id, {
+            action,
+            ok: false,
+            message: err.message || `${action} failed`,
+            started_at: startedAt,
+            finished_at: Date.now(),
+            duration_ms: Date.now() - startedAt,
+        });
+        throw err;
+    }
+}
 
 function registerAdminRoutes(fastify) {
     const adminPre = [fastify.authenticate, fastify.requireAdmin];
@@ -185,6 +225,7 @@ function registerAdminRoutes(fastify) {
                     envRequired.map((k) => [k, Boolean(secretHints[k])]),
                 ),
                 gateway_config: cfg,
+                last_lifecycle: agentLifecycleState.get(row.id),
             };
         }));
         return agents;
@@ -216,6 +257,35 @@ function registerAdminRoutes(fastify) {
         }
     });
 
+    fastify.get('/api/v1/admin/agents/:id/gateway-spawn-preview', { preValidation: adminPre }, async (request, reply) => {
+        const { previewGatewaySpawnEnv } = require('../agents/agentEnv');
+        const rows = await db.select().from(schema.agents).where(eq(schema.agents.id, request.params.id));
+        if (rows.length === 0) return reply.code(404).send({ error: 'Agent not found' });
+        const row = rows[0];
+        const draftModel = request.query?.model;
+        const draftAuthMode = request.query?.llm_auth_mode;
+        let draftEnvOverrides;
+        if (typeof request.query?.env_overrides === 'string' && request.query.env_overrides.trim()) {
+            try {
+                draftEnvOverrides = JSON.parse(request.query.env_overrides);
+            } catch {
+                return reply.code(400).send({ error: 'Invalid env_overrides query JSON' });
+            }
+        }
+        try {
+            return await previewGatewaySpawnEnv(row.id, {
+                envRequired: JSON.parse(row.envRequired),
+                cmd: row.cmd,
+                args: JSON.parse(row.args),
+                draftModel: typeof draftModel === 'string' ? draftModel : undefined,
+                draftAuthMode: typeof draftAuthMode === 'string' ? draftAuthMode : undefined,
+                draftEnvOverrides,
+            });
+        } catch (err) {
+            return reply.code(500).send({ error: err.message || 'Failed to preview gateway spawn env' });
+        }
+    });
+
     function agentFromRow(row) {
         return { id: row.id, name: row.name, cmd: row.cmd };
     }
@@ -225,12 +295,21 @@ function registerAdminRoutes(fastify) {
         if (rows.length === 0) return reply.code(404).send({ error: 'Agent not found' });
         const agent = agentFromRow(rows[0]);
         try {
-            const result = await installAgent(agent);
+            const result = await runRecordedLifecycle(agent, 'install', () => installAgent(agent));
             const probe = probeAgent(agent.cmd);
             const localVersion = probe.installed ? await getLocalVersion(agent.cmd) : null;
-            return { ...result, installed: probe.installed, executable_path: probe.path, local_version: localVersion };
+            return {
+                ...result,
+                installed: probe.installed,
+                executable_path: probe.path,
+                local_version: localVersion,
+                last_lifecycle: agentLifecycleState.get(agent.id),
+            };
         } catch (err) {
-            return reply.code(err.statusCode || 500).send({ error: err.message });
+            return reply.code(err.statusCode || 500).send({
+                error: err.message,
+                last_lifecycle: agentLifecycleState.get(agent.id),
+            });
         }
     });
 
@@ -239,11 +318,18 @@ function registerAdminRoutes(fastify) {
         if (rows.length === 0) return reply.code(404).send({ error: 'Agent not found' });
         const agent = agentFromRow(rows[0]);
         try {
-            const result = await uninstallAgent(agent);
+            const result = await runRecordedLifecycle(agent, 'uninstall', () => uninstallAgent(agent));
             const probe = probeAgent(agent.cmd);
-            return { ...result, installed: probe.installed };
+            return {
+                ...result,
+                installed: probe.installed,
+                last_lifecycle: agentLifecycleState.get(agent.id),
+            };
         } catch (err) {
-            return reply.code(err.statusCode || 500).send({ error: err.message });
+            return reply.code(err.statusCode || 500).send({
+                error: err.message,
+                last_lifecycle: agentLifecycleState.get(agent.id),
+            });
         }
     });
 
@@ -252,11 +338,19 @@ function registerAdminRoutes(fastify) {
         if (rows.length === 0) return reply.code(404).send({ error: 'Agent not found' });
         const agent = agentFromRow(rows[0]);
         try {
-            const result = await updateAgent(agent);
+            const result = await runRecordedLifecycle(agent, 'update', () => updateAgent(agent));
             const probe = probeAgent(agent.cmd);
-            return { ...result, installed: probe.installed, executable_path: probe.path };
+            return {
+                ...result,
+                installed: probe.installed,
+                executable_path: probe.path,
+                last_lifecycle: agentLifecycleState.get(agent.id),
+            };
         } catch (err) {
-            return reply.code(err.statusCode || 500).send({ error: err.message });
+            return reply.code(err.statusCode || 500).send({
+                error: err.message,
+                last_lifecycle: agentLifecycleState.get(agent.id),
+            });
         }
     });
 

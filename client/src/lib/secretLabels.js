@@ -9,6 +9,8 @@ export const SECRET_LABELS = {
   ANTHROPIC_AUTH_TOKEN: 'Anthropic Auth Token',
   OPENAI_API_KEY: 'OpenAI API Key',
   OPENAI_BASE_URL: 'OpenAI Base URL',
+  OPENROUTER_API_KEY: 'OpenRouter API Key',
+  OPENROUTER_BASE_URL: 'OpenRouter Base URL',
   KIMI_API_KEY: 'Kimi API Key',
   KIMI_BASE_URL: 'Kimi Base URL',
   AMP_API_KEY: 'AMP API Key',

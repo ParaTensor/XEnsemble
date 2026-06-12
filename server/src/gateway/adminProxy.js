@@ -2,6 +2,7 @@ const http = require('http');
 const https = require('https');
 const { URL } = require('url');
 const unigateway = require('./unigatewayManager');
+const { enrichLlmProxyStatus } = require('../llm/llmProxyStatus');
 const gatewaySettings = require('../admin/GatewaySettings');
 const platformSecrets = require('../admin/PlatformSecrets');
 const { fetchProviderModels } = require('./fetchProviderModels');
@@ -60,13 +61,19 @@ function registerGatewayAdminRoutes(fastify) {
     const adminPre = [fastify.authenticate, fastify.requireAdmin];
 
     fastify.get('/api/v1/admin/gateway/status', { preValidation: adminPre }, async () => {
-        return unigateway.refreshRunningState();
+        return enrichLlmProxyStatus(await unigateway.refreshRunningState());
     });
 
     fastify.get('/api/v1/admin/gateway/config', { preValidation: adminPre }, async () => {
         const config = await gatewaySettings.getConfig();
         const status = unigateway.getStatus();
-        return { ...config, env_bind_locked: status.envBindLocked };
+        const enriched = await enrichLlmProxyStatus(status);
+        return {
+            ...config,
+            env_bind_locked: status.envBindLocked,
+            llm_proxy_url: enriched.llm_proxy_url,
+            control_plane_public_url: enriched.control_plane_public_url,
+        };
     });
 
     fastify.patch('/api/v1/admin/gateway/config', { preValidation: adminPre }, async (request, reply) => {

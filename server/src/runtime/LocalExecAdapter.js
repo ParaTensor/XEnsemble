@@ -79,7 +79,15 @@ function buildPosixSpawnFailedMessage(cmd, agentName, resolved, cause) {
     }
     const argsHint = cmd === 'kimi'
         ? ' Kimi Code no longer supports `--mode agent`; set args to [] in Agents admin (interactive CLI).'
-        : '';
+        : cmd === 'claude'
+            ? ' Claude Code no longer supports `--not-interactive`; set args to [] in Agents admin.'
+            : cmd === 'agent' || cmd === 'cursor-agent'
+                ? ' Use command `agent` (Cursor Agent CLI), not the `cursor` editor binary.'
+                : cmd === 'droid'
+                    ? ' Droid has no `start` subcommand; set args to [] for interactive mode.'
+                    : cmd === 'hermes'
+                        ? ' Hermes gateway mode uses OPENROUTER_API_KEY + OPENROUTER_BASE_URL; launch args should include --ignore-user-config --provider openrouter.'
+                        : '';
     return `Cannot start agent ${label}: found executable at ${resolved} but failed to open a PTY (${cause}).` +
         ` Run \`${path.basename(resolved)} --help\` in your terminal to verify the CLI.${argsHint}`;
 }

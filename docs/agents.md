@@ -2,7 +2,7 @@
 
 Agent 注册、`env_required`、Vault 注入与启动逻辑见 `server/src/db/index.js`、`server/src/server.js`（实现正按架构演进）。
 
-**所有 UI / 交互规范以 [Designs.md](./Designs.md) 为准**（与 ParaRouter 中 `AGENTS.md` → `DESIGN.md` 的关系相同；本文不重复 Designs 内容）。
+**所有 UI / 交互规范以根目录 [DESIGN.md](../DESIGN.md) 为入口，细则见 [Designs.md](./Designs.md)**（与 ParaRouter 中 `AGENTS.md` → `DESIGN.md` 的关系相同；本文不重复 Designs 内容）。
 
 **系统架构对齐**（强制）：所有涉及 Agent 启动、Runtime 选择、Executor、Workspace 文件操作、Session 生命周期、Preview/Deployment 服务的代码实现与重构，**必须严格遵循 [Architecture.md](./Architecture.md)**。 
 
@@ -25,13 +25,17 @@ Agents 管理页（`AgentsAdmin.jsx`）及同类 Admin 表格的行内操作**�
 
 ## 内置 LLM 网关（UniGateway）
 
-控制面在启动时拉起 `gateway/` 下的 Rust 二进制 `xensemble-unigateway`（嵌入 [UniGateway](https://github.com/EeroEternal/unigateway) crates）。默认监听 `127.0.0.1:8741`，配置 `server/data/unigateway.toml`。
+控制面在启动时拉起 `gateway/` 下的 Rust 二进制 `xensemble-unigateway`（嵌入 [UniGateway](https://github.com/EeroEternal/unigateway) crates）。默认监听 `127.0.0.1:8741`（仅内网），配置 `server/data/unigateway.toml`。
+
+**Agent 连接方式**（Gateway 模式）见 **[LlmProxy.md](./LlmProxy.md)**：Agent 访问控制面 `/api/v1/llm/*`，由控制面反代至 UniGateway；spawn 时注入会话 token（`xel_*`），不注入平台 master key。
 
 - 构建：`cd gateway && cargo build --release`（或 `npm run build:gateway --prefix server`）
-- 每个 Agent 可在 Agents 页单独设为 **BYOK** 或 **Gateway**；Gateway 模式走本机 UniGateway，BYOK 由用户在 Settings → BYOK 填密钥
-- 控制面根据 Gateway 监听地址自动写入 `LLM_ROUTER_URL` / `LLM_ROUTER_API_KEY`（供 Gateway 模式 Agent 合成 env）；Admin 无需单独配置 Router URL
+- 每个 Agent 可在 Agents 页单独设为 **BYOK** 或 **Gateway**；Gateway 模式走控制面 LLM 反代，BYOK 由用户在 Settings → BYOK 填密钥
+- 环境变量 **`CONTROL_PLANE_PUBLIC_URL`** 或 Settings → Gateway → Control plane public URL
+- 外部 UniGateway：**`LLM_GATEWAY_UPSTREAM_URL`** 或 Settings → External UniGateway URL（Phase 3）
+- 验收：`npm test --prefix server`；`npm run test:llm-acceptance --prefix server`
 - Admin：`GET /api/v1/admin/gateway/status`、`/gateway/modes` 等代理到网关 `/api/admin/*`
-- 推理面：`POST /v1/chat/completions`、`POST /v1/messages`、`POST /v1/embeddings`（OpenAI / Anthropic 兼容）
+- 推理面（对外）：`POST /api/v1/llm/v1/chat/completions` 等；对内 UniGateway：`POST /v1/chat/completions`、`POST /v1/messages`、`POST /v1/embeddings`
 
 在 `unigateway.toml` 中配置 `[[providers]]` + `[[bindings]]` 后，Agent 的 `*_BASE_URL` 指向 Router URL 即可走网关。
 

@@ -1,8 +1,44 @@
-import React, { useState, useRef, useEffect, useId, useLayoutEffect } from 'react';
+import React, { useState, useRef, useEffect, useId, useLayoutEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
-import { Check, ChevronDown } from 'lucide-react';
+import { Check, ChevronDown, Search } from 'lucide-react';
 import { cn } from '../lib/utils';
-import { consoleMenuDropdownZClass, consoleToolbarInputClass } from '../lib/consoleTokens';
+import {
+  consoleMenuDropdownZClass,
+  consoleSectionLabelClass,
+  consoleToolbarInputClass,
+  consoleDropdownPanelClass,
+} from '../lib/consoleTokens';
+
+function OptionRow({ opt, isSelected, onPick }) {
+  return (
+    <li role="presentation">
+      <button
+        type="button"
+        role="option"
+        aria-selected={isSelected}
+        onClick={() => onPick(opt.value)}
+        className={`w-full flex items-center gap-2 px-3 py-2 text-sm text-left transition-colors ${
+          isSelected
+            ? 'bg-zinc-100 text-zinc-900'
+            : 'text-zinc-700 hover:bg-zinc-50'
+        }`}
+      >
+        <span className="w-4 shrink-0 flex items-center justify-center">
+          {isSelected && <Check className="w-3.5 h-3.5 text-zinc-900" strokeWidth={2.5} />}
+        </span>
+        <span className="truncate">{opt.label}</span>
+      </button>
+    </li>
+  );
+}
+
+function SectionLabel({ children }) {
+  return (
+    <li role="presentation" className="px-3 pt-2 pb-1">
+      <span className={consoleSectionLabelClass}>{children}</span>
+    </li>
+  );
+}
 
 export default function SelectMenu({
   value,
@@ -11,11 +47,16 @@ export default function SelectMenu({
   placeholder = 'Select…',
   disabled = false,
   className = '',
+  searchable = false,
+  searchPlaceholder = 'Search…',
+  recentValues = [],
 }) {
   const [open, setOpen] = useState(false);
   const [menuRect, setMenuRect] = useState(null);
+  const [query, setQuery] = useState('');
   const rootRef = useRef(null);
   const listRef = useRef(null);
+  const searchRef = useRef(null);
   const listId = useId();
   const selected = options.find((o) => o.value === value);
 
@@ -45,6 +86,17 @@ export default function SelectMenu({
   }, [open]);
 
   useEffect(() => {
+    if (!open) {
+      setQuery('');
+      return;
+    }
+    if (searchable) {
+      const t = window.setTimeout(() => searchRef.current?.focus(), 0);
+      return () => window.clearTimeout(t);
+    }
+  }, [open, searchable]);
+
+  useEffect(() => {
     if (!open) return;
     const onDoc = (e) => {
       if (rootRef.current?.contains(e.target)) return;
@@ -69,44 +121,120 @@ export default function SelectMenu({
     setOpen(false);
   };
 
+  const normalizedQuery = query.trim().toLowerCase();
+
+  const filteredOptions = useMemo(() => {
+    if (!normalizedQuery) return options;
+    return options.filter((opt) => opt.label.toLowerCase().includes(normalizedQuery));
+  }, [options, normalizedQuery]);
+
+  const { recentOptions, otherOptions } = useMemo(() => {
+    if (!searchable || normalizedQuery || !recentValues.length) {
+      return { recentOptions: [], otherOptions: filteredOptions };
+    }
+    const recentSet = new Set(recentValues);
+    const byValue = new Map(filteredOptions.map((opt) => [opt.value, opt]));
+    const recent = recentValues
+      .map((id) => byValue.get(id))
+      .filter(Boolean);
+    const other = filteredOptions.filter((opt) => !recentSet.has(opt.value));
+    return { recentOptions: recent, otherOptions: other };
+  }, [searchable, normalizedQuery, recentValues, filteredOptions]);
+
+  const showSections =
+    searchable && !normalizedQuery && recentOptions.length > 0 && otherOptions.length > 0;
+
+  const renderOptions = () => {
+    if (filteredOptions.length === 0) {
+      return (
+        <li role="presentation" className="px-3 py-3 text-sm text-zinc-400 text-center">
+          No matches
+        </li>
+      );
+    }
+
+    if (showSections) {
+      return (
+        <>
+          <SectionLabel>Recently used</SectionLabel>
+          {recentOptions.map((opt) => (
+            <OptionRow
+              key={`recent-${opt.value}`}
+              opt={opt}
+              isSelected={opt.value === value}
+              onPick={pick}
+            />
+          ))}
+          <SectionLabel>All agents</SectionLabel>
+          {otherOptions.map((opt) => (
+            <OptionRow
+              key={opt.value}
+              opt={opt}
+              isSelected={opt.value === value}
+              onPick={pick}
+            />
+          ))}
+        </>
+      );
+    }
+
+    return filteredOptions.map((opt) => (
+      <OptionRow
+        key={opt.value}
+        opt={opt}
+        isSelected={opt.value === value}
+        onPick={pick}
+      />
+    ));
+  };
+
   const list =
     open && options.length > 0 && menuRect ? (
-      <ul
+      <div
         ref={listRef}
-        id={listId}
-        role="listbox"
         style={{
           position: 'fixed',
           top: menuRect.top,
           left: menuRect.left,
           width: menuRect.width,
         }}
-        className={`${consoleMenuDropdownZClass} max-h-60 overflow-auto rounded-lg border border-zinc-200 bg-white py-1 shadow-lg`}
+        className={`${consoleMenuDropdownZClass} ${consoleDropdownPanelClass} shadow-md overflow-hidden`}
       >
-        {options.map((opt) => {
-          const isSelected = opt.value === value;
-          return (
-            <li key={opt.value} role="presentation">
-              <button
-                type="button"
-                role="option"
-                aria-selected={isSelected}
-                onClick={() => pick(opt.value)}
-                className={`w-full flex items-center gap-2 px-3 py-2 text-sm text-left transition-colors ${
-                  isSelected
-                    ? 'bg-zinc-100 text-zinc-900'
-                    : 'text-zinc-700 hover:bg-zinc-50'
-                }`}
-              >
-                <span className="w-4 shrink-0 flex items-center justify-center">
-                  {isSelected && <Check className="w-3.5 h-3.5 text-zinc-900" strokeWidth={2.5} />}
-                </span>
-                <span className="truncate">{opt.label}</span>
-              </button>
-            </li>
-          );
-        })}
-      </ul>
+        {searchable && (
+          <div
+            className="sticky top-0 z-10 border-b border-zinc-100 bg-white p-2"
+            onMouseDown={(e) => e.stopPropagation()}
+          >
+            <div className="relative">
+              <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-zinc-400" />
+              <input
+                ref={searchRef}
+                type="text"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder={searchPlaceholder}
+                className={cn(
+                  consoleToolbarInputClass,
+                  'w-full pl-8 pr-2 text-sm',
+                )}
+                onKeyDown={(e) => {
+                  if (e.key === 'Escape') {
+                    e.stopPropagation();
+                    setOpen(false);
+                  }
+                }}
+              />
+            </div>
+          </div>
+        )}
+        <ul
+          id={listId}
+          role="listbox"
+          className="max-h-60 overflow-auto py-1"
+        >
+          {renderOptions()}
+        </ul>
+      </div>
     ) : null;
 
   return (

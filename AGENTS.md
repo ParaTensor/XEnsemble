@@ -6,8 +6,8 @@
 
 ## 前端 UI
 
-`web/`（本仓库 `client/`）的布局、组件与交互以 **`docs/Designs.md`** 为唯一规范（对齐 ParaRouter `DESIGN.md`）。实现或评审前端前须阅读该文档；**勿在本文重复 UI 细则。**
+`web/`（本仓库 `client/`）的布局、组件与交互以根目录 **`DESIGN.md`** 为唯一规范入口（Console 面、对齐 ParaRouter `DESIGN.md`）；完整细则见 **`docs/Designs.md`**。实现或评审前端前须阅读上述文档；**勿在本文重复 UI 细则。**
 
-Agent 领域说明与架构对齐要求见 **`docs/agents.md`**（内含对 Architecture.md 的引用）。
+Agent 领域说明与架构对齐要求见 **`docs/agents.md`**（Gateway 反代见 **`docs/LlmProxy.md`**；内含对 Architecture.md 的引用）。
 
 用户、角色、配额与运维 CLI 见 **`docs/UserManagement.md`**。

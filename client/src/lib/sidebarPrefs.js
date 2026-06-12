@@ -1,6 +1,7 @@
 const STORAGE_KEY = 'xensemble.sidebar.prefs';
 
 const RECENT_SESSION_LIMIT = 8;
+const RECENT_AGENT_LIMIT = 8;
 
 const EMPTY_PREFS = {
   pinnedSessions: [],
@@ -9,6 +10,7 @@ const EMPTY_PREFS = {
   lastActiveSessionId: null,
   recentSessionIds: [],
   recentSessionSnapshots: {},
+  recentAgentIds: [],
 };
 
 function pruneSnapshots(prefs) {
@@ -40,8 +42,9 @@ function readPrefs() {
         data.recentSessionSnapshots && typeof data.recentSessionSnapshots === 'object'
           ? data.recentSessionSnapshots
           : {},
+      recentAgentIds: Array.isArray(data.recentAgentIds) ? data.recentAgentIds : [],
     };
-    return pruneSnapshots(prefs);
+    return hydrateRecentAgentIds(pruneSnapshots(prefs));
   } catch {
     return { ...EMPTY_PREFS, recentSessionSnapshots: {} };
   }
@@ -232,6 +235,74 @@ function ghostSessionFromSnapshot(id, snap) {
     memoryStatus: 'exited',
     status: 'exited',
   };
+}
+
+function hydrateRecentAgentIds(prefs) {
+  if (prefs.recentAgentIds?.length) return prefs;
+  const ids = [];
+  const snapshots = prefs.recentSessionSnapshots || {};
+  for (const sessionId of prefs.recentSessionIds) {
+    const agentId = snapshots[sessionId]?.agentId;
+    if (agentId && !ids.includes(agentId)) ids.push(agentId);
+  }
+  prefs.recentAgentIds = ids.slice(0, RECENT_AGENT_LIMIT);
+  return prefs;
+}
+
+export function rememberRecentAgent(agentId) {
+  if (!agentId) return readPrefs();
+  const prefs = readPrefs();
+  prefs.recentAgentIds = [
+    agentId,
+    ...prefs.recentAgentIds.filter((id) => id !== agentId),
+  ].slice(0, RECENT_AGENT_LIMIT);
+  writePrefs(prefs);
+  return prefs;
+}
+
+function buildAgentUsageRank(prefs) {
+  const snapshots = prefs.recentSessionSnapshots || {};
+  const counts = new Map();
+  const recentIndex = new Map();
+
+  for (const [index, sessionId] of prefs.recentSessionIds.entries()) {
+    const agentId = snapshots[sessionId]?.agentId;
+    if (!agentId) continue;
+    counts.set(agentId, (counts.get(agentId) || 0) + 1);
+    if (!recentIndex.has(agentId)) recentIndex.set(agentId, index);
+  }
+
+  return { counts, recentIndex };
+}
+
+/** Sort agents: explicit recent picks first, then session usage, then name. */
+export function sortAgentsByRecentUsage(agents, prefs) {
+  if (!agents?.length) return agents || [];
+  const recentRank = new Map(
+    (prefs.recentAgentIds || []).map((id, index) => [id, index]),
+  );
+  const { counts, recentIndex } = buildAgentUsageRank(prefs);
+
+  return [...agents].sort((a, b) => {
+    const aRecent = recentRank.has(a.id) ? recentRank.get(a.id) : Number.POSITIVE_INFINITY;
+    const bRecent = recentRank.has(b.id) ? recentRank.get(b.id) : Number.POSITIVE_INFINITY;
+    if (aRecent !== bRecent) return aRecent - bRecent;
+
+    const aCount = counts.get(a.id) || 0;
+    const bCount = counts.get(b.id) || 0;
+    if (aCount !== bCount) return bCount - aCount;
+
+    const aIdx = recentIndex.get(a.id) ?? Number.POSITIVE_INFINITY;
+    const bIdx = recentIndex.get(b.id) ?? Number.POSITIVE_INFINITY;
+    if (aIdx !== bIdx) return aIdx - bIdx;
+
+    return a.name.localeCompare(b.name);
+  });
+}
+
+export function getRecentAgentIds(agents, prefs) {
+  const valid = new Set((agents || []).map((a) => a.id));
+  return (prefs.recentAgentIds || []).filter((id) => valid.has(id));
 }
 
 export function getRecentSessions(sessions, prefs, { excludePinned = true } = {}) {

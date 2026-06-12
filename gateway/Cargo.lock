@@ -1440,7 +1440,7 @@ checksum = "e6e4313cd5fcd3dad5cafa179702e2b244f760991f45397d14d4ebf38247da75"
 
 [[package]]
 name = "unigateway-config"
-version = "2.3.0"
+version = "2.3.1"
 dependencies = [
  "anyhow",
  "llm_providers",
@@ -1454,7 +1454,7 @@ dependencies = [
 
 [[package]]
 name = "unigateway-core"
-version = "2.3.0"
+version = "2.3.1"
 dependencies = [
  "futures-core",
  "futures-util",
@@ -1469,7 +1469,7 @@ dependencies = [
 
 [[package]]
 name = "unigateway-host"
-version = "2.3.0"
+version = "2.3.1"
 dependencies = [
  "anyhow",
  "bytes",
@@ -1485,7 +1485,7 @@ dependencies = [
 
 [[package]]
 name = "unigateway-protocol"
-version = "2.3.0"
+version = "2.3.1"
 dependencies = [
  "anyhow",
  "bytes",
@@ -1499,7 +1499,7 @@ dependencies = [
 
 [[package]]
 name = "unigateway-sdk"
-version = "2.3.0"
+version = "2.3.1"
 dependencies = [
  "unigateway-core",
  "unigateway-host",

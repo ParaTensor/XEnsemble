@@ -1,7 +1,13 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { cn } from '../lib/utils';
-import { consoleBackdropClass, consoleDialogPanelClass } from '../lib/consoleTokens';
+import {
+  consoleBackdropClass,
+  consoleDialogPanelClass,
+  consoleStructuredDialogBodyClass,
+  consoleStructuredDialogFooterClass,
+  consoleStructuredDialogHeaderClass,
+} from '../lib/consoleTokens';
 
 export function useConsoleDialogEscape(onClose, active = true) {
   useEffect(() => {
@@ -29,6 +35,36 @@ export function ConsoleDialogBackdrop({ className, onClick }) {
 export function ConsoleDialogPanel({ className, children, ...props }) {
   return (
     <div className={cn(consoleDialogPanelClass, className)} {...props}>
+      {children}
+    </div>
+  );
+}
+
+/** ParaRouter structured dialog sections — DESIGN.md § Modals / Dialogs */
+export function ConsoleStructuredDialogHeader({ title, subtitle, className, children }) {
+  return (
+    <div className={cn(consoleStructuredDialogHeaderClass, className)}>
+      {children ?? (
+        <div>
+          <h3 className="font-bold text-lg text-zinc-900">{title}</h3>
+          {subtitle ? <p className="text-xs text-zinc-500 mt-0.5">{subtitle}</p> : null}
+        </div>
+      )}
+    </div>
+  );
+}
+
+export function ConsoleStructuredDialogBody({ className, children }) {
+  return (
+    <div className={cn(consoleStructuredDialogBodyClass, className)}>
+      {children}
+    </div>
+  );
+}
+
+export function ConsoleStructuredDialogFooter({ className, children }) {
+  return (
+    <div className={cn(consoleStructuredDialogFooterClass, className)}>
       {children}
     </div>
   );

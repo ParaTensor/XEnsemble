@@ -136,10 +136,11 @@ async function applyRuntimeConfig() {
 }
 
 async function syncPlatformRouterSecrets(platformSecrets) {
+    const { resolveLlmPublicRouterBase } = require('../llm/publicUrl');
     const secrets = ensureGatewaySecrets();
     status.gatewayKey = secrets.gatewayKey;
     await platformSecrets.merge({
-        LLM_ROUTER_URL: status.baseUrl,
+        LLM_ROUTER_URL: await resolveLlmPublicRouterBase(),
         LLM_ROUTER_API_KEY: secrets.gatewayKey,
     });
 }

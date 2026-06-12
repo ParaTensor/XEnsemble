@@ -14,6 +14,7 @@ export const buttonVariants = {
   secondary:
     'bg-transparent border border-zinc-300 text-zinc-900 hover:bg-zinc-50 focus:ring-black',
   ghost: 'p-2 text-zinc-500 hover:text-zinc-900 hover:bg-zinc-100 rounded-md focus:ring-black',
+  danger: 'bg-red-600 text-white hover:bg-red-700 focus:ring-red-500',
 };
 
 export function buttonClass(variant = 'primary', size = 'md', className) {

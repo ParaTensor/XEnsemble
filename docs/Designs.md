@@ -1,6 +1,6 @@
 # XEnsemble UI Design
 
-**唯一 UI 规范**（对齐 [ParaRouter DESIGN.md](https://github.com/EeroEternal/ParaRouter/blob/main/DESIGN.md) 的 Console 面）。后端系统架构以 `docs/Architecture.md` 为唯一规范；`docs/agents.md` 与 `AGENTS.md` 仅引用本文，不重复细则。
+**Console UI 完整规范**（根目录 [`DESIGN.md`](../DESIGN.md) 为 Agent/规则入口；本文为细则正文，对齐 [ParaRouter DESIGN.md](https://github.com/EeroEternal/ParaRouter/blob/main/DESIGN.md) 的 Console 面）。后端系统架构以 `docs/Architecture.md` 为唯一规范；`docs/agents.md` 与 `AGENTS.md` 仅引用 `DESIGN.md`，不重复细则。
 
 ## Surface：Console
 
@@ -16,6 +16,9 @@ Agent 控制台、Settings 弹窗、Registry 等 authenticated 页面均属 Cons
 | 能力 | 文件 |
 |------|------|
 | Token | `client/src/lib/consoleTokens.js` |
+| 表单标签 | `FormLabel`（`consoleFormLabelClass`） |
+| 多行输入 | `Textarea`（同 `Input` / `consoleInputClass`） |
+| 结构化弹窗 | `ConsoleStructuredDialogHeader` / `Body` / `Footer` |
 | 按钮 | `Button`、`buttonStyles.js`；图标按钮 `consoleIconButtonClass` / `consoleIconButtonDangerClass` |
 | 输入 | `Input` |
 | 页头 | `PageHeader` |
@@ -94,10 +97,17 @@ Agent 控制台、Settings 弹窗、Registry 等 authenticated 页面均属 Cons
 - **外层容器**：`fixed inset-0 z-[100+] flex items-center justify-center p-4 pointer-events-none`；面板 `pointer-events-auto`。
 - **禁止**：无 `max-width` 的 `w-full`、继承页面 `max-w-[1600px]` 壳层宽度、弹窗内表单字段随容器无限拉伸（多列 grid 用 `sm:grid-cols-2` 等约束列数，数字类短字段勿单行四列撑满宽屏）。
 
-### 内边距
+### 内边距与结构（对齐 ParaRouter DESIGN.md § Modals）
 
-- md / lg 表单弹窗：`p-6`；标题 `font-bold text-lg text-zinc-900 mb-4`。
-- sm 确认类：沿用 Console 内联弹窗 `p-4` / `p-5` 分区（可逐步迁移至 `ConsoleDialog`）。
+**简单弹窗**（确认、短表单）：`p-6`；标题 `font-bold text-lg text-zinc-900 mb-4`。
+
+**结构化弹窗**（Provider、Gateway 配置、长表单）：使用 `ConsoleStructuredDialogHeader` / `Body` / `Footer` + `consoleStructuredDialogPanelClass`：
+
+1. **Header**：`px-5 py-4 border-b border-zinc-200` — 标题 + 可选 subtitle `text-xs text-zinc-500`
+2. **Body**：`px-5 py-5 space-y-4`，可滚动 `console-scroll-hidden` 或 `scrollbar-hover`
+3. **Footer**：`border-t border-zinc-200 px-6 py-4 bg-zinc-50/80` — Cancel `Button variant="secondary" size="sm"` + 主操作 `size="sm"`
+
+表单字段：`FormLabel` + `Input` / `Textarea`（`consoleInputClass`）；分区卡片 `consoleCardClass bg-zinc-50/70 p-4`。
 
 ## Settings 弹窗
 
@@ -122,7 +132,7 @@ Agent 控制台、Settings 弹窗、Registry 等 authenticated 页面均属 Cons
 | Tab | 组件 | 内容 |
 |-----|------|------|
 | General | `GeneralSettingsPanel` | 普通用户：说明文案；**admin**：注册模式、默认用户配额（`grid-cols-2`）、Session TTL + Save（**无**全局 LLM auth 切换，BYOK/Gateway 仅在 Agents 页按 Agent 配置） |
-| Gateway | `GatewaySettingsPanel` | 仅 admin：Gateway 摘要 + 图标按钮（Configure / Start / Stop / Restart）+ Provider 列表（行内 Test / Edit / Remove 为图标；Add/Edit 弹窗内 Test connection / Fetch models 亦为图标；页级 **Add provider** 与弹窗 Save/Cancel 保留文案）；嵌套 `ConsoleDialogShell`（`z-[110+]`，`fitContent` + `consoleDialogMdClass`），禁止平铺长表单 |
+| Gateway | `GatewaySettingsPanel` | 仅 admin：Gateway 摘要 + 图标按钮（Configure / Start / Stop / Restart）+ Provider 列表（Name / Status / Actions 三列；Status 用固定徽章槽，验证中 spinner 占位不挤动列宽；行内 Test / Edit / Remove 为图标；Add/Edit 弹窗内 Test connection / Fetch models 亦为图标；页级 **Add provider** 与弹窗 Save/Cancel 保留文案）；嵌套 `ConsoleDialogShell`（`z-[110+]`，`consoleStructuredDialogPanelClass`），禁止平铺长表单 |
 | BYOK | `AgentSettingsPanel` | 用户自带各 Agent API 密钥 |
 | Quota | `QuotaSettingsPanel` | 只读用量条（Workspaces / Sessions / Previews X/Y）+ resource tier；非 admin 且无 Agent 授权时琥珀提示条 |
 
@@ -137,6 +147,7 @@ Admin 与 Console 中的数据表格（`consoleTableShellClass` 等）须遵守�
 - **一列一项**：每个表头对应单一语义单元（状态、版本、路径、配额 tier 等）；**禁止**在同一单元格内纵向叠放两行及以上独立信息（如 Status 徽章 + 版本号、主标题 + 副标题折行成「折叠」效果）。
 - 复合标识（如 Name + ID）若必须同格展示，主名一行、ID 一行仅作该列的附属标注；其余字段一律拆列。
 - 单元格内容超出列宽时用 `truncate` + `title`，不在格内换行堆叠第二项。
+- **页面稳定性**（详见根目录 `DESIGN.md` § 页面稳定性）：Status / Actions 列宽固定；状态徽章用 `consoleStatusBadgeClass` 预留图标槽；行内 loading 用同尺寸 spinner 原位替换，禁止验证/保存时整表或整列横向位移。
 
 ## Agents（Admin）
 

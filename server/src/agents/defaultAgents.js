@@ -13,14 +13,14 @@ const DEFAULT_AGENTS = [
         id: 'claude-code',
         name: 'Claude Code',
         cmd: 'claude',
-        args: ['--not-interactive'],
+        args: [],
         env_required: ['ANTHROPIC_API_KEY'],
     },
     {
         id: 'cursor',
         name: 'Cursor Agent',
-        cmd: 'cursor',
-        args: ['--headless'],
+        cmd: 'agent',
+        args: [],
         env_required: [],
     },
     {
@@ -55,7 +55,7 @@ const DEFAULT_AGENTS = [
         id: 'droid',
         name: 'Factory Droid',
         cmd: 'droid',
-        args: ['start'],
+        args: [],
         env_required: [],
     },
     {
@@ -111,8 +111,8 @@ const DEFAULT_AGENTS = [
         id: 'hermes',
         name: 'Hermes',
         cmd: 'hermes',
-        args: ['--run'],
-        env_required: ['HERMES_API_KEY'],
+        args: ['chat', '--ignore-user-config', '--provider', 'openrouter'],
+        env_required: ['OPENROUTER_API_KEY'],
     },
     {
         id: 'openclaw',
