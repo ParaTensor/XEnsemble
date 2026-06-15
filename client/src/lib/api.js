@@ -1,6 +1,22 @@
 export function getApiBase() {
-  const host = window.location.hostname || 'localhost';
-  return `http://${host}:3000`;
+  const env = import.meta.env.VITE_API_BASE?.trim();
+  if (env) return env.replace(/\/+$/, '');
+  if (import.meta.env.PROD) return '';
+  return 'http://localhost:3000';
+}
+
+export function getWsBase() {
+  const env = import.meta.env.VITE_API_BASE?.trim();
+  if (env) {
+    const u = new URL(env);
+    const proto = u.protocol === 'https:' ? 'wss:' : 'ws:';
+    return `${proto}//${u.host}`;
+  }
+  if (import.meta.env.PROD) {
+    const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    return `${proto}//${window.location.host}`;
+  }
+  return 'ws://localhost:3000';
 }
 
 export function apiFetch(path, token, options = {}) {

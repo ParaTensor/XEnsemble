@@ -29,6 +29,7 @@ import {
   rememberRecentAgent,
   getRecentAgentIds,
 } from '../lib/sidebarPrefs';
+import { getApiBase } from '../lib/api';
 import { consoleDialogPanelClass, consoleToolPageClass } from '../lib/consoleTokens';
 import {
   getCacheUserId,
@@ -246,7 +247,7 @@ export default function Console() {
 
   useEffect(() => {
     if (!token) return;
-    fetch('http://localhost:3000/api/v1/agents', {
+    fetch(`${getApiBase()}/api/v1/agents`, {
       headers: { Authorization: `Bearer ${token}` },
     })
       .then(res => res.json())
@@ -293,7 +294,7 @@ export default function Console() {
   }, [sessions]);
 
   const fetchProjects = () =>
-    fetch('http://localhost:3000/api/v1/projects', {
+    fetch(`${getApiBase()}/api/v1/projects`, {
       headers: { 'Authorization': `Bearer ${token}` },
     })
       .then((res) => res.json())
@@ -309,7 +310,7 @@ export default function Console() {
       });
 
   const fetchSessions = () =>
-    fetch('http://localhost:3000/api/v1/sessions', {
+    fetch(`${getApiBase()}/api/v1/sessions`, {
       headers: { 'Authorization': `Bearer ${token}` },
     })
       .then((res) => res.json())
@@ -343,7 +344,7 @@ export default function Console() {
   const fetchWorkspaceFiles = () => {
     if (!activeSession?.projectId) return;
     setIsLoadingFiles(true);
-    fetch(`http://localhost:3000/api/v1/workspace/files?project_id=${encodeURIComponent(activeSession.projectId)}`, {
+    fetch(`${getApiBase()}/api/v1/workspace/files?project_id=${encodeURIComponent(activeSession.projectId)}`, {
       headers: { 'Authorization': `Bearer ${token}` }
     })
       .then(res => res.json())
@@ -379,7 +380,7 @@ export default function Console() {
     setShowConfigModal(true);
     setConfigLoading(true);
     try {
-      const res = await fetch('http://localhost:3000/api/v1/secrets', {
+      const res = await fetch(`${getApiBase()}/api/v1/secrets`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       const data = await res.json();
@@ -410,7 +411,7 @@ export default function Console() {
     const required = agent?.env_required || [];
     if (required.length === 0 || agent?.llm_auth_mode === 'gateway') return true;
     try {
-      const res = await fetch('http://localhost:3000/api/v1/secrets', {
+      const res = await fetch(`${getApiBase()}/api/v1/secrets`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
       const data = await res.json();
@@ -430,7 +431,7 @@ export default function Console() {
     setProjectCreating(true);
     setError(null);
     try {
-      const res = await fetch('http://localhost:3000/api/v1/projects', {
+      const res = await fetch(`${getApiBase()}/api/v1/projects`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -470,7 +471,7 @@ export default function Console() {
         return false;
       }
 
-      const response = await fetch('http://localhost:3000/api/v1/session/start', {
+      const response = await fetch(`${getApiBase()}/api/v1/session/start`, {
         method: 'POST',
         headers: { 
           'Content-Type': 'application/json',
@@ -586,7 +587,7 @@ export default function Console() {
     }
     setConfigSaving(true);
     try {
-      const res = await fetch('http://localhost:3000/api/v1/secrets', {
+      const res = await fetch(`${getApiBase()}/api/v1/secrets`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -624,7 +625,7 @@ export default function Console() {
     if (file.type !== 'file') return;
     try {
       const res = await fetch(
-        `http://localhost:3000/api/v1/workspace/file?project_id=${encodeURIComponent(activeSession.projectId)}&path=${encodeURIComponent(file.path)}`,
+        `${getApiBase()}/api/v1/workspace/file?project_id=${encodeURIComponent(activeSession.projectId)}&path=${encodeURIComponent(file.path)}`,
         { headers: { 'Authorization': `Bearer ${token}` } }
       );
       const data = await res.json();
@@ -670,12 +671,12 @@ export default function Console() {
         return;
       }
 
-      await fetch(`http://localhost:3000/api/v1/sessions/${encodeURIComponent(oldSessionId)}`, {
+      await fetch(`${getApiBase()}/api/v1/sessions/${encodeURIComponent(oldSessionId)}`, {
         method: 'DELETE',
         headers: { Authorization: `Bearer ${token}` },
       }).catch(() => {});
 
-      const response = await fetch('http://localhost:3000/api/v1/session/start', {
+      const response = await fetch(`${getApiBase()}/api/v1/session/start`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -731,7 +732,7 @@ export default function Console() {
 
     setStoppingSession(true);
     try {
-      const res = await fetch(`http://localhost:3000/api/v1/sessions/${encodeURIComponent(activeSession.sessionId)}`, {
+      const res = await fetch(`${getApiBase()}/api/v1/sessions/${encodeURIComponent(activeSession.sessionId)}`, {
         method: 'DELETE',
         headers: { Authorization: `Bearer ${token}` },
       });
@@ -758,7 +759,7 @@ export default function Console() {
   const handleDeleteSession = async (sessionId) => {
     setDeletingSessionId(sessionId);
     try {
-      const res = await fetch(`http://localhost:3000/api/v1/sessions/${encodeURIComponent(sessionId)}`, {
+      const res = await fetch(`${getApiBase()}/api/v1/sessions/${encodeURIComponent(sessionId)}`, {
         method: 'DELETE',
         headers: { 'Authorization': `Bearer ${token}` },
       });
@@ -792,7 +793,7 @@ export default function Console() {
       if (workspaceId === '_orphan') {
         const orphanSessions = sessions.filter((s) => !s.projectId);
         for (const s of orphanSessions) {
-          const res = await fetch(`http://localhost:3000/api/v1/sessions/${encodeURIComponent(s.id)}`, {
+          const res = await fetch(`${getApiBase()}/api/v1/sessions/${encodeURIComponent(s.id)}`, {
             method: 'DELETE',
             headers: { Authorization: `Bearer ${token}` },
           });
@@ -801,7 +802,7 @@ export default function Console() {
         }
         if (activeSession && !activeSession.projectId) setActiveSession(null);
       } else {
-        const res = await fetch(`http://localhost:3000/api/v1/projects/${encodeURIComponent(workspaceId)}`, {
+        const res = await fetch(`${getApiBase()}/api/v1/projects/${encodeURIComponent(workspaceId)}`, {
           method: 'DELETE',
           headers: { Authorization: `Bearer ${token}` },
         });

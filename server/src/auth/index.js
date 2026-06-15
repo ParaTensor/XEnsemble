@@ -2,7 +2,15 @@ const crypto = require('crypto');
 const jwt = require('jsonwebtoken');
 
 const JWT_SECRET = process.env.JWT_SECRET || 'super-secret-emdash-key-for-mvp';
-const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY || crypto.scryptSync('emdash-vault-password', 'salt', 32);
+
+function resolveEncryptionKey() {
+    const raw = process.env.ENCRYPTION_KEY?.trim();
+    if (!raw) return crypto.scryptSync('emdash-vault-password', 'salt', 32);
+    if (/^[0-9a-fA-F]{64}$/.test(raw)) return Buffer.from(raw, 'hex');
+    return crypto.scryptSync(raw, 'xensemble-vault', 32);
+}
+
+const ENCRYPTION_KEY = resolveEncryptionKey();
 
 function hashPassword(password) {
     const salt = crypto.randomBytes(16).toString('hex');

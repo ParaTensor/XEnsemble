@@ -4,11 +4,7 @@ import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import '@xterm/xterm/css/xterm.css';
 import { usePreview, PreviewControlGroup } from './PreviewPanel';
-
-function parseWsMessage(message) {
-    const raw = typeof message === 'string' ? message : message.toString();
-    return JSON.parse(raw);
-}
+import { connectTerminalTransport } from '../lib/terminalTransport';
 
 function measureTerminalSize(terminal, container) {
     const cellWidth = terminal._core?._renderService?.dimensions?.css?.cell?.width;
@@ -93,11 +89,52 @@ export default function AgentConsole({
         container.replaceChildren();
         terminal.open(container);
 
-        const wsHost = window.location.hostname || 'localhost';
-        const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-        const ws = new WebSocket(
-            `${wsProtocol}//${wsHost}:3000/ws/v1/terminal?sessionId=${encodeURIComponent(sessionId)}`
-        );
+        const transport = connectTerminalTransport({
+            sessionId,
+            token,
+            onOpen: () => {
+                openedRef.current = true;
+                if (sessionLiveRef.current) setEnded(false);
+                let attempts = 0;
+                const tryFit = () => {
+                    applySize();
+                    focusTerminal();
+                    if ((terminal.cols < 2 || terminal.rows < 1) && attempts < 8) {
+                        attempts += 1;
+                        requestAnimationFrame(tryFit);
+                    }
+                };
+                requestAnimationFrame(tryFit);
+            },
+            onClose: (event) => {
+                if (disposedRef.current || serverEndedRef.current) return;
+                if (!openedRef.current) {
+                    terminal.write('\r\n\x1b[31m[System] Terminal connection failed. Is the backend running?\x1b[0m\r\n');
+                    setEnded(true);
+                    return;
+                }
+                if (event?.wasClean) return;
+                terminal.write('\r\n\x1b[33m[System] Disconnected from terminal.\x1b[0m\r\n');
+                setEnded(true);
+            },
+            onMessage: (msg) => {
+                if (msg.type === 'output') {
+                    terminal.write(msg.data);
+                } else if (msg.type === 'metrics') {
+                    setMetrics(msg.data);
+                } else if (msg.type === 'error') {
+                    terminal.write(`\r\n\x1b[31m[System] ${msg.data}\x1b[0m\r\n`);
+                    serverEndedRef.current = true;
+                    setEnded(true);
+                    onSessionEndRef.current?.(sessionId);
+                } else if (msg.type === 'exit') {
+                    if (msg.message) terminal.write(msg.message);
+                    serverEndedRef.current = true;
+                    setEnded(true);
+                    onSessionEndRef.current?.(sessionId);
+                }
+            },
+        });
 
         // xterm attachCustomKeyEventHandler: return false = handled (skip xterm); else let xterm process.
         terminal.attachCustomKeyEventHandler((ev) => {
@@ -114,8 +151,8 @@ export default function AgentConsole({
             }
 
             ev.preventDefault();
-            if (ws.readyState === WebSocket.OPEN) {
-                ws.send(JSON.stringify({ type: 'input', data: seq }));
+            if (transport.isOpen()) {
+                transport.send({ type: 'input', data: seq });
             }
             return false;
         });
@@ -129,8 +166,8 @@ export default function AgentConsole({
             if (terminal.cols !== dims.cols || terminal.rows !== dims.rows) {
                 terminal.resize(dims.cols, dims.rows);
             }
-            if (ws.readyState === WebSocket.OPEN && dims.cols > 0 && dims.rows > 0) {
-                ws.send(JSON.stringify({ type: 'resize', cols: dims.cols, rows: dims.rows }));
+            if (transport.isOpen() && dims.cols > 0 && dims.rows > 0) {
+                transport.send({ type: 'resize', cols: dims.cols, rows: dims.rows });
             }
             return dims;
         };
@@ -139,62 +176,9 @@ export default function AgentConsole({
             if (!serverEndedRef.current) terminal.focus();
         };
 
-        ws.onopen = () => {
-            openedRef.current = true;
-            if (sessionLiveRef.current) setEnded(false);
-            let attempts = 0;
-            const tryFit = () => {
-                applySize();
-                focusTerminal();
-                if ((terminal.cols < 2 || terminal.rows < 1) && attempts < 8) {
-                    attempts += 1;
-                    requestAnimationFrame(tryFit);
-                }
-            };
-            requestAnimationFrame(tryFit);
-        };
-
-        ws.onerror = () => {
-            // Transient errors during intentional close or reconnect are ignored.
-            if (serverEndedRef.current || disposedRef.current) return;
-        };
-
-        ws.onmessage = (event) => {
-            const msg = parseWsMessage(event.data);
-            if (msg.type === 'output') {
-                terminal.write(msg.data);
-            } else if (msg.type === 'metrics') {
-                setMetrics(msg.data);
-            } else if (msg.type === 'error') {
-                terminal.write(`\r\n\x1b[31m[System] ${msg.data}\x1b[0m\r\n`);
-                serverEndedRef.current = true;
-                setEnded(true);
-                onSessionEndRef.current?.(sessionId);
-            } else if (msg.type === 'exit') {
-                if (msg.message) terminal.write(msg.message);
-                serverEndedRef.current = true;
-                setEnded(true);
-                onSessionEndRef.current?.(sessionId);
-            }
-        };
-
-        ws.onclose = (event) => {
-            if (disposedRef.current || serverEndedRef.current) return;
-            if (!openedRef.current) {
-                if (!disposedRef.current && !serverEndedRef.current) {
-                    terminal.write('\r\n\x1b[31m[System] Terminal connection failed. Is the backend running on port 3000?\x1b[0m\r\n');
-                    setEnded(true);
-                }
-                return;
-            }
-            if (event.wasClean) return;
-            terminal.write('\r\n\x1b[33m[System] Disconnected from terminal.\x1b[0m\r\n');
-            setEnded(true);
-        };
-
         terminal.onData((data) => {
-            if (serverEndedRef.current || ws.readyState !== WebSocket.OPEN) return;
-            ws.send(JSON.stringify({ type: 'input', data }));
+            if (serverEndedRef.current || !transport.isOpen()) return;
+            transport.send({ type: 'input', data });
         });
 
         container.addEventListener('mousedown', focusTerminal);
@@ -228,10 +212,10 @@ export default function AgentConsole({
             resizeObserver.disconnect();
             container.removeEventListener('mousedown', focusTerminal);
             container.removeEventListener('click', focusTerminal);
-            ws.close();
+            transport.close();
             terminal.dispose();
         };
-    }, [sessionId]);
+    }, [sessionId, token]);
 
     const formatMem = (bytes) => (bytes / 1024 / 1024).toFixed(1) + ' MB';
 

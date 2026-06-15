@@ -2,7 +2,7 @@ import React, { useState, useEffect, useContext } from 'react';
 import { AuthContext } from '../../App';
 import { consoleSectionLabelClass } from '../../lib/consoleTokens';
 
-const API = 'http://localhost:3000';
+import { getApiBase } from '../../lib/api';
 
 export default function QuotaSettingsPanel() {
   const { token } = useContext(AuthContext);
@@ -10,7 +10,7 @@ export default function QuotaSettingsPanel() {
 
   useEffect(() => {
     if (!token) return;
-    fetch(`${API}/api/v1/auth/me`, {
+    fetch(`${getApiBase()}/api/v1/auth/me`, {
       headers: { Authorization: `Bearer ${token}` },
     })
       .then((res) => res.json())

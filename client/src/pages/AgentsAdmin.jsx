@@ -17,14 +17,13 @@ import {
 } from '../lib/consoleTokens';
 import { loadAdminAgentsCache, saveAdminAgentsCache } from '../lib/adminAgentsCache';
 import { getSecretLabel, isSecretPasswordField } from '../lib/secretLabels';
+import { getApiBase } from '../lib/api';
 
 const EMPTY_SPAWN_DRAFT = {
   OPENROUTER_API_KEY: '',
   OPENROUTER_BASE_URL: '',
   launch_command: '',
 };
-
-const API = 'http://localhost:3000';
 
 function statusBadge(installed) {
   return installed
@@ -112,7 +111,7 @@ export default function AgentsAdmin() {
   const fetchAgents = useCallback(({ silent = false } = {}) => {
     if (silent) setRefreshing(true);
     else setLoading(true);
-    return fetch(`${API}/api/v1/admin/agents`, { headers: authHeaders })
+    return fetch(`${getApiBase()}/api/v1/admin/agents`, { headers: authHeaders })
       .then((res) => res.json())
       .then((data) => {
         if (Array.isArray(data)) {
@@ -132,7 +131,7 @@ export default function AgentsAdmin() {
 
   useEffect(() => {
     if (!token) return;
-    fetch(`${API}/api/v1/admin/gateway/providers`, { headers: authHeaders })
+    fetch(`${getApiBase()}/api/v1/admin/gateway/providers`, { headers: authHeaders })
       .then((res) => (res.ok ? res.json() : null))
       .then((data) => setGatewayProviders(data?.data || []))
       .catch(() => {});
@@ -144,7 +143,7 @@ export default function AgentsAdmin() {
       const parsedArgs = JSON.parse(newAgent.args);
       const parsedEnv = JSON.parse(newAgent.env_required);
 
-      const res = await fetch(`${API}/api/v1/agents`, {
+      const res = await fetch(`${getApiBase()}/api/v1/agents`, {
         method: 'POST',
         headers: authHeaders,
         body: JSON.stringify({
@@ -196,7 +195,7 @@ export default function AgentsAdmin() {
       if (model?.trim()) params.set('model', model.trim());
       if (llmAuthMode) params.set('llm_auth_mode', llmAuthMode);
       const qs = params.toString();
-      const res = await fetch(`${API}/api/v1/admin/agents/${agentId}/gateway-spawn-preview${qs ? `?${qs}` : ''}`, {
+      const res = await fetch(`${getApiBase()}/api/v1/admin/agents/${agentId}/gateway-spawn-preview${qs ? `?${qs}` : ''}`, {
         headers: authHeaders,
       });
       const data = await res.json();
@@ -267,7 +266,7 @@ export default function AgentsAdmin() {
     }
     setSavingKeys(true);
     try {
-      const res = await fetch(`${API}/api/v1/admin/gateway/agent-configs/${keysAgent.id}`, {
+      const res = await fetch(`${getApiBase()}/api/v1/admin/gateway/agent-configs/${keysAgent.id}`, {
         method: 'PUT',
         headers: authHeaders,
         body: JSON.stringify({
@@ -286,7 +285,7 @@ export default function AgentsAdmin() {
         const args = parts.slice(1);
         const currentLine = [keysAgent.cmd, ...(keysAgent.args || [])].filter(Boolean).join(' ');
         if (launchLine !== currentLine) {
-          const execRes = await fetch(`${API}/api/v1/agents/${keysAgent.id}`, {
+          const execRes = await fetch(`${getApiBase()}/api/v1/agents/${keysAgent.id}`, {
             method: 'PUT',
             headers: authHeaders,
             body: JSON.stringify({ cmd, args }),
@@ -330,7 +329,7 @@ export default function AgentsAdmin() {
     const args = editDraft.args.trim() ? editDraft.args.trim().split(/\s+/) : [];
     setSavingExecutable(true);
     try {
-      const res = await fetch(`${API}/api/v1/agents/${editAgent.id}`, {
+      const res = await fetch(`${getApiBase()}/api/v1/agents/${editAgent.id}`, {
         method: 'PUT',
         headers: authHeaders,
         body: JSON.stringify({ cmd, args }),
@@ -354,7 +353,7 @@ export default function AgentsAdmin() {
     showToast('loading', hint ? `${label} ${name}… ${hint}` : `${label} ${name}…`);
     setActionLoading(`${agentId}:${action}`);
     try {
-      const res = await fetch(`${API}/api/v1/admin/agents/${agentId}/${action}`, {
+      const res = await fetch(`${getApiBase()}/api/v1/admin/agents/${agentId}/${action}`, {
         method,
         headers: authHeaders,
         ...(method !== 'GET' ? { body: '{}' } : {}),
@@ -402,7 +401,7 @@ export default function AgentsAdmin() {
   const handleCheckAndUpdate = async (agent) => {
     setActionLoading(`${agent.id}:update`);
     try {
-      const checkRes = await fetch(`${API}/api/v1/admin/agents/${agent.id}/check-update`, {
+      const checkRes = await fetch(`${getApiBase()}/api/v1/admin/agents/${agent.id}/check-update`, {
         headers: authHeaders,
       });
       const check = await checkRes.json();
@@ -419,7 +418,7 @@ export default function AgentsAdmin() {
       }
 
       showToast('loading', `Updating ${agent.name}…`);
-      const updateRes = await fetch(`${API}/api/v1/admin/agents/${agent.id}/update`, {
+      const updateRes = await fetch(`${getApiBase()}/api/v1/admin/agents/${agent.id}/update`, {
         method: 'POST',
         headers: authHeaders,
         body: '{}',

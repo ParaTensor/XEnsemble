@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useContext } from 'react';
 import { AuthContext } from '../App';
 import { useToast } from '../components/Toast';
+import { getApiBase } from '../lib/api';
 
 export function useSecrets() {
   const { token } = useContext(AuthContext);
@@ -12,7 +13,7 @@ export function useSecrets() {
   const load = useCallback(() => {
     if (!token) return Promise.resolve();
     setLoading(true);
-    return fetch('http://localhost:3000/api/v1/secrets', {
+    return fetch(`${getApiBase()}/api/v1/secrets`, {
       headers: { Authorization: `Bearer ${token}` },
     })
       .then((res) => res.json())
@@ -31,7 +32,7 @@ export function useSecrets() {
   const saveSecrets = async (payload, { successMessage = 'Saved successfully.' } = {}) => {
     setSaving(true);
     try {
-      const res = await fetch('http://localhost:3000/api/v1/secrets', {
+      const res = await fetch(`${getApiBase()}/api/v1/secrets`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

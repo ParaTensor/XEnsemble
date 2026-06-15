@@ -4,6 +4,7 @@ import Button from '../Button';
 import SelectMenu from '../SelectMenu';
 import { useToast } from '../Toast';
 import { consoleSectionLabelClass } from '../../lib/consoleTokens';
+import { getApiBase } from '../../lib/api';
 import SecretFields from './SecretFields';
 
 export default function AgentSettingsPanel({ secretsState }) {
@@ -16,7 +17,7 @@ export default function AgentSettingsPanel({ secretsState }) {
 
   useEffect(() => {
     if (!token) return;
-    fetch('http://localhost:3000/api/v1/agents', {
+    fetch(`${getApiBase()}/api/v1/agents`, {
       headers: { Authorization: `Bearer ${token}` },
     })
       .then((res) => res.json())

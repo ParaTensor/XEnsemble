@@ -26,7 +26,7 @@ import {
   consoleTableShellClass,
 } from '../../lib/consoleTokens';
 
-const API = 'http://localhost:3000';
+import { getApiBase } from '../../lib/api';
 
 const NESTED_DIALOG_BACKDROP = 'z-[110]';
 const NESTED_DIALOG_SHELL =
@@ -334,9 +334,9 @@ export default function GatewaySettingsPanel() {
     setLoading(true);
     try {
       const [statusRes, configRes, providersRes] = await Promise.all([
-        fetch(`${API}/api/v1/admin/gateway/status`, { headers: authHeaders }),
-        fetch(`${API}/api/v1/admin/gateway/config`, { headers: authHeaders }),
-        fetch(`${API}/api/v1/admin/gateway/providers`, { headers: authHeaders }),
+        fetch(`${getApiBase()}/api/v1/admin/gateway/status`, { headers: authHeaders }),
+        fetch(`${getApiBase()}/api/v1/admin/gateway/config`, { headers: authHeaders }),
+        fetch(`${getApiBase()}/api/v1/admin/gateway/providers`, { headers: authHeaders }),
       ]);
       const statusData = await statusRes.json();
       const configData = configRes.ok ? await configRes.json() : null;
@@ -372,7 +372,7 @@ export default function GatewaySettingsPanel() {
     }));
     setTestingProvider(name);
     try {
-      const res = await fetch(`${API}/api/v1/admin/gateway/providers/${encodeURIComponent(name)}/test`, {
+      const res = await fetch(`${getApiBase()}/api/v1/admin/gateway/providers/${encodeURIComponent(name)}/test`, {
         method: 'POST',
         headers: authHeaders,
         body: '{}',
@@ -414,7 +414,7 @@ export default function GatewaySettingsPanel() {
 
   const openAddProviderDialog = async () => {
     try {
-      const statusRes = await fetch(`${API}/api/v1/admin/gateway/status`, { headers: authHeaders });
+      const statusRes = await fetch(`${getApiBase()}/api/v1/admin/gateway/status`, { headers: authHeaders });
       const statusData = await statusRes.json();
       setStatus(statusData);
     } catch {
@@ -478,7 +478,7 @@ export default function GatewaySettingsPanel() {
     if (usesSavedApiKey(providerDialog) && !providerDialog.apiKeyFull) {
       try {
         const name = providerDialog.form.name.trim();
-        const res = await fetch(`${API}/api/v1/admin/gateway/providers/${encodeURIComponent(name)}/api-key`, {
+        const res = await fetch(`${getApiBase()}/api/v1/admin/gateway/providers/${encodeURIComponent(name)}/api-key`, {
           headers: authHeaders,
         });
         const data = await res.json();
@@ -530,7 +530,7 @@ export default function GatewaySettingsPanel() {
         showToast('error', 'API Key is required to verify provider.');
         return;
       }
-      const res = await fetch(`${API}/api/v1/admin/gateway/providers/test`, {
+      const res = await fetch(`${getApiBase()}/api/v1/admin/gateway/providers/test`, {
         method: 'POST',
         headers: authHeaders,
         body: JSON.stringify({
@@ -581,13 +581,13 @@ export default function GatewaySettingsPanel() {
     try {
       let res;
       if (usesSavedApiKey(providerDialog)) {
-        res = await fetch(`${API}/api/v1/admin/gateway/providers/${encodeURIComponent(form.name.trim())}/fetch-models`, {
+        res = await fetch(`${getApiBase()}/api/v1/admin/gateway/providers/${encodeURIComponent(form.name.trim())}/fetch-models`, {
           method: 'POST',
           headers: authHeaders,
           body: '{}',
         });
       } else {
-        res = await fetch(`${API}/api/v1/admin/gateway/providers/fetch-models`, {
+        res = await fetch(`${getApiBase()}/api/v1/admin/gateway/providers/fetch-models`, {
           method: 'POST',
           headers: authHeaders,
           body: JSON.stringify({
@@ -629,7 +629,7 @@ export default function GatewaySettingsPanel() {
       if (!payload.api_key) delete payload.api_key;
       delete payload.name;
       delete payload.service_id;
-      const res = await fetch(`${API}/api/v1/admin/gateway/providers/${encodeURIComponent(name)}`, {
+      const res = await fetch(`${getApiBase()}/api/v1/admin/gateway/providers/${encodeURIComponent(name)}`, {
         method: 'PATCH',
         headers: authHeaders,
         body: JSON.stringify(payload),
@@ -646,7 +646,7 @@ export default function GatewaySettingsPanel() {
       throw new Error('API Key is required for new providers.');
     }
     payload.api_key = body.api_key.trim();
-    const res = await fetch(`${API}/api/v1/admin/gateway/providers`, {
+    const res = await fetch(`${getApiBase()}/api/v1/admin/gateway/providers`, {
       method: 'POST',
       headers: authHeaders,
       body: JSON.stringify(payload),
@@ -704,7 +704,7 @@ export default function GatewaySettingsPanel() {
         payload.bind_addr = `${host}:${port}`;
         payload.restart = Boolean(status?.running);
       }
-      const res = await fetch(`${API}/api/v1/admin/gateway/config`, {
+      const res = await fetch(`${getApiBase()}/api/v1/admin/gateway/config`, {
         method: 'PATCH',
         headers: authHeaders,
         body: JSON.stringify(payload),
@@ -742,7 +742,7 @@ export default function GatewaySettingsPanel() {
   const runProcessAction = async (action) => {
     setProcessAction(action);
     try {
-      const res = await fetch(`${API}/api/v1/admin/gateway/${action}`, {
+      const res = await fetch(`${getApiBase()}/api/v1/admin/gateway/${action}`, {
         method: 'POST',
         headers: authHeaders,
         body: action === 'start' ? JSON.stringify({ force: false }) : undefined,
@@ -764,7 +764,7 @@ export default function GatewaySettingsPanel() {
   const handleDelete = async (name) => {
     setDeleting(name);
     try {
-      const res = await fetch(`${API}/api/v1/admin/gateway/providers/${encodeURIComponent(name)}`, {
+      const res = await fetch(`${getApiBase()}/api/v1/admin/gateway/providers/${encodeURIComponent(name)}`, {
         method: 'DELETE',
         headers: authHeaders,
       });

@@ -1,5 +1,7 @@
-const fastify = require('fastify')({ logger: true });
+const fastify = require('fastify')({ logger: true, trustProxy: true });
 const crypto = require('crypto');
+const path = require('path');
+const fs = require('fs');
 const WebSocket = require('ws');
 
 const { getRuntime } = require('./runtime/registry');
@@ -22,6 +24,8 @@ const { registerAuthHooks } = require('./auth/hooks');
 const policy = require('./auth/PolicyService');
 const { registerAuthRoutes } = require('./routes/auth');
 const { registerAdminRoutes } = require('./routes/admin');
+const { registerTerminalHttpRoutes } = require('./routes/terminalHttp');
+const { applyTerminalMessage, subscribeTerminal } = require('./session/terminalBridge');
 const unigateway = require('./gateway/unigatewayManager');
 const { registerGatewayAdminRoutes } = require('./gateway/adminProxy');
 const { deleteProjectForUser } = require('./projects/deleteProject');
@@ -54,6 +58,7 @@ fastify.register(require('@fastify/websocket'));
 registerAuthHooks(fastify);
 registerAuthRoutes(fastify);
 registerAdminRoutes(fastify);
+registerTerminalHttpRoutes(fastify);
 registerGatewayAdminRoutes(fastify);
 
 // -- API Routes --
@@ -443,7 +448,7 @@ fastify.post('/api/v1/session/start', { preValidation: [fastify.authenticate] },
     };
 });
 
-// WebSocket Terminal（协议不变，内部 bridge 改用 handle 接口）
+// WebSocket Terminal（协议不变；与 /api/v1/terminal/* HTTP 通道共享 terminalBridge）
 fastify.register(async function terminalWsRoutes(app) {
     app.get('/ws/v1/terminal', { websocket: true }, (connection, req) => {
         const ws = connection.socket;
@@ -462,83 +467,34 @@ fastify.register(async function terminalWsRoutes(app) {
             sessionId = null;
         }
 
-        const session = sessionId ? sessionManager.getSession(sessionId) : null;
-
-        if (!session) {
-            sendJson({
-                type: 'error',
-                data: 'Session not found. The backend may have restarted — use Restart to reconnect.',
-            });
+        if (!sessionId) {
+            sendJson({ type: 'error', data: 'sessionId is required' });
             ws.close();
             return;
         }
 
-        if (session.history) {
-            sendJson({ type: 'output', data: session.history });
-        }
-
-        if (!sessionManager.isAlive(sessionId)) {
-            sendJson({
-                type: 'error',
-                data: 'This session has ended. Launch a new agent instead of reconnecting to an old one.',
-            });
+        const sub = subscribeTerminal(sessionId, (payload) => {
+            sendJson(payload);
+            if (payload.type === 'exit' || payload.type === 'error') {
+                try { ws.close(); } catch (_) { /* already closing */ }
+            }
+        });
+        if (!sub.ok) {
             ws.close();
             return;
         }
-
-        const handle = session.handle;
-
-        const cleanup = () => {
-            offExit();
-            dataListener.dispose();
-            clearInterval(metricsInterval);
-        };
-
-        const dataListener = handle.onData((data) => {
-            sendJson({ type: 'output', data });
-        });
-
-        const metricsInterval = setInterval(async () => {
-            if (!sessionManager.isAlive(sessionId)) return;
-            try {
-                const stats = await handle.getMetrics();
-                sendJson({ type: 'metrics', data: stats });
-            } catch (_) { /* ignore metrics errors */ }
-        }, 3000);
-
-        const offExit = sessionManager.onExit(sessionId, (exitCode) => {
-            sendJson({
-                type: 'exit',
-                data: exitCode,
-                message: `\r\n\x1b[33m[Session ended with code ${exitCode ?? 'unknown'}]\x1b[0m\r\n`,
-            });
-            cleanup();
-            try { ws.close(); } catch (_) { /* already closing */ }
-        });
 
         ws.on('message', (message) => {
             if (!sessionManager.isAlive(sessionId)) return;
             try {
                 const raw = typeof message === 'string' ? message : message.toString();
-                const msg = JSON.parse(raw);
-                if (msg.type === 'input') {
-                    handle.write(msg.data);
-                } else if (msg.type === 'resize') {
-                    try {
-                        handle.resize(msg.cols, msg.rows);
-                    } catch (e) {
-                        const errorMsg = e instanceof Error ? e.message : String(e);
-                        if (!/EBADF|ENOTTY|ioctl\(2\) failed|not open|Napi::Error/.test(errorMsg)) {
-                            console.error('PTY Resize Error:', errorMsg);
-                        }
-                    }
-                }
+                applyTerminalMessage(sub.handle, JSON.parse(raw));
             } catch (err) {
                 console.error('WS Message Parse Error:', err);
             }
         });
 
-        ws.on('close', cleanup);
+        ws.on('close', sub.cleanup);
     });
 });
 
@@ -692,6 +648,22 @@ async function startServer() {
     await registerPreviewGateway(fastify);
     await registerLlmProxy(fastify);
     startPreviewLifecycle();
+
+    const staticRoot = path.join(__dirname, '../../client/dist');
+    if (fs.existsSync(staticRoot)) {
+        await fastify.register(require('@fastify/static'), {
+            root: staticRoot,
+            wildcard: false,
+        });
+        fastify.setNotFoundHandler((request, reply) => {
+            const url = request.raw.url || '';
+            if (url.startsWith('/api') || url.startsWith('/ws') || url.startsWith('/preview')) {
+                return reply.code(404).send({ error: 'Not found' });
+            }
+            return reply.sendFile('index.html', staticRoot);
+        });
+        fastify.log.info(`[static] serving ${staticRoot}`);
+    }
 
     const port = Number(process.env.PORT) || 3000;
     await fastify.listen({ port, host: '0.0.0.0' });

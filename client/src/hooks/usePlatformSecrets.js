@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useContext } from 'react';
 import { AuthContext } from '../App';
 import { useToast } from '../components/Toast';
 
-const API = 'http://localhost:3000';
+import { getApiBase, apiFetch } from '../lib/api';
 
 export function usePlatformSecrets() {
   const { token } = useContext(AuthContext);
@@ -15,7 +15,7 @@ export function usePlatformSecrets() {
   const load = useCallback(() => {
     if (!token) return Promise.resolve();
     setLoading(true);
-    return fetch(`${API}/api/v1/admin/agent-secrets`, {
+    return fetch(`${getApiBase()}/api/v1/admin/agent-secrets`, {
       headers: { Authorization: `Bearer ${token}` },
     })
       .then((res) => res.json())
@@ -34,7 +34,7 @@ export function usePlatformSecrets() {
   const saveSecrets = async (payload, { successMessage = 'Platform settings saved.' } = {}) => {
     setSaving(true);
     try {
-      const res = await fetch(`${API}/api/v1/admin/agent-secrets`, {
+      const res = await fetch(`${getApiBase()}/api/v1/admin/agent-secrets`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',

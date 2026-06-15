@@ -18,7 +18,7 @@ import {
   consoleTableShellClass,
 } from '../lib/consoleTokens';
 
-const API = 'http://localhost:3000';
+import { getApiBase } from '../lib/api';
 
 function statusBadge(status) {
   const map = {
@@ -64,7 +64,7 @@ export default function UsersAdmin() {
   };
 
   const fetchUsers = useCallback(() => {
-    fetch(`${API}/api/v1/admin/users`, { headers: authHeaders })
+    fetch(`${getApiBase()}/api/v1/admin/users`, { headers: authHeaders })
       .then((res) => res.json())
       .then((data) => {
         if (Array.isArray(data)) setUsers(data);
@@ -73,7 +73,7 @@ export default function UsersAdmin() {
   }, [token]);
 
   const fetchAgents = useCallback(() => {
-    fetch(`${API}/api/v1/agents`, { headers: authHeaders })
+    fetch(`${getApiBase()}/api/v1/agents`, { headers: authHeaders })
       .then((res) => res.json())
       .then((data) => {
         if (Array.isArray(data)) setAgents(data);
@@ -104,7 +104,7 @@ export default function UsersAdmin() {
 
   const openEdit = async (user) => {
     try {
-      const res = await fetch(`${API}/api/v1/admin/users/${user.id}`, { headers: authHeaders });
+      const res = await fetch(`${getApiBase()}/api/v1/admin/users/${user.id}`, { headers: authHeaders });
       const detail = await res.json();
       if (!res.ok) throw new Error(detail.error);
       setEditingUser(detail);
@@ -141,7 +141,7 @@ export default function UsersAdmin() {
           showToast('error', 'Password must be at least 8 characters.');
           return;
         }
-        const res = await fetch(`${API}/api/v1/admin/users`, {
+        const res = await fetch(`${getApiBase()}/api/v1/admin/users`, {
           method: 'POST',
           headers: authHeaders,
           body: JSON.stringify({
@@ -162,7 +162,7 @@ export default function UsersAdmin() {
         if (!res.ok) throw new Error(data.error);
         showToast('success', 'User created.');
       } else if (editingUser) {
-        const patchRes = await fetch(`${API}/api/v1/admin/users/${editingUser.id}`, {
+        const patchRes = await fetch(`${getApiBase()}/api/v1/admin/users/${editingUser.id}`, {
           method: 'PATCH',
           headers: authHeaders,
           body: JSON.stringify({
@@ -173,7 +173,7 @@ export default function UsersAdmin() {
         const patchData = await patchRes.json();
         if (!patchRes.ok) throw new Error(patchData.error);
 
-        const quotaRes = await fetch(`${API}/api/v1/admin/users/${editingUser.id}/quota`, {
+        const quotaRes = await fetch(`${getApiBase()}/api/v1/admin/users/${editingUser.id}/quota`, {
           method: 'PUT',
           headers: authHeaders,
           body: JSON.stringify({
@@ -186,7 +186,7 @@ export default function UsersAdmin() {
         const quotaData = await quotaRes.json();
         if (!quotaRes.ok) throw new Error(quotaData.error);
 
-        const agentsRes = await fetch(`${API}/api/v1/admin/users/${editingUser.id}/agents`, {
+        const agentsRes = await fetch(`${getApiBase()}/api/v1/admin/users/${editingUser.id}/agents`, {
           method: 'PUT',
           headers: authHeaders,
           body: JSON.stringify({ agent_ids: form.agent_ids }),
@@ -199,7 +199,7 @@ export default function UsersAdmin() {
             showToast('error', 'New password must be at least 8 characters.');
             return;
           }
-          const pwRes = await fetch(`${API}/api/v1/admin/users/${editingUser.id}/reset-password`, {
+          const pwRes = await fetch(`${getApiBase()}/api/v1/admin/users/${editingUser.id}/reset-password`, {
             method: 'POST',
             headers: authHeaders,
             body: JSON.stringify({ password: resetPassword }),
@@ -220,7 +220,7 @@ export default function UsersAdmin() {
   const toggleStatus = async (user) => {
     const next = user.status === 'active' ? 'suspended' : 'active';
     try {
-      const res = await fetch(`${API}/api/v1/admin/users/${user.id}`, {
+      const res = await fetch(`${getApiBase()}/api/v1/admin/users/${user.id}`, {
         method: 'PATCH',
         headers: authHeaders,
         body: JSON.stringify({ status: next }),
@@ -236,7 +236,7 @@ export default function UsersAdmin() {
 
   const approveUser = async (user) => {
     try {
-      const res = await fetch(`${API}/api/v1/admin/users/${user.id}`, {
+      const res = await fetch(`${getApiBase()}/api/v1/admin/users/${user.id}`, {
         method: 'PATCH',
         headers: authHeaders,
         body: JSON.stringify({ status: 'active' }),

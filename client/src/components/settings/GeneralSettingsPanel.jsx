@@ -6,7 +6,7 @@ import SelectMenu from '../SelectMenu';
 import { useToast } from '../Toast';
 import { consoleSectionLabelClass } from '../../lib/consoleTokens';
 
-const API = 'http://localhost:3000';
+import { getApiBase } from '../../lib/api';
 
 export default function GeneralSettingsPanel() {
   const { user, token } = useContext(AuthContext);
@@ -22,7 +22,7 @@ export default function GeneralSettingsPanel() {
 
   useEffect(() => {
     if (!token || !isAdmin) return;
-    fetch(`${API}/api/v1/admin/platform-settings`, { headers: authHeaders })
+    fetch(`${getApiBase()}/api/v1/admin/platform-settings`, { headers: authHeaders })
       .then((res) => res.json())
       .then((data) => setSettings(data));
   }, [token, isAdmin]);
@@ -33,7 +33,7 @@ export default function GeneralSettingsPanel() {
     e.preventDefault();
     setSaving(true);
     try {
-      const res = await fetch(`${API}/api/v1/admin/platform-settings`, {
+      const res = await fetch(`${getApiBase()}/api/v1/admin/platform-settings`, {
         method: 'PUT',
         headers: authHeaders,
         body: JSON.stringify({

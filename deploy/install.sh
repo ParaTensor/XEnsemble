@@ -1,0 +1,50 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+cd "$ROOT"
+
+export NVM_DIR="$HOME/.nvm"
+# shellcheck disable=SC1091
+[ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"
+[ -s "$HOME/.cargo/env" ] && . "$HOME/.cargo/env"
+
+echo "==> Node $(cat .nvmrc)"
+nvm install "$(cat .nvmrc)"
+nvm use "$(cat .nvmrc)"
+
+echo "==> Build UniGateway"
+(cd server && npm run build:gateway)
+
+echo "==> Server dependencies"
+(cd server && npm install)
+
+echo "==> Client build"
+(cd client && npm install && npm run build)
+
+echo "==> Ensure data directory"
+mkdir -p server/data
+
+if [ ! -f deploy/xensemble.env ]; then
+  echo "==> Creating deploy/xensemble.env from example (edit secrets!)"
+  cp deploy/xensemble.env.example deploy/xensemble.env
+  JWT=$(openssl rand -hex 32)
+  ENC=$(openssl rand -hex 32)
+  sed -i "s/change-me-to-a-long-random-string/$JWT/" deploy/xensemble.env
+  sed -i "s/change-me-to-a-32-byte-hex-string/$ENC/" deploy/xensemble.env
+fi
+
+NODE_BIN="$(nvm which current)"
+sed "s|/home/xinference/.nvm/versions/node/v20.19.2/bin/node|$NODE_BIN|g" \
+  deploy/systemd/xensemble.service | sudo tee /etc/systemd/system/xensemble.service >/dev/null
+
+sudo cp deploy/nginx/xensemble.conf /etc/nginx/sites-available/xensemble.conf
+sudo ln -sf /etc/nginx/sites-available/xensemble.conf /etc/nginx/sites-enabled/xensemble.conf
+sudo rm -f /etc/nginx/sites-enabled/default
+
+sudo nginx -t
+sudo systemctl daemon-reload
+sudo systemctl enable xensemble nginx
+sudo systemctl restart xensemble nginx
+
+echo "==> Done. Check: curl -sI http://127.0.0.1:3000/api/v1/llm/health"

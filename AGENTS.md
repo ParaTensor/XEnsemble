@@ -10,4 +10,4 @@
 
 Agent 领域说明与架构对齐要求见 **`docs/agents.md`**（Gateway 反代见 **`docs/LlmProxy.md`**；内含对 Architecture.md 的引用）。
 
-用户、角色、配额与运维 CLI 见 **`docs/UserManagement.md`**。
+用户、角色、配额与运维 CLI 见 **`docs/UserManagement.md`**。Desktop / 原生客户端 HTTP+WS 接入见 **`docs/ApiClient.md`**。

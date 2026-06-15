@@ -1,6 +1,7 @@
 import React, { useState, useContext } from 'react';
 import { AuthContext } from '../App';
 import BrandMark from '../components/BrandMark';
+import { getApiBase } from '../lib/api';
 import Button from '../components/Button';
 import Input from '../components/Input';
 import { cn } from '../lib/utils';
@@ -18,7 +19,7 @@ export default function Login() {
     setError(null);
     try {
       const endpoint = isRegister ? '/api/v1/auth/register' : '/api/v1/auth/login';
-      const res = await fetch(`http://localhost:3000${endpoint}`, {
+      const res = await fetch(`${getApiBase()}${endpoint}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ username, password }),
