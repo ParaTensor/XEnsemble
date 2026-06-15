@@ -1,6 +1,7 @@
 node_modules/
 emdash_source/
 .env
+deploy/xensemble.env
 server/data/
 gateway/target/
 client/dist

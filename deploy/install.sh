@@ -30,8 +30,19 @@ if [ ! -f deploy/xensemble.env ]; then
   cp deploy/xensemble.env.example deploy/xensemble.env
   JWT=$(openssl rand -hex 32)
   ENC=$(openssl rand -hex 32)
-  sed -i "s/change-me-to-a-long-random-string/$JWT/" deploy/xensemble.env
-  sed -i "s/change-me-to-a-32-byte-hex-string/$ENC/" deploy/xensemble.env
+  if [[ "$(uname -s)" == "Darwin" ]]; then
+    sed -i '' "s/change-me-to-a-long-random-string/$JWT/" deploy/xensemble.env
+    sed -i '' "s/change-me-to-a-32-byte-hex-string/$ENC/" deploy/xensemble.env
+  else
+    sed -i "s/change-me-to-a-long-random-string/$JWT/" deploy/xensemble.env
+    sed -i "s/change-me-to-a-32-byte-hex-string/$ENC/" deploy/xensemble.env
+  fi
+fi
+
+if ! command -v systemctl >/dev/null 2>&1; then
+  echo "==> No systemd on this host; skipping systemd/nginx. Start manually:"
+  echo "    set -a && source deploy/xensemble.env && set +a && node server/src/server.js"
+  exit 0
 fi
 
 NODE_BIN="$(nvm which current)"
