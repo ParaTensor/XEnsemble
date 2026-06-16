@@ -1,7 +1,8 @@
+const path = require('path');
 const { exec } = require('child_process');
 const { promisify } = require('util');
 const execAsync = promisify(exec);
-const { probeAgent } = require('./agentProbe');
+const { probeAgent, enrichPath } = require('./agentProbe');
 
 const TIMEOUT_MS = 10 * 60 * 1000;
 const VERSION_TIMEOUT_MS = 15 * 1000;
@@ -126,7 +127,14 @@ function getInstallCommand(agentId) {
 }
 
 function shellEnv() {
-    return { ...process.env, PATH: process.env.PATH || '' };
+    const nodeBinDir = path.dirname(process.execPath);
+    const basePath = [nodeBinDir, process.env.PATH || '']
+        .filter(Boolean)
+        .join(path.delimiter);
+    return {
+        ...process.env,
+        PATH: enrichPath({ ...process.env, PATH: basePath }),
+    };
 }
 
 async function runCommand(command, timeout = TIMEOUT_MS) {
