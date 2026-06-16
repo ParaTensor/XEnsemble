@@ -43,8 +43,15 @@ function isExecutable(filePath) {
 
 function enrichPath(env = process.env) {
     const home = env.HOME || process.env.HOME;
-    if (!home) return env.PATH || process.env.PATH || '';
-    const extra = HOME_PATH_PREFIXES.map((rel) => path.join(home, rel)).filter(isExecutable);
+    const nodeBinDir = path.dirname(process.execPath);
+    const extra = [];
+    if (nodeBinDir && fs.existsSync(nodeBinDir)) extra.push(nodeBinDir);
+    if (home) {
+        for (const rel of HOME_PATH_PREFIXES) {
+            const dir = path.join(home, rel);
+            if (fs.existsSync(dir)) extra.push(dir);
+        }
+    }
     const parts = [...extra, ...(env.PATH || process.env.PATH || '').split(path.delimiter)].filter(Boolean);
     const seen = new Set();
     const merged = parts.filter((p) => {
@@ -69,6 +76,9 @@ function resolveExecutable(cmd, env = process.env) {
 }
 
 function findOffPathInstall(cmd) {
+    const nodeBinCandidate = path.join(path.dirname(process.execPath), cmd);
+    if (isExecutable(nodeBinCandidate)) return nodeBinCandidate;
+
     const home = process.env.HOME;
     if (!home) return null;
     const relPaths = KNOWN_CLI_LOCATIONS[cmd] || [];
