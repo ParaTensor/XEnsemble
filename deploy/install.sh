@@ -58,4 +58,4 @@ sudo systemctl daemon-reload
 sudo systemctl enable xensemble nginx
 sudo systemctl restart xensemble nginx
 
-echo "==> Done. Check: curl -sI http://127.0.0.1:3000/api/v1/llm/health"
+echo "==> Done. Check: curl -sI http://127.0.0.1:3888/api/v1/llm/health"

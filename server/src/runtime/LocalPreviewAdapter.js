@@ -6,7 +6,8 @@ const { resolvePreviewContract } = require('./previewContract');
 const previewRegistry = require('./localPreviewRegistry');
 
 const CONTROL_HOST = process.env.PREVIEW_PUBLIC_HOST || 'localhost';
-const CONTROL_PORT = Number(process.env.PORT) || 3000;
+const { resolvePort } = require('../config/defaultPort');
+const CONTROL_PORT = resolvePort();
 const PORT_READY_TIMEOUT_MS = 120_000;
 const PORT_POLL_MS = 400;
 

@@ -672,7 +672,8 @@ async function startServer() {
         fastify.log.info(`[static] serving ${staticRoot}`);
     }
 
-    const port = Number(process.env.PORT) || 3000;
+    const { resolvePort } = require('./config/defaultPort');
+    const port = resolvePort();
 
     try {
         const sync = await userAdmin.syncInstalledAgentGrantsForAllUsers();

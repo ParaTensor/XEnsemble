@@ -1,5 +1,6 @@
 const { describe, it, afterEach } = require('node:test');
 const assert = require('node:assert/strict');
+const { DEFAULT_PORT } = require('../config/defaultPort');
 const {
     resolveControlPlanePublicUrlSync,
     resolveLlmPublicRouterBaseSync,
@@ -7,16 +8,20 @@ const {
 
 describe('publicUrl', () => {
     const original = process.env.CONTROL_PLANE_PUBLIC_URL;
+    const originalPort = process.env.PORT;
 
     afterEach(() => {
         if (original == null) delete process.env.CONTROL_PLANE_PUBLIC_URL;
         else process.env.CONTROL_PLANE_PUBLIC_URL = original;
+        if (originalPort == null) delete process.env.PORT;
+        else process.env.PORT = originalPort;
     });
 
     it('defaults to localhost control plane', () => {
         delete process.env.CONTROL_PLANE_PUBLIC_URL;
-        assert.equal(resolveControlPlanePublicUrlSync(), 'http://127.0.0.1:3000');
-        assert.equal(resolveLlmPublicRouterBaseSync(), 'http://127.0.0.1:3000/api/v1/llm');
+        delete process.env.PORT;
+        assert.equal(resolveControlPlanePublicUrlSync(), `http://127.0.0.1:${DEFAULT_PORT}`);
+        assert.equal(resolveLlmPublicRouterBaseSync(), `http://127.0.0.1:${DEFAULT_PORT}/api/v1/llm`);
     });
 
     it('honors CONTROL_PLANE_PUBLIC_URL without trailing slash', () => {

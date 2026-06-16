@@ -1,9 +1,10 @@
 const gatewaySettings = require('../admin/GatewaySettings');
+const { resolvePort } = require('../config/defaultPort');
 
 function resolveControlPlanePublicUrlSync() {
     const fromEnv = process.env.CONTROL_PLANE_PUBLIC_URL?.trim();
     if (fromEnv) return fromEnv.replace(/\/+$/, '');
-    const port = Number(process.env.PORT) || 3000;
+    const port = resolvePort();
     return `http://127.0.0.1:${port}`;
 }
 

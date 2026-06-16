@@ -2,7 +2,7 @@ export function getApiBase() {
   const env = import.meta.env.VITE_API_BASE?.trim();
   if (env) return env.replace(/\/+$/, '');
   if (import.meta.env.PROD) return '';
-  return 'http://localhost:3000';
+  return 'http://localhost:3888';
 }
 
 export function getWsBase() {
@@ -16,7 +16,7 @@ export function getWsBase() {
     const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     return `${proto}//${window.location.host}`;
   }
-  return 'ws://localhost:3000';
+  return 'ws://localhost:3888';
 }
 
 export function apiFetch(path, token, options = {}) {
