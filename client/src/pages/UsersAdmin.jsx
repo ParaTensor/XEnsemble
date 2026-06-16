@@ -73,10 +73,12 @@ export default function UsersAdmin() {
   }, [token]);
 
   const fetchAgents = useCallback(() => {
-    fetch(`${getApiBase()}/api/v1/agents`, { headers: authHeaders })
+    fetch(`${getApiBase()}/api/v1/admin/agents`, { headers: authHeaders })
       .then((res) => res.json())
       .then((data) => {
-        if (Array.isArray(data)) setAgents(data);
+        if (Array.isArray(data)) {
+          setAgents(data.filter((a) => a.installed));
+        }
       });
   }, [token]);
 

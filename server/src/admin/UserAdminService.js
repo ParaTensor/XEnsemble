@@ -5,6 +5,7 @@ const { eq, and, sql, inArray } = require('drizzle-orm');
 const auth = require('../auth/index');
 const policy = require('../auth/PolicyService');
 const platformSettings = require('./PlatformSettings');
+const installedAgents = require('../agents/installedAgents');
 const { recordEvent } = require('../events/recordEvent');
 
 function formatUserRow(user, extras = {}) {
@@ -133,8 +134,7 @@ async function createUser({ username, password, role = 'user', status = 'active'
     if (effectiveRole !== 'admin') {
         let idsToGrant = agentIds;
         if (!Array.isArray(agentIds)) {
-            const all = await db.select({ id: schema.agents.id }).from(schema.agents);
-            idsToGrant = all.map((a) => a.id);
+            idsToGrant = await installedAgents.listInstalledAgentIds();
         }
         if (idsToGrant.length > 0) {
             await setUserAgents(userId, idsToGrant, createdBy);

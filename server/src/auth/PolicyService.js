@@ -1,6 +1,8 @@
 const { db } = require('../db/index');
 const schema = require('../db/schema');
 const { eq, and, sql, inArray } = require('drizzle-orm');
+const installedAgents = require('../agents/installedAgents');
+const { probeAgent } = require('../agents/agentProbe');
 
 const DIMENSION_LIMIT = {
     projects: 'maxProjects',
@@ -104,25 +106,28 @@ async function checkQuota(userId, dimension, role) {
 }
 
 async function listGrantedAgentIds(userId, role) {
+    const installedSet = new Set(await installedAgents.listInstalledAgentIds());
     if (role === 'admin') {
-        const all = await db.select({ id: schema.agents.id }).from(schema.agents);
-        return all.map((a) => a.id);
+        return [...installedSet];
     }
     const grants = await db
         .select({ agentId: schema.userAgentGrants.agentId })
         .from(schema.userAgentGrants)
         .innerJoin(schema.agents, eq(schema.userAgentGrants.agentId, schema.agents.id))
         .where(eq(schema.userAgentGrants.userId, userId));
-    return grants.map((g) => g.agentId);
+    return grants.map((g) => g.agentId).filter((id) => installedSet.has(id));
 }
 
 async function checkAgentAccess(userId, agentId, role) {
     const agentRows = await db
-        .select({ id: schema.agents.id })
+        .select({ id: schema.agents.id, cmd: schema.agents.cmd })
         .from(schema.agents)
         .where(eq(schema.agents.id, agentId));
     if (agentRows.length === 0) {
         return { ok: false, error: 'agent_not_found', agent_id: agentId };
+    }
+    if (!probeAgent(agentRows[0].cmd).installed) {
+        return { ok: false, error: 'agent_not_installed', agent_id: agentId };
     }
     if (role === 'admin') return { ok: true };
     const grants = await db

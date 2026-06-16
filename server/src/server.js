@@ -99,10 +99,10 @@ const DEFAULT_AGENT_ID = 'kimi-code';
 
 fastify.get('/api/v1/agents', { preValidation: [fastify.authenticate] }, async (request) => {
     const agentGatewayConfig = require('./admin/AgentGatewayConfig');
-    const platformSettings = require('./admin/PlatformSettings');
+    const installedAgents = require('./agents/installedAgents');
     const grantedIds = await policy.listGrantedAgentIds(request.user.id, request.user.role);
     const grantedSet = new Set(grantedIds);
-    const allAgents = await db.select().from(schema.agents);
+    const allAgents = await installedAgents.listInstalledAgentRows();
     const filtered = request.user.role === 'admin'
         ? allAgents
         : allAgents.filter((a) => grantedSet.has(a.id));
