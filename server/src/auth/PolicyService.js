@@ -111,11 +111,19 @@ async function listGrantedAgentIds(userId, role) {
     const grants = await db
         .select({ agentId: schema.userAgentGrants.agentId })
         .from(schema.userAgentGrants)
+        .innerJoin(schema.agents, eq(schema.userAgentGrants.agentId, schema.agents.id))
         .where(eq(schema.userAgentGrants.userId, userId));
     return grants.map((g) => g.agentId);
 }
 
 async function checkAgentAccess(userId, agentId, role) {
+    const agentRows = await db
+        .select({ id: schema.agents.id })
+        .from(schema.agents)
+        .where(eq(schema.agents.id, agentId));
+    if (agentRows.length === 0) {
+        return { ok: false, error: 'agent_not_found', agent_id: agentId };
+    }
     if (role === 'admin') return { ok: true };
     const grants = await db
         .select()

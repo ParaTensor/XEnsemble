@@ -58,10 +58,7 @@ async function listUsers() {
     for (const user of users) {
         const usage = await getUsageSummary(user.id);
         const quota = await policy.ensureUserQuota(user.id);
-        const grants = await db
-            .select({ agentId: schema.userAgentGrants.agentId })
-            .from(schema.userAgentGrants)
-            .where(eq(schema.userAgentGrants.userId, user.id));
+        const grantedIds = await policy.listGrantedAgentIds(user.id, user.role);
         result.push(formatUserRow(user, {
             ...usage,
             quotas: {
@@ -70,7 +67,7 @@ async function listUsers() {
                 max_previews: quota.maxPreviews,
                 resource_tier: quota.resourceTier,
             },
-            granted_agents_count: user.role === 'admin' ? null : grants.length,
+            granted_agents_count: user.role === 'admin' ? null : grantedIds.length,
         }));
     }
     return result;
@@ -133,8 +130,15 @@ async function createUser({ username, password, role = 'user', status = 'active'
         updatedAt: now,
     });
 
-    if (Array.isArray(agentIds) && agentIds.length > 0) {
-        await setUserAgents(userId, agentIds, createdBy);
+    if (effectiveRole !== 'admin') {
+        let idsToGrant = agentIds;
+        if (!Array.isArray(agentIds)) {
+            const all = await db.select({ id: schema.agents.id }).from(schema.agents);
+            idsToGrant = all.map((a) => a.id);
+        }
+        if (idsToGrant.length > 0) {
+            await setUserAgents(userId, idsToGrant, createdBy);
+        }
     }
 
     await recordEvent({
