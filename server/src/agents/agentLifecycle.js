@@ -9,10 +9,10 @@ const VERSION_TIMEOUT_MS = 15 * 1000;
 
 const AGENT_LIFECYCLE = {
     'kimi-code': {
-        install: 'npm install -g @moonshot-ai/kimi-cli',
-        uninstall: 'npm uninstall -g @moonshot-ai/kimi-cli',
-        update: 'npm install -g @moonshot-ai/kimi-cli@latest',
-        npmPackage: '@moonshot-ai/kimi-cli',
+        install: 'npm install -g @moonshot-ai/kimi-code',
+        uninstall: 'npm uninstall -g @moonshot-ai/kimi-code',
+        update: 'npm install -g @moonshot-ai/kimi-code@latest',
+        npmPackage: '@moonshot-ai/kimi-code',
     },
     'claude-code': {
         install: 'npm install -g @anthropic-ai/claude-code',
