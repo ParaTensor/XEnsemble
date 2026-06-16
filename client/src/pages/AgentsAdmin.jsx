@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useContext, useCallback, useMemo, useRef } from 'react';
-import { Plus, Download, KeyRound, Pencil, Trash2, RefreshCw, ChevronRight, ChevronDown } from 'lucide-react';
+import { Plus, Download, KeyRound, Pencil, Trash2, RefreshCw } from 'lucide-react';
 import { AuthContext } from '../App';
 import Button from '../components/Button';
 import Input from '../components/Input';
@@ -46,14 +46,6 @@ function formatLifecycleTime(ts) {
   return new Date(ts).toLocaleString();
 }
 
-function compactPath(displayPath) {
-  if (!displayPath) return null;
-  const normalized = displayPath.replace(/^~\//, '');
-  const parts = normalized.split('/').filter(Boolean);
-  if (parts.length <= 2) return displayPath;
-  return `…/${parts.slice(-2).join('/')}`;
-}
-
 function getAuthSummary(agent) {
   const isGateway = agent.llm_auth_mode === 'gateway';
   if (isGateway) {
@@ -68,6 +60,43 @@ function getAuthSummary(agent) {
     hint: 'User keys',
     hintClass: 'text-zinc-500',
   };
+}
+
+function LifecycleInfoDot({ lifecycle }) {
+  if (!lifecycle) return null;
+  const label = lifecycle.ok
+    ? `${lifecycle.action} OK`
+    : `${lifecycle.action} failed`;
+  const when = formatLifecycleTime(lifecycle.finished_at);
+
+  return (
+    <span className="relative inline-flex group/lifecycle">
+      <button
+        type="button"
+        tabIndex={-1}
+        className={`ml-1.5 inline-flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-full border ${
+          lifecycle.ok
+            ? 'border-zinc-300 bg-zinc-50 text-zinc-400 hover:border-zinc-400 hover:text-zinc-600'
+            : 'border-red-200 bg-red-50 text-red-500 hover:border-red-300'
+        }`}
+        aria-label={`${label}, ${when}`}
+      >
+        <span className="h-1 w-1 rounded-full bg-current" />
+      </button>
+      <span
+        role="tooltip"
+        className="pointer-events-none absolute bottom-full left-1/2 z-20 mb-1.5 hidden w-max max-w-xs -translate-x-1/2 rounded-md border border-zinc-200 bg-white px-2.5 py-1.5 text-xs shadow-sm group-hover/lifecycle:block"
+      >
+        <span className={`block font-medium ${lifecycle.ok ? 'text-zinc-700' : 'text-red-600'}`}>
+          {label}
+        </span>
+        {!lifecycle.ok && lifecycle.message ? (
+          <span className="mt-0.5 block text-zinc-500">{lifecycle.message}</span>
+        ) : null}
+        <span className="mt-0.5 block text-zinc-400">{when}</span>
+      </span>
+    </span>
+  );
 }
 
 function patchAgentLifecycle(agents, agentId, lastLifecycle) {
@@ -116,8 +145,8 @@ export default function AgentsAdmin() {
   const [spawnDraft, setSpawnDraft] = useState(EMPTY_SPAWN_DRAFT);
   const spawnHydratedRef = useRef(false);
   const [actionLoading, setActionLoading] = useState(null);
-  const [expandedRows, setExpandedRows] = useState(() => new Set());
   const [editAgent, setEditAgent] = useState(null);
+  const [detailsAgent, setDetailsAgent] = useState(null);
   const [editDraft, setEditDraft] = useState({ cmd: '', args: '' });
   const [savingExecutable, setSavingExecutable] = useState(false);
   const [newAgent, setNewAgent] = useState({
@@ -474,15 +503,6 @@ export default function AgentsAdmin() {
 
   const isActionLoading = (agentId, action) => actionLoading === `${agentId}:${action}`;
 
-  const toggleRowExpanded = (agentId) => {
-    setExpandedRows((prev) => {
-      const next = new Set(prev);
-      if (next.has(agentId)) next.delete(agentId);
-      else next.add(agentId);
-      return next;
-    });
-  };
-
   const canSaveKeys = keysAgent && (
     authDraft.llm_auth_mode === 'gateway'
       ? Boolean(authDraft.model?.trim())
@@ -741,192 +761,206 @@ export default function AgentsAdmin() {
         </ConsoleDialogShell>
       )}
 
+      {detailsAgent && (
+        <ConsoleDialogShell
+          fitContent
+          onClose={() => setDetailsAgent(null)}
+          panelClassName={`${consoleDialogAdminFormPanelClass} p-6`}
+        >
+          <h2 className="font-bold text-lg text-zinc-900 mb-1">{detailsAgent.name}</h2>
+          <p className="text-sm text-zinc-500 mb-4">Agent registry details on this server.</p>
+          <dl className="grid grid-cols-1 gap-x-6 gap-y-4 text-sm sm:grid-cols-2">
+            <div className="min-w-0">
+              <dt className={consoleSectionLabelClass}>ID</dt>
+              <dd className="mt-0.5 break-all font-mono text-zinc-600">{detailsAgent.id}</dd>
+            </div>
+            <div className="min-w-0">
+              <dt className={consoleSectionLabelClass}>Status</dt>
+              <dd className="mt-0.5">
+                <span className={`inline-flex rounded border px-1.5 py-0.5 text-xs font-medium ${statusBadge(detailsAgent.installed)}`}>
+                  {detailsAgent.installed ? 'Installed' : 'Not installed'}
+                </span>
+              </dd>
+            </div>
+            <div className="min-w-0">
+              <dt className={consoleSectionLabelClass}>Version</dt>
+              <dd className="mt-0.5 font-mono text-zinc-600">
+                {detailsAgent.local_version ? `v${detailsAgent.local_version}` : '—'}
+              </dd>
+            </div>
+            <div className="min-w-0 sm:col-span-2">
+              <dt className={consoleSectionLabelClass}>Path</dt>
+              <dd className="mt-0.5 break-all font-mono text-zinc-600">
+                {detailsAgent.executable_path_display || detailsAgent.executable_path || '—'}
+              </dd>
+            </div>
+            <div className="min-w-0 sm:col-span-2">
+              <dt className={consoleSectionLabelClass}>Executable</dt>
+              <dd className="mt-0.5 break-all font-mono text-zinc-600">
+                {[detailsAgent.cmd, ...(detailsAgent.args || [])].filter(Boolean).join(' ')}
+              </dd>
+            </div>
+            <div className="min-w-0">
+              <dt className={consoleSectionLabelClass}>Auth</dt>
+              <dd className="mt-0.5 text-zinc-600">{getAuthSummary(detailsAgent).mode}</dd>
+            </div>
+            <div className="min-w-0">
+              <dt className={consoleSectionLabelClass}>Model</dt>
+              <dd className="mt-0.5 break-all font-mono text-zinc-600">
+                {detailsAgent.llm_auth_mode === 'gateway' && detailsAgent.gateway_config?.model
+                  ? detailsAgent.gateway_config.model
+                  : '—'}
+              </dd>
+            </div>
+            <div className="min-w-0">
+              <dt className={consoleSectionLabelClass}>Ready</dt>
+              <dd className={`mt-0.5 font-medium ${getAuthSummary(detailsAgent).hintClass}`}>
+                {getAuthSummary(detailsAgent).hint}
+              </dd>
+            </div>
+            {detailsAgent.last_lifecycle ? (
+              <div className="min-w-0 sm:col-span-2">
+                <dt className={consoleSectionLabelClass}>Last operation</dt>
+                <dd className="mt-0.5 text-zinc-600">
+                  <span className={detailsAgent.last_lifecycle.ok ? 'text-zinc-700' : 'text-red-600'}>
+                    {detailsAgent.last_lifecycle.ok
+                      ? `${detailsAgent.last_lifecycle.action} OK`
+                      : `${detailsAgent.last_lifecycle.action} failed`}
+                  </span>
+                  {!detailsAgent.last_lifecycle.ok && detailsAgent.last_lifecycle.message ? (
+                    <span className="block text-zinc-500">{detailsAgent.last_lifecycle.message}</span>
+                  ) : null}
+                  <span className="block text-xs text-zinc-400">
+                    {formatLifecycleTime(detailsAgent.last_lifecycle.finished_at)}
+                  </span>
+                </dd>
+              </div>
+            ) : null}
+          </dl>
+          <div className="flex justify-end pt-4">
+            <Button type="button" variant="secondary" size="md" onClick={() => setDetailsAgent(null)}>
+              Close
+            </Button>
+          </div>
+        </ConsoleDialogShell>
+      )}
+
       <div className={consoleTableShellClass}>
         <div className="overflow-x-auto">
-          <table className="w-full table-fixed text-left text-sm">
-            <colgroup>
-              <col className="w-9" />
-              <col className="w-[18%]" />
-              <col className="w-[22%]" />
-              <col className="w-[14%]" />
-              <col className="w-[12rem]" />
-            </colgroup>
+          <table className="w-full text-left text-sm">
             <thead className="border-b border-zinc-200 bg-white">
               <tr>
-                <th className={`${consoleTableHeadCellClass} w-9`} aria-label="Expand" />
                 <th className={consoleTableHeadCellClass}>Name</th>
                 <th className={consoleTableHeadCellClass}>Status</th>
                 <th className={consoleTableHeadCellClass}>Auth</th>
-                <th className={consoleTableHeadCellClass}>Actions</th>
+                <th className={`${consoleTableHeadCellClass} w-[9.5rem]`}>Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-zinc-100">
               {loading && agents.length === 0 ? (
                 <tr>
-                  <td colSpan={5} className={`${consoleTableBodyCellClass} text-zinc-500`}>
+                  <td colSpan={4} className={`${consoleTableBodyCellClass} text-zinc-500`}>
                     Loading...
                   </td>
                 </tr>
               ) : agents.length === 0 ? (
                 <tr>
-                  <td colSpan={5} className={`${consoleTableBodyCellClass} text-zinc-500`}>
+                  <td colSpan={4} className={`${consoleTableBodyCellClass} text-zinc-500`}>
                     No agents registered yet.
                   </td>
                 </tr>
               ) : agents.map((agent) => {
-                const isGateway = agent.llm_auth_mode === 'gateway';
-                const executable = [agent.cmd, ...agent.args].filter(Boolean).join(' ');
                 const authSummary = getAuthSummary(agent);
-                const pathDisplay = agent.executable_path_display || agent.executable_path;
-                const pathCompact = compactPath(pathDisplay);
-                const expanded = expandedRows.has(agent.id);
                 return (
-                  <React.Fragment key={agent.id}>
-                    <tr className="hover:bg-zinc-50/50">
-                      <td className={`${consoleTableBodyCellClass} w-9`}>
+                  <tr key={agent.id} className="hover:bg-zinc-50/50">
+                    <td className={`${consoleTableBodyCellClass} min-w-0`}>
+                      <div className="truncate font-medium text-zinc-900" title={agent.name}>
+                        {agent.name}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setDetailsAgent(agent)}
+                        className="mt-0.5 text-xs text-zinc-400 hover:text-zinc-700"
+                      >
+                        View details
+                      </button>
+                    </td>
+                    <td className={consoleTableBodyCellClass}>
+                      <div className="flex items-center">
+                        <span className={`inline-flex rounded border px-1.5 py-0.5 text-xs font-medium ${statusBadge(agent.installed)}`}>
+                          {agent.installed ? 'Installed' : 'Not installed'}
+                        </span>
+                        <LifecycleInfoDot lifecycle={agent.last_lifecycle} />
+                      </div>
+                    </td>
+                    <td className={consoleTableBodyCellClass}>
+                      <div className="text-xs font-medium text-zinc-700">{authSummary.mode}</div>
+                      <div
+                        className={`text-xs ${authSummary.hintClass}`}
+                        title={
+                          agent.llm_auth_mode === 'gateway'
+                            ? (agent.keys_ready
+                              ? 'Gateway model configured; agent can launch.'
+                              : 'Select a model under Configure.')
+                            : 'Users supply API keys in Settings → BYOK.'
+                        }
+                      >
+                        {authSummary.hint}
+                      </div>
+                    </td>
+                    <td className={consoleTableBodyCellClass}>
+                      <div className="flex items-center gap-1">
                         <button
                           type="button"
-                          onClick={() => toggleRowExpanded(agent.id)}
-                          className="rounded-md p-1 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-700"
-                          aria-expanded={expanded}
-                          title={expanded ? 'Hide details' : 'Show details'}
+                          onClick={() => openEditDialog(agent)}
+                          className="p-1.5 rounded-md text-zinc-500 hover:bg-zinc-100 hover:text-zinc-900"
+                          title="Edit executable"
                         >
-                          {expanded ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
+                          <Pencil className="w-3.5 h-3.5" />
                         </button>
-                      </td>
-                      <td className={`${consoleTableBodyCellClass} min-w-0`}>
-                        <div className="truncate font-medium text-zinc-900" title={agent.name}>
-                          {agent.name}
-                        </div>
-                      </td>
-                      <td className={consoleTableBodyCellClass}>
-                        <div className="space-y-1">
-                          <span className={`inline-flex rounded border px-1.5 py-0.5 text-xs font-medium ${statusBadge(agent.installed)}`}>
-                            {agent.installed ? 'Installed' : 'Not installed'}
-                          </span>
-                          {agent.last_lifecycle && (
-                            <p
-                              className={`truncate text-xs ${
-                                agent.last_lifecycle.ok ? 'text-zinc-500' : 'text-red-600'
-                              }`}
-                              title={`${agent.last_lifecycle.message} (${formatLifecycleTime(agent.last_lifecycle.finished_at)})`}
-                            >
-                              {agent.last_lifecycle.ok
-                                ? `${agent.last_lifecycle.action} OK · ${formatLifecycleTime(agent.last_lifecycle.finished_at)}`
-                                : `${agent.last_lifecycle.action} failed · ${agent.last_lifecycle.message}`}
-                            </p>
-                          )}
-                        </div>
-                      </td>
-                      <td className={consoleTableBodyCellClass}>
-                        <div className="text-xs font-medium text-zinc-700">{authSummary.mode}</div>
-                        <div
-                          className={`text-xs ${authSummary.hintClass}`}
-                          title={
-                            isGateway
-                              ? (agent.keys_ready
-                                ? 'Gateway model configured; agent can launch.'
-                                : 'Select a model under Configure.')
-                              : 'Users supply API keys in Settings → BYOK.'
-                          }
-                        >
-                          {authSummary.hint}
-                        </div>
-                      </td>
-                      <td className={consoleTableBodyCellClass}>
-                        <div className="flex items-center gap-1">
+                        {!agent.installed ? (
                           <button
                             type="button"
-                            onClick={() => openEditDialog(agent)}
-                            className="p-1.5 rounded-md text-zinc-500 hover:bg-zinc-100 hover:text-zinc-900"
-                            title="Edit executable"
+                            disabled={isActionLoading(agent.id, 'install')}
+                            onClick={() => handleInstall(agent)}
+                            className="p-1.5 rounded-md text-zinc-500 hover:bg-zinc-100 hover:text-zinc-900 disabled:opacity-40 disabled:pointer-events-none"
+                            title="Install on server"
                           >
-                            <Pencil className="w-3.5 h-3.5" />
+                            <Download className="w-3.5 h-3.5" />
                           </button>
-                          {!agent.installed ? (
+                        ) : (
+                          <>
                             <button
                               type="button"
-                              disabled={isActionLoading(agent.id, 'install')}
-                              onClick={() => handleInstall(agent)}
+                              disabled={isActionLoading(agent.id, 'update')}
+                              onClick={() => handleCheckAndUpdate(agent)}
                               className="p-1.5 rounded-md text-zinc-500 hover:bg-zinc-100 hover:text-zinc-900 disabled:opacity-40 disabled:pointer-events-none"
-                              title="Install on server"
+                              title="Check and update"
                             >
-                              <Download className="w-3.5 h-3.5" />
+                              <RefreshCw className={`w-3.5 h-3.5 ${isActionLoading(agent.id, 'update') ? 'animate-spin' : ''}`} />
                             </button>
-                          ) : (
-                            <>
-                              <button
-                                type="button"
-                                disabled={isActionLoading(agent.id, 'update')}
-                                onClick={() => handleCheckAndUpdate(agent)}
-                                className="p-1.5 rounded-md text-zinc-500 hover:bg-zinc-100 hover:text-zinc-900 disabled:opacity-40 disabled:pointer-events-none"
-                                title="Check and update"
-                              >
-                                <RefreshCw className={`w-3.5 h-3.5 ${isActionLoading(agent.id, 'update') ? 'animate-spin' : ''}`} />
-                              </button>
-                              <button
-                                type="button"
-                                disabled={isActionLoading(agent.id, 'uninstall')}
-                                onClick={() => handleUninstall(agent)}
-                                className="p-1.5 rounded-md text-red-500 hover:bg-red-50 hover:text-red-700 disabled:opacity-40 disabled:pointer-events-none"
-                                title="Uninstall from server"
-                              >
-                                <Trash2 className="w-3.5 h-3.5" />
-                              </button>
-                            </>
-                          )}
-                          <button
-                            type="button"
-                            onClick={() => openKeysDialog(agent)}
-                            className="p-1.5 rounded-md text-zinc-500 hover:bg-zinc-100 hover:text-zinc-900"
-                            title="Configure LLM auth"
-                          >
-                            <KeyRound className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                    {expanded && (
-                      <tr className="bg-zinc-50/60">
-                        <td colSpan={5} className="px-4 py-3">
-                          <dl className="grid grid-cols-2 gap-x-6 gap-y-3 text-xs sm:grid-cols-3 lg:grid-cols-5">
-                            <div className="min-w-0">
-                              <dt className={consoleSectionLabelClass}>ID</dt>
-                              <dd className="mt-0.5 truncate font-mono text-zinc-600" title={agent.id}>{agent.id}</dd>
-                            </div>
-                            <div className="min-w-0">
-                              <dt className={consoleSectionLabelClass}>Version</dt>
-                              <dd className="mt-0.5 font-mono text-zinc-600">
-                                {agent.local_version ? `v${agent.local_version}` : '—'}
-                              </dd>
-                            </div>
-                            <div className="min-w-0">
-                              <dt className={consoleSectionLabelClass}>Path</dt>
-                              <dd
-                                className="mt-0.5 truncate font-mono text-zinc-600"
-                                title={pathDisplay || undefined}
-                              >
-                                {pathCompact || '—'}
-                              </dd>
-                            </div>
-                            <div className="min-w-0">
-                              <dt className={consoleSectionLabelClass}>Executable</dt>
-                              <dd className="mt-0.5 truncate font-mono text-zinc-600" title={executable}>{executable}</dd>
-                            </div>
-                            <div className="min-w-0">
-                              <dt className={consoleSectionLabelClass}>Model</dt>
-                              <dd
-                                className="mt-0.5 truncate font-mono text-zinc-600"
-                                title={agent.gateway_config?.model || undefined}
-                              >
-                                {isGateway && agent.gateway_config?.model ? agent.gateway_config.model : '—'}
-                              </dd>
-                            </div>
-                          </dl>
-                        </td>
-                      </tr>
-                    )}
-                  </React.Fragment>
+                            <button
+                              type="button"
+                              disabled={isActionLoading(agent.id, 'uninstall')}
+                              onClick={() => handleUninstall(agent)}
+                              className="p-1.5 rounded-md text-red-500 hover:bg-red-50 hover:text-red-700 disabled:opacity-40 disabled:pointer-events-none"
+                              title="Uninstall from server"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => openKeysDialog(agent)}
+                          className="p-1.5 rounded-md text-zinc-500 hover:bg-zinc-100 hover:text-zinc-900"
+                          title="Configure LLM auth"
+                        >
+                          <KeyRound className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
                 );
               })}
             </tbody>
