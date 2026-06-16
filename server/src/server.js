@@ -13,6 +13,7 @@ const { registerPreviewGateway } = require('./preview/gateway');
 const { registerLlmProxy } = require('./llm/proxy');
 const { issueSessionToken } = require('./llm/sessionToken');
 const agentGatewayConfig = require('./admin/AgentGatewayConfig');
+const userAdmin = require('./admin/UserAdminService');
 const { startPreviewLifecycle } = require('./preview/lifecycle');
 const sessionManager = require('./session/SessionManager');
 
@@ -672,6 +673,18 @@ async function startServer() {
     }
 
     const port = Number(process.env.PORT) || 3000;
+
+    try {
+        const sync = await userAdmin.syncInstalledAgentGrantsForAllUsers();
+        if (sync.granted_count > 0) {
+            fastify.log.info(
+                `[agents] synced ${sync.granted_count} missing grant(s) for ${sync.agent_count} installed agent(s)`,
+            );
+        }
+    } catch (err) {
+        fastify.log.warn(err, '[agents] failed to sync installed agent grants');
+    }
+
     await fastify.listen({ port, host: '0.0.0.0' });
 }
 

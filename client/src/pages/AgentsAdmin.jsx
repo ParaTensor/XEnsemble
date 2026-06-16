@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useContext, useCallback, useMemo, useRef } from 'react';
-import { Plus, Download, KeyRound, Pencil, Trash2, RefreshCw } from 'lucide-react';
+import { Plus, Download, KeyRound, Pencil, Trash2, RefreshCw, ChevronRight, ChevronDown } from 'lucide-react';
 import { AuthContext } from '../App';
 import Button from '../components/Button';
 import Input from '../components/Input';
@@ -44,6 +44,30 @@ const ACTION_LOADING_HINT = {
 function formatLifecycleTime(ts) {
   if (!ts) return '';
   return new Date(ts).toLocaleString();
+}
+
+function compactPath(displayPath) {
+  if (!displayPath) return null;
+  const normalized = displayPath.replace(/^~\//, '');
+  const parts = normalized.split('/').filter(Boolean);
+  if (parts.length <= 2) return displayPath;
+  return `…/${parts.slice(-2).join('/')}`;
+}
+
+function getAuthSummary(agent) {
+  const isGateway = agent.llm_auth_mode === 'gateway';
+  if (isGateway) {
+    return {
+      mode: 'Gateway',
+      hint: agent.keys_ready ? 'Ready' : 'Needs model',
+      hintClass: agent.keys_ready ? 'text-emerald-600' : 'text-amber-600',
+    };
+  }
+  return {
+    mode: 'BYOK',
+    hint: 'User keys',
+    hintClass: 'text-zinc-500',
+  };
 }
 
 function patchAgentLifecycle(agents, agentId, lastLifecycle) {
@@ -92,6 +116,7 @@ export default function AgentsAdmin() {
   const [spawnDraft, setSpawnDraft] = useState(EMPTY_SPAWN_DRAFT);
   const spawnHydratedRef = useRef(false);
   const [actionLoading, setActionLoading] = useState(null);
+  const [expandedRows, setExpandedRows] = useState(() => new Set());
   const [editAgent, setEditAgent] = useState(null);
   const [editDraft, setEditDraft] = useState({ cmd: '', args: '' });
   const [savingExecutable, setSavingExecutable] = useState(false);
@@ -449,6 +474,15 @@ export default function AgentsAdmin() {
 
   const isActionLoading = (agentId, action) => actionLoading === `${agentId}:${action}`;
 
+  const toggleRowExpanded = (agentId) => {
+    setExpandedRows((prev) => {
+      const next = new Set(prev);
+      if (next.has(agentId)) next.delete(agentId);
+      else next.add(agentId);
+      return next;
+    });
+  };
+
   const canSaveKeys = keysAgent && (
     authDraft.llm_auth_mode === 'gateway'
       ? Boolean(authDraft.model?.trim())
@@ -709,164 +743,190 @@ export default function AgentsAdmin() {
 
       <div className={consoleTableShellClass}>
         <div className="overflow-x-auto">
-          <table className="w-full text-left text-sm whitespace-nowrap">
+          <table className="w-full table-fixed text-left text-sm">
+            <colgroup>
+              <col className="w-9" />
+              <col className="w-[18%]" />
+              <col className="w-[22%]" />
+              <col className="w-[14%]" />
+              <col className="w-[12rem]" />
+            </colgroup>
             <thead className="border-b border-zinc-200 bg-white">
               <tr>
-                <th className={`${consoleTableHeadCellClass}`}>Name / ID</th>
-                <th className={`${consoleTableHeadCellClass}`}>Status</th>
-                <th className={`${consoleTableHeadCellClass}`}>Version</th>
-                <th className={`${consoleTableHeadCellClass}`}>Path</th>
-                <th className={`${consoleTableHeadCellClass}`}>Executable</th>
-                <th className={`${consoleTableHeadCellClass}`}>Auth</th>
-                <th className={`${consoleTableHeadCellClass}`}>Model</th>
-                <th className={`${consoleTableHeadCellClass}`}>Ready</th>
-                <th className={`${consoleTableHeadCellClass}`}>Actions</th>
+                <th className={`${consoleTableHeadCellClass} w-9`} aria-label="Expand" />
+                <th className={consoleTableHeadCellClass}>Name</th>
+                <th className={consoleTableHeadCellClass}>Status</th>
+                <th className={consoleTableHeadCellClass}>Auth</th>
+                <th className={consoleTableHeadCellClass}>Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-zinc-100">
               {loading && agents.length === 0 ? (
                 <tr>
-                  <td colSpan={9} className={`${consoleTableBodyCellClass} text-zinc-500`}>
+                  <td colSpan={5} className={`${consoleTableBodyCellClass} text-zinc-500`}>
                     Loading...
                   </td>
                 </tr>
               ) : agents.length === 0 ? (
                 <tr>
-                  <td colSpan={9} className={`${consoleTableBodyCellClass} text-zinc-500`}>
+                  <td colSpan={5} className={`${consoleTableBodyCellClass} text-zinc-500`}>
                     No agents registered yet.
                   </td>
                 </tr>
               ) : agents.map((agent) => {
                 const isGateway = agent.llm_auth_mode === 'gateway';
                 const executable = [agent.cmd, ...agent.args].filter(Boolean).join(' ');
+                const authSummary = getAuthSummary(agent);
+                const pathDisplay = agent.executable_path_display || agent.executable_path;
+                const pathCompact = compactPath(pathDisplay);
+                const expanded = expandedRows.has(agent.id);
                 return (
-                  <tr key={agent.id} className="hover:bg-zinc-50/50">
-                    <td className={consoleTableBodyCellClass}>
-                      <div className="font-medium text-zinc-900">{agent.name}</div>
-                      <div className="font-mono text-xs text-zinc-400">{agent.id}</div>
-                    </td>
-                    <td className={consoleTableBodyCellClass}>
-                      <div className="space-y-1">
-                        <span className={`inline-flex rounded border px-1.5 py-0.5 text-xs font-medium ${statusBadge(agent.installed)}`}>
-                          {agent.installed ? 'Installed' : 'Not installed'}
-                        </span>
-                        {agent.last_lifecycle && (
-                          <p
-                            className={`max-w-[12rem] truncate text-xs ${
-                              agent.last_lifecycle.ok ? 'text-zinc-500' : 'text-red-600'
-                            }`}
-                            title={`${agent.last_lifecycle.message} (${formatLifecycleTime(agent.last_lifecycle.finished_at)})`}
-                          >
-                            {agent.last_lifecycle.ok
-                              ? `${agent.last_lifecycle.action} OK · ${formatLifecycleTime(agent.last_lifecycle.finished_at)}`
-                              : `${agent.last_lifecycle.action} failed · ${agent.last_lifecycle.message}`}
-                          </p>
-                        )}
-                      </div>
-                    </td>
-                    <td className={consoleTableBodyCellClass}>
-                      {agent.local_version ? (
-                        <span className="font-mono text-xs text-zinc-500">v{agent.local_version}</span>
-                      ) : (
-                        <span className="text-xs text-zinc-400">—</span>
-                      )}
-                    </td>
-                    <td className={consoleTableBodyCellClass}>
-                      {agent.executable_path ? (
-                        <span
-                          className="block max-w-[12rem] truncate font-mono text-xs text-zinc-500"
-                          title={agent.executable_path}
-                        >
-                          {agent.executable_path_display || agent.executable_path}
-                        </span>
-                      ) : (
-                        <span className="text-xs text-zinc-400">—</span>
-                      )}
-                    </td>
-                    <td className={consoleTableBodyCellClass}>
-                      <span className="inline-flex max-w-[14rem] truncate rounded bg-zinc-100 px-1.5 py-0.5 font-mono text-xs text-zinc-700" title={executable}>
-                        {executable}
-                      </span>
-                    </td>
-                    <td className={consoleTableBodyCellClass}>
-                      <span className="text-xs font-medium text-zinc-700 capitalize">
-                        {isGateway ? 'Gateway' : 'BYOK'}
-                      </span>
-                    </td>
-                    <td className={consoleTableBodyCellClass}>
-                      {isGateway && agent.gateway_config?.model ? (
-                        <span className="font-mono text-xs text-zinc-700">{agent.gateway_config.model}</span>
-                      ) : (
-                        <span className="text-xs text-zinc-400">—</span>
-                      )}
-                    </td>
-                    <td className={consoleTableBodyCellClass}>
-                      <span className={`inline-flex rounded border px-1.5 py-0.5 text-xs font-medium ${
-                        isGateway
-                          ? (agent.keys_ready
-                            ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
-                            : 'border-amber-200 bg-amber-50 text-amber-700')
-                          : 'border-zinc-200 bg-zinc-50 text-zinc-600'
-                      }`}
-                      >
-                        {isGateway
-                          ? (agent.keys_ready ? 'Ready' : 'Needs model')
-                          : 'User keys'}
-                      </span>
-                    </td>
-                    <td className={consoleTableBodyCellClass}>
-                      <div className="flex items-center gap-1">
+                  <React.Fragment key={agent.id}>
+                    <tr className="hover:bg-zinc-50/50">
+                      <td className={`${consoleTableBodyCellClass} w-9`}>
                         <button
                           type="button"
-                          onClick={() => openEditDialog(agent)}
-                          className="p-1.5 rounded-md text-zinc-500 hover:bg-zinc-100 hover:text-zinc-900"
-                          title="Edit executable"
+                          onClick={() => toggleRowExpanded(agent.id)}
+                          className="rounded-md p-1 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-700"
+                          aria-expanded={expanded}
+                          title={expanded ? 'Hide details' : 'Show details'}
                         >
-                          <Pencil className="w-3.5 h-3.5" />
+                          {expanded ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
                         </button>
-                        {!agent.installed ? (
+                      </td>
+                      <td className={`${consoleTableBodyCellClass} min-w-0`}>
+                        <div className="truncate font-medium text-zinc-900" title={agent.name}>
+                          {agent.name}
+                        </div>
+                      </td>
+                      <td className={consoleTableBodyCellClass}>
+                        <div className="space-y-1">
+                          <span className={`inline-flex rounded border px-1.5 py-0.5 text-xs font-medium ${statusBadge(agent.installed)}`}>
+                            {agent.installed ? 'Installed' : 'Not installed'}
+                          </span>
+                          {agent.last_lifecycle && (
+                            <p
+                              className={`truncate text-xs ${
+                                agent.last_lifecycle.ok ? 'text-zinc-500' : 'text-red-600'
+                              }`}
+                              title={`${agent.last_lifecycle.message} (${formatLifecycleTime(agent.last_lifecycle.finished_at)})`}
+                            >
+                              {agent.last_lifecycle.ok
+                                ? `${agent.last_lifecycle.action} OK · ${formatLifecycleTime(agent.last_lifecycle.finished_at)}`
+                                : `${agent.last_lifecycle.action} failed · ${agent.last_lifecycle.message}`}
+                            </p>
+                          )}
+                        </div>
+                      </td>
+                      <td className={consoleTableBodyCellClass}>
+                        <div className="text-xs font-medium text-zinc-700">{authSummary.mode}</div>
+                        <div
+                          className={`text-xs ${authSummary.hintClass}`}
+                          title={
+                            isGateway
+                              ? (agent.keys_ready
+                                ? 'Gateway model configured; agent can launch.'
+                                : 'Select a model under Configure.')
+                              : 'Users supply API keys in Settings → BYOK.'
+                          }
+                        >
+                          {authSummary.hint}
+                        </div>
+                      </td>
+                      <td className={consoleTableBodyCellClass}>
+                        <div className="flex items-center gap-1">
                           <button
                             type="button"
-                            disabled={isActionLoading(agent.id, 'install')}
-                            onClick={() => handleInstall(agent)}
-                            className="p-1.5 rounded-md text-zinc-500 hover:bg-zinc-100 hover:text-zinc-900 disabled:opacity-40 disabled:pointer-events-none"
-                            title="Install on server"
+                            onClick={() => openEditDialog(agent)}
+                            className="p-1.5 rounded-md text-zinc-500 hover:bg-zinc-100 hover:text-zinc-900"
+                            title="Edit executable"
                           >
-                            <Download className="w-3.5 h-3.5" />
+                            <Pencil className="w-3.5 h-3.5" />
                           </button>
-                        ) : (
-                          <>
+                          {!agent.installed ? (
                             <button
                               type="button"
-                              disabled={isActionLoading(agent.id, 'update')}
-                              onClick={() => handleCheckAndUpdate(agent)}
+                              disabled={isActionLoading(agent.id, 'install')}
+                              onClick={() => handleInstall(agent)}
                               className="p-1.5 rounded-md text-zinc-500 hover:bg-zinc-100 hover:text-zinc-900 disabled:opacity-40 disabled:pointer-events-none"
-                              title="Check and update"
+                              title="Install on server"
                             >
-                              <RefreshCw className={`w-3.5 h-3.5 ${isActionLoading(agent.id, 'update') ? 'animate-spin' : ''}`} />
+                              <Download className="w-3.5 h-3.5" />
                             </button>
-                            <button
-                              type="button"
-                              disabled={isActionLoading(agent.id, 'uninstall')}
-                              onClick={() => handleUninstall(agent)}
-                              className="p-1.5 rounded-md text-red-500 hover:bg-red-50 hover:text-red-700 disabled:opacity-40 disabled:pointer-events-none"
-                              title="Uninstall from server"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
-                          </>
-                        )}
-                        <button
-                          type="button"
-                          onClick={() => openKeysDialog(agent)}
-                          className="p-1.5 rounded-md text-zinc-500 hover:bg-zinc-100 hover:text-zinc-900"
-                          title="Configure LLM auth"
-                        >
-                          <KeyRound className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
+                          ) : (
+                            <>
+                              <button
+                                type="button"
+                                disabled={isActionLoading(agent.id, 'update')}
+                                onClick={() => handleCheckAndUpdate(agent)}
+                                className="p-1.5 rounded-md text-zinc-500 hover:bg-zinc-100 hover:text-zinc-900 disabled:opacity-40 disabled:pointer-events-none"
+                                title="Check and update"
+                              >
+                                <RefreshCw className={`w-3.5 h-3.5 ${isActionLoading(agent.id, 'update') ? 'animate-spin' : ''}`} />
+                              </button>
+                              <button
+                                type="button"
+                                disabled={isActionLoading(agent.id, 'uninstall')}
+                                onClick={() => handleUninstall(agent)}
+                                className="p-1.5 rounded-md text-red-500 hover:bg-red-50 hover:text-red-700 disabled:opacity-40 disabled:pointer-events-none"
+                                title="Uninstall from server"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => openKeysDialog(agent)}
+                            className="p-1.5 rounded-md text-zinc-500 hover:bg-zinc-100 hover:text-zinc-900"
+                            title="Configure LLM auth"
+                          >
+                            <KeyRound className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                    {expanded && (
+                      <tr className="bg-zinc-50/60">
+                        <td colSpan={5} className="px-4 py-3">
+                          <dl className="grid grid-cols-2 gap-x-6 gap-y-3 text-xs sm:grid-cols-3 lg:grid-cols-5">
+                            <div className="min-w-0">
+                              <dt className={consoleSectionLabelClass}>ID</dt>
+                              <dd className="mt-0.5 truncate font-mono text-zinc-600" title={agent.id}>{agent.id}</dd>
+                            </div>
+                            <div className="min-w-0">
+                              <dt className={consoleSectionLabelClass}>Version</dt>
+                              <dd className="mt-0.5 font-mono text-zinc-600">
+                                {agent.local_version ? `v${agent.local_version}` : '—'}
+                              </dd>
+                            </div>
+                            <div className="min-w-0">
+                              <dt className={consoleSectionLabelClass}>Path</dt>
+                              <dd
+                                className="mt-0.5 truncate font-mono text-zinc-600"
+                                title={pathDisplay || undefined}
+                              >
+                                {pathCompact || '—'}
+                              </dd>
+                            </div>
+                            <div className="min-w-0">
+                              <dt className={consoleSectionLabelClass}>Executable</dt>
+                              <dd className="mt-0.5 truncate font-mono text-zinc-600" title={executable}>{executable}</dd>
+                            </div>
+                            <div className="min-w-0">
+                              <dt className={consoleSectionLabelClass}>Model</dt>
+                              <dd
+                                className="mt-0.5 truncate font-mono text-zinc-600"
+                                title={agent.gateway_config?.model || undefined}
+                              >
+                                {isGateway && agent.gateway_config?.model ? agent.gateway_config.model : '—'}
+                              </dd>
+                            </div>
+                          </dl>
+                        </td>
+                      </tr>
+                    )}
+                  </React.Fragment>
                 );
               })}
             </tbody>

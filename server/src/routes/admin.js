@@ -316,11 +316,19 @@ function registerAdminRoutes(fastify) {
             const result = await runRecordedLifecycle(agent, 'install', () => installAgent(agent));
             const probe = probeAgent(agent.cmd);
             const localVersion = probe.installed ? await getLocalVersion(agent.cmd) : null;
+            let grantsSynced = { granted_count: 0, user_count: 0 };
+            if (probe.installed) {
+                grantsSynced = await userAdmin.grantAgentToAllNonAdminUsers(
+                    agent.id,
+                    request.user.id,
+                );
+            }
             return {
                 ...result,
                 installed: probe.installed,
                 executable_path: probe.path,
                 local_version: localVersion,
+                grants_synced: grantsSynced,
                 last_lifecycle: agentLifecycleState.get(agent.id),
             };
         } catch (err) {

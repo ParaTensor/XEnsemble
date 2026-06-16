@@ -96,7 +96,9 @@ updated_at     INTEGER
 
 主键：`(user_id, agent_id)`。
 
-**语义**：用户仅能启动白名单内的 Agent。未授权任何 Agent 时，Session 启动一律拒绝。`admin` 不受白名单限制（可使用全部已注册 Agent）。
+**语义**：用户仅能启动白名单内的 Agent。未授权任何 Agent 时，Session 启动一律拒绝。`admin` 不受白名单限制（可使用全部已安装 Agent）。
+
+**自动授权**：Admin 在服务器上成功 **Install** 某 Agent 后，系统自动将该 Agent 授予所有非 `admin` 用户（已拥有该授权的用户跳过）。服务启动时亦会按当前**已安装** Agent 列表做一次幂等回填，补齐缺失授权。管理员仍可在 Users 页手动收回某用户的 Agent 权限。
 
 ### 4.4 `platform_settings`（平台配置）
 

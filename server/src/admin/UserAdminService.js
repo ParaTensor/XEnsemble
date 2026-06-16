@@ -1,7 +1,7 @@
 const crypto = require('crypto');
 const { db } = require('../db/index');
 const schema = require('../db/schema');
-const { eq, and, sql, inArray } = require('drizzle-orm');
+const { eq, and, sql, inArray, ne } = require('drizzle-orm');
 const auth = require('../auth/index');
 const policy = require('../auth/PolicyService');
 const platformSettings = require('./PlatformSettings');
@@ -306,6 +306,77 @@ async function grantAgent(userId, agentId, actorId) {
     return { userId, agentId };
 }
 
+/**
+ * Grant one agent to every non-admin user who does not already have it.
+ * Used after a successful server install and on startup backfill.
+ */
+async function grantAgentToAllNonAdminUsers(agentId, actorId = null, { recordEvent: shouldRecord = true } = {}) {
+    const agentRows = await db.select({ id: schema.agents.id }).from(schema.agents)
+        .where(eq(schema.agents.id, agentId));
+    if (agentRows.length === 0) {
+        throw Object.assign(new Error(`Unknown agent: ${agentId}`), { statusCode: 400 });
+    }
+
+    const users = await db
+        .select({ id: schema.users.id })
+        .from(schema.users)
+        .where(ne(schema.users.role, 'admin'));
+    if (users.length === 0) {
+        return { granted_count: 0, user_count: 0 };
+    }
+
+    const existing = await db
+        .select({ userId: schema.userAgentGrants.userId })
+        .from(schema.userAgentGrants)
+        .where(eq(schema.userAgentGrants.agentId, agentId));
+    const existingSet = new Set(existing.map((row) => row.userId));
+
+    const now = Date.now();
+    let grantedCount = 0;
+    for (const user of users) {
+        if (existingSet.has(user.id)) continue;
+        await db.insert(schema.userAgentGrants).values({
+            userId: user.id,
+            agentId,
+            grantedBy: actorId,
+            grantedAt: now,
+        });
+        grantedCount += 1;
+    }
+
+    if (shouldRecord && grantedCount > 0) {
+        await recordEvent({
+            userId: actorId,
+            subjectType: 'agent',
+            subjectId: agentId,
+            type: 'agent_granted',
+            data: { granted_to_all_users: true, user_count: grantedCount },
+        });
+    }
+
+    return { granted_count: grantedCount, user_count: users.length };
+}
+
+/** Ensure every installed agent is granted to all non-admin users (idempotent). */
+async function syncInstalledAgentGrantsForAllUsers(actorId = null) {
+    const agentIds = await installedAgents.listInstalledAgentIds();
+    let grantedCount = 0;
+    for (const agentId of agentIds) {
+        const result = await grantAgentToAllNonAdminUsers(agentId, actorId, { recordEvent: false });
+        grantedCount += result.granted_count;
+    }
+    if (grantedCount > 0) {
+        await recordEvent({
+            userId: actorId,
+            subjectType: 'platform',
+            subjectId: 'agent_grants',
+            type: 'agent_granted',
+            data: { sync_installed_agents: true, grant_count: grantedCount, agent_count: agentIds.length },
+        });
+    }
+    return { agent_count: agentIds.length, granted_count: grantedCount };
+}
+
 async function revokeAgent(userId, agentId, actorId) {
     await db.delete(schema.userAgentGrants).where(and(
         eq(schema.userAgentGrants.userId, userId),
@@ -412,6 +483,8 @@ module.exports = {
     setUserQuota,
     setUserAgents,
     grantAgent,
+    grantAgentToAllNonAdminUsers,
+    syncInstalledAgentGrantsForAllUsers,
     revokeAgent,
     resetPassword,
     loginUser,
