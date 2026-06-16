@@ -73,6 +73,12 @@ const agents = sqliteTable('agents', {
   envRequired: text('env_required').notNull()
 });
 
+const userPreferences = sqliteTable('user_preferences', {
+  userId: text('user_id').notNull().references(() => users.id),
+  key: text('key').notNull(),
+  value: text('value').notNull(),
+});
+
 const userAgentGrants = sqliteTable('user_agent_grants', {
   userId: text('user_id').notNull().references(() => users.id),
   agentId: text('agent_id').notNull().references(() => agents.id),
@@ -169,6 +175,7 @@ const workspaceCheckpoints = sqliteTable('workspace_checkpoints', {
 module.exports = {
   users,
   userQuotas,
+  userPreferences,
   userAgentGrants,
   platformSettings,
   secrets,

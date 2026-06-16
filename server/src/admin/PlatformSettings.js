@@ -14,6 +14,8 @@ const DEFAULTS = {
         resource_tier: DEFAULT_QUOTA.resourceTier,
     },
     session_ttl_hours: 24,
+    default_terminal_theme_id: 'nord',
+    disabled_terminal_theme_ids: [],
 };
 
 async function get(key) {
@@ -51,9 +53,21 @@ async function getAll() {
 }
 
 async function updateAll(updates) {
-    const allowed = ['llm_auth_mode', 'registration_mode', 'default_user_quota', 'session_ttl_hours'];
+    const allowed = [
+        'llm_auth_mode',
+        'registration_mode',
+        'default_user_quota',
+        'session_ttl_hours',
+        'default_terminal_theme_id',
+        'disabled_terminal_theme_ids',
+    ];
     if (updates.llm_auth_mode !== undefined && !['gateway', 'byok'].includes(updates.llm_auth_mode)) {
         throw Object.assign(new Error('Invalid llm_auth_mode'), { statusCode: 400 });
+    }
+    if (updates.disabled_terminal_theme_ids !== undefined) {
+        if (!Array.isArray(updates.disabled_terminal_theme_ids)) {
+            throw Object.assign(new Error('disabled_terminal_theme_ids must be an array'), { statusCode: 400 });
+        }
     }
     for (const key of allowed) {
         if (updates[key] !== undefined) {
@@ -82,6 +96,8 @@ async function seedDefaults(sqlite) {
     insert.run('registration_mode', JSON.stringify(DEFAULTS.registration_mode));
     insert.run('default_user_quota', JSON.stringify(DEFAULTS.default_user_quota));
     insert.run('session_ttl_hours', JSON.stringify(DEFAULTS.session_ttl_hours));
+    insert.run('default_terminal_theme_id', JSON.stringify(DEFAULTS.default_terminal_theme_id));
+    insert.run('disabled_terminal_theme_ids', JSON.stringify(DEFAULTS.disabled_terminal_theme_ids));
 }
 
 module.exports = {

@@ -1,5 +1,7 @@
 const platformSecrets = require('../admin/PlatformSecrets');
 const platformSettings = require('../admin/PlatformSettings');
+const userPreferences = require('../admin/UserPreferences');
+const terminalThemes = require('../config/terminalThemes');
 const unigateway = require('../gateway/unigatewayManager');
 const agentGatewayConfig = require('../admin/AgentGatewayConfig');
 const { resolveLlmPublicRouterBase } = require('../llm/publicUrl');
@@ -167,6 +169,41 @@ function applyAgentEnvOverrides(env, cfg) {
     return out;
 }
 
+async function resolveTerminalThemeContext({ userId, terminalThemeId, warn } = {}) {
+    const settings = await platformSettings.getAll();
+    const disabledIds = settings.disabled_terminal_theme_ids || [];
+    const userThemeId = userId ? await userPreferences.getTerminalThemeId(userId) : null;
+    const platformDefaultId = settings.default_terminal_theme_id;
+
+    const effectiveId = terminalThemes.resolveEffectiveTerminalThemeId({
+        requestThemeId: terminalThemeId,
+        userThemeId,
+        platformDefaultId,
+        disabledIds,
+        warn,
+    });
+
+    const platformThemeId = platformDefaultId || terminalThemes.getCatalogDefaultId();
+    return {
+        terminal_theme_id: effectiveId,
+        platformSpawnEnv: terminalThemes.getThemeSpawnEnv(platformThemeId),
+        themeSpawnEnv: terminalThemes.getThemeSpawnEnv(effectiveId),
+    };
+}
+
+function resolveTerminalSpawnEnv(themeId) {
+    return terminalThemes.getThemeSpawnEnv(themeId);
+}
+
+function mergeSpawnEnvLayers({ platformSpawnEnv, themeSpawnEnv, secretEnv, cfg }) {
+    let env = {
+        ...platformSpawnEnv,
+        ...themeSpawnEnv,
+        ...secretEnv,
+    };
+    return applyAgentEnvOverrides(env, cfg);
+}
+
 async function buildGatewaySpawnEnv(agentId, envRequired, { draftModel, draftEnvOverrides, sessionToken, forPreview = false } = {}) {
     const cfg = await agentGatewayConfig.getForAgent(agentId);
     const model = (draftModel ?? cfg?.model ?? '').trim();
@@ -195,12 +232,30 @@ async function buildGatewaySpawnEnv(agentId, envRequired, { draftModel, draftEnv
     return { env, cfg, model, platform, defaults };
 }
 
-async function resolveSpawnEnv({ userId, agentId, envRequired, sessionToken, projectId } = {}) {
+async function resolveSpawnEnv({ userId, agentId, envRequired, sessionToken, projectId, terminalThemeId, forPreview = false, warn } = {}) {
     const mode = await resolveAgentAuthMode(agentId);
-    const platform = applyGatewaySynthesis(await resolvePlatformSecrets({ sessionToken }));
+    const cfg = await agentGatewayConfig.getForAgent(agentId);
+    const themeCtx = await resolveTerminalThemeContext({ userId, terminalThemeId, warn });
+    const platform = applyGatewaySynthesis(await resolvePlatformSecrets({ sessionToken, forPreview }));
+
+    const finish = (secretEnv, missing = []) => {
+        const env = mergeSpawnEnvLayers({
+            platformSpawnEnv: themeCtx.platformSpawnEnv,
+            themeSpawnEnv: themeCtx.themeSpawnEnv,
+            secretEnv,
+            cfg,
+        });
+        return {
+            mode,
+            env,
+            missing,
+            terminal_theme_id: themeCtx.terminal_theme_id,
+            spawn_env_preview: terminalThemes.pickSpawnEnvPreview(env),
+        };
+    };
 
     if (mode === 'gateway') {
-        if (!sessionToken?.trim()) {
+        if (!forPreview && !sessionToken?.trim()) {
             return {
                 mode,
                 env: null,
@@ -221,7 +276,7 @@ async function resolveSpawnEnv({ userId, agentId, envRequired, sessionToken, pro
             }
         }
         const missing = findMissing(env, envRequired);
-        if (missing.length > 0) {
+        if (missing.length > 0 && !forPreview) {
             return {
                 mode,
                 env: null,
@@ -231,8 +286,7 @@ async function resolveSpawnEnv({ userId, agentId, envRequired, sessionToken, pro
         }
         env = await applyAgentGatewayModel(agentId, applySpawnDefaults({ ...platform, ...env }, envRequired));
         env = applyGatewayAgentEnv(agentId, env, platform, envRequired);
-        env = applyAgentEnvOverrides(env, await agentGatewayConfig.getForAgent(agentId));
-        return { mode, env, missing: [] };
+        return finish(env, missing);
     }
 
     const user = await getUserSecrets(userId);
@@ -246,7 +300,31 @@ async function resolveSpawnEnv({ userId, agentId, envRequired, sessionToken, pro
             error: `Missing required keys: ${missing.join(', ')}. Configure them in Settings or before launch.`,
         };
     }
-    return { mode, env, missing: [] };
+    return finish(env);
+}
+
+async function previewSpawnEnv({ userId, agentId, envRequired, terminalThemeId } = {}) {
+    const resolved = await resolveSpawnEnv({
+        userId,
+        agentId,
+        envRequired,
+        terminalThemeId,
+        forPreview: true,
+    });
+    if (!resolved.env) {
+        return {
+            mode: resolved.mode,
+            ready: false,
+            error: resolved.error || 'Unable to resolve spawn environment.',
+        };
+    }
+    return {
+        mode: resolved.mode,
+        ready: true,
+        terminal_theme_id: resolved.terminal_theme_id,
+        effective_spawn_env: resolved.env,
+        spawn_env_preview: resolved.spawn_env_preview,
+    };
 }
 
 async function isAgentKeysReady(envRequired, userId, agentId) {
@@ -355,7 +433,12 @@ module.exports = {
     getUserSecrets,
     applyGatewaySynthesis,
     resolveSpawnEnv,
+    resolveTerminalSpawnEnv,
+    resolveTerminalThemeContext,
+    mergeSpawnEnvLayers,
+    applyAgentEnvOverrides,
     isAgentKeysReady,
     findMissing,
     previewGatewaySpawnEnv,
+    previewSpawnEnv,
 };

@@ -196,9 +196,12 @@ Authorization: Bearer <token>
 
 {
   "agent_id": "kimi-code",
-  "project_id": "proj_abc123"
+  "project_id": "proj_abc123",
+  "terminal_theme_id": "dracula"
 }
 ```
+
+`terminal_theme_id` 可选；省略时使用用户偏好 → 平台默认 → catalog 默认。解析优先级：`请求体` > `用户偏好` > `平台 default_terminal_theme_id` > catalog `default_id`。
 
 成功响应：
 
@@ -208,9 +211,36 @@ Authorization: Bearer <token>
   "status": "running",
   "runtime_id": "rt_...",
   "stream_ref": null,
-  "recoverable": true
+  "recoverable": true,
+  "terminal_theme_id": "dracula",
+  "spawn_env_preview": { "COLORFGBG": "15;0", "COLORTERM": "truecolor" }
 }
 ```
+
+spawn 时 Server 按 effective theme 注入 `COLORFGBG` 等变量（Cursor Agent 等 CLI 用于 dark/light TUI 探测）。Admin 可在 Agent gateway config 的 `env_overrides.COLORFGBG` 覆盖 per-agent。
+
+### 4.4.1 Terminal Themes & 用户偏好
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| GET | `/api/v1/terminal-themes` | Theme catalog（metadata；完整 palette 由 Desktop 持有） |
+| GET | `/api/v1/user/preferences` | 用户偏好 |
+| PUT | `/api/v1/user/preferences` | 更新偏好；body: `{ "terminal_theme_id": "dracula" }` |
+| GET | `/api/v1/session/spawn-preview?agent_id=&terminal_theme_id=` | 预览 effective spawn env（含 COLORFGBG） |
+
+**Theme catalog 响应**：
+
+```json
+{
+  "default_id": "nord",
+  "themes": [
+    { "id": "nord", "label": "Nord", "appearance": "dark" },
+    { "id": "dracula", "label": "Dracula", "appearance": "dark" }
+  ]
+}
+```
+
+Admin 平台设置（`GET/PUT /api/v1/admin/platform-settings`）扩展字段：`default_terminal_theme_id`、`disabled_terminal_theme_ids`。
 
 启动前须：项目存在、Agent 已授权、Secrets 已配置（Gateway 或 BYOK 模式）、未超并发 Session 配额。
 

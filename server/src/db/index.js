@@ -242,6 +242,14 @@ sqlite.exec(`
     key TEXT PRIMARY KEY,
     value TEXT NOT NULL
   );
+
+  CREATE TABLE IF NOT EXISTS user_preferences (
+    user_id TEXT NOT NULL,
+    key TEXT NOT NULL,
+    value TEXT NOT NULL,
+    PRIMARY KEY (user_id, key),
+    FOREIGN KEY(user_id) REFERENCES users(id)
+  );
 `);
 
 const userCols = sqlite.prepare(`PRAGMA table_info(users)`).all();
@@ -274,6 +282,8 @@ insertSetting.run('default_user_quota', JSON.stringify({
     resource_tier: 'basic',
 }));
 insertSetting.run('session_ttl_hours', JSON.stringify(24));
+insertSetting.run('default_terminal_theme_id', JSON.stringify('nord'));
+insertSetting.run('disabled_terminal_theme_ids', JSON.stringify([]));
 
 const defaultQuotaJson = sqlite.prepare(`SELECT value FROM platform_settings WHERE key = 'default_user_quota'`).get();
 const defaultQuota = defaultQuotaJson ? JSON.parse(defaultQuotaJson.value) : {

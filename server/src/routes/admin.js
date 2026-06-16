@@ -179,6 +179,24 @@ function registerAdminRoutes(fastify) {
         if (llmMode !== undefined && !['gateway', 'byok'].includes(llmMode)) {
             return reply.code(400).send({ error: 'Invalid llm_auth_mode' });
         }
+        const terminalThemes = require('../config/terminalThemes');
+        const defaultThemeId = request.body?.default_terminal_theme_id;
+        if (defaultThemeId !== undefined) {
+            if (typeof defaultThemeId !== 'string' || !terminalThemes.getThemeById(defaultThemeId)) {
+                return reply.code(400).send({ error: 'Invalid default_terminal_theme_id' });
+            }
+        }
+        const disabledIds = request.body?.disabled_terminal_theme_ids;
+        if (disabledIds !== undefined) {
+            if (!Array.isArray(disabledIds)) {
+                return reply.code(400).send({ error: 'disabled_terminal_theme_ids must be an array' });
+            }
+            for (const id of disabledIds) {
+                if (typeof id !== 'string' || !terminalThemes.getThemeById(id)) {
+                    return reply.code(400).send({ error: `Invalid disabled terminal theme id: ${id}` });
+                }
+            }
+        }
         try {
             return await platformSettings.updateAll(request.body || {});
         } catch (err) {

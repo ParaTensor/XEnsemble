@@ -1,0 +1,44 @@
+{
+  "themes": [
+    {
+      "id": "nord",
+      "label": "Nord",
+      "appearance": "dark",
+      "enabled": true,
+      "spawn_env": {
+        "COLORFGBG": "15;0",
+        "COLORTERM": "truecolor"
+      }
+    },
+    {
+      "id": "dracula",
+      "label": "Dracula",
+      "appearance": "dark",
+      "enabled": true,
+      "spawn_env": {
+        "COLORFGBG": "15;0",
+        "COLORTERM": "truecolor"
+      }
+    },
+    {
+      "id": "one-dark",
+      "label": "One Dark",
+      "appearance": "dark",
+      "enabled": true,
+      "spawn_env": {
+        "COLORFGBG": "15;0",
+        "COLORTERM": "truecolor"
+      }
+    },
+    {
+      "id": "solarized-light",
+      "label": "Solarized Light",
+      "appearance": "light",
+      "enabled": false,
+      "spawn_env": {
+        "COLORFGBG": "0;15"
+      }
+    }
+  ],
+  "default_id": "nord"
+}

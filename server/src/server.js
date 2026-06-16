@@ -24,6 +24,7 @@ const { registerAuthHooks } = require('./auth/hooks');
 const policy = require('./auth/PolicyService');
 const { registerAuthRoutes } = require('./routes/auth');
 const { registerAdminRoutes } = require('./routes/admin');
+const { registerUserRoutes } = require('./routes/user');
 const { registerTerminalHttpRoutes } = require('./routes/terminalHttp');
 const { applyTerminalMessage, subscribeTerminal } = require('./session/terminalBridge');
 const unigateway = require('./gateway/unigatewayManager');
@@ -58,6 +59,7 @@ fastify.register(require('@fastify/websocket'));
 registerAuthHooks(fastify);
 registerAuthRoutes(fastify);
 registerAdminRoutes(fastify);
+registerUserRoutes(fastify);
 registerTerminalHttpRoutes(fastify);
 registerGatewayAdminRoutes(fastify);
 
@@ -327,7 +329,7 @@ fastify.delete('/api/v1/sessions/:sessionId', { preValidation: [fastify.authenti
 
 // 启动 Agent Session（通过 RuntimeProvider + ExecAdapter）
 fastify.post('/api/v1/session/start', { preValidation: [fastify.authenticate] }, async (request, reply) => {
-    const { agent_id, project_id } = request.body;
+    const { agent_id, project_id, terminal_theme_id } = request.body;
     if (!project_id) {
         return reply.code(400).send({ error: 'project_id is required. Select or create a project first.' });
     }
@@ -388,6 +390,8 @@ fastify.post('/api/v1/session/start', { preValidation: [fastify.authenticate] },
         envRequired: agentMeta.env_required,
         sessionToken,
         projectId: project_id,
+        terminalThemeId: terminal_theme_id,
+        warn: (msg) => request.log.warn(msg),
     });
     if (!resolved.env) {
         return reply.code(400).send({ error: resolved.error });
@@ -445,6 +449,8 @@ fastify.post('/api/v1/session/start', { preValidation: [fastify.authenticate] },
         runtime_id: runtimeId,
         stream_ref: streamRef,
         recoverable,
+        terminal_theme_id: resolved.terminal_theme_id,
+        spawn_env_preview: resolved.spawn_env_preview,
     };
 });
 

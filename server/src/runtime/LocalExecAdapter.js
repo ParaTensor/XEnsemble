@@ -172,7 +172,7 @@ class LocalExecAdapter extends ExecAdapter {
             ...process.env,
             ...env,
             PATH: enrichPath({ ...process.env, ...env }),
-            TERM: 'xterm-256color',
+            TERM: env.TERM || process.env.TERM || 'xterm-256color',
         };
 
         const resolved = resolveExecutable(cmd, spawnEnv);
