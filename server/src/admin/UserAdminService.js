@@ -1,7 +1,7 @@
 const crypto = require('crypto');
 const { db } = require('../db/index');
 const schema = require('../db/schema');
-const { eq, and, sql, inArray, ne } = require('drizzle-orm');
+const { eq, and, sql, inArray, ne, isNull, gt } = require('drizzle-orm');
 const auth = require('../auth/index');
 const policy = require('../auth/PolicyService');
 const platformSettings = require('./PlatformSettings');
@@ -10,12 +10,13 @@ const { recordEvent } = require('../events/recordEvent');
 
 const REFRESH_TOKEN_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
 
-async function createRefreshToken(userId, deviceName = null) {
+async function createRefreshToken(userId, deviceName = null, tx = null) {
     const raw = auth.generateRefreshTokenValue();
     const tokenHash = auth.hashToken(raw);
     const now = Date.now();
     const id = `rt_${crypto.randomBytes(8).toString('hex')}`;
-    await db.insert(schema.refreshTokens).values({
+    const client = tx || db;
+    await client.insert(schema.refreshTokens).values({
         id,
         userId,
         tokenHash,
@@ -28,17 +29,24 @@ async function createRefreshToken(userId, deviceName = null) {
 
 async function rotateRefreshToken(oldRawToken, userId, deviceName = null) {
     const oldHash = auth.hashToken(oldRawToken);
-    const rows = await db.select().from(schema.refreshTokens)
-        .where(eq(schema.refreshTokens.tokenHash, oldHash));
-    if (rows.length === 0) return null;
-    const tokenRow = rows[0];
-    if (tokenRow.userId !== userId) return null;
-    if (tokenRow.revokedAt || tokenRow.expiresAt < Date.now()) return null;
-    // Revoke old token
-    await db.update(schema.refreshTokens)
-        .set({ revokedAt: Date.now() })
-        .where(eq(schema.refreshTokens.id, tokenRow.id));
-    return createRefreshToken(userId, deviceName);
+    const now = Date.now();
+    return db.transaction(async (tx) => {
+        const rows = await tx.select().from(schema.refreshTokens)
+            .where(and(
+                eq(schema.refreshTokens.tokenHash, oldHash),
+                eq(schema.refreshTokens.userId, userId),
+                isNull(schema.refreshTokens.revokedAt),
+                gt(schema.refreshTokens.expiresAt, now),
+            ));
+        if (rows.length === 0) {
+            return null;
+        }
+        const tokenRow = rows[0];
+        await tx.update(schema.refreshTokens)
+            .set({ revokedAt: now })
+            .where(eq(schema.refreshTokens.id, tokenRow.id));
+        return createRefreshToken(userId, deviceName, tx);
+    });
 }
 
 async function revokeAllUserRefreshTokens(userId) {
@@ -471,21 +479,27 @@ async function loginUser(username, password, deviceName = null) {
         throw Object.assign(new Error('Account suspended'), { statusCode: 403, code: 'account_suspended' });
     }
 
-    // Transparently upgrade legacy password hashes on successful login
-    if (auth.needsRehash(user.passwordHash)) {
-        await db.update(schema.users)
-            .set({ passwordHash: auth.hashPassword(password), updatedAt: Date.now() })
-            .where(eq(schema.users.id, user.id));
-    }
-
-    await db.update(schema.users).set({ lastLoginAt: Date.now() }).where(eq(schema.users.id, user.id));
+    // Ensure quota row exists before the login transaction; it does not accept a tx handle.
     await policy.ensureUserQuota(user.id);
 
+    const refreshToken = await db.transaction(async (tx) => {
+        // Transparently upgrade legacy password hashes on successful login
+        if (auth.needsRehash(user.passwordHash)) {
+            await tx.update(schema.users)
+                .set({ passwordHash: auth.hashPassword(password), updatedAt: Date.now() })
+                .where(eq(schema.users.id, user.id));
+        }
+
+        await tx.update(schema.users)
+            .set({ lastLoginAt: Date.now() })
+            .where(eq(schema.users.id, user.id));
+
+        return createRefreshToken(user.id, deviceName, tx);
+    });
+
     const accessToken = auth.generateAccessToken(user);
-    const refreshToken = await createRefreshToken(user.id, deviceName);
     const quotas = await policy.getEffectiveQuota(user.id);
-    const platformSettings = require('./PlatformSettings');
-    const llm_auth_mode = await platformSettings.getLlmAuthMode();
+    const llmAuthMode = await platformSettings.getLlmAuthMode();
     return {
         access_token: accessToken,
         refresh_token: refreshToken,
@@ -494,7 +508,7 @@ async function loginUser(username, password, deviceName = null) {
             username: user.username,
             role: user.role,
             status,
-            llm_auth_mode,
+            llm_auth_mode: llmAuthMode,
         },
         quotas,
     };
@@ -505,8 +519,7 @@ async function getMe(userId) {
     if (!user) return null;
     const quotas = await policy.getEffectiveQuota(userId);
     const granted = await policy.listGrantedAgentIds(userId, user.role);
-    const platformSettings = require('./PlatformSettings');
-    const llm_auth_mode = await platformSettings.getLlmAuthMode();
+    const llmAuthMode = await platformSettings.getLlmAuthMode();
     return {
         id: user.id,
         username: user.username,
@@ -516,7 +529,7 @@ async function getMe(userId) {
         email: user.email || null,
         quotas,
         granted_agents_count: user.role === 'admin' ? null : granted.length,
-        llm_auth_mode,
+        llm_auth_mode: llmAuthMode,
     };
 }
 
