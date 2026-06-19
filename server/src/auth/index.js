@@ -33,20 +33,33 @@ function hashPassword(password) {
 
 function verifyPassword(password, storedHash) {
     if (!storedHash) return false;
-    // Legacy format: salt:hash (1000 iterations)
-    if (!storedHash.includes('$')) {
-        const [salt, hash] = storedHash.split(':');
-        if (!salt || !hash) return false;
-        const verifyHash = crypto.pbkdf2Sync(password, salt, 1000, 64, 'sha512').toString('hex');
+    try {
+        // Legacy format: salt:hash (1000 iterations)
+        if (!storedHash.includes('$')) {
+            const [salt, hash] = storedHash.split(':');
+            if (!salt || !hash) return false;
+            const verifyHash = crypto.pbkdf2Sync(password, salt, 1000, 64, 'sha512').toString('hex');
+            return hash === verifyHash;
+        }
+        const parts = storedHash.split('$');
+        if (parts.length !== 4 || parts[0] !== 'pbkdf2_sha512') return false;
+        const iterations = parseInt(parts[1], 10);
+        const salt = parts[2];
+        const hash = parts[3];
+        if (
+            !Number.isFinite(iterations) ||
+            iterations < 1 ||
+            iterations > Number.MAX_SAFE_INTEGER ||
+            !salt ||
+            !hash
+        ) {
+            return false;
+        }
+        const verifyHash = crypto.pbkdf2Sync(password, salt, iterations, 64, 'sha512').toString('hex');
         return hash === verifyHash;
+    } catch (err) {
+        return false;
     }
-    const parts = storedHash.split('$');
-    if (parts.length !== 4 || parts[0] !== 'pbkdf2_sha512') return false;
-    const iterations = parseInt(parts[1], 10);
-    const salt = parts[2];
-    const hash = parts[3];
-    const verifyHash = crypto.pbkdf2Sync(password, salt, iterations, 64, 'sha512').toString('hex');
-    return hash === verifyHash;
 }
 
 function needsRehash(storedHash) {
@@ -92,12 +105,25 @@ function encryptSecrets(secretsObj) {
 
 function decryptSecrets(encryptedStr) {
     if (!encryptedStr) return {};
-    const [ivHex, authTagHex, encryptedData] = encryptedStr.split(':');
-    const decipher = crypto.createDecipheriv('aes-256-gcm', ENCRYPTION_KEY, Buffer.from(ivHex, 'hex'));
-    decipher.setAuthTag(Buffer.from(authTagHex, 'hex'));
-    let decrypted = decipher.update(encryptedData, 'hex', 'utf8');
-    decrypted += decipher.final('utf8');
-    return JSON.parse(decrypted);
+    const parts = encryptedStr.split(':');
+    if (parts.length !== 3) return {};
+    const [ivHex, authTagHex, encryptedData] = parts;
+    if (
+        !/^[0-9a-fA-F]{24}$/.test(ivHex) ||
+        !/^[0-9a-fA-F]{32}$/.test(authTagHex) ||
+        !encryptedData
+    ) {
+        return {};
+    }
+    try {
+        const decipher = crypto.createDecipheriv('aes-256-gcm', ENCRYPTION_KEY, Buffer.from(ivHex, 'hex'));
+        decipher.setAuthTag(Buffer.from(authTagHex, 'hex'));
+        let decrypted = decipher.update(encryptedData, 'hex', 'utf8');
+        decrypted += decipher.final('utf8');
+        return JSON.parse(decrypted);
+    } catch (err) {
+        return {};
+    }
 }
 
 module.exports = {
