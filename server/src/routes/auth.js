@@ -4,9 +4,17 @@ const { db } = require('../db/index');
 const schema = require('../db/schema');
 const { eq } = require('drizzle-orm');
 
+function sanitizeDeviceName(deviceName) {
+    if (typeof deviceName !== 'string') return null;
+    const trimmed = deviceName.trim();
+    if (trimmed.length === 0) return null;
+    return trimmed.slice(0, 255);
+}
+
 function registerAuthRoutes(fastify) {
     fastify.post('/api/v1/auth/register', async (request, reply) => {
         const { username, password, device_name } = request.body || {};
+        const deviceName = sanitizeDeviceName(device_name);
         try {
             const { user, status, autoLogin } = await userAdmin.registerUser({ username, password });
             if (!autoLogin) {
@@ -15,7 +23,7 @@ function registerAuthRoutes(fastify) {
                     user: { id: user.id, username: user.username, status },
                 });
             }
-            const login = await userAdmin.loginUser(username, password, device_name);
+            const login = await userAdmin.loginUser(username, password, deviceName);
             return {
                 access_token: login.access_token,
                 refresh_token: login.refresh_token,
@@ -32,8 +40,9 @@ function registerAuthRoutes(fastify) {
 
     fastify.post('/api/v1/auth/login', async (request, reply) => {
         const { username, password, device_name } = request.body || {};
+        const deviceName = sanitizeDeviceName(device_name);
         try {
-            const result = await userAdmin.loginUser(username, password, device_name);
+            const result = await userAdmin.loginUser(username, password, deviceName);
             return {
                 access_token: result.access_token,
                 refresh_token: result.refresh_token,
@@ -50,26 +59,33 @@ function registerAuthRoutes(fastify) {
 
     fastify.post('/api/v1/auth/refresh', async (request, reply) => {
         const { refresh_token, device_name } = request.body || {};
+        const deviceName = sanitizeDeviceName(device_name);
         if (!refresh_token) {
             return reply.code(400).send({ error: 'refresh_token is required' });
         }
+        let userId = null;
         try {
             const tokenHash = auth.hashToken(refresh_token);
-            const rows = await db.select().from(schema.refreshTokens).where(eq(schema.refreshTokens.tokenHash, tokenHash));
-            if (rows.length === 0 || rows[0].revokedAt || rows[0].expiresAt < Date.now()) {
+            const rows = await db.select({ userId: schema.refreshTokens.userId })
+                .from(schema.refreshTokens)
+                .where(eq(schema.refreshTokens.tokenHash, tokenHash));
+            if (rows.length === 0) {
                 return reply.code(401).send({ error: 'Invalid or expired refresh token' });
             }
-            const tokenRow = rows[0];
-            const user = await userAdmin.getUserById(tokenRow.userId);
+            userId = rows[0].userId;
+            const user = await userAdmin.getUserById(userId);
             if (!user || user.status !== 'active') {
-                return reply.code(403).send({ error: 'account_inactive' });
+                return reply.code(403).send({ error: 'Account is inactive', code: 'account_inactive' });
             }
-            await db.update(schema.refreshTokens).set({ revokedAt: Date.now() }).where(eq(schema.refreshTokens.id, tokenRow.id));
-            const newRefreshToken = await userAdmin.createRefreshToken(user.id, device_name);
+            const newRefreshToken = await userAdmin.rotateRefreshToken(refresh_token, user.id, deviceName);
+            if (!newRefreshToken) {
+                return reply.code(401).send({ error: 'Invalid or expired refresh token' });
+            }
             const accessToken = auth.generateAccessToken(user);
             return { access_token: accessToken, refresh_token: newRefreshToken };
         } catch (err) {
-            return reply.code(401).send({ error: 'Invalid refresh token' });
+            if (reply.sent) return;
+            return reply.code(500).send({ error: 'Internal server error' });
         }
     });
 
