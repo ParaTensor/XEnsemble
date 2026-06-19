@@ -225,23 +225,45 @@ class LocalExecAdapter extends ExecAdapter {
         };
 
         return new Promise((resolve, reject) => {
+            const maxBuffer = options.maxBuffer || 2 * 1024 * 1024;
+
             const child = spawn(cmd, args, {
                 cwd: workspaceDir,
                 env: spawnEnv,
                 timeout: options.timeoutMs || 60_000,
-                maxBuffer: options.maxBuffer || 2 * 1024 * 1024,
             });
 
             let stdout = '';
             let stderr = '';
-            child.stdout?.on('data', (chunk) => { stdout += chunk; });
-            child.stderr?.on('data', (chunk) => { stderr += chunk; });
+            let totalLength = 0;
+            let killedForBuffer = false;
+
+            child.stdout?.on('data', (chunk) => {
+                stdout += chunk;
+                totalLength += chunk.length;
+                if (totalLength > maxBuffer && !killedForBuffer) {
+                    killedForBuffer = true;
+                    child.kill('SIGTERM');
+                }
+            });
+            child.stderr?.on('data', (chunk) => {
+                stderr += chunk;
+                totalLength += chunk.length;
+                if (totalLength > maxBuffer && !killedForBuffer) {
+                    killedForBuffer = true;
+                    child.kill('SIGTERM');
+                }
+            });
 
             child.on('error', (err) => {
                 reject(new AgentSpawnError(`Failed to run command: ${err.message}`, 500));
             });
 
             child.on('close', (code, signal) => {
+                if (killedForBuffer) {
+                    reject(new AgentSpawnError('Command output exceeded maxBuffer', 504));
+                    return;
+                }
                 if (signal) {
                     reject(new AgentSpawnError(`Command killed by ${signal}`, 504));
                     return;
