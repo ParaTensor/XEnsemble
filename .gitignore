@@ -6,3 +6,4 @@ server/data/
 gateway/target/
 client/dist
 .cursor/
+.kimi-code/

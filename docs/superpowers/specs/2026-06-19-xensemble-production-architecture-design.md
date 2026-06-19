@@ -1,6 +1,6 @@
 # XEnsemble 生产架构设计
 
-> 状态：生产架构规范  
+> 状态：设计草案  
 > 日期：2026-06-19  
 > 适用范围：`server/` 控制面、`gateway/` LLM Gateway、`desktop/` Desktop Client、`client/` Web 管理面、Runtime Provider  
 
