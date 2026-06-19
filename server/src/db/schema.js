@@ -172,6 +172,16 @@ const workspaceCheckpoints = sqliteTable('workspace_checkpoints', {
   expiresAt: integer('expires_at')
 });
 
+const refreshTokens = sqliteTable('refresh_tokens', {
+  id: text('id').primaryKey(),
+  userId: text('user_id').notNull().references(() => users.id),
+  tokenHash: text('token_hash').notNull().unique(),
+  deviceName: text('device_name'),
+  createdAt: integer('created_at').notNull(),
+  expiresAt: integer('expires_at').notNull(),
+  revokedAt: integer('revoked_at'),
+});
+
 module.exports = {
   users,
   userQuotas,
@@ -188,4 +198,5 @@ module.exports = {
   devEnvironmentProfiles,
   repoSnapshots,
   workspaceCheckpoints,
+  refreshTokens,
 };
