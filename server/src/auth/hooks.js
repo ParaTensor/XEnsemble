@@ -8,7 +8,7 @@ function registerAuthHooks(fastify) {
         try {
             const token = request.headers.authorization?.replace('Bearer ', '');
             if (!token) throw new Error('Missing token');
-            const payload = auth.verifyToken(token);
+            const payload = auth.verifyAccessToken(token);
             if (!payload?.id) throw new Error('Invalid token');
 
             const rows = await db.select().from(schema.users).where(eq(schema.users.id, payload.id));
@@ -31,6 +31,13 @@ function registerAuthHooks(fastify) {
             if (!reply.sent) {
                 reply.code(401).send({ error: 'Unauthorized' });
             }
+        }
+    });
+
+    fastify.decorate('requireActive', async function requireActive(request, reply) {
+        if (reply.sent) return;
+        if (!request.user || request.user.status !== 'active') {
+            return reply.code(403).send({ error: 'account_inactive' });
         }
     });
 
