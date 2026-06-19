@@ -108,6 +108,15 @@ class LocalStreamHandle extends StreamHandle {
     constructor(ptyProcess) {
         super();
         this._pty = ptyProcess;
+        this._exited = false;
+        this._killFallback = null;
+        this._pty.onExit(() => {
+            this._exited = true;
+            if (this._killFallback) {
+                clearTimeout(this._killFallback);
+                this._killFallback = null;
+            }
+        });
     }
 
     onData(callback) {
@@ -130,7 +139,15 @@ class LocalStreamHandle extends StreamHandle {
         const pid = this._pty.pid;
         if (process.platform !== 'win32' && Number.isInteger(pid) && pid > 0) {
             try { process.kill(-pid, 'SIGTERM'); } catch (e) { /* ignore */ }
-            setTimeout(() => { try { process.kill(-pid, 'SIGKILL'); } catch (e) { /* ignore */ } }, 2000);
+            if (this._killFallback) {
+                clearTimeout(this._killFallback);
+                this._killFallback = null;
+            }
+            this._killFallback = setTimeout(() => {
+                if (!this._exited) {
+                    try { process.kill(-pid, 'SIGKILL'); } catch (e) { /* ignore */ }
+                }
+            }, 2000);
         }
         this._pty.kill();
     }
