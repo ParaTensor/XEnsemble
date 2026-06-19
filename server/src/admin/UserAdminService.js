@@ -8,6 +8,45 @@ const platformSettings = require('./PlatformSettings');
 const installedAgents = require('../agents/installedAgents');
 const { recordEvent } = require('../events/recordEvent');
 
+const REFRESH_TOKEN_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
+
+async function createRefreshToken(userId, deviceName = null) {
+    const raw = auth.generateRefreshTokenValue();
+    const tokenHash = auth.hashToken(raw);
+    const now = Date.now();
+    const id = `rt_${crypto.randomBytes(8).toString('hex')}`;
+    await db.insert(schema.refreshTokens).values({
+        id,
+        userId,
+        tokenHash,
+        deviceName,
+        createdAt: now,
+        expiresAt: now + REFRESH_TOKEN_TTL_MS,
+    });
+    return raw;
+}
+
+async function rotateRefreshToken(oldRawToken, userId, deviceName = null) {
+    const oldHash = auth.hashToken(oldRawToken);
+    const rows = await db.select().from(schema.refreshTokens)
+        .where(eq(schema.refreshTokens.tokenHash, oldHash));
+    if (rows.length === 0) return null;
+    const tokenRow = rows[0];
+    if (tokenRow.userId !== userId) return null;
+    if (tokenRow.revokedAt || tokenRow.expiresAt < Date.now()) return null;
+    // Revoke old token
+    await db.update(schema.refreshTokens)
+        .set({ revokedAt: Date.now() })
+        .where(eq(schema.refreshTokens.id, tokenRow.id));
+    return createRefreshToken(userId, deviceName);
+}
+
+async function revokeAllUserRefreshTokens(userId) {
+    await db.update(schema.refreshTokens)
+        .set({ revokedAt: Date.now() })
+        .where(eq(schema.refreshTokens.userId, userId));
+}
+
 function formatUserRow(user, extras = {}) {
     return {
         id: user.id,
@@ -417,7 +456,7 @@ async function resetPassword(userId, newPassword, actorId) {
     return { ok: true };
 }
 
-async function loginUser(username, password) {
+async function loginUser(username, password, deviceName = null) {
     const users = await db.select().from(schema.users).where(eq(schema.users.username, username));
     if (users.length === 0 || !auth.verifyPassword(password, users[0].passwordHash)) {
         throw Object.assign(new Error('Invalid credentials'), { statusCode: 401 });
@@ -432,15 +471,24 @@ async function loginUser(username, password) {
         throw Object.assign(new Error('Account suspended'), { statusCode: 403, code: 'account_suspended' });
     }
 
+    // Transparently upgrade legacy password hashes on successful login
+    if (auth.needsRehash(user.passwordHash)) {
+        await db.update(schema.users)
+            .set({ passwordHash: auth.hashPassword(password), updatedAt: Date.now() })
+            .where(eq(schema.users.id, user.id));
+    }
+
     await db.update(schema.users).set({ lastLoginAt: Date.now() }).where(eq(schema.users.id, user.id));
     await policy.ensureUserQuota(user.id);
 
-    const token = auth.generateToken(user);
+    const accessToken = auth.generateAccessToken(user);
+    const refreshToken = await createRefreshToken(user.id, deviceName);
     const quotas = await policy.getEffectiveQuota(user.id);
     const platformSettings = require('./PlatformSettings');
     const llm_auth_mode = await platformSettings.getLlmAuthMode();
     return {
-        token,
+        access_token: accessToken,
+        refresh_token: refreshToken,
         user: {
             id: user.id,
             username: user.username,
@@ -489,4 +537,7 @@ module.exports = {
     resetPassword,
     loginUser,
     getMe,
+    createRefreshToken,
+    rotateRefreshToken,
+    revokeAllUserRefreshTokens,
 };
