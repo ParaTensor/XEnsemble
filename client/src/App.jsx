@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 import { Routes, Route, Link, useNavigate, useLocation, Navigate } from 'react-router-dom';
 import Login from './pages/Login';
-import Console from './pages/Console';
 import AgentsAdmin from './pages/AgentsAdmin';
 import UsersAdmin from './pages/UsersAdmin';
 import UserMenu from './components/UserMenu';
@@ -30,7 +29,7 @@ function App() {
     localStorage.setItem('user', JSON.stringify(user));
     setToken(token);
     setUser(user);
-    navigate('/sessions');
+    navigate(user?.role === 'admin' ? '/admin/agents' : '/');
   };
 
   const logout = () => {
@@ -47,44 +46,27 @@ function App() {
       location.pathname === path ? consoleNavActiveClass : consoleNavIdleClass,
     );
 
-  /** Keep main pages mounted (invisible off-route) so state and terminal sessions stay alive with stable layout. */
+  /** Admin-only authenticated layout. Normal users should use the Desktop Client. */
   function AuthenticatedLayout() {
-    const isSessions = location.pathname === '/sessions';
-    const isAgentsAdmin = location.pathname === '/admin/agents';
-    const isUsersAdmin = location.pathname === '/admin/users';
-
-    const offRouteClass = 'pointer-events-none invisible absolute inset-0 z-0';
-
+    const ADMIN_PATHS = ['/admin/agents', '/admin/users'];
     return (
       <Shell compactMain>
         <div className="relative flex min-h-0 flex-1 flex-col">
-          <div
-            className={cn('flex min-h-0 flex-1 flex-col', !isSessions && offRouteClass)}
-            aria-hidden={!isSessions}
-          >
-            <Console />
-          </div>
-          {user?.role === 'admin' && (
-            <>
-              <div
-                className={cn(
-                  'flex min-h-0 flex-1 flex-col overflow-auto console-scroll-hidden',
-                  isAgentsAdmin ? 'relative z-10' : offRouteClass,
-                )}
-                aria-hidden={!isAgentsAdmin}
-              >
-                <AgentsAdmin />
-              </div>
-              <div
-                className={cn(
-                  'flex min-h-0 flex-1 flex-col overflow-auto console-scroll-hidden',
-                  isUsersAdmin ? 'relative z-10' : offRouteClass,
-                )}
-                aria-hidden={!isUsersAdmin}
-              >
-                <UsersAdmin />
-              </div>
-            </>
+          {user?.role === 'admin' && location.pathname === ADMIN_PATHS[0] && (
+            <div className="relative z-10 flex min-h-0 flex-1 flex-col overflow-auto console-scroll-hidden">
+              <AgentsAdmin />
+            </div>
+          )}
+          {user?.role === 'admin' && location.pathname === ADMIN_PATHS[1] && (
+            <div className="relative z-10 flex min-h-0 flex-1 flex-col overflow-auto console-scroll-hidden">
+              <UsersAdmin />
+            </div>
+          )}
+          {!ADMIN_PATHS.includes(location.pathname) && (
+            <div className="flex flex-1 flex-col items-center justify-center text-center text-zinc-500">
+              <p className="text-lg font-medium">Please use the XEnsemble Desktop Client.</p>
+              <p className="text-sm">Web Console is available to administrators only.</p>
+            </div>
           )}
         </div>
       </Shell>
@@ -100,9 +82,11 @@ function App() {
             <span className="text-lg font-bold tracking-tight text-black">XEnsemble</span>
           </Link>
           <nav className="flex items-center gap-6">
-            <Link to="/sessions" className={navLinkClass('/sessions')}>
-              Sessions
-            </Link>
+            {user?.role !== 'admin' && (
+              <Link to="/sessions" className={navLinkClass('/sessions')}>
+                Sessions
+              </Link>
+            )}
             {user?.role === 'admin' && (
               <>
                 <Link to="/admin/users" className={navLinkClass('/admin/users')}>
@@ -142,30 +126,23 @@ function App() {
   return (
     <AuthContext.Provider value={{ token, user, login, logout }}>
       <div className="h-full">
-      <Routes>
-        <Route path="/login" element={!token ? <Login /> : <Navigate to="/sessions" />} />
-
-        <Route
-          element={token ? <AuthenticatedLayout /> : <Navigate to="/login" replace />}
-        >
-          <Route path="/sessions" element={null} />
-          <Route path="/console" element={<Navigate to="/sessions" replace />} />
-          <Route
-            path="/admin/agents"
-            element={user?.role === 'admin' ? null : <Navigate to="/sessions" replace />}
-          />
-          <Route
-            path="/admin/users"
-            element={user?.role === 'admin' ? null : <Navigate to="/sessions" replace />}
-          />
-        </Route>
-
-        <Route path="/settings" element={<Navigate to="/sessions" replace />} />
-
-        <Route path="/admin/platform" element={<Navigate to="/sessions" replace />} />
-
-        <Route path="*" element={<Navigate to={token ? '/sessions' : '/login'} />} />
-      </Routes>
+        <Routes>
+          <Route path="/login" element={!token ? <Login /> : <Navigate to="/" />} />
+          <Route element={token ? <AuthenticatedLayout /> : <Navigate to="/login" replace />}>
+            <Route path="/" element={null} />
+            <Route path="/sessions" element={null} />
+            <Route path="/console" element={null} />
+            <Route
+              path="/admin/agents"
+              element={user?.role === 'admin' ? null : <Navigate to="/" replace />}
+            />
+            <Route
+              path="/admin/users"
+              element={user?.role === 'admin' ? null : <Navigate to="/" replace />}
+            />
+          </Route>
+          <Route path="*" element={<Navigate to={token ? '/' : '/login'} />} />
+        </Routes>
       </div>
     </AuthContext.Provider>
   );
