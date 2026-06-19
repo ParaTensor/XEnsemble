@@ -1,10 +1,20 @@
 const crypto = require('crypto');
 const jwt = require('jsonwebtoken');
 
-const JWT_SECRET = process.env.JWT_SECRET || 'super-secret-emdash-key-for-mvp';
+const NODE_ENV = process.env.NODE_ENV || 'development';
+
+// ─── Production secret guard ───
+const JWT_SECRET = process.env.JWT_SECRET;
+if (NODE_ENV === 'production' && (!JWT_SECRET || JWT_SECRET.length < 32)) {
+    throw new Error('JWT_SECRET must be set to at least 32 characters in production');
+}
+const EFFECTIVE_JWT_SECRET = JWT_SECRET || 'dev-only-jwt-secret-do-not-use-in-production';
 
 function resolveEncryptionKey() {
     const raw = process.env.ENCRYPTION_KEY?.trim();
+    if (NODE_ENV === 'production' && !raw) {
+        throw new Error('ENCRYPTION_KEY must be set in production');
+    }
     if (!raw) return crypto.scryptSync('emdash-vault-password', 'salt', 32);
     if (/^[0-9a-fA-F]{64}$/.test(raw)) return Buffer.from(raw, 'hex');
     return crypto.scryptSync(raw, 'xensemble-vault', 32);
@@ -12,33 +22,62 @@ function resolveEncryptionKey() {
 
 const ENCRYPTION_KEY = resolveEncryptionKey();
 
+// ─── Password hashing (upgrade path) ───
+const PBKDF2_ITERATIONS = 210_000;
+
 function hashPassword(password) {
     const salt = crypto.randomBytes(16).toString('hex');
-    const hash = crypto.pbkdf2Sync(password, salt, 1000, 64, 'sha512').toString('hex');
-    return `${salt}:${hash}`;
+    const hash = crypto.pbkdf2Sync(password, salt, PBKDF2_ITERATIONS, 64, 'sha512').toString('hex');
+    return `pbkdf2_sha512$${PBKDF2_ITERATIONS}$${salt}$${hash}`;
 }
 
 function verifyPassword(password, storedHash) {
-    const [salt, hash] = storedHash.split(':');
-    const verifyHash = crypto.pbkdf2Sync(password, salt, 1000, 64, 'sha512').toString('hex');
+    if (!storedHash) return false;
+    // Legacy format: salt:hash (1000 iterations)
+    if (!storedHash.includes('$')) {
+        const [salt, hash] = storedHash.split(':');
+        if (!salt || !hash) return false;
+        const verifyHash = crypto.pbkdf2Sync(password, salt, 1000, 64, 'sha512').toString('hex');
+        return hash === verifyHash;
+    }
+    const parts = storedHash.split('$');
+    if (parts.length !== 4 || parts[0] !== 'pbkdf2_sha512') return false;
+    const iterations = parseInt(parts[1], 10);
+    const salt = parts[2];
+    const hash = parts[3];
+    const verifyHash = crypto.pbkdf2Sync(password, salt, iterations, 64, 'sha512').toString('hex');
     return hash === verifyHash;
 }
 
-function generateToken(user) {
+function needsRehash(storedHash) {
+    return !storedHash || !storedHash.startsWith(`pbkdf2_sha512$${PBKDF2_ITERATIONS}$`);
+}
+
+// ─── Access tokens ───
+function generateAccessToken(user) {
     return jwt.sign({
         id: user.id,
         username: user.username,
         role: user.role,
         status: user.status || 'active',
-    }, JWT_SECRET, { expiresIn: '7d' });
+    }, EFFECTIVE_JWT_SECRET, { expiresIn: '15m' });
 }
 
-function verifyToken(token) {
+function verifyAccessToken(token) {
     try {
-        return jwt.verify(token, JWT_SECRET);
+        return jwt.verify(token, EFFECTIVE_JWT_SECRET);
     } catch (err) {
         return null;
     }
+}
+
+// ─── Refresh tokens ───
+function generateRefreshTokenValue() {
+    return crypto.randomBytes(32).toString('base64url');
+}
+
+function hashToken(rawToken) {
+    return crypto.createHash('sha256').update(rawToken).digest('hex');
 }
 
 // Simple AES-256-GCM encryption for Secrets
@@ -64,8 +103,11 @@ function decryptSecrets(encryptedStr) {
 module.exports = {
     hashPassword,
     verifyPassword,
-    generateToken,
-    verifyToken,
+    needsRehash,
+    generateAccessToken,
+    verifyAccessToken,
+    generateRefreshTokenValue,
+    hashToken,
     encryptSecrets,
-    decryptSecrets
+    decryptSecrets,
 };
