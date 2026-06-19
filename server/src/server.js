@@ -459,72 +459,79 @@ fastify.post('/api/v1/session/start', { preValidation: [fastify.authenticate] },
 fastify.register(async function terminalWsRoutes(app) {
     app.get('/ws/v1/terminal', { websocket: true }, async (connection, req) => {
         const ws = connection.socket;
+
         const sendJson = (payload) => {
             if (ws.readyState === WebSocket.OPEN) {
                 ws.send(JSON.stringify(payload));
             }
         };
 
-        let sessionId = null;
-        let accessToken = null;
         try {
-            const url = new URL(req.url, 'http://localhost');
-            sessionId = url.searchParams.get('sessionId');
-            accessToken = url.searchParams.get('access_token');
-        } catch (_) {
-            sessionId = null;
-            accessToken = null;
-        }
-
-        if (!accessToken) {
-            sendJson({ type: 'error', data: 'access_token is required' });
-            ws.close();
-            return;
-        }
-
-        const payload = auth.verifyAccessToken(accessToken);
-        if (!payload?.id) {
-            sendJson({ type: 'error', data: 'Invalid access token' });
-            ws.close();
-            return;
-        }
-
-        if (!sessionId) {
-            sendJson({ type: 'error', data: 'sessionId is required' });
-            ws.close();
-            return;
-        }
-
-        const sessionRows = await db.select().from(schema.sessions)
-            .where(and(eq(schema.sessions.id, sessionId), eq(schema.sessions.userId, payload.id)));
-        if (sessionRows.length === 0 || sessionRows[0].status !== 'running') {
-            sendJson({ type: 'error', data: 'Session not found or not active' });
-            ws.close();
-            return;
-        }
-
-        const sub = subscribeTerminal(sessionId, (payload) => {
-            sendJson(payload);
-            if (payload.type === 'exit' || payload.type === 'error') {
-                try { ws.close(); } catch (_) {}
-            }
-        });
-        if (!sub.ok) {
-            ws.close();
-            return;
-        }
-
-        ws.on('message', (message) => {
-            if (!sessionManager.isAlive(sessionId)) return;
+            let sessionId = null;
+            let accessToken = null;
             try {
-                const raw = typeof message === 'string' ? message : message.toString();
-                applyTerminalMessage(sub.handle, JSON.parse(raw));
-            } catch (err) {
-                console.error('WS Message Parse Error:', err);
+                const url = new URL(req.url, 'http://localhost');
+                sessionId = url.searchParams.get('sessionId');
+                accessToken = url.searchParams.get('access_token');
+            } catch (_) {
+                sessionId = null;
+                accessToken = null;
             }
-        });
 
-        ws.on('close', sub.cleanup);
+            if (!accessToken) {
+                sendJson({ type: 'error', data: 'access_token is required' });
+                ws.close();
+                return;
+            }
+
+            const payload = auth.verifyAccessToken(accessToken);
+            if (!payload?.id) {
+                sendJson({ type: 'error', data: 'Invalid access token' });
+                ws.close();
+                return;
+            }
+
+            if (!sessionId) {
+                sendJson({ type: 'error', data: 'sessionId is required' });
+                ws.close();
+                return;
+            }
+
+            const sessionRows = await db.select().from(schema.sessions)
+                .where(and(eq(schema.sessions.id, sessionId), eq(schema.sessions.userId, payload.id)));
+            if (sessionRows.length === 0 || sessionRows[0].status !== 'running') {
+                sendJson({ type: 'error', data: 'Session not found or not active' });
+                ws.close();
+                return;
+            }
+
+            const sub = subscribeTerminal(sessionId, (payload) => {
+                sendJson(payload);
+                if (payload.type === 'exit' || payload.type === 'error') {
+                    try { ws.close(); } catch (_) {}
+                }
+            });
+            if (!sub.ok) {
+                ws.close();
+                return;
+            }
+
+            ws.on('message', (message) => {
+                if (!sessionManager.isAlive(sessionId)) return;
+                try {
+                    const raw = typeof message === 'string' ? message : message.toString();
+                    applyTerminalMessage(sub.handle, JSON.parse(raw));
+                } catch (err) {
+                    request.log.error(err);
+                }
+            });
+
+            ws.on('close', sub.cleanup);
+        } catch (err) {
+            request.log.error(err);
+            sendJson({ type: 'error', data: 'Internal server error' });
+            ws.close();
+        }
     });
 });
 
