@@ -19,12 +19,75 @@ export const AuthContext = React.createContext(null);
 
 const ADMIN_PATHS = ['/admin/agents', '/admin/users'];
 
+function DesktopClientMessage() {
+  return (
+    <div
+      className="flex flex-1 flex-col items-center justify-center text-center text-zinc-500"
+      role="status"
+    >
+      <p className="text-lg font-medium">Please use the XEnsemble Desktop Client.</p>
+      <p className="text-sm">Web Console is available to administrators only.</p>
+    </div>
+  );
+}
+
+function AdminRoute({ user, children }) {
+  return user?.role === 'admin' ? children : <Navigate to="/" replace />;
+}
+
+function Shell({ children, isAdmin, user, onLogout, setShowSettingsModal, compactMain = false }) {
+  const location = useLocation();
+
+  const navLinkClass = (path) =>
+    cn(
+      'rounded-full px-3 py-1.5 text-sm font-medium transition-all',
+      location.pathname === path ? consoleNavActiveClass : consoleNavIdleClass,
+    );
+
+  return (
+    <div className="h-full flex flex-col bg-zinc-50">
+      <header className="sticky top-0 z-50 flex-none border-b border-zinc-200 bg-white">
+        <div className={cn('mx-auto flex h-14 items-center justify-between', APP_SHELL_MAX_CLASS, APP_SHELL_PAD_CLASS)}>
+          <Link to={isAdmin ? '/admin/agents' : '/'} className="flex items-center gap-2.5 text-zinc-900">
+            <BrandMark className="h-8 w-8" />
+            <span className="text-lg font-bold tracking-tight text-black">XEnsemble</span>
+          </Link>
+          <nav className="flex items-center gap-6">
+            {isAdmin &&
+              ADMIN_PATHS.map((path) => (
+                <Link key={path} to={path} className={navLinkClass(path)}>
+                  {path === '/admin/agents' ? 'Agents' : 'Users'}
+                </Link>
+              ))}
+            <div className="h-4 w-px bg-zinc-300" />
+            <UserMenu
+              username={user?.username}
+              onLogout={onLogout}
+              onOpenSettings={() => setShowSettingsModal(true)}
+            />
+          </nav>
+        </div>
+      </header>
+      <main
+        className={cn(
+          'mx-auto flex w-full flex-1 flex-col',
+          compactMain ? 'min-h-0 overflow-hidden' : 'overflow-auto',
+          APP_SHELL_MAX_CLASS,
+          APP_SHELL_PAD_CLASS,
+          compactMain ? APP_SHELL_CONSOLE_PY_CLASS : APP_SHELL_MAIN_PY_CLASS,
+        )}
+      >
+        {children}
+      </main>
+    </div>
+  );
+}
+
 function App() {
   const [token, setToken] = useState(localStorage.getItem('token'));
   const [user, setUser] = useState(JSON.parse(localStorage.getItem('user')));
   const [showSettingsModal, setShowSettingsModal] = useState(false);
   const navigate = useNavigate();
-  const location = useLocation();
   const isAdmin = user?.role === 'admin';
 
   const login = (token, user) => {
@@ -43,113 +106,75 @@ function App() {
     navigate('/login');
   };
 
-  const navLinkClass = (path) =>
-    cn(
-      'rounded-full px-3 py-1.5 text-sm font-medium transition-all',
-      location.pathname === path ? consoleNavActiveClass : consoleNavIdleClass,
-    );
-
-  /** Admin-only authenticated layout. Normal users should use the Desktop Client. */
-  function AuthenticatedLayout() {
-    if (!isAdmin && ADMIN_PATHS.includes(location.pathname)) {
-      return <Navigate to="/" replace />;
-    }
-
-    return (
-      <Shell compactMain>
-        <div className="relative flex min-h-0 flex-1 flex-col">
-          {isAdmin && location.pathname === ADMIN_PATHS[0] && (
-            <div className="relative z-10 flex min-h-0 flex-1 flex-col overflow-auto console-scroll-hidden">
-              <AgentsAdmin />
-            </div>
-          )}
-          {isAdmin && location.pathname === ADMIN_PATHS[1] && (
-            <div className="relative z-10 flex min-h-0 flex-1 flex-col overflow-auto console-scroll-hidden">
-              <UsersAdmin />
-            </div>
-          )}
-          {!ADMIN_PATHS.includes(location.pathname) && (
-            <div
-              className="flex flex-1 flex-col items-center justify-center text-center text-zinc-500"
-              role="status"
-            >
-              <p className="text-lg font-medium">Please use the XEnsemble Desktop Client.</p>
-              <p className="text-sm">Web Console is available to administrators only.</p>
-            </div>
-          )}
-        </div>
-      </Shell>
-    );
-  }
-
-  const Shell = ({ children, compactMain = false }) => (
-    <div className="h-full flex flex-col bg-zinc-50">
-      <header className="sticky top-0 z-50 flex-none border-b border-zinc-200 bg-white">
-        <div className={cn('mx-auto flex h-14 items-center justify-between', APP_SHELL_MAX_CLASS, APP_SHELL_PAD_CLASS)}>
-          <Link to={isAdmin ? '/admin/agents' : '/'} className="flex items-center gap-2.5 text-zinc-900">
-            <BrandMark className="h-8 w-8" />
-            <span className="text-lg font-bold tracking-tight text-black">XEnsemble</span>
-          </Link>
-          <nav className="flex items-center gap-6">
-            {isAdmin &&
-              ADMIN_PATHS.map((path) => (
-                <Link key={path} to={path} className={navLinkClass(path)}>
-                  {path === '/admin/agents' ? 'Agents' : 'Users'}
-                </Link>
-              ))}
-            <div className="h-4 w-px bg-zinc-300" />
-            <UserMenu
-              username={user?.username}
-              onLogout={logout}
-              onOpenSettings={() => setShowSettingsModal(true)}
-            />
-          </nav>
-        </div>
-      </header>
-      <main
-        className={cn(
-          'mx-auto flex w-full flex-1 flex-col',
-          compactMain ? 'min-h-0 overflow-hidden' : 'overflow-auto',
-          APP_SHELL_MAX_CLASS,
-          APP_SHELL_PAD_CLASS,
-          compactMain ? APP_SHELL_CONSOLE_PY_CLASS : APP_SHELL_MAIN_PY_CLASS,
-        )}
-      >
-        {children}
-      </main>
-      {showSettingsModal && (
-        <SettingsModal onClose={() => setShowSettingsModal(false)} />
-      )}
-    </div>
+  const adminShell = (page) => (
+    <Shell
+      isAdmin={isAdmin}
+      user={user}
+      onLogout={logout}
+      setShowSettingsModal={setShowSettingsModal}
+      compactMain
+    >
+      {page}
+    </Shell>
   );
 
   return (
     <AuthContext.Provider value={{ token, user, login, logout }}>
       <div className="h-full">
         <Routes>
-          <Route path="/login" element={!token ? <Login /> : <Navigate to="/" />} />
-          <Route element={token ? <AuthenticatedLayout /> : <Navigate to="/login" replace />}>
-            <Route path="/" element={null} />
-            <Route
-              path="/sessions"
-              element={<Navigate to={isAdmin ? '/admin/agents' : '/'} replace />}
-            />
-            <Route
-              path="/console"
-              element={<Navigate to={isAdmin ? '/admin/agents' : '/'} replace />}
-            />
-            <Route
-              path="/admin/agents"
-              element={isAdmin ? null : <Navigate to="/" replace />}
-            />
-            <Route
-              path="/admin/users"
-              element={isAdmin ? null : <Navigate to="/" replace />}
-            />
-          </Route>
-          <Route path="*" element={<Navigate to={token ? '/' : '/login'} />} />
+          <Route path="/login" element={!token ? <Login /> : <Navigate to="/" replace />} />
+          <Route
+            path="/"
+            element={
+              token ? (
+                isAdmin ? (
+                  <Navigate to="/admin/agents" replace />
+                ) : (
+                  <DesktopClientMessage />
+                )
+              ) : (
+                <Navigate to="/login" replace />
+              )
+            }
+          />
+          <Route
+            path="/admin/agents"
+            element={
+              token ? (
+                <AdminRoute user={user}>
+                  {adminShell(<AgentsAdmin />)}
+                </AdminRoute>
+              ) : (
+                <Navigate to="/login" replace />
+              )
+            }
+          />
+          <Route
+            path="/admin/users"
+            element={
+              token ? (
+                <AdminRoute user={user}>
+                  {adminShell(<UsersAdmin />)}
+                </AdminRoute>
+              ) : (
+                <Navigate to="/login" replace />
+              )
+            }
+          />
+          <Route
+            path="/sessions"
+            element={<Navigate to={token && isAdmin ? '/admin/agents' : '/'} replace />}
+          />
+          <Route
+            path="/console"
+            element={<Navigate to={token && isAdmin ? '/admin/agents' : '/'} replace />}
+          />
+          <Route path="*" element={<Navigate to={token ? '/' : '/login'} replace />} />
         </Routes>
       </div>
+      {showSettingsModal && (
+        <SettingsModal onClose={() => setShowSettingsModal(false)} />
+      )}
     </AuthContext.Provider>
   );
 }
