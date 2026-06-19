@@ -31,7 +31,7 @@ function registerAuthRoutes(fastify) {
                 quotas: login.quotas,
             };
         } catch (err) {
-            const code = err.statusCode || 400;
+            const code = err.statusCode || 500;
             const body = { error: err.message };
             if (err.code) body.code = err.code;
             return reply.code(code).send(body);
@@ -50,7 +50,7 @@ function registerAuthRoutes(fastify) {
                 quotas: result.quotas,
             };
         } catch (err) {
-            const code = err.statusCode || 401;
+            const code = err.statusCode || 500;
             const body = { error: err.message };
             if (err.code) body.code = err.code;
             return reply.code(code).send(body);
