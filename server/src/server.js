@@ -522,13 +522,13 @@ fastify.register(async function terminalWsRoutes(app) {
                     const raw = typeof message === 'string' ? message : message.toString();
                     applyTerminalMessage(sub.handle, JSON.parse(raw));
                 } catch (err) {
-                    request.log.error(err);
+                    req.log.error(err);
                 }
             });
 
             ws.on('close', sub.cleanup);
         } catch (err) {
-            request.log.error(err);
+            req.log.error(err);
             sendJson({ type: 'error', data: 'Internal server error' });
             ws.close();
         }
