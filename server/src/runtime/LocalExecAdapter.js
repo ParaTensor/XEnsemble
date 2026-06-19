@@ -1,4 +1,5 @@
 // 仅 Local 有效：本地 node-pty 命令执行与 StreamHandle 实现。
+const { spawn } = require('child_process');
 const pty = require('node-pty');
 const path = require('path');
 const fs = require('fs');
@@ -209,7 +210,49 @@ class LocalExecAdapter extends ExecAdapter {
     }
 
     async exec(cmd, args, env, options = {}) {
-        throw new Error('LocalExecAdapter.exec not yet implemented');
+        const workspaceDir = options.cwd;
+        if (!workspaceDir || typeof workspaceDir !== 'string') {
+            throw new AgentSpawnError('Project workspace directory is required to run a command.');
+        }
+        if (!fs.existsSync(workspaceDir)) {
+            fs.mkdirSync(workspaceDir, { recursive: true });
+        }
+
+        const spawnEnv = {
+            ...process.env,
+            ...env,
+            PATH: enrichPath({ ...process.env, ...env }),
+        };
+
+        return new Promise((resolve, reject) => {
+            const child = spawn(cmd, args, {
+                cwd: workspaceDir,
+                env: spawnEnv,
+                timeout: options.timeoutMs || 60_000,
+                maxBuffer: options.maxBuffer || 2 * 1024 * 1024,
+            });
+
+            let stdout = '';
+            let stderr = '';
+            child.stdout?.on('data', (chunk) => { stdout += chunk; });
+            child.stderr?.on('data', (chunk) => { stderr += chunk; });
+
+            child.on('error', (err) => {
+                reject(new AgentSpawnError(`Failed to run command: ${err.message}`, 500));
+            });
+
+            child.on('close', (code, signal) => {
+                if (signal) {
+                    reject(new AgentSpawnError(`Command killed by ${signal}`, 504));
+                    return;
+                }
+                resolve({
+                    exitCode: code ?? 0,
+                    stdout: stdout.slice(0, options.maxOutput || 1024 * 1024),
+                    stderr: stderr.slice(0, options.maxOutput || 1024 * 1024),
+                });
+            });
+        });
     }
 }
 
