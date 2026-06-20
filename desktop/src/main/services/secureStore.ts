@@ -15,13 +15,14 @@ function get(name: keyof SecureStoreSchema): string | null {
   if (!encrypted) return null;
   try {
     return safeStorage.decryptString(Buffer.from(encrypted, 'base64'));
-  } catch {
+  } catch (err) {
+    console.error('[secureStore] failed to decrypt token', err);
     return null;
   }
 }
 
 function set(name: keyof SecureStoreSchema, value: string | null): void {
-  if (!value) {
+  if (value == null) {
     store.set(name, null);
     return;
   }
@@ -29,10 +30,22 @@ function set(name: keyof SecureStoreSchema, value: string | null): void {
   store.set(name, encrypted);
 }
 
-export function getAccessToken(): string | null { return get('accessToken'); }
-export function setAccessToken(token: string | null): void { set('accessToken', token); }
-export function getRefreshToken(): string | null { return get('refreshToken'); }
-export function setRefreshToken(token: string | null): void { set('refreshToken', token); }
+export function getAccessToken(): string | null {
+  return get('accessToken');
+}
+
+export function setAccessToken(token: string | null): void {
+  set('accessToken', token);
+}
+
+export function getRefreshToken(): string | null {
+  return get('refreshToken');
+}
+
+export function setRefreshToken(token: string | null): void {
+  set('refreshToken', token);
+}
+
 export function clearTokens(): void {
   setAccessToken(null);
   setRefreshToken(null);
