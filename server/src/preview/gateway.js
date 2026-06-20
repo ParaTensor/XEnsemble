@@ -1,4 +1,7 @@
 const httpProxy = require('http-proxy');
+const { db } = require('../db/index');
+const schema = require('../db/schema');
+const { eq } = require('drizzle-orm');
 const auth = require('../auth/index');
 const deploymentService = require('../deployments/DeploymentService');
 const previewRegistry = require('../runtime/localPreviewRegistry');
@@ -32,7 +35,12 @@ async function resolveDeployment(request, deploymentId) {
     const token = extractToken(request);
     if (!token) return { error: 'Unauthorized', status: 401 };
     const user = auth.verifyAccessToken(token);
-    if (!user) return { error: 'Unauthorized', status: 401 };
+    if (!user?.id) return { error: 'Unauthorized', status: 401 };
+
+    const userRows = await db.select({ status: schema.users.status }).from(schema.users).where(eq(schema.users.id, user.id));
+    if (userRows.length === 0 || userRows[0].status !== 'active') {
+        return { error: 'Account is inactive', status: 403, code: 'account_inactive' };
+    }
 
     const row = await deploymentService.getForUser(user.id, deploymentId);
     if (!row) return { error: 'Deployment not found', status: 404 };
@@ -68,7 +76,9 @@ async function proxyPreviewRequest(request, reply) {
     const deploymentId = request.params.deploymentId;
     const resolved = await resolveDeployment(request.raw, deploymentId);
     if (resolved.error) {
-        return reply.code(resolved.status).send({ error: resolved.error });
+        const payload = { error: resolved.error };
+        if (resolved.code) payload.code = resolved.code;
+        return reply.code(resolved.status).send(payload);
     }
 
     const target = `http://127.0.0.1:${resolved.entry.port}`;
