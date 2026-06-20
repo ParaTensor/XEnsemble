@@ -85,18 +85,24 @@ function Shell({ children, isAdmin, user, onLogout, setShowSettingsModal, compac
 
 function App() {
   const [token, setToken] = useState(localStorage.getItem('xe_access_token'));
-  const [user, setUser] = useState(JSON.parse(localStorage.getItem('user')));
+  const [user, setUser] = useState(() => {
+    try {
+      return JSON.parse(localStorage.getItem('user'));
+    } catch {
+      return null;
+    }
+  });
   const [showSettingsModal, setShowSettingsModal] = useState(false);
   const navigate = useNavigate();
   const isAdmin = user?.role === 'admin';
 
-  const login = (accessToken, refreshToken, user) => {
+  const login = (accessToken, refreshToken, userData) => {
     localStorage.setItem('xe_access_token', accessToken);
     localStorage.setItem('xe_refresh_token', refreshToken);
-    localStorage.setItem('user', JSON.stringify(user));
+    localStorage.setItem('user', JSON.stringify(userData));
     setToken(accessToken);
-    setUser(user);
-    navigate(user?.role === 'admin' ? '/admin/agents' : '/');
+    setUser(userData);
+    navigate(userData?.role === 'admin' ? '/admin/agents' : '/');
   };
 
   const logout = () => {

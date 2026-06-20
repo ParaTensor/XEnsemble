@@ -28,7 +28,7 @@ export default function Login() {
       if (!res.ok) {
         if (data.code === 'account_pending') throw new Error('Your account is pending administrator approval.');
         if (data.code === 'account_suspended') throw new Error('Your account has been suspended.');
-        throw new Error(data.error);
+        throw new Error(data.error || 'Authentication failed. Please try again.');
       }
       if (isRegister && !data.access_token) {
         setError(data.message || 'Registration submitted. Await administrator approval.');
@@ -47,7 +47,7 @@ export default function Login() {
 
   return (
     <div className="flex h-full items-center justify-center bg-zinc-50 p-4">
-      <div className={cn(`${consoleCardClass} w-full max-w-sm p-8 flex flex-col gap-6`)}>
+      <div className={cn(consoleCardClass, 'w-full max-w-sm p-8 flex flex-col gap-6')}>
         <div className="flex flex-col items-center gap-2">
           <BrandMark className="mb-2 h-10 w-10" iconClassName="h-5 w-5" />
           <h1 className="text-xl font-bold tracking-tight text-zinc-900">
