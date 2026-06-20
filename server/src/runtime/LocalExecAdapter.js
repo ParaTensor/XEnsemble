@@ -56,6 +56,13 @@ function buildNotFoundMessage(cmd, agentName) {
     return message;
 }
 
+function parseId(value) {
+    if (value == null || value === '') return undefined;
+    const n = Number(value);
+    if (!Number.isInteger(n) || n < 0) return undefined;
+    return n;
+}
+
 function getSpawnHelperPath() {
     const archDir = process.platform === 'darwin'
         ? (process.arch === 'arm64' ? 'darwin-arm64' : 'darwin-x64')
@@ -177,7 +184,7 @@ class LocalExecAdapter extends ExecAdapter {
      * @param {string} cmd
      * @param {string[]} args
      * @param {object} env
-     * @param {{ cwd: string, name?: string }} options
+     * @param {{ cwd: string, name?: string, uid?: number, gid?: number }} options
      * @returns {LocalStreamHandle}
      */
     spawn(cmd, args, env, options = {}) {
@@ -208,8 +215,8 @@ class LocalExecAdapter extends ExecAdapter {
             rows: 32,
             cwd: workspaceDir,
             env: spawnEnv,
-            uid: options.uid != null ? Number(options.uid) : undefined,
-            gid: options.gid != null ? Number(options.gid) : undefined,
+            uid: parseId(options.uid),
+            gid: parseId(options.gid),
         };
 
         try {
@@ -254,9 +261,9 @@ class LocalExecAdapter extends ExecAdapter {
                 cwd: workspaceDir,
                 env: spawnEnv,
                 timeout: options.timeoutMs || 60_000,
-                maxBuffer: options.maxBuffer || 2 * 1024 * 1024,
-                uid: options.uid != null ? Number(options.uid) : undefined,
-                gid: options.gid != null ? Number(options.gid) : undefined,
+                maxBuffer,
+                uid: parseId(options.uid),
+                gid: parseId(options.gid),
             });
 
             let stdout = '';

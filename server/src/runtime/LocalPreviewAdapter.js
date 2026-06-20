@@ -6,6 +6,13 @@ const { resolvePreviewContract } = require('./previewContract');
 const { resolvePlatformSecrets, applyGatewaySynthesis } = require('../agents/agentEnv');
 const previewRegistry = require('./localPreviewRegistry');
 
+function parseId(value) {
+    if (value == null || value === '') return undefined;
+    const n = Number(value);
+    if (!Number.isInteger(n) || n < 0) return undefined;
+    return n;
+}
+
 const CONTROL_HOST = process.env.PREVIEW_PUBLIC_HOST || 'localhost';
 const { resolvePort } = require('../config/defaultPort');
 const CONTROL_PORT = resolvePort();
@@ -101,8 +108,8 @@ class LocalPreviewAdapter extends PreviewAdapter {
             },
             detached: process.platform !== 'win32',
             stdio: ['ignore', 'pipe', 'pipe'],
-            uid: process.env.RUNTIME_UID ? Number(process.env.RUNTIME_UID) : undefined,
-            gid: process.env.RUNTIME_GID ? Number(process.env.RUNTIME_GID) : undefined,
+            uid: parseId(process.env.RUNTIME_UID),
+            gid: parseId(process.env.RUNTIME_GID),
         });
 
         let logTail = '';
