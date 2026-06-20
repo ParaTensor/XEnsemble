@@ -260,10 +260,13 @@ async function start(log = console, { force = false } = {}) {
     }
 
     const bindAddr = await applyRuntimeConfig();
-    const secrets = ensureGatewaySecrets();
-    status.gatewayKey = secrets.gatewayKey;
-    status.adminToken = secrets.adminToken;
-    status.configPath = secrets.configPath;
+    const config = ensureGatewaySecrets();
+    if (process.env.NODE_ENV === 'production' && !config.adminToken) {
+        throw new Error('UNIGATEWAY_ADMIN_TOKEN is required in production');
+    }
+    status.gatewayKey = config.gatewayKey;
+    status.adminToken = config.adminToken;
+    status.configPath = config.configPath;
 
     const binary = gatewayBinaryPath();
     status.binary = binary;
@@ -279,7 +282,7 @@ async function start(log = console, { force = false } = {}) {
         if (isManagedChildAlive()) return status;
         try {
             await waitForHealth(status.baseUrl, 2000);
-            const adminStatus = await probeAdminApi(status.baseUrl, secrets.adminToken);
+            const adminStatus = await probeAdminApi(status.baseUrl, config.adminToken);
             if (adminStatus === 200) {
                 status.running = true;
                 status.lastError = null;
@@ -298,9 +301,9 @@ async function start(log = console, { force = false } = {}) {
     child = spawn(binary, [], {
         env: {
             ...process.env,
-            UNIGATEWAY_CONFIG_PATH: secrets.configPath,
+            UNIGATEWAY_CONFIG_PATH: config.configPath,
             UNIGATEWAY_BIND_ADDR: bindAddr,
-            UNIGATEWAY_ADMIN_TOKEN: secrets.adminToken,
+            UNIGATEWAY_ADMIN_TOKEN: config.adminToken,
             RUST_LOG: process.env.UNIGATEWAY_LOG || 'info',
         },
         stdio: ['ignore', 'pipe', 'pipe'],
@@ -324,7 +327,7 @@ async function start(log = console, { force = false } = {}) {
 
     try {
         await waitForHealth(status.baseUrl);
-        const adminStatus = await probeAdminApi(status.baseUrl, secrets.adminToken);
+        const adminStatus = await probeAdminApi(status.baseUrl, config.adminToken);
         if (isManagedChildAlive() && adminStatus === 200) {
             status.running = true;
             status.lastError = null;

@@ -1,4 +1,7 @@
-const fastify = require('fastify')({ logger: true, trustProxy: true });
+const TRUSTED_PROXIES = process.env.TRUSTED_PROXIES
+    ? process.env.TRUSTED_PROXIES.split(',').map((s) => s.trim()).filter(Boolean)
+    : false;
+const fastify = require('fastify')({ logger: true, trustProxy: TRUSTED_PROXIES });
 const crypto = require('crypto');
 const path = require('path');
 const fs = require('fs');
@@ -51,9 +54,20 @@ async function getProjectForUser(userId, projectId) {
     return rows[0];
 }
 
+const allowedOrigins = process.env.ALLOWED_ORIGINS
+    ? process.env.ALLOWED_ORIGINS.split(',').map((s) => s.trim()).filter(Boolean)
+    : ['http://127.0.0.1:5173', 'http://localhost:5173'];
+
 fastify.register(require('@fastify/cors'), {
-    origin: '*',
+    origin: (origin, cb) => {
+        if (!origin || allowedOrigins.includes(origin)) {
+            cb(null, true);
+            return;
+        }
+        cb(new Error('Not allowed by CORS'), false);
+    },
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'],
+    credentials: true,
 });
 fastify.register(require('@fastify/websocket'));
 
