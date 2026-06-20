@@ -5,7 +5,7 @@ import { FitAddon } from '@xterm/addon-fit';
 import '@xterm/xterm/css/xterm.css';
 import { usePreview, PreviewControlGroup } from './PreviewPanel';
 import TerminalThemePicker from './TerminalThemePicker';
-import { getWsUrl, getAccessToken } from '../lib/api';
+import { getWsUrl, getAccessToken, getBackendURL } from '../lib/api';
 import { useTerminalTheme } from '../hooks/useTerminalTheme.jsx';
 import { XTERM_MINIMUM_CONTRAST_RATIO } from '../lib/terminalThemes.js';
 import { useToast } from './Toast';
@@ -225,7 +225,7 @@ export default function AgentConsole({
                 }
                 if (disposedRef.current || serverEndedRef.current) return;
                 if (!openedRef.current) {
-                    terminal.write('\r\n\x1b[31m[System] Terminal connection failed. Is the backend running on port 3000?\x1b[0m\r\n');
+                    terminal.write(`\r\n\x1b[31m[System] Terminal connection failed. Is the backend running at ${getBackendURL()}?\x1b[0m\r\n`);
                 } else if (!event.wasClean) {
                     terminal.write('\r\n\x1b[33m[System] Disconnected from terminal.\x1b[0m\r\n');
                 }

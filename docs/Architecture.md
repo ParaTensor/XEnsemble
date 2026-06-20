@@ -290,7 +290,7 @@ Docker/K8s Provider 作为第二阶段实现，通过同一组接口替换 Local
 
 ```
 [Server]
-  ├─ XEnsemble Server (Node.js, port 3000)
+  ├─ XEnsemble Server (Node.js, port 3888)
   ├─ UniGateway (Rust, 127.0.0.1:8741)
   ├─ SQLite / Postgres
   └─ Local Execution Environment
@@ -385,37 +385,10 @@ Runtime Provider 切换为 Docker/K8s，其他不变。
 
 ---
 
-## 14. 实施检查清单
+## 14. 相关文档
 
-- [ ] 更新 `docs/Architecture.md` 为本文内容。
-- [ ] 调整 `client/`：移除普通用户 Coding 入口，保留 Admin Web UI。
-- [ ] 调整 `desktop/`：接入后台 API/WS，作为用户主入口。
-- [ ] 实现 Refresh Token 与 Access Token 分离。
-- [ ] WS 终端鉴权。
-- [ ] 实现 `LocalExecAdapter.exec`。
-- [ ] 实现 `RuntimeProvider.attachSession` 与本地 scrollback 缓存。
-- [ ] 加固 `LocalFsAdapter` 路径 jail。
-- [ ] Local preview 注入 scoped secrets。
-- [ ] Agent/Preview 进程以低权限用户运行并加资源限制。
-- [ ] 修正 `FsAdapter.fsList` 签名与调用方。
-- [ ] Deployment revision 使用真实 checkpoint/gitSha/snapshotId。
-- [ ] Preview Gateway 使用 deployment-scoped token。
-- [ ] 替换内存 quota/singleflight 为 Redis 实现。
-- [ ] 升级 `drizzle-orm`、`fastify`、`glob` 等高危依赖。
-- [ ] 增加 Runtime Provider contract tests（Local + stub Docker）。
-- [ ] 更新 `deploy/` 中的 systemd/nginx 配置示例。
-
----
-
-## 15. 相关文档
-
-- 当前实现检查：`docs/Architecture.md`
 - 客户端 API：`docs/ApiClient.md`
 - 用户/配额：`docs/UserManagement.md`
 - LLM 反代：`docs/LlmProxy.md`
 - Agent 说明：`docs/agents.md`
 - Desktop Client：`desktop/README.md`、`desktop/DESIGN.md`、`desktop/AGENTS.md`
-
----
-
-*本设计确认后，将用于替换/更新 `docs/Architecture.md` 并进入 `writing-plans` 阶段。*
