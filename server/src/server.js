@@ -64,7 +64,7 @@ fastify.register(require('@fastify/cors'), {
             cb(null, true);
             return;
         }
-        cb(new Error('Not allowed by CORS'), false);
+        cb(null, false);
     },
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'],
     credentials: true,
