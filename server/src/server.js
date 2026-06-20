@@ -640,8 +640,9 @@ fastify.get('/api/v1/workspace/files', { preValidation: [fastify.authenticate] }
     if (!project) return reply.code(404).send({ error: 'Project not found' });
 
     try {
+        const relativePath = request.query.path || '';
         const { workspacePath } = await ensureProjectRuntime(project);
-        return runtime.fs.fsList(workspacePath);
+        return runtime.fs.fsList(workspacePath, relativePath);
     } catch (err) {
         const code = err instanceof RuntimeError ? err.statusCode : 500;
         return reply.code(code).send({ error: err.message });

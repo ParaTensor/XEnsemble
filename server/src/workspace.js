@@ -27,9 +27,18 @@ function createProjectDirectory(userId, projectId) {
 function resolveSafePath(rootDir, relativePath) {
     const root = path.resolve(rootDir);
     const trimmed = String(relativePath || '').replace(/^[/\\]+/, '');
-    const safe = path.normalize(trimmed).replace(/^(\.\.(\/|\\|$))+/, '');
+    const safe = path.normalize(trimmed).replace(/^(\.\.(\/|\\\\|$))+/, '');
     const absolute = path.resolve(root, safe === '.' ? '' : safe);
-    if (absolute !== root && !absolute.startsWith(root + path.sep)) {
+    // Resolve symlinks to prevent symlink escape
+    let realAbsolute;
+    try {
+        realAbsolute = fs.realpathSync.native(absolute);
+    } catch (e) {
+        // Path does not exist yet; use normalized absolute but ensure it stays under root
+        realAbsolute = absolute;
+    }
+    const realRoot = fs.realpathSync.native(root);
+    if (realAbsolute !== realRoot && !realAbsolute.startsWith(realRoot + path.sep)) {
         return null;
     }
     return absolute;

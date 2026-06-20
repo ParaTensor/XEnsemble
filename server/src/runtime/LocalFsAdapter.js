@@ -8,19 +8,24 @@ class LocalFsAdapter extends FsAdapter {
     /**
      * 递归列出 rootDir 下所有文件与目录。
      * @param {string} rootDir  project workspace 绝对路径
+     * @param {string} relativePath 相对路径（可选）
      * @returns {Promise<Array<{ name, path, type }>>}
      */
-    async fsList(rootDir) {
-        if (!fs.existsSync(rootDir)) return [];
+    async fsList(rootDir, relativePath = '.') {
+        const target = resolveSafePath(rootDir, relativePath);
+        if (!target) throw new RuntimeError('Access denied', 403);
+        if (!fs.existsSync(target)) return [];
         const root = path.resolve(rootDir);
         const results = [];
         const walk = (dirPath) => {
             let entries;
             try { entries = fs.readdirSync(dirPath); } catch (e) { return; }
             for (const name of entries) {
+                if (name === '.scrollback') continue; // hide internal scrollback dir
                 const fullPath = path.join(dirPath, name);
                 let stat;
-                try { stat = fs.statSync(fullPath); } catch (e) { continue; }
+                try { stat = fs.lstatSync(fullPath); } catch (e) { continue; }
+                if (stat.isSymbolicLink()) continue; // do not follow symlinks in listing
                 const rel = path.relative(root, fullPath);
                 results.push({
                     name,
@@ -30,7 +35,7 @@ class LocalFsAdapter extends FsAdapter {
                 if (stat.isDirectory()) walk(fullPath);
             }
         };
-        walk(rootDir);
+        walk(target);
         return results;
     }
 
