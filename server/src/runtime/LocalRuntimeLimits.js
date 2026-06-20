@@ -45,7 +45,11 @@ function hasActiveLimits(limits) {
 }
 
 function buildSystemdRunArgs(command, args, options, limits) {
-    const out = ['run', '--scope', '--collect'];
+    // Do not prepend the 'run' subcommand: it only exists in systemd >= 256.
+    // Older distributions (e.g. Debian 12 / systemd 252) treat the first
+    // positional argument as the executable and fail with "Failed to find
+    // executable run". Omitting it uses the default run operation on both.
+    const out = ['--scope', '--collect'];
     if (options.uid != null) out.push(`--uid=${options.uid}`);
     if (options.gid != null) out.push(`--gid=${options.gid}`);
     if (limits.cpuPercent != null) {

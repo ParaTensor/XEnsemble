@@ -82,7 +82,7 @@ describe('LocalRuntimeLimits', () => {
         };
         const args = buildSystemdRunArgs('node', ['server.js'], { uid: 1000, gid: 1000 }, limits);
         assert.deepEqual(args, [
-            'run', '--scope', '--collect',
+            '--scope', '--collect',
             '--uid=1000', '--gid=1000',
             '--property=CPUQuota=60%',
             '--property=MemoryMax=512M',
