@@ -41,7 +41,7 @@ OpenAI / Anthropic / …（providers 配置）
 | 场景 | 示例 |
 |------|------|
 | 本机 Local | `http://127.0.0.1:3888` |
-| Agent 在 Docker | `http://host.docker.internal:3000` |
+| Agent 在 Docker | `http://host.docker.internal:3888` |
 | 生产 | `https://app.example.com` |
 
 Gateway 模式 spawn 时，由 `agentEnv.js` 的 `applyGatewaySynthesis` 展开为各 CLI 所需的 `*_BASE_URL` / `*_API_KEY`（值为 `xel_*` session token）。
