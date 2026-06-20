@@ -3,6 +3,7 @@ const net = require('net');
 const { spawn } = require('child_process');
 const { PreviewAdapter, RuntimeError } = require('./interfaces');
 const { resolvePreviewContract } = require('./previewContract');
+const { resolvePlatformSecrets, applyGatewaySynthesis } = require('../agents/agentEnv');
 const previewRegistry = require('./localPreviewRegistry');
 
 const CONTROL_HOST = process.env.PREVIEW_PUBLIC_HOST || 'localhost';
@@ -88,10 +89,12 @@ class LocalPreviewAdapter extends PreviewAdapter {
         const spec = resolvePreviewContract(workspacePath);
         const port = await getFreePort();
         const shell = process.env.SHELL || '/bin/bash';
+        const previewSecrets = applyGatewaySynthesis(await resolvePlatformSecrets({ forPreview: true }));
         const child = spawn(shell, ['-lc', spec.shell], {
             cwd: workspacePath,
             env: {
                 ...process.env,
+                ...previewSecrets,
                 PORT: String(port),
                 HOST: '127.0.0.1',
                 BROWSER: 'none',

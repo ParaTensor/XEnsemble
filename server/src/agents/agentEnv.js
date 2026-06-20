@@ -431,6 +431,7 @@ module.exports = {
     getLlmAuthMode,
     resolveAgentAuthMode,
     getUserSecrets,
+    resolvePlatformSecrets,
     applyGatewaySynthesis,
     resolveSpawnEnv,
     resolveTerminalSpawnEnv,
