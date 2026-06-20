@@ -37,6 +37,13 @@ const { deleteProjectForUser } = require('./projects/deleteProject');
 
 const runtime = getRuntime();
 
+function parseId(value) {
+    if (value == null || value === '') return undefined;
+    const n = Number(value);
+    if (!Number.isInteger(n) || n < 0) return undefined;
+    return n;
+}
+
 function formatAgentRow(a) {
     return {
         id: a.id,
@@ -431,7 +438,12 @@ fastify.post('/api/v1/session/start', { preValidation: [fastify.authenticate] },
             agentMeta.cmd,
             agentMeta.args,
             resolved.env,
-            { name: agentMeta.name, cwd: workspacePath }
+            {
+                name: agentMeta.name,
+                cwd: workspacePath,
+                uid: parseId(process.env.RUNTIME_UID),
+                gid: parseId(process.env.RUNTIME_GID),
+            }
         );
     } catch (err) {
         await db.delete(schema.sessions).where(eq(schema.sessions.id, sessionId));
