@@ -24,6 +24,7 @@ const { db } = require('./db/index');
 const schema = require('./db/schema');
 const { eq, and, sql } = require('drizzle-orm');
 const auth = require('./auth/index');
+const { assertActiveUser } = require('./auth/assertActiveUser');
 const { registerAuthHooks } = require('./auth/hooks');
 const policy = require('./auth/PolicyService');
 const { registerAuthRoutes } = require('./routes/auth');
@@ -514,6 +515,13 @@ fastify.register(async function terminalWsRoutes(app) {
                 return;
             }
 
+            const active = await assertActiveUser(accessToken);
+            if (active.error) {
+                sendJson({ type: 'error', data: active.error });
+                ws.close();
+                return;
+            }
+
             if (!sessionId) {
                 sendJson({ type: 'error', data: 'sessionId is required' });
                 ws.close();
@@ -652,6 +660,15 @@ fastify.delete('/api/v1/deployments/:deploymentId', { preValidation: [fastify.au
 
     await deploymentService.remove(request.user.id, row.id);
     return { ok: true };
+});
+
+fastify.post('/api/v1/deployments/:deploymentId/preview-token', { preValidation: [fastify.authenticate] }, async (request, reply) => {
+    const row = await deploymentService.getForUser(request.user.id, request.params.deploymentId);
+    if (!row) return reply.code(404).send({ error: 'Deployment not found' });
+    if (row.status !== 'running') return reply.code(503).send({ error: 'Preview is not running' });
+
+    const previewToken = await deploymentService.issuePreviewToken(row.id);
+    return { preview_token: previewToken };
 });
 
 // Workspace API — 经 runtime 解析 workspace 根路径后委托 FsAdapter

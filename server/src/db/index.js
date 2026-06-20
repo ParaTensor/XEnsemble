@@ -88,6 +88,7 @@ sqlite.exec(`
     status TEXT NOT NULL DEFAULT 'pending',
     public_url TEXT,
     internal_ref TEXT,
+    preview_token_hash TEXT,
     revision TEXT,
     expires_at INTEGER,
     created_at INTEGER NOT NULL,
@@ -222,6 +223,16 @@ if (!sessionColsAfter.some((c) => c.name === 'stream_ref')) {
 }
 if (!sessionColsAfter.some((c) => c.name === 'recoverable')) {
     sqlite.exec(`ALTER TABLE sessions ADD COLUMN recoverable INTEGER DEFAULT 0`);
+}
+
+const deploymentCols = sqlite.prepare(`PRAGMA table_info(deployments)`).all();
+if (!deploymentCols.some((c) => c.name === 'preview_token_hash')) {
+    try {
+        sqlite.exec(`ALTER TABLE deployments ADD COLUMN preview_token_hash TEXT`);
+    } catch (err) {
+        // 并发进程可能同时执行同一 ALTER；忽略已存在的列。
+        if (!err.message?.includes('duplicate column name')) throw err;
+    }
 }
 
 // ─── 用户管理表与 users 扩展字段 ───

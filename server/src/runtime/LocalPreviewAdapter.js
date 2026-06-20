@@ -4,7 +4,11 @@ const { spawn } = require('child_process');
 const { PreviewAdapter, RuntimeError } = require('./interfaces');
 const { resolvePreviewContract } = require('./previewContract');
 const { resolvePlatformSecrets, applyGatewaySynthesis } = require('../agents/agentEnv');
+const { resolveControlPlanePublicUrlSync } = require('../llm/publicUrl');
+const { loadRuntimeLimits, wrapForLimits } = require('./LocalRuntimeLimits');
 const previewRegistry = require('./localPreviewRegistry');
+
+const runtimeLimits = loadRuntimeLimits();
 
 function parseId(value) {
     if (value == null || value === '') return undefined;
@@ -13,9 +17,6 @@ function parseId(value) {
     return n;
 }
 
-const CONTROL_HOST = process.env.PREVIEW_PUBLIC_HOST || 'localhost';
-const { resolvePort } = require('../config/defaultPort');
-const CONTROL_PORT = resolvePort();
 const PORT_READY_TIMEOUT_MS = 120_000;
 const PORT_POLL_MS = 400;
 
@@ -97,7 +98,7 @@ class LocalPreviewAdapter extends PreviewAdapter {
         const port = await getFreePort();
         const shell = process.env.SHELL || '/bin/bash';
         const previewSecrets = applyGatewaySynthesis(await resolvePlatformSecrets({ forPreview: true }));
-        const child = spawn(shell, ['-lc', spec.shell], {
+        const spawnOptions = {
             cwd: workspacePath,
             env: {
                 ...process.env,
@@ -110,7 +111,13 @@ class LocalPreviewAdapter extends PreviewAdapter {
             stdio: ['ignore', 'pipe', 'pipe'],
             uid: parseId(process.env.RUNTIME_UID),
             gid: parseId(process.env.RUNTIME_GID),
-        });
+        };
+        const {
+            command,
+            args: finalArgs,
+            options: finalOptions,
+        } = wrapForLimits(shell, ['-lc', spec.shell], spawnOptions, runtimeLimits);
+        const child = spawn(command, finalArgs, finalOptions);
 
         let logTail = '';
         const appendLog = (chunk) => {
@@ -141,7 +148,7 @@ class LocalPreviewAdapter extends PreviewAdapter {
 
         previewRegistry.set(deploymentId, { port, child, workspacePath, startedAt: Date.now() });
 
-        const publicUrl = `http://${CONTROL_HOST}:${CONTROL_PORT}/preview/${deploymentId}/`;
+        const publicUrl = `${resolveControlPlanePublicUrlSync()}/preview/${deploymentId}/`;
         return {
             publicUrl,
             internalRef: `127.0.0.1:${port}`,

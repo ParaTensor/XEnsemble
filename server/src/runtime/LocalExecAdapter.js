@@ -7,6 +7,9 @@ const crypto = require('crypto');
 const { ExecAdapter, AgentSpawnError, StreamHandle } = require('./interfaces');
 const { getProcessStats } = require('./Monitor');
 const { resolveExecutable, enrichPath, KNOWN_CLI_LOCATIONS } = require('../agents/agentProbe');
+const { loadRuntimeLimits, wrapForLimits } = require('./LocalRuntimeLimits');
+
+const runtimeLimits = loadRuntimeLimits();
 
 // ─── 辅助函数（原 Executor.js） ───
 
@@ -208,7 +211,7 @@ class LocalExecAdapter extends ExecAdapter {
             throw new AgentSpawnError(buildNotFoundMessage(cmd, options.name));
         }
 
-        const { command, args: spawnArgs } = resolveSpawnTarget(resolved, args);
+        const { command: targetCommand, args: spawnArgs } = resolveSpawnTarget(resolved, args);
         const ptyOptions = {
             name: 'xterm-256color',
             cols: 120,
@@ -219,8 +222,14 @@ class LocalExecAdapter extends ExecAdapter {
             gid: parseId(options.gid),
         };
 
+        const {
+            command,
+            args: finalArgs,
+            options: finalOptions,
+        } = wrapForLimits(targetCommand, spawnArgs, ptyOptions, runtimeLimits);
+
         try {
-            const ptyProcess = pty.spawn(command, spawnArgs, ptyOptions);
+            const ptyProcess = pty.spawn(command, finalArgs, finalOptions);
             const streamRef = `local:pty:${Date.now()}_${crypto.randomBytes(4).toString('hex')}_${ptyProcess.pid}`;
             return new LocalStreamHandle(ptyProcess, streamRef);
         } catch (err) {
@@ -257,14 +266,20 @@ class LocalExecAdapter extends ExecAdapter {
         return new Promise((resolve, reject) => {
             const maxBuffer = options.maxBuffer || 2 * 1024 * 1024;
 
-            const child = spawn(cmd, args, {
+            const execOptions = {
                 cwd: workspaceDir,
                 env: spawnEnv,
                 timeout: options.timeoutMs || 60_000,
                 maxBuffer,
                 uid: parseId(options.uid),
                 gid: parseId(options.gid),
-            });
+            };
+            const {
+                command,
+                args: finalArgs,
+                options: finalOptions,
+            } = wrapForLimits(cmd, args, execOptions, runtimeLimits);
+            const child = spawn(command, finalArgs, finalOptions);
 
             let stdout = '';
             let stderr = '';

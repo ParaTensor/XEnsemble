@@ -7,8 +7,42 @@ const { RuntimeError } = require('../runtime/interfaces');
 const { ensureProjectRuntime } = require('../runtime/RuntimeService');
 const { recordEvent } = require('../events/recordEvent');
 const { singleflight } = require('../runtime/singleflight');
+const { createCheckpoint } = require('../repositories/RepositoryEnvironmentService');
 
 const PREVIEW_TTL_MS = 24 * 60 * 60 * 1000;
+
+function generateRawToken() {
+    return crypto.randomBytes(32).toString('base64url');
+}
+
+function hashToken(raw) {
+    return crypto.createHash('sha256').update(raw).digest('hex');
+}
+
+function verifyToken(raw, hash) {
+    if (!raw || !hash) return false;
+    const rawHash = hashToken(raw);
+    try {
+        return crypto.timingSafeEqual(Buffer.from(rawHash, 'hex'), Buffer.from(hash, 'hex'));
+    } catch {
+        return false;
+    }
+}
+
+async function issuePreviewToken(deploymentId) {
+    const raw = generateRawToken();
+    const tokenHash = hashToken(raw);
+    await db.update(schema.deployments)
+        .set({ previewTokenHash: tokenHash, updatedAt: Date.now() })
+        .where(eq(schema.deployments.id, deploymentId));
+    return raw;
+}
+
+async function clearPreviewToken(deploymentId) {
+    await db.update(schema.deployments)
+        .set({ previewTokenHash: null, updatedAt: Date.now() })
+        .where(eq(schema.deployments.id, deploymentId));
+}
 
 function formatDeployment(row) {
     return {
@@ -52,7 +86,9 @@ async function createPreview(userId, project) {
     const { runtime } = await ensureProjectRuntime(project);
     const now = Date.now();
     const id = `dep_${crypto.randomBytes(8).toString('hex')}`;
-    const revision = `checkpoint:${now}`;
+
+    const checkpoint = await createCheckpoint(project, { status: 'ready' }, userId);
+    const revision = `checkpoint:${checkpoint.id}`;
 
     await db.insert(schema.deployments).values({
         id,
@@ -78,7 +114,17 @@ async function createPreview(userId, project) {
     });
 
     const row = await getForUser(userId, id);
-    return formatDeployment(row);
+    const previewToken = await issuePreviewToken(id);
+    return { ...formatDeployment(row), preview_token: previewToken };
+}
+
+async function getByPreviewToken(deploymentId, rawToken) {
+    const rows = await db.select().from(schema.deployments)
+        .where(eq(schema.deployments.id, deploymentId));
+    const row = rows[0];
+    if (!row) return null;
+    if (!verifyToken(rawToken, row.previewTokenHash)) return null;
+    return row;
 }
 
 async function startPreview(userId, project, deployment) {
@@ -137,7 +183,8 @@ async function startPreview(userId, project, deployment) {
         }
 
         const row = await getForUser(userId, deployment.id);
-        return formatDeployment(row);
+        const previewToken = await issuePreviewToken(deployment.id);
+        return { ...formatDeployment(row), preview_token: previewToken };
     });
 }
 
@@ -151,6 +198,7 @@ async function stopPreview(userId, deployment) {
     const now = Date.now();
     await db.update(schema.deployments).set({
         status: 'stopped',
+        previewTokenHash: null,
         updatedAt: now,
         stoppedBy: userId,
     }).where(eq(schema.deployments.id, deployment.id));
@@ -191,6 +239,8 @@ module.exports = {
     formatDeployment,
     listForProject,
     getForUser,
+    getByPreviewToken,
+    issuePreviewToken,
     createPreview,
     startPreview,
     stopPreview,

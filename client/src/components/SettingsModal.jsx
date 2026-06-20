@@ -1,4 +1,3 @@
-import React from 'react';
 import { X } from 'lucide-react';
 import { ConsoleDialogShell } from './ConsoleDialog';
 import { consoleDialogPanelClass } from '../lib/consoleTokens';

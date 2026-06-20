@@ -1,4 +1,4 @@
-import React, { useState, useContext } from 'react';
+import { useState, useContext } from 'react';
 import { AuthContext } from '../App';
 import BrandMark from '../components/BrandMark';
 import { publicFetch } from '../lib/api';

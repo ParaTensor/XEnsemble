@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { AlertCircle } from 'lucide-react';
 import Input from '../Input';
 import { getSecretLabel, getSecretPlaceholder, isSecretPasswordField } from '../../lib/secretLabels';

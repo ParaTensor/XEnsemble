@@ -10,7 +10,7 @@ use axum::{
     extract::{Path, State},
     http::{HeaderMap, StatusCode, header},
     response::{IntoResponse, Response},
-    routing::{delete, get, patch, post},
+    routing::{get, patch, post},
 };
 use futures_util::StreamExt;
 use serde::Deserialize;
@@ -125,7 +125,10 @@ async fn main() -> Result<()> {
             "/api/admin/preferences/default-mode",
             post(admin_set_default_mode),
         )
-        .route("/api/admin/api-keys", patch(admin_rebind_api_key))
+        .route(
+            "/api/admin/api-keys",
+            post(admin_create_api_key).patch(admin_rebind_api_key),
+        )
         .route(
             "/api/admin/providers",
             get(admin_list_providers).post(admin_create_provider),
@@ -490,6 +493,46 @@ async fn admin_set_default_mode(
 struct RebindApiKeyBody {
     key: String,
     service_id: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct CreateApiKeyBody {
+    key: String,
+    service_id: String,
+    quota_limit: Option<i64>,
+    qps_limit: Option<f64>,
+    concurrency_limit: Option<i64>,
+}
+
+async fn admin_create_api_key(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(body): Json<CreateApiKeyBody>,
+) -> Result<Json<AdminResponse<Value>>, ApiError> {
+    require_admin(&headers, &state.admin_token)?;
+    let key = body.key.trim();
+    let service_id = body.service_id.trim();
+    if key.is_empty() {
+        return Err(ApiError::bad_request("key is required"));
+    }
+    if service_id.is_empty() {
+        return Err(ApiError::bad_request("service_id is required"));
+    }
+    state
+        .gateway
+        .create_api_key(
+            key,
+            service_id,
+            body.quota_limit,
+            body.qps_limit,
+            body.concurrency_limit,
+        )
+        .await;
+    state.gateway.persist_if_dirty().await.ok();
+    Ok(Json(AdminResponse::ok(json!({
+        "key": key,
+        "service_id": service_id,
+    }))))
 }
 
 async fn admin_rebind_api_key(
