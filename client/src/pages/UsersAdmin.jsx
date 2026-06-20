@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useContext, useCallback, useRef } from 'react';
 import { Plus, Pencil, Ban, CheckCircle, KeyRound } from 'lucide-react';
-import { AuthContext } from '../App';
+
 import Button from '../components/Button';
 import Input from '../components/Input';
 import PageHeader from '../components/PageHeader';
@@ -18,7 +18,7 @@ import {
   consoleTableShellClass,
 } from '../lib/consoleTokens';
 
-import { getApiBase } from '../lib/api';
+import { apiFetch } from '../lib/api';
 
 function statusBadge(status) {
   const map = {
@@ -47,7 +47,7 @@ const emptyForm = {
 };
 
 export default function UsersAdmin() {
-  const { token } = useContext(AuthContext);
+  
   const { showToast } = useToast();
   const [users, setUsers] = useState([]);
   const [agents, setAgents] = useState([]);
@@ -58,29 +58,26 @@ export default function UsersAdmin() {
   const [resetPassword, setResetPassword] = useState('');
   const pendingCreateAgentDefaults = useRef(false);
 
-  const authHeaders = {
-    'Content-Type': 'application/json',
-    Authorization: `Bearer ${token}`,
-  };
+  
 
   const fetchUsers = useCallback(() => {
-    fetch(`${getApiBase()}/api/v1/admin/users`, { headers: authHeaders })
+    apiFetch('/api/v1/admin/users')
       .then((res) => res.json())
       .then((data) => {
         if (Array.isArray(data)) setUsers(data);
       })
       .finally(() => setLoading(false));
-  }, [token]);
+  }, []);
 
   const fetchAgents = useCallback(() => {
-    fetch(`${getApiBase()}/api/v1/admin/agents`, { headers: authHeaders })
+    apiFetch('/api/v1/admin/agents')
       .then((res) => res.json())
       .then((data) => {
         if (Array.isArray(data)) {
           setAgents(data.filter((a) => a.installed));
         }
       });
-  }, [token]);
+  }, []);
 
   useEffect(() => {
     fetchUsers();
@@ -106,7 +103,7 @@ export default function UsersAdmin() {
 
   const openEdit = async (user) => {
     try {
-      const res = await fetch(`${getApiBase()}/api/v1/admin/users/${user.id}`, { headers: authHeaders });
+      const res = await apiFetch(`/api/v1/admin/users/${user.id}`);
       const detail = await res.json();
       if (!res.ok) throw new Error(detail.error);
       setEditingUser(detail);
@@ -143,9 +140,9 @@ export default function UsersAdmin() {
           showToast('error', 'Password must be at least 8 characters.');
           return;
         }
-        const res = await fetch(`${getApiBase()}/api/v1/admin/users`, {
+        const res = await apiFetch('/api/v1/admin/users', {
           method: 'POST',
-          headers: authHeaders,
+          
           body: JSON.stringify({
             username: form.username,
             password: form.password,
@@ -164,9 +161,9 @@ export default function UsersAdmin() {
         if (!res.ok) throw new Error(data.error);
         showToast('success', 'User created.');
       } else if (editingUser) {
-        const patchRes = await fetch(`${getApiBase()}/api/v1/admin/users/${editingUser.id}`, {
+        const patchRes = await apiFetch(`/api/v1/admin/users/${editingUser.id}`, {
           method: 'PATCH',
-          headers: authHeaders,
+          
           body: JSON.stringify({
             role: form.role,
             status: form.status,
@@ -175,9 +172,9 @@ export default function UsersAdmin() {
         const patchData = await patchRes.json();
         if (!patchRes.ok) throw new Error(patchData.error);
 
-        const quotaRes = await fetch(`${getApiBase()}/api/v1/admin/users/${editingUser.id}/quota`, {
+        const quotaRes = await apiFetch(`/api/v1/admin/users/${editingUser.id}/quota`, {
           method: 'PUT',
-          headers: authHeaders,
+          
           body: JSON.stringify({
             max_projects: Number(form.max_projects),
             max_sessions: Number(form.max_sessions),
@@ -188,9 +185,9 @@ export default function UsersAdmin() {
         const quotaData = await quotaRes.json();
         if (!quotaRes.ok) throw new Error(quotaData.error);
 
-        const agentsRes = await fetch(`${getApiBase()}/api/v1/admin/users/${editingUser.id}/agents`, {
+        const agentsRes = await apiFetch(`/api/v1/admin/users/${editingUser.id}/agents`, {
           method: 'PUT',
-          headers: authHeaders,
+          
           body: JSON.stringify({ agent_ids: form.agent_ids }),
         });
         const agentsData = await agentsRes.json();
@@ -201,9 +198,9 @@ export default function UsersAdmin() {
             showToast('error', 'New password must be at least 8 characters.');
             return;
           }
-          const pwRes = await fetch(`${getApiBase()}/api/v1/admin/users/${editingUser.id}/reset-password`, {
+          const pwRes = await apiFetch(`/api/v1/admin/users/${editingUser.id}/reset-password`, {
             method: 'POST',
-            headers: authHeaders,
+            
             body: JSON.stringify({ password: resetPassword }),
           });
           const pwData = await pwRes.json();
@@ -222,9 +219,9 @@ export default function UsersAdmin() {
   const toggleStatus = async (user) => {
     const next = user.status === 'active' ? 'suspended' : 'active';
     try {
-      const res = await fetch(`${getApiBase()}/api/v1/admin/users/${user.id}`, {
+      const res = await apiFetch(`/api/v1/admin/users/${user.id}`, {
         method: 'PATCH',
-        headers: authHeaders,
+        
         body: JSON.stringify({ status: next }),
       });
       const data = await res.json();
@@ -238,9 +235,9 @@ export default function UsersAdmin() {
 
   const approveUser = async (user) => {
     try {
-      const res = await fetch(`${getApiBase()}/api/v1/admin/users/${user.id}`, {
+      const res = await apiFetch(`/api/v1/admin/users/${user.id}`, {
         method: 'PATCH',
-        headers: authHeaders,
+        
         body: JSON.stringify({ status: 'active' }),
       });
       const data = await res.json();

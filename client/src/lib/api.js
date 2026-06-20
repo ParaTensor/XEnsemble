@@ -19,10 +19,15 @@ export function getWsBase() {
   return 'ws://localhost:3888';
 }
 
-export function apiFetch(path, token, options = {}) {
-  const headers = {
-    ...(options.headers || {}),
-  };
-  if (token) headers.Authorization = `Bearer ${token}`;
-  return fetch(`${getApiBase()}${path}`, { ...options, headers });
+export function publicFetch(path, options = {}) {
+  return fetch(`${getApiBase()}${path}`, options);
 }
+
+export {
+  apiFetch,
+  getAccessToken,
+  getRefreshToken,
+  setTokens,
+  clearTokens,
+  refreshAccessToken,
+} from './auth';

@@ -14,6 +14,7 @@ import {
 } from './lib/appShellLayout';
 import { cn } from './lib/utils';
 import { consoleNavActiveClass, consoleNavIdleClass } from './lib/consoleTokens';
+import { getAccessToken, setTokens, clearTokens } from './lib/api';
 
 export const AuthContext = React.createContext(null);
 
@@ -84,7 +85,7 @@ function Shell({ children, isAdmin, user, onLogout, setShowSettingsModal, compac
 }
 
 function App() {
-  const [token, setToken] = useState(localStorage.getItem('xe_access_token'));
+  const [token, setToken] = useState(getAccessToken());
   const [user, setUser] = useState(() => {
     try {
       return JSON.parse(localStorage.getItem('user'));
@@ -97,8 +98,7 @@ function App() {
   const isAdmin = user?.role === 'admin';
 
   const login = (accessToken, refreshToken, userData) => {
-    localStorage.setItem('xe_access_token', accessToken);
-    localStorage.setItem('xe_refresh_token', refreshToken);
+    setTokens(accessToken, refreshToken);
     localStorage.setItem('user', JSON.stringify(userData));
     setToken(accessToken);
     setUser(userData);
@@ -106,8 +106,7 @@ function App() {
   };
 
   const logout = () => {
-    localStorage.removeItem('xe_access_token');
-    localStorage.removeItem('xe_refresh_token');
+    clearTokens();
     localStorage.removeItem('user');
     setToken(null);
     setUser(null);

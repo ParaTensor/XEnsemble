@@ -17,7 +17,7 @@ const GENERAL_SECTION = { id: 'general', label: 'General' };
 const BYOK_SECTION = { id: 'byok', label: 'BYOK' };
 const GATEWAY_SECTION = { id: 'gateway', label: 'Gateway' };
 export default function SettingsShell() {
-  const { user, token } = useContext(AuthContext);
+  const { user } = useContext(AuthContext);
   const [section, setSection] = useState('general');
   const secretsState = useSecrets();
 
