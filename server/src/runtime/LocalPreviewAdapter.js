@@ -101,6 +101,8 @@ class LocalPreviewAdapter extends PreviewAdapter {
             },
             detached: process.platform !== 'win32',
             stdio: ['ignore', 'pipe', 'pipe'],
+            uid: process.env.RUNTIME_UID ? Number(process.env.RUNTIME_UID) : undefined,
+            gid: process.env.RUNTIME_GID ? Number(process.env.RUNTIME_GID) : undefined,
         });
 
         let logTail = '';

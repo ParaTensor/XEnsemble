@@ -208,6 +208,8 @@ class LocalExecAdapter extends ExecAdapter {
             rows: 32,
             cwd: workspaceDir,
             env: spawnEnv,
+            uid: options.uid != null ? Number(options.uid) : undefined,
+            gid: options.gid != null ? Number(options.gid) : undefined,
         };
 
         try {
@@ -252,6 +254,9 @@ class LocalExecAdapter extends ExecAdapter {
                 cwd: workspaceDir,
                 env: spawnEnv,
                 timeout: options.timeoutMs || 60_000,
+                maxBuffer: options.maxBuffer || 2 * 1024 * 1024,
+                uid: options.uid != null ? Number(options.uid) : undefined,
+                gid: options.gid != null ? Number(options.gid) : undefined,
             });
 
             let stdout = '';
