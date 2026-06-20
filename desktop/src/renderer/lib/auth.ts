@@ -1,3 +1,5 @@
+import { getApiBase } from './backend';
+
 const LS_ACCESS = 'xe_access_token';
 const LS_REFRESH = 'xe_refresh_token';
 
@@ -42,7 +44,7 @@ export async function refreshAccessToken(): Promise<string | null> {
     try {
       const refreshToken = await getRefreshToken();
       if (!refreshToken) return null;
-      const res = await fetch('/api/v1/auth/refresh', {
+      const res = await fetch(`${getApiBase()}/api/v1/auth/refresh`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ refresh_token: refreshToken }),
@@ -62,17 +64,20 @@ export async function refreshAccessToken(): Promise<string | null> {
 export async function apiFetch(path: string, options: RequestInit = {}): Promise<Response> {
   const accessToken = await getAccessToken();
   const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
     ...(options.headers as Record<string, string> || {}),
   };
+  if (options.body && !headers['Content-Type']) {
+    headers['Content-Type'] = 'application/json';
+  }
   if (accessToken) headers.Authorization = `Bearer ${accessToken}`;
 
-  const res = await fetch(path, { ...options, headers });
+  const url = `${getApiBase()}${path}`;
+  const res = await fetch(url, { ...options, headers });
   if (res.status === 401) {
     const newToken = await refreshAccessToken();
     if (newToken) {
       headers.Authorization = `Bearer ${newToken}`;
-      return fetch(path, { ...options, headers });
+      return fetch(url, { ...options, headers });
     }
   }
   return res;
