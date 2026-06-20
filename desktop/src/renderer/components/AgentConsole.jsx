@@ -119,7 +119,7 @@ export default function AgentConsole({
         terminalRef.current = terminal;
         applyXtermSurfaceStyles(container, terminalPaneRef.current, presetRef.current.xterm);
 
-        const ws = new WebSocket(getWsUrl(sessionId));
+        const ws = new WebSocket(getWsUrl(sessionId, token));
 
         terminal.attachCustomKeyEventHandler((ev) => {
             if (ev.type !== 'keydown') return true;

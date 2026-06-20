@@ -6,28 +6,24 @@ export function getBackendURL(): string {
   }
   const host = window.location.hostname || 'localhost';
   const protocol = window.location.protocol || 'http:';
-  return `${protocol}//${host}:3000`;
+  return `${protocol}//${host}:3888`;
 }
 
 export function getApiBase(): string {
   return getBackendURL().replace(/\/$/, '');
 }
 
-export function getWsUrl(sessionId: string): string {
+export function getWsUrl(sessionId: string, accessToken: string | null): string {
   const base = getBackendURL();
   const wsProtocol = base.startsWith('https:') ? 'wss:' : 'ws:';
   const httpProtocolRemoved = base.replace(/^https?:/, '');
-  return `${wsProtocol}${httpProtocolRemoved}/ws/v1/terminal?sessionId=${encodeURIComponent(sessionId)}`;
-}
-
-export function apiFetch(path: string, token: string | null, options: RequestInit = {}): Promise<Response> {
-  const headers: Record<string, string> = {
-    ...(options.headers as Record<string, string> || {})
-  };
-  if (token) headers.Authorization = `Bearer ${token}`;
-  return fetch(`${getApiBase()}${path}`, { ...options, headers });
+  const qs = new URLSearchParams({ sessionId });
+  if (accessToken) qs.set('access_token', accessToken);
+  return `${wsProtocol}${httpProtocolRemoved}/ws/v1/terminal?${qs.toString()}`;
 }
 
 export function publicFetch(path: string, options: RequestInit = {}): Promise<Response> {
   return fetch(`${getApiBase()}${path}`, options);
 }
+
+export { apiFetch, getAccessToken, setTokens, clearTokens } from './auth';

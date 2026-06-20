@@ -19,7 +19,7 @@ const TerminalThemeContext = createContext(null);
 async function syncPreferencesToServer(token, themeId) {
   if (!token) return;
   try {
-    await apiFetch('/api/v1/user/preferences', token, {
+    await apiFetch('/api/v1/user/preferences', {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ terminal_theme_id: themeId }),
@@ -32,7 +32,7 @@ async function syncPreferencesToServer(token, themeId) {
 async function fetchRemoteCatalog(token) {
   if (!token) return null;
   try {
-    const res = await apiFetch('/api/v1/terminal-themes', token);
+    const res = await apiFetch('/api/v1/terminal-themes');
     if (!res.ok) return null;
     const data = await res.json();
     return mergeTerminalCatalog(data.themes);
@@ -44,7 +44,7 @@ async function fetchRemoteCatalog(token) {
 async function fetchRemotePreference(token) {
   if (!token) return null;
   try {
-    const res = await apiFetch('/api/v1/user/preferences', token);
+    const res = await apiFetch('/api/v1/user/preferences');
     if (!res.ok) return null;
     const data = await res.json();
     const id = data?.terminal_theme_id;

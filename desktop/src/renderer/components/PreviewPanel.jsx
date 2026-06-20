@@ -83,7 +83,6 @@ export function usePreview(projectId, token) {
     try {
       const res = await apiFetch(
         `/api/v1/deployments?project_id=${encodeURIComponent(projectId)}`,
-        token,
       );
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed to load preview');
@@ -103,7 +102,7 @@ export function usePreview(projectId, token) {
   const deployPreview = async () => {
     setLoading(true);
     try {
-      const res = await apiFetch(`/api/v1/projects/${encodeURIComponent(projectId)}/preview`, token, {
+      const res = await apiFetch(`/api/v1/projects/${encodeURIComponent(projectId)}/preview`, {
         method: 'POST',
       });
       const data = await res.json();
@@ -130,7 +129,6 @@ export function usePreview(projectId, token) {
     try {
       const res = await apiFetch(
         `/api/v1/deployments/${encodeURIComponent(deployment.id)}/stop`,
-        token,
         { method: 'POST' },
       );
       const data = await res.json();
@@ -150,7 +148,6 @@ export function usePreview(projectId, token) {
     try {
       const res = await apiFetch(
         `/api/v1/deployments/${encodeURIComponent(deployment.id)}/start`,
-        token,
         { method: 'POST' },
       );
       const data = await res.json();
