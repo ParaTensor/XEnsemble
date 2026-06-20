@@ -47,6 +47,10 @@ function readTextFile(filePath) {
 }
 
 function ensureGatewaySecrets() {
+    if (process.env.NODE_ENV === 'production' && !process.env.UNIGATEWAY_ADMIN_TOKEN) {
+        throw new Error('UNIGATEWAY_ADMIN_TOKEN is required in production');
+    }
+
     if (!fs.existsSync(DATA_DIR)) {
         fs.mkdirSync(DATA_DIR, { recursive: true });
     }
@@ -59,7 +63,7 @@ function ensureGatewaySecrets() {
         fs.writeFileSync(GATEWAY_KEY_PATH, `${gatewayKey}\n`, { mode: 0o600 });
     }
     if (!adminToken) {
-        adminToken = generateAdminToken();
+        adminToken = process.env.UNIGATEWAY_ADMIN_TOKEN || generateAdminToken();
         fs.writeFileSync(ADMIN_TOKEN_PATH, `${adminToken}\n`, { mode: 0o600 });
     }
 
@@ -265,9 +269,6 @@ async function start(log = console, { force = false } = {}) {
 
     const bindAddr = await applyRuntimeConfig();
     const config = ensureGatewaySecrets();
-    if (process.env.NODE_ENV === 'production' && !config.adminToken) {
-        throw new Error('UNIGATEWAY_ADMIN_TOKEN is required in production');
-    }
     status.gatewayKey = config.gatewayKey;
     status.adminToken = config.adminToken;
     status.configPath = config.configPath;
