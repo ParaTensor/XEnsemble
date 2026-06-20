@@ -29,7 +29,7 @@ function resolveSafePath(rootDir, relativePath) {
     const input = String(relativePath || '');
     if (input.includes('\0')) return null;
     const trimmed = input.replace(/^[/\\]+/, '');
-    const safe = path.normalize(trimmed).replace(/^(\.\.(\/|\\\\|$))+/, '');
+    const safe = path.normalize(trimmed).replace(/^(\.\.(\/|\\|$))+/, '');
     if (safe.startsWith('..')) return null;
     const absolute = path.resolve(root, safe === '.' ? '' : safe);
 
@@ -40,32 +40,57 @@ function resolveSafePath(rootDir, relativePath) {
         realRoot = root;
     }
 
-    // Resolve symlinks in the path. If the target does not exist, walk up to the
-    // nearest existing ancestor, resolve that, and append the remaining suffix.
-    let realAbsolute;
-    let suffix = '';
-    let current = absolute;
-    while (true) {
+    // Walk path components from root, resolving symlinks, to handle non-existent
+    // final targets and symlinks (including broken ones) pointing outside the jail.
+    const relativeParts = path.relative(root, absolute).split(path.sep).filter(Boolean);
+    let resolvedReal = realRoot;
+
+    for (let i = 0; i < relativeParts.length; i++) {
+        const part = relativeParts[i];
+        if (part === '..') return null;
+        const current = path.join(root, ...relativeParts.slice(0, i + 1));
+
+        let stat;
         try {
-            realAbsolute = fs.realpathSync.native(current);
-            break;
+            stat = fs.lstatSync(current);
         } catch {
-            if (current === root || current === path.dirname(current)) {
-                // Nothing above resolves; fall back to normalized absolute.
-                realAbsolute = absolute;
-                suffix = '';
-                break;
+            // Component does not exist. Append remaining parts to the real path
+            // and verify it stays inside root.
+            const remaining = relativeParts.slice(i).join(path.sep);
+            const finalReal = path.join(resolvedReal, remaining);
+            const realRootNorm = path.normalize(realRoot + path.sep);
+            const finalNorm = path.normalize(finalReal);
+            if (finalNorm !== realRoot && !finalNorm.startsWith(realRootNorm)) {
+                return null;
             }
-            suffix = path.basename(current) + (suffix ? path.sep + suffix : '');
-            current = path.dirname(current);
+            return absolute;
         }
-    }
-    if (suffix) {
-        realAbsolute = path.join(realAbsolute, suffix);
+
+        if (stat.isSymbolicLink()) {
+            let linkTarget;
+            try {
+                linkTarget = fs.realpathSync.native(current);
+            } catch {
+                // Symlink target does not exist; resolve the link text manually.
+                linkTarget = fs.readlinkSync(current);
+                if (!path.isAbsolute(linkTarget)) {
+                    linkTarget = path.resolve(path.dirname(current), linkTarget);
+                }
+                linkTarget = path.normalize(linkTarget);
+            }
+            const realRootNorm = path.normalize(realRoot + path.sep);
+            const linkNorm = path.normalize(linkTarget + path.sep);
+            if (linkTarget !== realRoot && !linkNorm.startsWith(realRootNorm)) {
+                return null;
+            }
+            resolvedReal = linkTarget;
+        } else {
+            resolvedReal = path.join(resolvedReal, part);
+        }
     }
 
     const realRootNorm = path.normalize(realRoot + path.sep);
-    const realAbsNorm = path.normalize(realAbsolute);
+    const realAbsNorm = path.normalize(resolvedReal);
     if (realAbsNorm !== realRoot && !realAbsNorm.startsWith(realRootNorm)) {
         return null;
     }

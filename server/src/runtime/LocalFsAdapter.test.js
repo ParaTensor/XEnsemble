@@ -100,3 +100,16 @@ test('fsRead throws for non-existent path', async () => {
         fs.rmSync(tmp, { recursive: true, force: true });
     }
 });
+
+test('fsRead rejects intermediate symlink to non-existent outside target', async () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'xe-fs-'));
+    const outsideDir = fs.mkdtempSync(path.join(os.tmpdir(), 'xe-outside-'));
+    try {
+        fs.rmSync(outsideDir, { recursive: true, force: true });
+        fs.symlinkSync(outsideDir, path.join(tmp, 'escape'), 'dir');
+        const adapter = new LocalFsAdapter();
+        await assert.rejects(() => adapter.fsRead(tmp, 'escape/missing.txt'), /Access denied|403/);
+    } finally {
+        fs.rmSync(tmp, { recursive: true, force: true });
+    }
+});
