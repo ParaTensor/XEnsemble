@@ -5,7 +5,7 @@ import { FitAddon } from '@xterm/addon-fit';
 import '@xterm/xterm/css/xterm.css';
 import { usePreview, PreviewControlGroup } from './PreviewPanel';
 import TerminalThemePicker from './TerminalThemePicker';
-import { getWsUrl } from '../lib/api.ts';
+import { getWsUrl, getAccessToken } from '../lib/api';
 import { useTerminalTheme } from '../hooks/useTerminalTheme.jsx';
 import { XTERM_MINIMUM_CONTRAST_RATIO } from '../lib/terminalThemes.js';
 
@@ -94,6 +94,7 @@ export default function AgentConsole({
         const disposedRef = { current: false };
         const serverEndedRef = { current: false };
         const openedRef = { current: false };
+        const wsRef = { current: null };
 
         const terminal = new Terminal({
             cols: 120,
@@ -119,8 +120,6 @@ export default function AgentConsole({
         terminalRef.current = terminal;
         applyXtermSurfaceStyles(container, terminalPaneRef.current, presetRef.current.xterm);
 
-        const ws = new WebSocket(getWsUrl(sessionId, token));
-
         terminal.attachCustomKeyEventHandler((ev) => {
             if (ev.type !== 'keydown') return true;
             if (serverEndedRef.current) return false;
@@ -135,8 +134,8 @@ export default function AgentConsole({
             }
 
             ev.preventDefault();
-            if (ws.readyState === WebSocket.OPEN) {
-                ws.send(JSON.stringify({ type: 'input', data: seq }));
+            if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+                wsRef.current.send(JSON.stringify({ type: 'input', data: seq }));
             }
             return false;
         });
@@ -150,8 +149,8 @@ export default function AgentConsole({
             if (terminal.cols !== dims.cols || terminal.rows !== dims.rows) {
                 terminal.resize(dims.cols, dims.rows);
             }
-            if (ws.readyState === WebSocket.OPEN && dims.cols > 0 && dims.rows > 0) {
-                ws.send(JSON.stringify({ type: 'resize', cols: dims.cols, rows: dims.rows }));
+            if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN && dims.cols > 0 && dims.rows > 0) {
+                wsRef.current.send(JSON.stringify({ type: 'resize', cols: dims.cols, rows: dims.rows }));
             }
             return dims;
         };
@@ -161,62 +160,69 @@ export default function AgentConsole({
             if (!serverEndedRef.current) terminal.focus();
         };
 
-        ws.onopen = () => {
-            openedRef.current = true;
-            if (sessionLiveRef.current) setEnded(false);
-            let attempts = 0;
-            const tryFit = () => {
-                applySize();
-                focusTerminal();
-                if ((terminal.cols < 2 || terminal.rows < 1) && attempts < 8) {
-                    attempts += 1;
-                    requestAnimationFrame(tryFit);
+        (async () => {
+            const accessToken = await getAccessToken();
+            if (disposedRef.current) return;
+            const ws = new WebSocket(getWsUrl(sessionId, accessToken));
+            wsRef.current = ws;
+
+            ws.onopen = () => {
+                openedRef.current = true;
+                if (sessionLiveRef.current) setEnded(false);
+                let attempts = 0;
+                const tryFit = () => {
+                    applySize();
+                    focusTerminal();
+                    if ((terminal.cols < 2 || terminal.rows < 1) && attempts < 8) {
+                        attempts += 1;
+                        requestAnimationFrame(tryFit);
+                    }
+                };
+                requestAnimationFrame(tryFit);
+            };
+
+            ws.onerror = () => {
+                if (serverEndedRef.current || disposedRef.current) return;
+            };
+
+            ws.onmessage = (event) => {
+                const msg = parseWsMessage(event.data);
+                if (msg.type === 'output') {
+                    terminal.write(msg.data);
+                } else if (msg.type === 'metrics') {
+                    setMetrics(msg.data);
+                } else if (msg.type === 'error') {
+                    terminal.write(`\r\n\x1b[31m[System] ${msg.data}\x1b[0m\r\n`);
+                    serverEndedRef.current = true;
+                    setEnded(true);
+                    onSessionEndRef.current?.(sessionId);
+                } else if (msg.type === 'exit') {
+                    if (msg.message) terminal.write(msg.message);
+                    serverEndedRef.current = true;
+                    setEnded(true);
+                    onSessionEndRef.current?.(sessionId);
                 }
             };
-            requestAnimationFrame(tryFit);
-        };
 
-        ws.onerror = () => {
-            if (serverEndedRef.current || disposedRef.current) return;
-        };
-
-        ws.onmessage = (event) => {
-            const msg = parseWsMessage(event.data);
-            if (msg.type === 'output') {
-                terminal.write(msg.data);
-            } else if (msg.type === 'metrics') {
-                setMetrics(msg.data);
-            } else if (msg.type === 'error') {
-                terminal.write(`\r\n\x1b[31m[System] ${msg.data}\x1b[0m\r\n`);
-                serverEndedRef.current = true;
-                setEnded(true);
-                onSessionEndRef.current?.(sessionId);
-            } else if (msg.type === 'exit') {
-                if (msg.message) terminal.write(msg.message);
-                serverEndedRef.current = true;
-                setEnded(true);
-                onSessionEndRef.current?.(sessionId);
-            }
-        };
-
-        ws.onclose = (event) => {
-            if (disposedRef.current || serverEndedRef.current) return;
-            if (!openedRef.current) {
-                if (!disposedRef.current && !serverEndedRef.current) {
-                    terminal.write('\r\n\x1b[31m[System] Terminal connection failed. Is the backend running on port 3000?\x1b[0m\r\n');
-                    setEnded(true);
+            ws.onclose = (event) => {
+                if (disposedRef.current || serverEndedRef.current) return;
+                if (!openedRef.current) {
+                    if (!disposedRef.current && !serverEndedRef.current) {
+                        terminal.write('\r\n\x1b[31m[System] Terminal connection failed. Is the backend running on port 3000?\x1b[0m\r\n');
+                        setEnded(true);
+                    }
+                    return;
                 }
-                return;
-            }
-            if (event.wasClean) return;
-            terminal.write('\r\n\x1b[33m[System] Disconnected from terminal.\x1b[0m\r\n');
-            setEnded(true);
-        };
+                if (event.wasClean) return;
+                terminal.write('\r\n\x1b[33m[System] Disconnected from terminal.\x1b[0m\r\n');
+                setEnded(true);
+            };
 
-        terminal.onData((data) => {
-            if (serverEndedRef.current || ws.readyState !== WebSocket.OPEN) return;
-            ws.send(JSON.stringify({ type: 'input', data }));
-        });
+            terminal.onData((data) => {
+                if (serverEndedRef.current || !wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
+                wsRef.current.send(JSON.stringify({ type: 'input', data }));
+            });
+        })();
 
         container.addEventListener('mousedown', focusTerminal);
         container.addEventListener('click', focusTerminal);
@@ -249,7 +255,7 @@ export default function AgentConsole({
             resizeObserver.disconnect();
             container.removeEventListener('mousedown', focusTerminal);
             container.removeEventListener('click', focusTerminal);
-            ws.close();
+            if (wsRef.current) wsRef.current.close();
             terminal.dispose();
             terminalRef.current = null;
             applySizeRef.current = null;
