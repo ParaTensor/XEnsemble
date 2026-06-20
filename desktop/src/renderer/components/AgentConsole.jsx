@@ -8,6 +8,7 @@ import TerminalThemePicker from './TerminalThemePicker';
 import { getWsUrl, getAccessToken } from '../lib/api';
 import { useTerminalTheme } from '../hooks/useTerminalTheme.jsx';
 import { XTERM_MINIMUM_CONTRAST_RATIO } from '../lib/terminalThemes.js';
+import { useToast } from './Toast';
 
 function parseWsMessage(message) {
     const raw = typeof message === 'string' ? message : message.toString();
@@ -71,6 +72,7 @@ export default function AgentConsole({
     const [ended, setEnded] = useState(!sessionLive);
     const { preset, themeRevision } = useTerminalTheme();
     const preview = usePreview(projectId, token);
+    const { showToast } = useToast();
     const containerRef = useRef(null);
     const terminalPaneRef = useRef(null);
     const terminalRef = useRef(null);
@@ -161,12 +163,22 @@ export default function AgentConsole({
         };
 
         (async () => {
-            const accessToken = await getAccessToken();
-            if (disposedRef.current) return;
-            const ws = new WebSocket(getWsUrl(sessionId, accessToken));
-            wsRef.current = ws;
+            let ws;
+            try {
+                const accessToken = await getAccessToken();
+                if (disposedRef.current) return;
+                ws = new WebSocket(getWsUrl(sessionId, accessToken));
+                wsRef.current = ws;
+            } catch (err) {
+                if (disposedRef.current) return;
+                terminal.write(`\r\n\x1b[31m[System] Failed to connect: ${err?.message || 'Unknown error'}\x1b[0m\r\n`);
+                showToast('error', `Terminal connection failed: ${err?.message || 'Unknown error'}`);
+                setEnded(true);
+                return;
+            }
 
             ws.onopen = () => {
+                if (disposedRef.current) return;
                 openedRef.current = true;
                 if (sessionLiveRef.current) setEnded(false);
                 let attempts = 0;
@@ -186,6 +198,7 @@ export default function AgentConsole({
             };
 
             ws.onmessage = (event) => {
+                if (disposedRef.current) return;
                 const msg = parseWsMessage(event.data);
                 if (msg.type === 'output') {
                     terminal.write(msg.data);
@@ -196,25 +209,26 @@ export default function AgentConsole({
                     serverEndedRef.current = true;
                     setEnded(true);
                     onSessionEndRef.current?.(sessionId);
+                    ws.close();
                 } else if (msg.type === 'exit') {
                     if (msg.message) terminal.write(msg.message);
                     serverEndedRef.current = true;
                     setEnded(true);
                     onSessionEndRef.current?.(sessionId);
+                    ws.close();
                 }
             };
 
             ws.onclose = (event) => {
+                if (ws.readyState !== WebSocket.CLOSED) {
+                    ws.close();
+                }
                 if (disposedRef.current || serverEndedRef.current) return;
                 if (!openedRef.current) {
-                    if (!disposedRef.current && !serverEndedRef.current) {
-                        terminal.write('\r\n\x1b[31m[System] Terminal connection failed. Is the backend running on port 3000?\x1b[0m\r\n');
-                        setEnded(true);
-                    }
-                    return;
+                    terminal.write('\r\n\x1b[31m[System] Terminal connection failed. Is the backend running on port 3000?\x1b[0m\r\n');
+                } else if (!event.wasClean) {
+                    terminal.write('\r\n\x1b[33m[System] Disconnected from terminal.\x1b[0m\r\n');
                 }
-                if (event.wasClean) return;
-                terminal.write('\r\n\x1b[33m[System] Disconnected from terminal.\x1b[0m\r\n');
                 setEnded(true);
             };
 
