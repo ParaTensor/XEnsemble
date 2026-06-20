@@ -40,7 +40,7 @@ OpenAI / Anthropic / …（providers 配置）
 
 | 场景 | 示例 |
 |------|------|
-| 本机 Local | `http://127.0.0.1:3000` |
+| 本机 Local | `http://127.0.0.1:3888` |
 | Agent 在 Docker | `http://host.docker.internal:3000` |
 | 生产 | `https://app.example.com` |
 

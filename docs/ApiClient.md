@@ -14,7 +14,7 @@
 
 | 环境 | 基址示例 |
 |------|----------|
-| 本机开发 | `http://127.0.0.1:3000` |
+| 本机开发 | `http://127.0.0.1:3888` |
 | 生产（systemd + nginx） | `https://xensemble.dev`（见 `deploy/xensemble.env` 中 `CONTROL_PLANE_PUBLIC_URL`） |
 
 下文以 `{BASE}` 表示控制面根 URL（无尾部斜杠）。
@@ -291,7 +291,7 @@ Web Console 默认 `auto`：先连 WS，约 4s 内未建立则自动切 HTTP。�
 ### 5.1 WebSocket
 
 ```
-ws://127.0.0.1:3000/ws/v1/terminal?sessionId=<session_id>     # 开发
+ws://127.0.0.1:3888/ws/v1/terminal?sessionId=<session_id>     # 开发
 wss://xensemble.dev/ws/v1/terminal?sessionId=<session_id>     # 生产
 ```
 

@@ -290,7 +290,7 @@ Docker/K8s Provider 作为第二阶段实现，通过同一组接口替换 Local
 
 ```
 [Server]
-  ├─ XEnsemble Server (Node.js, port 3000)
+  ├─ XEnsemble Server (Node.js, port 3888)
   ├─ UniGateway (Rust, 127.0.0.1:8741)
   ├─ SQLite / Postgres
   └─ Local Execution Environment

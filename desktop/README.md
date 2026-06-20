@@ -9,7 +9,7 @@ npm install
 npm run dev
 ```
 
-By default the app connects to `https://xensemble.dev`. For local development, start the XEnsemble server on `http://localhost:3000` and set the backend URL in the app settings.
+By default the app connects to `https://xensemble.dev`. For local development, start the XEnsemble server on `http://localhost:3888` and set the backend URL in the app settings.
 
 ## Build
 
