@@ -30,12 +30,16 @@ export default function Login() {
         if (data.code === 'account_suspended') throw new Error('Your account has been suspended.');
         throw new Error(data.error);
       }
-      if (isRegister && !data.token) {
+      if (isRegister && !data.access_token) {
         setError(data.message || 'Registration submitted. Await administrator approval.');
         setIsRegister(false);
         return;
       }
-      login(data.token, data.user);
+      if (!data.access_token || !data.refresh_token) {
+        setError('Server returned incomplete credentials');
+        return;
+      }
+      login(data.access_token, data.refresh_token, data.user);
     } catch (err) {
       setError(err.message);
     }
