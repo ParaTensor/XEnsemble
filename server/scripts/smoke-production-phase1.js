@@ -5,7 +5,7 @@ async function request(path, method = 'GET', body = null, token = null) {
     return new Promise((resolve, reject) => {
         const opts = {
             hostname: '127.0.0.1',
-            port: process.env.PORT || 3000,
+            port: process.env.PORT || 3888,
             path,
             method,
             headers: { 'Content-Type': 'application/json' },
