@@ -1,8 +1,5 @@
 const httpProxy = require('http-proxy');
-const { db } = require('../db/index');
-const schema = require('../db/schema');
-const { eq } = require('drizzle-orm');
-const auth = require('../auth/index');
+const { assertActiveUser } = require('../auth/assertActiveUser');
 const deploymentService = require('../deployments/DeploymentService');
 const previewRegistry = require('../runtime/localPreviewRegistry');
 
@@ -34,13 +31,9 @@ function extractToken(request) {
 async function resolveDeployment(request, deploymentId) {
     const token = extractToken(request);
     if (!token) return { error: 'Unauthorized', status: 401 };
-    const user = auth.verifyAccessToken(token);
-    if (!user?.id) return { error: 'Unauthorized', status: 401 };
-
-    const userRows = await db.select({ status: schema.users.status }).from(schema.users).where(eq(schema.users.id, user.id));
-    if (userRows.length === 0 || userRows[0].status !== 'active') {
-        return { error: 'Account is inactive', status: 403, code: 'account_inactive' };
-    }
+    const active = await assertActiveUser(token);
+    if (active.error) return active;
+    const user = active.user;
 
     const row = await deploymentService.getForUser(user.id, deploymentId);
     if (!row) return { error: 'Deployment not found', status: 404 };
@@ -108,22 +101,30 @@ async function registerPreviewGateway(fastify) {
     fastify.route({ url: '/preview/:deploymentId/*', ...proxyOpts });
 
     fastify.server.on('upgrade', async (req, socket, head) => {
-        const match = req.url?.match(/^\/preview\/([^/?]+)/);
-        if (!match) return;
+        try {
+            const match = req.url?.match(/^\/preview\/([^/?]+)/);
+            if (!match) return;
 
-        const deploymentId = match[1];
-        const resolved = await resolveDeployment(req, deploymentId);
-        if (resolved.error) {
-            socket.write(`HTTP/1.1 ${resolved.status} ${resolved.error}\r\n\r\n`);
-            socket.destroy();
-            return;
+            const deploymentId = match[1];
+            const resolved = await resolveDeployment(req, deploymentId);
+            if (resolved.error) {
+                socket.write(`HTTP/1.1 ${resolved.status} ${resolved.error}\r\n\r\n`);
+                socket.destroy();
+                return;
+            }
+
+            const target = `http://127.0.0.1:${resolved.entry.port}`;
+            req.url = stripPreviewPrefix(req.url, deploymentId);
+            proxy.ws(req, socket, head, { target }, (err) => {
+                if (err) socket.destroy();
+            });
+        } catch (err) {
+            console.error('[preview-gateway] upgrade error:', err.message);
+            if (!socket.destroyed) {
+                socket.write('HTTP/1.1 500 Internal Server Error\r\n\r\n');
+                socket.destroy();
+            }
         }
-
-        const target = `http://127.0.0.1:${resolved.entry.port}`;
-        req.url = stripPreviewPrefix(req.url, deploymentId);
-        proxy.ws(req, socket, head, { target }, (err) => {
-            if (err) socket.destroy();
-        });
     });
 }
 
