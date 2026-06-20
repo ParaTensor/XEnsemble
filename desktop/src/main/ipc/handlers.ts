@@ -14,11 +14,15 @@ export function registerIPCHandlers(): void {
     config.setBackendURL(url);
   });
 
-  ipcMain.handle(IPC_CHANNELS.GET_TOKEN, () => secureStore.getToken());
-  ipcMain.handle(IPC_CHANNELS.SET_TOKEN, (_event, token: string) => {
-    secureStore.setToken(token);
+  ipcMain.handle(IPC_CHANNELS.GET_ACCESS_TOKEN, () => secureStore.getAccessToken());
+  ipcMain.handle(IPC_CHANNELS.SET_ACCESS_TOKEN, (_event, token: string) => {
+    secureStore.setAccessToken(token);
   });
-  ipcMain.handle(IPC_CHANNELS.DELETE_TOKEN, () => secureStore.deleteToken());
+  ipcMain.handle(IPC_CHANNELS.GET_REFRESH_TOKEN, () => secureStore.getRefreshToken());
+  ipcMain.handle(IPC_CHANNELS.SET_REFRESH_TOKEN, (_event, token: string) => {
+    secureStore.setRefreshToken(token);
+  });
+  ipcMain.handle(IPC_CHANNELS.CLEAR_TOKENS, () => secureStore.clearTokens());
 
   ipcMain.handle(IPC_CHANNELS.SELECT_FILE, async () => {
     const { canceled, filePaths } = await dialog.showOpenDialog({

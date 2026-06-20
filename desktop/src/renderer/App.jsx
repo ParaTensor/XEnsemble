@@ -14,7 +14,7 @@ export const AuthContext = React.createContext(null);
 
 async function loadStoredAuth() {
   if (typeof window !== 'undefined' && window.xensembleDesktopAPI) {
-    const token = await window.xensembleDesktopAPI.getToken();
+    const token = await window.xensembleDesktopAPI.getAccessToken();
     const userRaw = localStorage.getItem('user');
     return { token, user: userRaw ? JSON.parse(userRaw) : null };
   }
@@ -154,7 +154,7 @@ function App() {
 
   const login = async (token, user) => {
     if (typeof window !== 'undefined' && window.xensembleDesktopAPI) {
-      await window.xensembleDesktopAPI.setToken(token);
+      await window.xensembleDesktopAPI.setAccessToken(token);
     } else {
       localStorage.setItem('token', token);
     }
@@ -166,7 +166,7 @@ function App() {
 
   const logout = async () => {
     if (typeof window !== 'undefined' && window.xensembleDesktopAPI) {
-      await window.xensembleDesktopAPI.deleteToken();
+      await window.xensembleDesktopAPI.clearTokens();
     } else {
       localStorage.removeItem('token');
     }
