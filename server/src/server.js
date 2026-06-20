@@ -10,7 +10,6 @@ const WebSocket = require('ws');
 const { getRuntime } = require('./runtime/registry');
 const { AgentSpawnError, RuntimeError } = require('./runtime/interfaces');
 const { ensureProjectRuntime, formatRuntime } = require('./runtime/RuntimeService');
-const { parseId } = require('./runtime/LocalExecAdapter');
 const deploymentService = require('./deployments/DeploymentService');
 const repositoryEnvironment = require('./repositories/RepositoryEnvironmentService');
 const { registerPreviewGateway } = require('./preview/gateway');
