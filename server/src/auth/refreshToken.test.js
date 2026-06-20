@@ -1,4 +1,4 @@
-const { test, describe, before, after } = require('node:test');
+const { test, before, after } = require('node:test');
 const assert = require('node:assert');
 const auth = require('./index');
 const userAdmin = require('../admin/UserAdminService');
