@@ -47,10 +47,6 @@ function readTextFile(filePath) {
 }
 
 function ensureGatewaySecrets() {
-    if (process.env.NODE_ENV === 'production' && !process.env.UNIGATEWAY_ADMIN_TOKEN) {
-        throw new Error('UNIGATEWAY_ADMIN_TOKEN is required in production');
-    }
-
     if (!fs.existsSync(DATA_DIR)) {
         fs.mkdirSync(DATA_DIR, { recursive: true });
     }
@@ -62,12 +58,20 @@ function ensureGatewaySecrets() {
         gatewayKey = generateGatewayKey();
         fs.writeFileSync(GATEWAY_KEY_PATH, `${gatewayKey}\n`, { mode: 0o600 });
     }
-    if (!adminToken) {
-        adminToken = process.env.UNIGATEWAY_ADMIN_TOKEN || generateAdminToken();
+
+    const envToken = process.env.UNIGATEWAY_ADMIN_TOKEN;
+    if (process.env.NODE_ENV === 'production') {
+        if (!envToken) {
+            throw new Error('UNIGATEWAY_ADMIN_TOKEN is required in production');
+        }
+        adminToken = envToken;
+        fs.writeFileSync(ADMIN_TOKEN_PATH, `${adminToken}\n`, { mode: 0o600 });
+    } else if (!adminToken) {
+        adminToken = envToken || generateAdminToken();
         fs.writeFileSync(ADMIN_TOKEN_PATH, `${adminToken}\n`, { mode: 0o600 });
     }
 
-    if (!fs.existsSync(CONFIG_PATH)) {
+    if (process.env.NODE_ENV === 'production' || !fs.existsSync(CONFIG_PATH)) {
         fs.writeFileSync(
             CONFIG_PATH,
             buildDefaultToml({ gatewayKey, adminToken }),
@@ -141,11 +145,15 @@ async function applyRuntimeConfig() {
 
 async function syncPlatformRouterSecrets(platformSecrets) {
     const { resolveLlmPublicRouterBase } = require('../llm/publicUrl');
-    const secrets = ensureGatewaySecrets();
-    status.gatewayKey = secrets.gatewayKey;
+    let gatewayKey = status.gatewayKey;
+    if (!gatewayKey) {
+        const secrets = ensureGatewaySecrets();
+        gatewayKey = secrets.gatewayKey;
+        status.gatewayKey = gatewayKey;
+    }
     await platformSecrets.merge({
         LLM_ROUTER_URL: await resolveLlmPublicRouterBase(),
-        LLM_ROUTER_API_KEY: secrets.gatewayKey,
+        LLM_ROUTER_API_KEY: gatewayKey,
     });
 }
 
