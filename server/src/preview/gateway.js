@@ -31,7 +31,7 @@ function extractToken(request) {
 async function resolveDeployment(request, deploymentId) {
     const token = extractToken(request);
     if (!token) return { error: 'Unauthorized', status: 401 };
-    const user = auth.verifyToken(token);
+    const user = auth.verifyAccessToken(token);
     if (!user) return { error: 'Unauthorized', status: 401 };
 
     const row = await deploymentService.getForUser(user.id, deploymentId);

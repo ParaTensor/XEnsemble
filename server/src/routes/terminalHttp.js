@@ -26,7 +26,7 @@ async function authenticateTerminalRequest(request, reply) {
         reply.code(401).send({ error: 'Unauthorized' });
         return null;
     }
-    const payload = auth.verifyToken(token);
+    const payload = auth.verifyAccessToken(token);
     if (!payload?.id) {
         reply.code(401).send({ error: 'Unauthorized' });
         return null;
