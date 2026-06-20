@@ -1,21 +1,16 @@
-import { useState, useEffect, useCallback, useContext } from 'react';
-import { AuthContext } from '../App';
+import { useState, useEffect, useCallback } from 'react';
 import { useToast } from '../components/Toast';
-import { getApiBase } from '../lib/api.ts';
+import { apiFetch } from '../lib/api.ts';
 
 export function useSecrets() {
-  const { token } = useContext(AuthContext);
   const { showToast } = useToast();
   const [secrets, setSecrets] = useState({});
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
   const load = useCallback(() => {
-    if (!token) return Promise.resolve();
     setLoading(true);
-    return fetch(`${getApiBase()}/api/v1/secrets`, {
-      headers: { Authorization: `Bearer ${token}` },
-    })
+    return apiFetch('/api/v1/secrets')
       .then((res) => res.json())
       .then((data) => {
         if (data && typeof data === 'object' && !data.error) {
@@ -23,7 +18,7 @@ export function useSecrets() {
         }
       })
       .finally(() => setLoading(false));
-  }, [token]);
+  }, []);
 
   useEffect(() => {
     load();
@@ -32,12 +27,8 @@ export function useSecrets() {
   const saveSecrets = async (payload, { successMessage = 'Saved successfully.' } = {}) => {
     setSaving(true);
     try {
-      const res = await fetch(`${getApiBase()}/api/v1/secrets`, {
+      const res = await apiFetch('/api/v1/secrets', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
         body: JSON.stringify(payload),
       });
       if (res.ok) {

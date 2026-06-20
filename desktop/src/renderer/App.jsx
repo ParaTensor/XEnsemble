@@ -145,7 +145,7 @@ function App() {
     activeSession,
     setActiveSession,
     fetchWorkspaces,
-  } = useWorkspaces(token, user);
+  } = useWorkspaces(user);
 
   React.useEffect(() => {
     loadStoredAuth().then(({ accessToken, user }) => {

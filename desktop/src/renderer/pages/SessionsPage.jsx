@@ -1,4 +1,4 @@
-import { getApiBase } from '../lib/api.ts';
+import { apiFetch } from '../lib/api.ts';
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import AgentConsole from '../components/AgentConsole';
 import WorkspaceFileTree from '../components/WorkspaceFileTree';
@@ -149,9 +149,7 @@ export default React.forwardRef(function SessionsPage({
   const fetchWorkspaceFiles = () => {
     if (!activeSession?.projectId) return;
     setIsLoadingFiles(true);
-    fetch(`${getApiBase()}/api/v1/workspace/files?project_id=${encodeURIComponent(activeSession.projectId)}`, {
-      headers: { 'Authorization': `Bearer ${token}` }
-    })
+    apiFetch(`/api/v1/workspace/files?project_id=${encodeURIComponent(activeSession.projectId)}`)
       .then(res => res.json())
       .then(data => {
         if (Array.isArray(data)) setWorkspaceFiles(data);
@@ -170,7 +168,7 @@ export default React.forwardRef(function SessionsPage({
       setViewingFile(null);
       setWorkspaceOpen(false);
     }
-  }, [activeSession, token]);
+  }, [activeSession]);
 
   const selectedAgent = agents.find(a => a.id === selectedAgentId);
 
@@ -185,9 +183,7 @@ export default React.forwardRef(function SessionsPage({
     setShowConfigModal(true);
     setConfigLoading(true);
     try {
-      const res = await fetch(`${getApiBase()}/api/v1/secrets`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      const res = await apiFetch('/api/v1/secrets');
       const data = await res.json();
       if (res.ok) {
         const saved = {};
@@ -216,9 +212,7 @@ export default React.forwardRef(function SessionsPage({
     const required = agent?.env_required || [];
     if (required.length === 0 || agent?.llm_auth_mode === 'gateway') return true;
     try {
-      const res = await fetch(`${getApiBase()}/api/v1/secrets`, {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
+      const res = await apiFetch('/api/v1/secrets');
       const data = await res.json();
       if (!res.ok) return false;
       const missing = required.filter((k) => !data[k]);
@@ -236,12 +230,8 @@ export default React.forwardRef(function SessionsPage({
     setProjectCreating(true);
     setError(null);
     try {
-      const res = await fetch(`${getApiBase()}/api/v1/projects`, {
+      const res = await apiFetch('/api/v1/projects', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
         body: JSON.stringify({ name })
       });
       const data = await res.json();
@@ -276,12 +266,8 @@ export default React.forwardRef(function SessionsPage({
         return false;
       }
 
-      const response = await fetch(`${getApiBase()}/api/v1/session/start`, {
+      const response = await apiFetch('/api/v1/session/start', {
         method: 'POST',
-        headers: { 
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}` 
-        },
         body: JSON.stringify({
           agent_id: selectedAgentId,
           project_id: projectId,
@@ -397,12 +383,8 @@ export default React.forwardRef(function SessionsPage({
     }
     setConfigSaving(true);
     try {
-      const res = await fetch(`${getApiBase()}/api/v1/secrets`, {
+      const res = await apiFetch('/api/v1/secrets', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
         body: JSON.stringify(payload),
       });
       const data = await res.json();
@@ -434,9 +416,8 @@ export default React.forwardRef(function SessionsPage({
   const handleOpenFile = async (file) => {
     if (file.type !== 'file') return;
     try {
-      const res = await fetch(
-        `${getApiBase()}/api/v1/workspace/file?project_id=${encodeURIComponent(activeSession.projectId)}&path=${encodeURIComponent(file.path)}`,
-        { headers: { 'Authorization': `Bearer ${token}` } }
+      const res = await apiFetch(
+        `/api/v1/workspace/file?project_id=${encodeURIComponent(activeSession.projectId)}&path=${encodeURIComponent(file.path)}`
       );
       const data = await res.json();
       if (res.ok) {
@@ -481,21 +462,16 @@ export default React.forwardRef(function SessionsPage({
         return;
       }
 
-      const deleteRes = await fetch(`${getApiBase()}/api/v1/sessions/${encodeURIComponent(oldSessionId)}`, {
+      const deleteRes = await apiFetch(`/api/v1/sessions/${encodeURIComponent(oldSessionId)}`, {
         method: 'DELETE',
-        headers: { Authorization: `Bearer ${token}` },
       });
       if (!deleteRes.ok) {
         const deleteData = await deleteRes.json().catch(() => ({}));
         throw new Error(deleteData.error || 'Failed to release previous session');
       }
 
-      const response = await fetch(`${getApiBase()}/api/v1/session/start`, {
+      const response = await apiFetch('/api/v1/session/start', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
         body: JSON.stringify({
           agent_id: agentId,
           project_id: activeSession.projectId,
@@ -550,9 +526,8 @@ export default React.forwardRef(function SessionsPage({
 
     setStoppingSession(true);
     try {
-      const res = await fetch(`${getApiBase()}/api/v1/sessions/${encodeURIComponent(activeSession.sessionId)}`, {
+      const res = await apiFetch(`/api/v1/sessions/${encodeURIComponent(activeSession.sessionId)}`, {
         method: 'DELETE',
-        headers: { Authorization: `Bearer ${token}` },
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed to stop session');
@@ -577,9 +552,8 @@ export default React.forwardRef(function SessionsPage({
   const handleDeleteSession = async (sessionId) => {
     setDeletingSessionId(sessionId);
     try {
-      const res = await fetch(`${getApiBase()}/api/v1/sessions/${encodeURIComponent(sessionId)}`, {
+      const res = await apiFetch(`/api/v1/sessions/${encodeURIComponent(sessionId)}`, {
         method: 'DELETE',
-        headers: { 'Authorization': `Bearer ${token}` },
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed to delete session');
@@ -613,18 +587,16 @@ export default React.forwardRef(function SessionsPage({
       if (workspaceId === '_orphan') {
         const orphanSessions = sessions.filter((s) => !s.projectId);
         for (const s of orphanSessions) {
-          const res = await fetch(`${getApiBase()}/api/v1/sessions/${encodeURIComponent(s.id)}`, {
+          const res = await apiFetch(`/api/v1/sessions/${encodeURIComponent(s.id)}`, {
             method: 'DELETE',
-            headers: { Authorization: `Bearer ${token}` },
           });
           const data = await res.json();
           if (!res.ok) throw new Error(data.error || 'Failed to delete session');
         }
         if (activeSession && !activeSession.projectId) setActiveSession(null);
       } else {
-        const res = await fetch(`${getApiBase()}/api/v1/projects/${encodeURIComponent(workspaceId)}`, {
+        const res = await apiFetch(`/api/v1/projects/${encodeURIComponent(workspaceId)}`, {
           method: 'DELETE',
-          headers: { Authorization: `Bearer ${token}` },
         });
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || 'Failed to delete workspace');

@@ -1,6 +1,6 @@
-import React, { useState, useEffect, useContext, useCallback, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { Plus, Download, KeyRound, Pencil, Trash2, RefreshCw } from 'lucide-react';
-import { AuthContext } from '../App';
+
 import Button from '../components/Button';
 import Input from '../components/Input';
 import SelectMenu from '../components/SelectMenu';
@@ -17,15 +17,13 @@ import {
 } from '../lib/consoleTheme';
 import { loadAdminAgentsCache, saveAdminAgentsCache } from '../lib/adminAgentsCache';
 import { getSecretLabel, isSecretPasswordField } from '../lib/secretLabels';
-import { getApiBase } from '../lib/api.ts';
+import { apiFetch } from '../lib/api.ts';
 
 const EMPTY_SPAWN_DRAFT = {
   OPENROUTER_API_KEY: '',
   OPENROUTER_BASE_URL: '',
   launch_command: '',
 };
-
-const API = getApiBase();
 
 function statusBadge(installed) {
   return installed
@@ -79,7 +77,6 @@ function getGatewaySpawnFieldDefs(agent) {
 }
 
 export default function AgentsAdmin() {
-  const { token } = useContext(AuthContext);
   const { showToast } = useToast();
   const [agents, setAgents] = useState(() => loadAdminAgentsCache());
   const [gatewayProviders, setGatewayProviders] = useState([]);
@@ -106,15 +103,10 @@ export default function AgentsAdmin() {
     env_required: '[]',
   });
 
-  const authHeaders = useMemo(() => ({
-    'Content-Type': 'application/json',
-    Authorization: `Bearer ${token}`,
-  }), [token]);
-
   const fetchAgents = useCallback(({ silent = false } = {}) => {
     if (silent) setRefreshing(true);
     else setLoading(true);
-    return fetch(`${API}/api/v1/admin/agents`, { headers: authHeaders })
+    return apiFetch('/api/v1/admin/agents')
       .then((res) => res.json())
       .then((data) => {
         if (Array.isArray(data)) {
@@ -126,19 +118,18 @@ export default function AgentsAdmin() {
         setLoading(false);
         setRefreshing(false);
       });
-  }, [authHeaders]);
+  }, []);
 
   useEffect(() => {
     fetchAgents({ silent: agents.length > 0 });
   }, [fetchAgents]);
 
   useEffect(() => {
-    if (!token) return;
-    fetch(`${API}/api/v1/admin/gateway/providers`, { headers: authHeaders })
+    apiFetch('/api/v1/admin/gateway/providers')
       .then((res) => (res.ok ? res.json() : null))
       .then((data) => setGatewayProviders(data?.data || []))
       .catch(() => {});
-  }, [token, authHeaders]);
+  }, []);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -148,9 +139,8 @@ export default function AgentsAdmin() {
       const parsedArgs = JSON.parse(newAgent.args);
       const parsedEnv = JSON.parse(newAgent.env_required);
 
-      const res = await fetch(`${API}/api/v1/agents`, {
+      const res = await apiFetch('/api/v1/agents', {
         method: 'POST',
-        headers: authHeaders,
         body: JSON.stringify({
           ...newAgent,
           args: parsedArgs,
@@ -202,9 +192,7 @@ export default function AgentsAdmin() {
       if (model?.trim()) params.set('model', model.trim());
       if (llmAuthMode) params.set('llm_auth_mode', llmAuthMode);
       const qs = params.toString();
-      const res = await fetch(`${API}/api/v1/admin/agents/${agentId}/gateway-spawn-preview${qs ? `?${qs}` : ''}`, {
-        headers: authHeaders,
-      });
+      const res = await apiFetch(`/api/v1/admin/agents/${agentId}/gateway-spawn-preview${qs ? `?${qs}` : ''}`);
       const data = await res.json();
       setGatewayPreview(res.ok ? data : null);
     } catch {
@@ -212,7 +200,7 @@ export default function AgentsAdmin() {
     } finally {
       setGatewayPreviewLoading(false);
     }
-  }, [authHeaders]);
+  }, []);
 
   useEffect(() => {
     if (!keysAgent || authDraft.llm_auth_mode !== 'gateway') {
@@ -273,9 +261,8 @@ export default function AgentsAdmin() {
     }
     setSavingKeys(true);
     try {
-      const res = await fetch(`${API}/api/v1/admin/gateway/agent-configs/${keysAgent.id}`, {
+      const res = await apiFetch(`/api/v1/admin/gateway/agent-configs/${keysAgent.id}`, {
         method: 'PUT',
-        headers: authHeaders,
         body: JSON.stringify({
           llm_auth_mode: mode,
           provider: mode === 'gateway' ? (authDraft.provider || undefined) : undefined,
@@ -292,9 +279,8 @@ export default function AgentsAdmin() {
         const args = parts.slice(1);
         const currentLine = [keysAgent.cmd, ...(keysAgent.args || [])].filter(Boolean).join(' ');
         if (launchLine !== currentLine) {
-          const execRes = await fetch(`${API}/api/v1/agents/${keysAgent.id}`, {
+          const execRes = await apiFetch(`/api/v1/agents/${keysAgent.id}`, {
             method: 'PUT',
-            headers: authHeaders,
             body: JSON.stringify({ cmd, args }),
           });
           const execData = await execRes.json();
@@ -336,9 +322,8 @@ export default function AgentsAdmin() {
     const args = editDraft.args.trim() ? editDraft.args.trim().split(/\s+/) : [];
     setSavingExecutable(true);
     try {
-      const res = await fetch(`${API}/api/v1/agents/${editAgent.id}`, {
+      const res = await apiFetch(`/api/v1/agents/${editAgent.id}`, {
         method: 'PUT',
-        headers: authHeaders,
         body: JSON.stringify({ cmd, args }),
       });
       const data = await res.json();
@@ -360,9 +345,8 @@ export default function AgentsAdmin() {
     showToast('loading', hint ? `${label} ${name}… ${hint}` : `${label} ${name}…`);
     setActionLoading(`${agentId}:${action}`);
     try {
-      const res = await fetch(`${API}/api/v1/admin/agents/${agentId}/${action}`, {
+      const res = await apiFetch(`/api/v1/admin/agents/${agentId}/${action}`, {
         method,
-        headers: authHeaders,
         ...(method !== 'GET' ? { body: '{}' } : {}),
       });
       const data = await res.json();
@@ -408,9 +392,7 @@ export default function AgentsAdmin() {
   const handleCheckAndUpdate = async (agent) => {
     setActionLoading(`${agent.id}:update`);
     try {
-      const checkRes = await fetch(`${API}/api/v1/admin/agents/${agent.id}/check-update`, {
-        headers: authHeaders,
-      });
+      const checkRes = await apiFetch(`/api/v1/admin/agents/${agent.id}/check-update`);
       const check = await checkRes.json();
       if (!checkRes.ok) throw new Error(check.error);
       if (!check.installed) {
@@ -425,9 +407,8 @@ export default function AgentsAdmin() {
       }
 
       showToast('loading', `Updating ${agent.name}…`);
-      const updateRes = await fetch(`${API}/api/v1/admin/agents/${agent.id}/update`, {
+      const updateRes = await apiFetch(`/api/v1/admin/agents/${agent.id}/update`, {
         method: 'POST',
-        headers: authHeaders,
         body: '{}',
       });
       const updated = await updateRes.json();

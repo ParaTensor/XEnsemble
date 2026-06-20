@@ -5,28 +5,21 @@ import Input from '../Input';
 import SelectMenu from '../SelectMenu';
 import { useToast } from '../Toast';
 import { consoleSectionLabelClass } from '../../lib/consoleTheme';
-import { getApiBase } from '../../lib/api.ts';
-
-const API = getApiBase();
+import { apiFetch } from '../../lib/api.ts';
 
 export default function GeneralSettingsPanel() {
-  const { user, token } = useContext(AuthContext);
+  const { user } = useContext(AuthContext);
   const { showToast } = useToast();
   const [settings, setSettings] = useState(null);
   const [saving, setSaving] = useState(false);
   const isAdmin = user?.role === 'admin';
 
-  const authHeaders = {
-    'Content-Type': 'application/json',
-    Authorization: `Bearer ${token}`,
-  };
-
   useEffect(() => {
-    if (!token || !isAdmin) return;
-    fetch(`${API}/api/v1/admin/platform-settings`, { headers: authHeaders })
+    if (!isAdmin) return;
+    apiFetch('/api/v1/admin/platform-settings')
       .then((res) => res.json())
       .then((data) => setSettings(data));
-  }, [token, isAdmin]);
+  }, [isAdmin]);
 
   const quota = settings?.default_user_quota || {};
 
@@ -34,9 +27,8 @@ export default function GeneralSettingsPanel() {
     e.preventDefault();
     setSaving(true);
     try {
-      const res = await fetch(`${API}/api/v1/admin/platform-settings`, {
+      const res = await apiFetch('/api/v1/admin/platform-settings', {
         method: 'PUT',
-        headers: authHeaders,
         body: JSON.stringify({
           registration_mode: settings.registration_mode,
           default_user_quota: {

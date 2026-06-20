@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { getApiBase } from '../lib/api.ts';
+import { apiFetch } from '../lib/api.ts';
 import {
   readBootstrapConsoleState,
   saveConsoleCache,
@@ -11,31 +11,25 @@ import {
   isArchivedSession,
 } from '../lib/sidebarPrefs.js';
 
-export function useWorkspaces(token, user) {
+export function useWorkspaces(user) {
   const [agents, setAgents] = useState(() => readBootstrapConsoleState(null).agents);
   const [projects, setProjects] = useState(() => readBootstrapConsoleState(null).projects);
   const [sessions, setSessions] = useState(() => readBootstrapConsoleState(null).sessions);
   const [activeSession, setActiveSession] = useState(() => readBootstrapConsoleState(null).activeSession);
 
   const fetchAgents = useCallback(async () => {
-    if (!token) return;
     try {
-      const res = await fetch(`${getApiBase()}/api/v1/agents`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      const res = await apiFetch('/api/v1/agents');
       const data = await res.json();
       if (Array.isArray(data)) setAgents(data);
     } catch {
       // ignore transient errors
     }
-  }, [token]);
+  }, []);
 
   const fetchProjects = useCallback(async () => {
-    if (!token) return;
     try {
-      const res = await fetch(`${getApiBase()}/api/v1/projects`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      const res = await apiFetch('/api/v1/projects');
       const data = await res.json();
       if (Array.isArray(data)) {
         setProjects(data.map((p) => ({
@@ -47,34 +41,30 @@ export function useWorkspaces(token, user) {
     } catch {
       // ignore transient errors
     }
-  }, [token]);
+  }, []);
 
   const fetchSessions = useCallback(async () => {
-    if (!token) return;
     try {
-      const res = await fetch(`${getApiBase()}/api/v1/sessions`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      const res = await apiFetch('/api/v1/sessions');
       const data = await res.json();
       if (Array.isArray(data)) setSessions(data);
     } catch {
       // ignore transient errors
     }
-  }, [token]);
+  }, []);
 
   const fetchWorkspaces = useCallback(async () => {
     await Promise.all([fetchAgents(), fetchProjects(), fetchSessions()]);
   }, [fetchAgents, fetchProjects, fetchSessions]);
 
   useEffect(() => {
-    if (!token) return;
     fetchWorkspaces();
     const poll = setInterval(fetchWorkspaces, 5000);
     return () => clearInterval(poll);
-  }, [token, fetchWorkspaces]);
+  }, [fetchWorkspaces]);
 
   useEffect(() => {
-    if (!token || sessions.length === 0 || activeSession) return;
+    if (sessions.length === 0 || activeSession) return;
     const prefs = loadSidebarPrefs();
     if (activeSession?.sessionId && !isArchivedSession(prefs, activeSession.sessionId)) return;
     const candidate = pickSessionToRestore(sessions, prefs);
@@ -87,13 +77,13 @@ export function useWorkspaces(token, user) {
       projectId: candidate.projectId ?? null,
       projectName: projectName ?? null,
     });
-  }, [token, sessions, activeSession, agents, projects]);
+  }, [sessions, activeSession, agents, projects]);
 
   useEffect(() => {
     const userId = getCacheUserId(user);
-    if (!userId || !token) return;
+    if (!userId) return;
     saveConsoleCache(userId, { agents, sessions, projects, activeSession });
-  }, [user, token, agents, sessions, projects, activeSession]);
+  }, [user, agents, sessions, projects, activeSession]);
 
   return {
     agents,

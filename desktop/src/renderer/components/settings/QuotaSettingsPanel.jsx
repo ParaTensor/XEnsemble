@@ -1,22 +1,15 @@
-import React, { useState, useEffect, useContext } from 'react';
-import { AuthContext } from '../../App';
+import React, { useState, useEffect } from 'react';
 import { consoleSectionLabelClass } from '../../lib/consoleTheme';
-import { getApiBase } from '../../lib/api.ts';
-
-const API = getApiBase();
+import { apiFetch } from '../../lib/api.ts';
 
 export default function QuotaSettingsPanel() {
-  const { token } = useContext(AuthContext);
   const [me, setMe] = useState(null);
 
   useEffect(() => {
-    if (!token) return;
-    fetch(`${API}/api/v1/auth/me`, {
-      headers: { Authorization: `Bearer ${token}` },
-    })
+    apiFetch('/api/v1/auth/me')
       .then((res) => res.json())
       .then((data) => setMe(data));
-  }, [token]);
+  }, []);
 
   if (!me?.quotas) {
     return <p className="text-sm text-[#9AA0A6]">Loading quota information…</p>;
