@@ -182,7 +182,6 @@ fastify.get('/api/v1/projects', { preValidation: [fastify.authenticate] }, async
         .map((p) => ({
             id: p.id,
             name: p.name,
-            server_path: p.serverPath,
             default_runtime_id: p.defaultRuntimeId,
             repo_provider: p.repoProvider || 'none',
             repo_url: p.repoUrl || null,
@@ -233,7 +232,6 @@ fastify.post('/api/v1/projects', { preValidation: [fastify.authenticate] }, asyn
     return {
         id: projectId,
         name,
-        server_path: workspacePath,
         default_runtime_id: defaultRuntimeId,
         created_at: createdAt,
     };
