@@ -8,20 +8,15 @@ import AppSidebar from './components/AppSidebar';
 import SettingsModal from './components/SettingsModal';
 import { useWorkspaces } from './hooks/useWorkspaces';
 import { cn } from './lib/utils';
+import { getAccessToken, setTokens, clearTokens } from './lib/auth';
 import { TerminalThemeProvider } from './hooks/useTerminalTheme.jsx';
 
 export const AuthContext = React.createContext(null);
 
 async function loadStoredAuth() {
-  if (typeof window !== 'undefined' && window.xensembleDesktopAPI) {
-    const token = await window.xensembleDesktopAPI.getAccessToken();
-    const userRaw = localStorage.getItem('user');
-    return { token, user: userRaw ? JSON.parse(userRaw) : null };
-  }
-  return {
-    token: localStorage.getItem('token'),
-    user: JSON.parse(localStorage.getItem('user')),
-  };
+  const accessToken = await getAccessToken();
+  const userRaw = localStorage.getItem('user');
+  return { accessToken, user: userRaw ? JSON.parse(userRaw) : null };
 }
 
 /** Keep main pages mounted (invisible off-route) so state and terminal sessions stay alive with stable layout. */
@@ -145,31 +140,23 @@ function App() {
   } = useWorkspaces(token, user);
 
   React.useEffect(() => {
-    loadStoredAuth().then(({ token, user }) => {
-      setToken(token);
+    loadStoredAuth().then(({ accessToken, user }) => {
+      setToken(accessToken);
       setUser(user);
       setAuthReady(true);
     });
   }, []);
 
-  const login = async (token, user) => {
-    if (typeof window !== 'undefined' && window.xensembleDesktopAPI) {
-      await window.xensembleDesktopAPI.setAccessToken(token);
-    } else {
-      localStorage.setItem('token', token);
-    }
+  const login = async (accessToken, refreshToken, user) => {
+    await setTokens(accessToken, refreshToken);
     localStorage.setItem('user', JSON.stringify(user));
-    setToken(token);
+    setToken(accessToken);
     setUser(user);
     navigate('/sessions');
   };
 
   const logout = async () => {
-    if (typeof window !== 'undefined' && window.xensembleDesktopAPI) {
-      await window.xensembleDesktopAPI.clearTokens();
-    } else {
-      localStorage.removeItem('token');
-    }
+    await clearTokens();
     localStorage.removeItem('user');
     setToken(null);
     setUser(null);

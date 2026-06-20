@@ -54,12 +54,18 @@ export default function Login() {
         }
         throw new Error(msg || `Server error ${res.status}`);
       }
-      if (isRegister && !data.token) {
-        showToast('success', data.message || 'Registration submitted. Await administrator approval.');
-        setIsRegister(false);
+      if (res.ok) {
+        if (isRegister && !data.access_token) {
+          showToast('success', data.message || 'Registration submitted. Await administrator approval.');
+          setIsRegister(false);
+          return;
+        }
+        if (!data.access_token || !data.refresh_token) {
+          throw new Error('Server returned incomplete credentials');
+        }
+        login(data.access_token, data.refresh_token, data.user);
         return;
       }
-      login(data.token, data.user);
     } catch (err) {
       showToast('error', err.message);
     } finally {
