@@ -26,19 +26,47 @@ function createProjectDirectory(userId, projectId) {
 /** Resolve a relative path inside project root; returns null if traversal escapes jail. */
 function resolveSafePath(rootDir, relativePath) {
     const root = path.resolve(rootDir);
-    const trimmed = String(relativePath || '').replace(/^[/\\]+/, '');
+    const input = String(relativePath || '');
+    if (input.includes('\0')) return null;
+    const trimmed = input.replace(/^[/\\]+/, '');
     const safe = path.normalize(trimmed).replace(/^(\.\.(\/|\\\\|$))+/, '');
+    if (safe.startsWith('..')) return null;
     const absolute = path.resolve(root, safe === '.' ? '' : safe);
-    // Resolve symlinks to prevent symlink escape
-    let realAbsolute;
+
+    let realRoot;
     try {
-        realAbsolute = fs.realpathSync.native(absolute);
-    } catch (e) {
-        // Path does not exist yet; use normalized absolute but ensure it stays under root
-        realAbsolute = absolute;
+        realRoot = fs.realpathSync.native(root);
+    } catch {
+        realRoot = root;
     }
-    const realRoot = fs.realpathSync.native(root);
-    if (realAbsolute !== realRoot && !realAbsolute.startsWith(realRoot + path.sep)) {
+
+    // Resolve symlinks in the path. If the target does not exist, walk up to the
+    // nearest existing ancestor, resolve that, and append the remaining suffix.
+    let realAbsolute;
+    let suffix = '';
+    let current = absolute;
+    while (true) {
+        try {
+            realAbsolute = fs.realpathSync.native(current);
+            break;
+        } catch {
+            if (current === root || current === path.dirname(current)) {
+                // Nothing above resolves; fall back to normalized absolute.
+                realAbsolute = absolute;
+                suffix = '';
+                break;
+            }
+            suffix = path.basename(current) + (suffix ? path.sep + suffix : '');
+            current = path.dirname(current);
+        }
+    }
+    if (suffix) {
+        realAbsolute = path.join(realAbsolute, suffix);
+    }
+
+    const realRootNorm = path.normalize(realRoot + path.sep);
+    const realAbsNorm = path.normalize(realAbsolute);
+    if (realAbsNorm !== realRoot && !realAbsNorm.startsWith(realRootNorm)) {
         return null;
     }
     return absolute;
