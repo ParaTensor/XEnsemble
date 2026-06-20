@@ -320,10 +320,15 @@ fastify.get('/api/v1/sessions', { preValidation: [fastify.authenticate] }, async
         .where(eq(schema.projects.userId, request.user.id));
     const projectNames = Object.fromEntries(projectRows.map((p) => [p.id, p.name]));
     return rows.map((row) => ({
-        ...row,
-        projectName: row.projectId ? projectNames[row.projectId] : null,
-        alive: sessionManager.isAlive(row.id),
+        id: row.id,
+        projectId: row.projectId,
+        agentId: row.agentId,
+        status: row.status,
         memoryStatus: sessionManager.getSession(row.id)?.status ?? row.status,
+        alive: sessionManager.isAlive(row.id),
+        projectName: row.projectId ? projectNames[row.projectId] : null,
+        createdAt: row.createdAt,
+        updatedAt: row.updatedAt,
     }));
 });
 
@@ -439,7 +444,8 @@ fastify.post('/api/v1/session/start', { preValidation: [fastify.authenticate] },
     } catch (err) {
         await db.delete(schema.sessions).where(eq(schema.sessions.id, sessionId));
         if (err instanceof AgentSpawnError) {
-            return reply.code(err.statusCode).send({ error: err.message });
+            request.log.error(err);
+            return reply.code(err.statusCode).send({ error: 'Failed to start agent session' });
         }
         request.log.error(err);
         return reply.code(500).send({ error: 'Failed to start agent session' });
@@ -661,8 +667,8 @@ fastify.get('/api/v1/workspace/files', { preValidation: [fastify.authenticate] }
         const { workspacePath } = await ensureProjectRuntime(project);
         return runtime.fs.fsList(workspacePath, relativePath);
     } catch (err) {
-        const code = err instanceof RuntimeError ? err.statusCode : 500;
-        return reply.code(code).send({ error: err.message });
+        request.log.error(err);
+        return reply.code(500).send({ error: 'Failed to list workspace files' });
     }
 });
 
@@ -680,8 +686,8 @@ fastify.get('/api/v1/workspace/file', { preValidation: [fastify.authenticate] },
         const content = await runtime.fs.fsRead(workspacePath, filePath);
         return { content };
     } catch (err) {
-        const code = err instanceof RuntimeError ? err.statusCode : 500;
-        return reply.code(code).send({ error: err.message });
+        request.log.error(err);
+        return reply.code(500).send({ error: 'Failed to read file' });
     }
 });
 

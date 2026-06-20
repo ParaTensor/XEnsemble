@@ -134,13 +134,9 @@ class LocalPreviewAdapter extends PreviewAdapter {
         } catch (err) {
             killPreviewProcess({ child });
             previewRegistry.remove(deploymentId);
-            const hint = logTail.trim()
-                ? ` Last output: ${logTail.trim().slice(-500)}`
-                : '';
-            throw new RuntimeError(
-                `${err.message}.${hint}`,
-                err.statusCode || 504,
-            );
+            const summary = `Preview did not become ready within ${PORT_READY_TIMEOUT_MS}ms`;
+            console.error({ logTail: logTail.trim().slice(-500) }, summary);
+            throw new RuntimeError(summary, 504);
         }
 
         previewRegistry.set(deploymentId, { port, child, workspacePath, startedAt: Date.now() });
