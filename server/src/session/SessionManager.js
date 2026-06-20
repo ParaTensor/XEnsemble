@@ -1,3 +1,5 @@
+const { removeScrollback } = require('../runtime/LocalScrollbackBuffer');
+
 /**
  * SessionManager — 管理活跃 agent session 的 bridge handle 与转发缓存。
  *
@@ -21,15 +23,15 @@ class SessionManager {
             exitListeners: new Set(),
         };
 
+        const scrollback = require('../runtime/LocalScrollbackBuffer').readScrollback(handle.streamRef);
+        session.history = scrollback;
+
         handle.onData((data) => {
             session.history += data;
             if (session.history.length > 100000) {
                 session.history = session.history.slice(-100000);
             }
         });
-
-        const scrollback = require('../runtime/LocalScrollbackBuffer').readScrollback(handle.streamRef);
-        session.history = scrollback;
 
         handle.onExit(({ exitCode, signal }) => {
             session.status = 'exited';
@@ -71,6 +73,11 @@ class SessionManager {
                 session.handle.kill();
             } catch (e) {
                 console.error(`Kill process error: ${e.message}`);
+            }
+            try {
+                removeScrollback(session.handle.streamRef);
+            } catch (e) {
+                console.error(`Remove scrollback error: ${e.message}`);
             }
         }
         this.sessions.delete(sessionId);

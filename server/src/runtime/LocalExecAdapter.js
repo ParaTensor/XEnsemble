@@ -3,6 +3,7 @@ const { spawn } = require('child_process');
 const pty = require('node-pty');
 const path = require('path');
 const fs = require('fs');
+const crypto = require('crypto');
 const { ExecAdapter, AgentSpawnError, StreamHandle } = require('./interfaces');
 const { getProcessStats } = require('./Monitor');
 const { resolveExecutable, enrichPath, KNOWN_CLI_LOCATIONS } = require('../agents/agentProbe');
@@ -211,7 +212,7 @@ class LocalExecAdapter extends ExecAdapter {
 
         try {
             const ptyProcess = pty.spawn(command, spawnArgs, ptyOptions);
-            const streamRef = `local:pty:${ptyProcess.pid}`;
+            const streamRef = `local:pty:${Date.now()}_${crypto.randomBytes(4).toString('hex')}_${ptyProcess.pid}`;
             return new LocalStreamHandle(ptyProcess, streamRef);
         } catch (err) {
             const cause = err instanceof Error ? err.message : String(err);
