@@ -259,6 +259,10 @@ async function start(log = console, { force = false } = {}) {
         return status;
     }
 
+    if (process.env.NODE_ENV === 'production' && !process.env.UNIGATEWAY_ADMIN_TOKEN) {
+        throw new Error('UNIGATEWAY_ADMIN_TOKEN is required in production');
+    }
+
     const bindAddr = await applyRuntimeConfig();
     const config = ensureGatewaySecrets();
     if (process.env.NODE_ENV === 'production' && !config.adminToken) {
