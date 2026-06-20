@@ -130,7 +130,7 @@ describe('LocalRuntimeLimits', () => {
         assert.equal(result.options.gid, undefined);
     });
 
-    test('wrapForLimits falls back to nice + prlimit', () => {
+    test('wrapForLimits fallback applies nice only', () => {
         const limits = {
             useSystemd: false,
             cpuPercent: 50,
@@ -139,11 +139,7 @@ describe('LocalRuntimeLimits', () => {
             nice: 10,
         };
         const result = wrapForLimits('node', ['server.js'], { cwd: '/' }, limits);
-        assert.equal(result.command, 'prlimit');
-        assert.ok(result.args.includes('--as=536870912:536870912'));
-        assert.ok(result.args.includes('--nproc=16:16'));
-        assert.ok(result.args.includes('nice'));
-        assert.ok(result.args.includes('-n'));
-        assert.ok(result.args.includes('10'));
+        assert.equal(result.command, 'nice');
+        assert.deepEqual(result.args, ['-n', '10', 'node', 'server.js']);
     });
 });

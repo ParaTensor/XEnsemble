@@ -7,3 +7,6 @@ gateway/target/
 client/dist
 .cursor/
 .kimi-code/
+server/test.db
+deploy/logs/
+*.log

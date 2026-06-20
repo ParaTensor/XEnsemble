@@ -65,11 +65,19 @@ export function useWorkspaces(user) {
   }, [fetchWorkspaces, user?.id]);
 
   useEffect(() => {
-    if (sessions.length === 0 || activeSession) return;
+    if (sessions.length === 0) return;
+    if (activeSession?.sessionId) {
+      const live = sessions.find((s) => s.id === activeSession.sessionId && s.alive === true);
+      if (!live) {
+        setActiveSession(null);
+        const userId = getCacheUserId(user);
+        if (userId) saveConsoleCache(userId, { agents, sessions, projects, activeSession: null });
+      }
+      return;
+    }
     const prefs = loadSidebarPrefs();
-    if (activeSession?.sessionId && !isArchivedSession(prefs, activeSession.sessionId)) return;
     const candidate = pickSessionToRestore(sessions, prefs);
-    if (!candidate) return;
+    if (!candidate || candidate.alive !== true) return;
     const projectName = candidate.projectName || projects.find((p) => p.id === candidate.projectId)?.name;
     setActiveSession({
       sessionId: candidate.id,
@@ -78,7 +86,7 @@ export function useWorkspaces(user) {
       projectId: candidate.projectId ?? null,
       projectName: projectName ?? null,
     });
-  }, [sessions, activeSession, agents, projects]);
+  }, [sessions, activeSession, agents, projects, user]);
 
   useEffect(() => {
     const userId = getCacheUserId(user);

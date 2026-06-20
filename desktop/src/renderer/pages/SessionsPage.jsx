@@ -3,7 +3,7 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import AgentConsole from '../components/AgentConsole';
 import WorkspaceFileTree from '../components/WorkspaceFileTree';
 import SelectMenu from '../components/SelectMenu';
-import { ConsoleAnchoredDialog, ConsoleDialogShell, ConsoleInlineDialog } from '../components/ConsoleDialog';
+import { ConsoleDialogShell, ConsoleInlineDialog } from '../components/ConsoleDialog';
 import SecretFields from '../components/settings/SecretFields';
 import { useToast } from '../components/Toast';
 import { useTerminalTheme } from '../hooks/useTerminalTheme.jsx';
@@ -673,9 +673,8 @@ export default React.forwardRef(function SessionsPage({
       )}
 
       {deleteConfirmWorkspace && (
-        <ConsoleAnchoredDialog
+        <ConsoleInlineDialog
           onClose={() => setDeleteConfirmWorkspace(null)}
-          anchorRect={deleteConfirmWorkspace.anchorRect}
           panelClassName={`${consoleDialogPanelClass} w-72 max-w-[calc(100vw-1.5rem)] shadow-lg`}
         >
             <div className={`${consoleStructuredDialogHeaderClass} flex items-center gap-3`}>
@@ -740,7 +739,7 @@ export default React.forwardRef(function SessionsPage({
                     : 'Delete workspace'}
               </button>
             </div>
-        </ConsoleAnchoredDialog>
+        </ConsoleInlineDialog>
       )}
 
       {deleteConfirmSession && (

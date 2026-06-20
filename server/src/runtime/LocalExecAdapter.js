@@ -104,13 +104,18 @@ function buildPosixSpawnFailedMessage(cmd, agentName, resolved, cause) {
         ` Run \`${path.basename(resolved)} --help\` in your terminal to verify the CLI.${argsHint}`;
 }
 
-function resolveSpawnTarget(resolved, args) {
+function resolveSpawnTarget(resolved, args, pathEnv) {
     if (process.platform === 'win32') {
         return { command: resolved, args: [...args] };
     }
     const shell = process.env.SHELL || '/bin/zsh';
-    const commandLine = `exec ${[resolved, ...args].map(quotePosixArg).join(' ')}`;
-    return { command: shell, args: ['-il', '-c', commandLine] };
+    // Explicitly set PATH before exec so the interpreter (e.g. /usr/bin/env node)
+    // can find runtimes even if the shell resets the environment.
+    const pathExport = pathEnv ? `PATH=${quotePosixArg(pathEnv)} ` : '';
+    const commandLine = `${pathExport}exec ${[resolved, ...args].map(quotePosixArg).join(' ')}`;
+    // Use interactive but not login shell: login shell (-l) resets PATH from
+    // /etc/profile and can break Node CLIs installed via nvm/other prefixes.
+    return { command: shell, args: ['-i', '-c', commandLine] };
 }
 
 // ─── LocalStreamHandle：封装 node-pty，隐藏 Local 细节 ───
@@ -211,7 +216,7 @@ class LocalExecAdapter extends ExecAdapter {
             throw new AgentSpawnError(buildNotFoundMessage(cmd, options.name));
         }
 
-        const { command: targetCommand, args: spawnArgs } = resolveSpawnTarget(resolved, args);
+        const { command: targetCommand, args: spawnArgs } = resolveSpawnTarget(resolved, args, spawnEnv.PATH);
         const ptyOptions = {
             name: 'xterm-256color',
             cols: 120,

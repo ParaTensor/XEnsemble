@@ -81,33 +81,39 @@ function buildNiceArgs(command, args, limits) {
 }
 
 function wrapForLimits(command, args, options, limits) {
-    if (!hasActiveLimits(limits)) {
+    // prlimit --as (RLIMIT_AS) limits total virtual address space, not physical
+    // memory. Node-based agents (kimi, claude-code, etc.) reserve large virtual
+    // address ranges for V8 and WebAssembly memory, so --as causes them to exit
+    // with "Out of memory: Cannot allocate Wasm memory". RLIMIT_NPROC counts
+    // processes per real UID, so --nproc also affects the backend user and is
+    // unsafe in fallback mode. CPU, memory and task limits require cgroups,
+    // i.e. RUNTIME_USE_SYSTEMD=1.
+    const effectiveLimits = limits.useSystemd
+        ? limits
+        : { ...limits, memoryMaxMb: null, maxProcesses: null, cpuPercent: null };
+
+    if (!hasActiveLimits(effectiveLimits)) {
         return { command, args, options };
     }
 
     if (limits.useSystemd) {
         return {
             command: 'systemd-run',
-            args: buildSystemdRunArgs(command, args, options, limits),
+            args: buildSystemdRunArgs(command, args, options, effectiveLimits),
             options: { ...options, uid: undefined, gid: undefined },
         };
     }
 
-    // Fallback: nice (CPU priority) + prlimit (memory/process count).
-    let nextCommand = command;
-    let nextArgs = args;
-
-    if (limits.nice != null) {
-        nextArgs = buildNiceArgs(nextCommand, nextArgs, limits);
-        nextCommand = 'nice';
+    // Fallback: nice (CPU scheduling priority) only.
+    if (effectiveLimits.nice != null) {
+        return {
+            command: 'nice',
+            args: buildNiceArgs(command, args, effectiveLimits),
+            options,
+        };
     }
 
-    if (limits.memoryMaxMb != null || limits.maxProcesses != null) {
-        nextArgs = buildPrlimitArgs(nextCommand, nextArgs, limits);
-        nextCommand = 'prlimit';
-    }
-
-    return { command: nextCommand, args: nextArgs, options };
+    return { command, args, options };
 }
 
 module.exports = {
