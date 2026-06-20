@@ -30,12 +30,15 @@ if [ ! -f deploy/xensemble.env ]; then
   cp deploy/xensemble.env.example deploy/xensemble.env
   JWT=$(openssl rand -hex 32)
   ENC=$(openssl rand -hex 32)
+  ADMIN=$(openssl rand -hex 32)
   if [[ "$(uname -s)" == "Darwin" ]]; then
-    sed -i '' "s/change-me-to-a-long-random-string/$JWT/" deploy/xensemble.env
-    sed -i '' "s/change-me-to-a-32-byte-hex-string/$ENC/" deploy/xensemble.env
+    sed -i '' "s/change-me-to-a-long-random-string-min-32-chars/$JWT/" deploy/xensemble.env
+    sed -i '' "s/change-me-to-a-64-char-hex-string/$ENC/" deploy/xensemble.env
+    sed -i '' "s/change-me-to-a-long-random-admin-token/$ADMIN/" deploy/xensemble.env
   else
-    sed -i "s/change-me-to-a-long-random-string/$JWT/" deploy/xensemble.env
-    sed -i "s/change-me-to-a-32-byte-hex-string/$ENC/" deploy/xensemble.env
+    sed -i "s/change-me-to-a-long-random-string-min-32-chars/$JWT/" deploy/xensemble.env
+    sed -i "s/change-me-to-a-64-char-hex-string/$ENC/" deploy/xensemble.env
+    sed -i "s/change-me-to-a-long-random-admin-token/$ADMIN/" deploy/xensemble.env
   fi
 fi
 
