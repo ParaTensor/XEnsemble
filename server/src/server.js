@@ -10,6 +10,7 @@ const WebSocket = require('ws');
 const { getRuntime } = require('./runtime/registry');
 const { AgentSpawnError, RuntimeError } = require('./runtime/interfaces');
 const { ensureProjectRuntime, formatRuntime } = require('./runtime/RuntimeService');
+const { parseId } = require('./runtime/LocalExecAdapter');
 const deploymentService = require('./deployments/DeploymentService');
 const repositoryEnvironment = require('./repositories/RepositoryEnvironmentService');
 const { registerPreviewGateway } = require('./preview/gateway');
@@ -36,13 +37,6 @@ const { registerGatewayAdminRoutes } = require('./gateway/adminProxy');
 const { deleteProjectForUser } = require('./projects/deleteProject');
 
 const runtime = getRuntime();
-
-function parseId(value) {
-    if (value == null || value === '') return undefined;
-    const n = Number(value);
-    if (!Number.isInteger(n) || n < 0) return undefined;
-    return n;
-}
 
 function formatAgentRow(a) {
     return {
@@ -441,8 +435,8 @@ fastify.post('/api/v1/session/start', { preValidation: [fastify.authenticate] },
             {
                 name: agentMeta.name,
                 cwd: workspacePath,
-                uid: parseId(process.env.RUNTIME_UID),
-                gid: parseId(process.env.RUNTIME_GID),
+                uid: process.env.RUNTIME_UID,
+                gid: process.env.RUNTIME_GID,
             }
         );
     } catch (err) {

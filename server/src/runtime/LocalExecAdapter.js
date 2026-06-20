@@ -312,3 +312,4 @@ class LocalExecAdapter extends ExecAdapter {
 }
 
 module.exports = LocalExecAdapter;
+module.exports.parseId = parseId;
