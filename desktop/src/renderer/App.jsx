@@ -16,7 +16,15 @@ export const AuthContext = React.createContext(null);
 async function loadStoredAuth() {
   const accessToken = await getAccessToken();
   const userRaw = localStorage.getItem('user');
-  return { accessToken, user: userRaw ? JSON.parse(userRaw) : null };
+  let user = null;
+  if (userRaw) {
+    try {
+      user = JSON.parse(userRaw);
+    } catch {
+      user = null;
+    }
+  }
+  return { accessToken, user };
 }
 
 /** Keep main pages mounted (invisible off-route) so state and terminal sessions stay alive with stable layout. */
@@ -152,7 +160,7 @@ function App() {
     localStorage.setItem('user', JSON.stringify(user));
     setToken(accessToken);
     setUser(user);
-    navigate('/sessions');
+    navigate('/sessions', { replace: true });
   };
 
   const logout = async () => {
@@ -160,13 +168,13 @@ function App() {
     localStorage.removeItem('user');
     setToken(null);
     setUser(null);
-    navigate('/login');
+    navigate('/login', { replace: true });
   };
 
   if (!authReady) {
     return (
-      <div className="flex h-full items-center justify-center bg-zinc-50">
-        <div className="text-sm text-zinc-500">Loading…</div>
+      <div className="flex h-full items-center justify-center bg-[#F4F5F6]">
+        <div className="text-sm text-[#5F6368]">Loading…</div>
       </div>
     );
   }
@@ -176,49 +184,52 @@ function App() {
       <TerminalThemeProvider token={token}>
         <div className="h-full">
           <Routes>
-          <Route path="/login" element={!token ? <Login /> : <Navigate to="/sessions" />} />
-
-          <Route
-            element={
-              token ? (
-                <AuthenticatedLayout
-                  token={token}
-                  user={user}
-                  agents={agents}
-                  projects={projects}
-                  setProjects={setProjects}
-                  sessions={sessions}
-                  setSessions={setSessions}
-                  activeSession={activeSession}
-                  setActiveSession={setActiveSession}
-                  fetchWorkspaces={fetchWorkspaces}
-                  logout={logout}
-                  showSettingsModal={showSettingsModal}
-                  setShowSettingsModal={setShowSettingsModal}
-                />
-              ) : (
-                <Navigate to="/login" replace />
-              )
-            }
-          >
-            <Route path="/sessions" element={null} />
-            <Route path="/console" element={<Navigate to="/sessions" replace />} />
             <Route
-              path="/admin/agents"
-              element={user?.role === 'admin' ? null : <Navigate to="/sessions" replace />}
+              path="/login"
+              element={!token ? <Login /> : <Navigate to="/sessions" replace />}
             />
+
             <Route
-              path="/admin/users"
-              element={user?.role === 'admin' ? null : <Navigate to="/sessions" replace />}
-            />
-          </Route>
+              element={
+                token ? (
+                  <AuthenticatedLayout
+                    token={token}
+                    user={user}
+                    agents={agents}
+                    projects={projects}
+                    setProjects={setProjects}
+                    sessions={sessions}
+                    setSessions={setSessions}
+                    activeSession={activeSession}
+                    setActiveSession={setActiveSession}
+                    fetchWorkspaces={fetchWorkspaces}
+                    logout={logout}
+                    showSettingsModal={showSettingsModal}
+                    setShowSettingsModal={setShowSettingsModal}
+                  />
+                ) : (
+                  <Navigate to="/login" replace />
+                )
+              }
+            >
+              <Route path="/sessions" element={null} />
+              <Route path="/console" element={<Navigate to="/sessions" replace />} />
+              <Route
+                path="/admin/agents"
+                element={user?.role === 'admin' ? null : <Navigate to="/sessions" replace />}
+              />
+              <Route
+                path="/admin/users"
+                element={user?.role === 'admin' ? null : <Navigate to="/sessions" replace />}
+              />
+            </Route>
 
-          <Route path="/settings" element={<Navigate to="/sessions" replace />} />
+            <Route path="/settings" element={<Navigate to="/sessions" replace />} />
 
-          <Route path="/admin/platform" element={<Navigate to="/sessions" replace />} />
+            <Route path="/admin/platform" element={<Navigate to="/sessions" replace />} />
 
-          <Route path="*" element={<Navigate to={token ? '/sessions' : '/login'} />} />
-        </Routes>
+            <Route path="*" element={<Navigate to={token ? '/sessions' : '/login'} replace />} />
+          </Routes>
         </div>
       </TerminalThemeProvider>
     </AuthContext.Provider>
