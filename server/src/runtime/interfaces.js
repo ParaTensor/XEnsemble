@@ -46,6 +46,7 @@ class RuntimeProvider {
         throw new Error('RuntimeProvider.ensureReady not implemented');
     }
     async attach(runtimeRef) { throw new Error('RuntimeProvider.attach not implemented'); }
+    async attachSession(sessionId, streamRef) { throw new Error('RuntimeProvider.attachSession not implemented'); }
     async destroy(runtimeRef) { throw new Error('RuntimeProvider.destroy not implemented'); }
     async metrics(runtimeRef) { throw new Error('RuntimeProvider.metrics not implemented'); }
 }

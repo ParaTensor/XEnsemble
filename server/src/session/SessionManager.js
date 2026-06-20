@@ -28,6 +28,9 @@ class SessionManager {
             }
         });
 
+        const scrollback = require('../runtime/LocalScrollbackBuffer').readScrollback(handle.streamRef);
+        session.history = scrollback;
+
         handle.onExit(({ exitCode, signal }) => {
             session.status = 'exited';
             session.exitCode = exitCode ?? signal ?? null;

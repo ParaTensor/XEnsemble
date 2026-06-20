@@ -105,11 +105,14 @@ function resolveSpawnTarget(resolved, args) {
 // ─── LocalStreamHandle：封装 node-pty，隐藏 Local 细节 ───
 
 class LocalStreamHandle extends StreamHandle {
-    constructor(ptyProcess) {
+    constructor(ptyProcess, streamRef) {
         super();
         this._pty = ptyProcess;
+        this._streamRef = streamRef;
         this._exited = false;
         this._killFallback = null;
+        const { appendScrollback } = require('./LocalScrollbackBuffer');
+        ptyProcess.onData((data) => appendScrollback(streamRef, data));
         this._pty.onExit(() => {
             this._exited = true;
             if (this._killFallback) {
@@ -157,8 +160,7 @@ class LocalStreamHandle extends StreamHandle {
     }
 
     get streamRef() {
-        const pid = this._pty.pid;
-        return Number.isInteger(pid) && pid > 0 ? `local:pty:${pid}` : null;
+        return this._streamRef;
     }
 
     async getMetrics() {
@@ -209,7 +211,8 @@ class LocalExecAdapter extends ExecAdapter {
 
         try {
             const ptyProcess = pty.spawn(command, spawnArgs, ptyOptions);
-            return new LocalStreamHandle(ptyProcess);
+            const streamRef = `local:pty:${ptyProcess.pid}`;
+            return new LocalStreamHandle(ptyProcess, streamRef);
         } catch (err) {
             const cause = err instanceof Error ? err.message : String(err);
             if (/posix_spawnp failed|ENOENT|not found/i.test(cause)) {

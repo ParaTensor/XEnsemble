@@ -17,6 +17,14 @@ class LocalRuntimeProvider extends RuntimeProvider {
         return { runtimeRef, recoverable: false };
     }
 
+    async attachSession(sessionId, streamRef) {
+        const { readScrollback } = require('./LocalScrollbackBuffer');
+        const scrollback = readScrollback(streamRef);
+        // For local execution, reattachment to a still-running PTY is not supported across server restarts.
+        // Return scrollback so the client can replay history; mark recoverable=false.
+        return { scrollback, recoverable: false };
+    }
+
     async destroy(runtimeRef) {
         // Local 模式不删除 workspace 目录
     }
