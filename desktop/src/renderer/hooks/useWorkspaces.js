@@ -58,10 +58,11 @@ export function useWorkspaces(user) {
   }, [fetchAgents, fetchProjects, fetchSessions]);
 
   useEffect(() => {
+    if (!user?.id) return undefined;
     fetchWorkspaces();
     const poll = setInterval(fetchWorkspaces, 5000);
     return () => clearInterval(poll);
-  }, [fetchWorkspaces]);
+  }, [fetchWorkspaces, user?.id]);
 
   useEffect(() => {
     if (sessions.length === 0 || activeSession) return;

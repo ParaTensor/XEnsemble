@@ -261,17 +261,21 @@ Admin 平台设置（`GET/PUT /api/v1/admin/platform-settings`）扩展字段：
 | POST | `/api/v1/projects/:projectId/preview` | 一键部署并启动 Preview |
 | POST | `/api/v1/deployments` | 创建 Deployment；body: `{ "project_id": "..." }` |
 | POST | `/api/v1/deployments/:id/start` | 启动 |
+| POST | `/api/v1/deployments/:id/preview-token` | 为 running deployment 签发/轮换 `preview_token` |
 | POST | `/api/v1/deployments/:id/stop` | 停止 Preview |
 | DELETE | `/api/v1/deployments/:id` | 删除 |
 
-**Preview 访问**（HTTP/WebSocket 反代，需用户 JWT）：
+**Preview 访问**（HTTP/WebSocket 反代，需 deployment-scoped token）：
+
+- 创建/启动 Deployment 的响应体新增 `preview_token` 字段。
+- 访问 Preview 时通过 header 或 query 携带该 token：
 
 ```
 {BASE}/preview/{deploymentId}/...
-Authorization: Bearer <jwt>
+x-preview-token: <preview_token>
 ```
 
-或通过 query：`?access_token=<jwt>`。
+或通过 query：`?preview_token=<preview_token>`。
 
 ---
 

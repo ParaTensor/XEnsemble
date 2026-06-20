@@ -24,6 +24,7 @@ const { db } = require('./db/index');
 const schema = require('./db/schema');
 const { eq, and, sql } = require('drizzle-orm');
 const auth = require('./auth/index');
+const { assertActiveUser } = require('./auth/assertActiveUser');
 const { registerAuthHooks } = require('./auth/hooks');
 const policy = require('./auth/PolicyService');
 const { registerAuthRoutes } = require('./routes/auth');
@@ -182,7 +183,6 @@ fastify.get('/api/v1/projects', { preValidation: [fastify.authenticate] }, async
         .map((p) => ({
             id: p.id,
             name: p.name,
-            server_path: p.serverPath,
             default_runtime_id: p.defaultRuntimeId,
             repo_provider: p.repoProvider || 'none',
             repo_url: p.repoUrl || null,
@@ -233,7 +233,6 @@ fastify.post('/api/v1/projects', { preValidation: [fastify.authenticate] }, asyn
     return {
         id: projectId,
         name,
-        server_path: workspacePath,
         default_runtime_id: defaultRuntimeId,
         created_at: createdAt,
     };
@@ -322,10 +321,15 @@ fastify.get('/api/v1/sessions', { preValidation: [fastify.authenticate] }, async
         .where(eq(schema.projects.userId, request.user.id));
     const projectNames = Object.fromEntries(projectRows.map((p) => [p.id, p.name]));
     return rows.map((row) => ({
-        ...row,
-        projectName: row.projectId ? projectNames[row.projectId] : null,
-        alive: sessionManager.isAlive(row.id),
+        id: row.id,
+        projectId: row.projectId,
+        agentId: row.agentId,
+        status: row.status,
         memoryStatus: sessionManager.getSession(row.id)?.status ?? row.status,
+        alive: sessionManager.isAlive(row.id),
+        projectName: row.projectId ? projectNames[row.projectId] : null,
+        createdAt: row.createdAt,
+        updatedAt: row.updatedAt,
     }));
 });
 
@@ -431,12 +435,18 @@ fastify.post('/api/v1/session/start', { preValidation: [fastify.authenticate] },
             agentMeta.cmd,
             agentMeta.args,
             resolved.env,
-            { name: agentMeta.name, cwd: workspacePath }
+            {
+                name: agentMeta.name,
+                cwd: workspacePath,
+                uid: process.env.RUNTIME_UID,
+                gid: process.env.RUNTIME_GID,
+            }
         );
     } catch (err) {
         await db.delete(schema.sessions).where(eq(schema.sessions.id, sessionId));
         if (err instanceof AgentSpawnError) {
-            return reply.code(err.statusCode).send({ error: err.message });
+            request.log.error(err);
+            return reply.code(err.statusCode).send({ error: 'Failed to start agent session' });
         }
         request.log.error(err);
         return reply.code(500).send({ error: 'Failed to start agent session' });
@@ -501,6 +511,13 @@ fastify.register(async function terminalWsRoutes(app) {
             const payload = auth.verifyAccessToken(accessToken);
             if (!payload?.id) {
                 sendJson({ type: 'error', data: 'Invalid access token' });
+                ws.close();
+                return;
+            }
+
+            const active = await assertActiveUser(accessToken);
+            if (active.error) {
+                sendJson({ type: 'error', data: active.error });
                 ws.close();
                 return;
             }
@@ -645,6 +662,15 @@ fastify.delete('/api/v1/deployments/:deploymentId', { preValidation: [fastify.au
     return { ok: true };
 });
 
+fastify.post('/api/v1/deployments/:deploymentId/preview-token', { preValidation: [fastify.authenticate] }, async (request, reply) => {
+    const row = await deploymentService.getForUser(request.user.id, request.params.deploymentId);
+    if (!row) return reply.code(404).send({ error: 'Deployment not found' });
+    if (row.status !== 'running') return reply.code(503).send({ error: 'Preview is not running' });
+
+    const previewToken = await deploymentService.issuePreviewToken(row.id);
+    return { preview_token: previewToken };
+});
+
 // Workspace API — 经 runtime 解析 workspace 根路径后委托 FsAdapter
 fastify.get('/api/v1/workspace/files', { preValidation: [fastify.authenticate] }, async (request, reply) => {
     const projectId = request.query.project_id;
@@ -658,8 +684,8 @@ fastify.get('/api/v1/workspace/files', { preValidation: [fastify.authenticate] }
         const { workspacePath } = await ensureProjectRuntime(project);
         return runtime.fs.fsList(workspacePath, relativePath);
     } catch (err) {
-        const code = err instanceof RuntimeError ? err.statusCode : 500;
-        return reply.code(code).send({ error: err.message });
+        request.log.error(err);
+        return reply.code(500).send({ error: 'Failed to list workspace files' });
     }
 });
 
@@ -677,8 +703,8 @@ fastify.get('/api/v1/workspace/file', { preValidation: [fastify.authenticate] },
         const content = await runtime.fs.fsRead(workspacePath, filePath);
         return { content };
     } catch (err) {
-        const code = err instanceof RuntimeError ? err.statusCode : 500;
-        return reply.code(code).send({ error: err.message });
+        request.log.error(err);
+        return reply.code(500).send({ error: 'Failed to read file' });
     }
 });
 

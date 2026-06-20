@@ -1,4 +1,3 @@
-import React from 'react';
 import { Eye, EyeOff } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { consoleInputClass, consoleIconButtonClass } from '../lib/consoleTokens';

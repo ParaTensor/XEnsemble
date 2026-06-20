@@ -6,6 +6,14 @@ const LocalRuntimeProvider = require('./LocalRuntimeProvider');
 const LocalExecAdapter = require('./LocalExecAdapter');
 const LocalFsAdapter = require('./LocalFsAdapter');
 const LocalPreviewAdapter = require('./LocalPreviewAdapter');
+const BoxLiteRuntimeProvider = require('./BoxLiteRuntimeProvider');
+const BoxLiteExecAdapter = require('./BoxLiteExecAdapter');
+const BoxLiteFsAdapter = require('./BoxLiteFsAdapter');
+const BoxLitePreviewAdapter = require('./BoxLitePreviewAdapter');
+const K8sRuntimeProvider = require('./K8sRuntimeProvider');
+const K8sExecAdapter = require('./K8sExecAdapter');
+const K8sFsAdapter = require('./K8sFsAdapter');
+const K8sPreviewAdapter = require('./K8sPreviewAdapter');
 
 const PROVIDER = process.env.RUNTIME_PROVIDER || 'local';
 
@@ -26,8 +34,24 @@ function getRuntime() {
                 preview: new LocalPreviewAdapter(),
             };
             break;
+        case 'boxlite':
+            _runtime = {
+                provider: new BoxLiteRuntimeProvider(),
+                exec: new BoxLiteExecAdapter(),
+                fs: new BoxLiteFsAdapter(),
+                preview: new BoxLitePreviewAdapter(),
+            };
+            break;
+        case 'k8s':
+            _runtime = {
+                provider: new K8sRuntimeProvider(),
+                exec: new K8sExecAdapter(),
+                fs: new K8sFsAdapter(),
+                preview: new K8sPreviewAdapter(),
+            };
+            break;
         default:
-            throw new Error(`Unknown RUNTIME_PROVIDER: "${PROVIDER}". Supported: local`);
+            throw new Error(`Unknown RUNTIME_PROVIDER: "${PROVIDER}". Supported: local, boxlite, k8s`);
     }
 
     return _runtime;

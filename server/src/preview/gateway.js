@@ -1,7 +1,38 @@
 const httpProxy = require('http-proxy');
-const auth = require('../auth/index');
+const { eq } = require('drizzle-orm');
 const deploymentService = require('../deployments/DeploymentService');
 const previewRegistry = require('../runtime/localPreviewRegistry');
+const { db } = require('../db/index');
+const schema = require('../db/schema');
+
+const DEFAULT_PREVIEW_HOSTS = ['localhost', '127.0.0.1'];
+
+function loadAllowedPreviewHosts() {
+    const hosts = new Set(DEFAULT_PREVIEW_HOSTS);
+    const envHosts = process.env.PREVIEW_ALLOWED_HOSTS
+        ? process.env.PREVIEW_ALLOWED_HOSTS.split(',').map((s) => s.trim()).filter(Boolean)
+        : [];
+    envHosts.forEach((h) => hosts.add(h));
+
+    const publicUrl = process.env.CONTROL_PLANE_PUBLIC_URL?.trim();
+    if (publicUrl) {
+        try {
+            const host = new URL(publicUrl).host;
+            if (host) hosts.add(host);
+        } catch {
+            /* ignore invalid public url */
+        }
+    }
+    return hosts;
+}
+
+const allowedPreviewHosts = loadAllowedPreviewHosts();
+
+function isAllowedPreviewHost(request) {
+    const host = request.headers.host;
+    if (!host) return false;
+    return allowedPreviewHosts.has(host);
+}
 
 const proxy = httpProxy.createProxyServer({
     ws: true,
@@ -18,32 +49,49 @@ proxy.on('error', (err, req, res) => {
 });
 
 function extractToken(request) {
-    const authHeader = request.headers.authorization;
-    if (authHeader?.startsWith('Bearer ')) return authHeader.slice(7);
+    const previewHeader = request.headers['x-preview-token'];
+    if (previewHeader) return previewHeader;
     try {
         const url = new URL(request.url, 'http://localhost');
-        return url.searchParams.get('access_token');
+        return url.searchParams.get('preview_token');
     } catch {
         return null;
     }
 }
 
-async function resolveDeployment(request, deploymentId) {
-    const token = extractToken(request);
-    if (!token) return { error: 'Unauthorized', status: 401 };
-    const user = auth.verifyAccessToken(token);
-    if (!user) return { error: 'Unauthorized', status: 401 };
+async function assertDeploymentUserActive(userId) {
+    const rows = await db.select({ status: schema.users.status })
+        .from(schema.users)
+        .where(eq(schema.users.id, userId));
+    const user = rows[0];
+    if (!user || user.status !== 'active') {
+        return { error: 'Account is inactive', status: 403, code: 'account_inactive' };
+    }
+    return null;
+}
 
-    const row = await deploymentService.getForUser(user.id, deploymentId);
-    if (!row) return { error: 'Deployment not found', status: 404 };
+async function resolveDeployment(request, deploymentId) {
+    if (!isAllowedPreviewHost(request)) {
+        return { error: 'Invalid host', status: 400, code: 'invalid_host' };
+    }
+
+    const token = extractToken(request);
+    if (!token) return { error: 'Unauthorized', status: 401, code: 'missing_preview_token' };
+
+    const row = await deploymentService.getByPreviewToken(deploymentId, token);
+    if (!row) return { error: 'Invalid preview token', status: 401, code: 'invalid_preview_token' };
+
+    const inactive = await assertDeploymentUserActive(row.userId);
+    if (inactive) return inactive;
+
     if (row.status !== 'running') {
-        return { error: 'Preview is not running', status: 503 };
+        return { error: 'Preview is not running', status: 503, code: 'preview_not_running' };
     }
 
     const entry = previewRegistry.get(deploymentId);
-    if (!entry) return { error: 'Preview process not found', status: 503 };
+    if (!entry) return { error: 'Preview process not found', status: 503, code: 'preview_process_not_found' };
 
-    return { user, deployment: row, entry };
+    return { deployment: row, entry };
 }
 
 function stripPreviewPrefix(url, deploymentId) {
@@ -56,7 +104,7 @@ function stripPreviewPrefix(url, deploymentId) {
         path = path.slice(prefix.length) || '/';
     }
     const qs = new URLSearchParams(search);
-    qs.delete('access_token');
+    qs.delete('preview_token');
     const rest = qs.toString();
     return rest ? `${path}?${rest}` : path;
 }
@@ -68,7 +116,9 @@ async function proxyPreviewRequest(request, reply) {
     const deploymentId = request.params.deploymentId;
     const resolved = await resolveDeployment(request.raw, deploymentId);
     if (resolved.error) {
-        return reply.code(resolved.status).send({ error: resolved.error });
+        const payload = { error: resolved.error };
+        if (resolved.code) payload.code = resolved.code;
+        return reply.code(resolved.status).send(payload);
     }
 
     const target = `http://127.0.0.1:${resolved.entry.port}`;
@@ -98,22 +148,30 @@ async function registerPreviewGateway(fastify) {
     fastify.route({ url: '/preview/:deploymentId/*', ...proxyOpts });
 
     fastify.server.on('upgrade', async (req, socket, head) => {
-        const match = req.url?.match(/^\/preview\/([^/?]+)/);
-        if (!match) return;
+        try {
+            const match = req.url?.match(/^\/preview\/([^/?]+)/);
+            if (!match) return;
 
-        const deploymentId = match[1];
-        const resolved = await resolveDeployment(req, deploymentId);
-        if (resolved.error) {
-            socket.write(`HTTP/1.1 ${resolved.status} ${resolved.error}\r\n\r\n`);
-            socket.destroy();
-            return;
+            const deploymentId = match[1];
+            const resolved = await resolveDeployment(req, deploymentId);
+            if (resolved.error) {
+                socket.write(`HTTP/1.1 ${resolved.status} ${resolved.error}\r\n\r\n`);
+                socket.destroy();
+                return;
+            }
+
+            const target = `http://127.0.0.1:${resolved.entry.port}`;
+            req.url = stripPreviewPrefix(req.url, deploymentId);
+            proxy.ws(req, socket, head, { target }, (err) => {
+                if (err) socket.destroy();
+            });
+        } catch (err) {
+            console.error('[preview-gateway] upgrade error:', err.message);
+            if (!socket.destroyed) {
+                socket.write('HTTP/1.1 500 Internal Server Error\r\n\r\n');
+                socket.destroy();
+            }
         }
-
-        const target = `http://127.0.0.1:${resolved.entry.port}`;
-        req.url = stripPreviewPrefix(req.url, deploymentId);
-        proxy.ws(req, socket, head, { target }, (err) => {
-            if (err) socket.destroy();
-        });
     });
 }
 

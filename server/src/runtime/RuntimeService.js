@@ -140,7 +140,6 @@ function formatRuntime(row) {
         runtime_ref: row.runtimeRef,
         role: row.role,
         status: row.status,
-        endpoint: row.endpoint,
         created_at: row.createdAt,
         updated_at: row.updatedAt,
     };

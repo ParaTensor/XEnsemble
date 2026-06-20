@@ -41,6 +41,7 @@ async function expirePreviews() {
         } catch (_) { /* ignore */ }
         await db.update(schema.deployments).set({
             status: 'expired',
+            previewTokenHash: null,
             updatedAt: now,
         }).where(eq(schema.deployments.id, row.id));
 

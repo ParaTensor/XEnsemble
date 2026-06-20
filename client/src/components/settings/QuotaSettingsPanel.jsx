@@ -1,5 +1,4 @@
-import React, { useState, useEffect, useContext } from 'react';
-import { AuthContext } from '../../App';
+import { useState, useEffect } from 'react';
 import { consoleSectionLabelClass } from '../../lib/consoleTokens';
 
 import { apiFetch } from '../../lib/api';

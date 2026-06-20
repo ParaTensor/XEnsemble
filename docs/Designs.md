@@ -216,4 +216,4 @@ Node 项目常见写法：`{ "command": "npm", "args": ["run", "dev"], "port": 5
 - **操作**：Deploy preview（`POST /api/v1/projects/:id/preview`）、Stop、Restart、Open（新标签）、Embed（iframe，`h-48`，`sandbox` 含 scripts/forms）；**图标按钮**（见 § 按钮），与工具栏其他操作一致。
 - **TTL**：running 时显示 `expires_at` 倒计时（`font-mono text-[10px]`）。
 - **错误**：遵 Toast 节；部署/操作失败与 `last_error_message` 用 `useToast('error', …)`，不在终端区内联展示。
-- **鉴权 iframe**：`public_url` 追加 `access_token` query（Gateway 校验，见 Architecture 7）。
+- **鉴权 iframe**：`public_url` 追加 `preview_token` query（Gateway 校验 deployment-scoped token，见 Architecture 7）。

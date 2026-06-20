@@ -110,6 +110,7 @@ const deployments = sqliteTable('deployments', {
   status: text('status').notNull().default('pending'),
   publicUrl: text('public_url'),
   internalRef: text('internal_ref'),
+  previewTokenHash: text('preview_token_hash'),
   revision: text('revision'),
   expiresAt: integer('expires_at'),
   createdAt: integer('created_at').notNull(),

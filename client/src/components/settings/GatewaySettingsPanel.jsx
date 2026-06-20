@@ -1,6 +1,5 @@
-import React, { useState, useEffect, useContext, useCallback } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Plus, Settings2, Play, Square, RefreshCw, Loader2, Pencil, Trash2, Activity, List } from 'lucide-react';
-import { AuthContext } from '../../App';
 import Button from '../Button';
 import Input, { FormLabel, Textarea } from '../Input';
 import MaskedApiKeyInput from '../MaskedApiKeyInput';

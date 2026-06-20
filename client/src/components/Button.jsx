@@ -1,4 +1,3 @@
-import React from 'react';
 import { buttonClass } from '../lib/buttonStyles';
 import { cn } from '../lib/utils';
 

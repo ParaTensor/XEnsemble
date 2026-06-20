@@ -13,8 +13,8 @@
 1. **不再支持在线 Web Coding**：普通用户不再通过浏览器进行代码编辑、Web Terminal 交互、iframe Preview 等在线 Coding 操作，降低前端维护成本。
 2. **Client-Server 模式**：XEnsemble Server 作为独立后台服务运行，用户主要通过 **XEnsemble Desktop Client**（桌面原生应用）连接并使用。
 3. **保留 Web 管理面**：现有 `client/` Web UI 继续保留，作为 **Admin 管理台、平台状态页、用户登录/注册入口**（可选）。普通用户的 Coding 工作流迁移到 Desktop Client。
-4. **执行面本地执行（第一阶段）**：为降低部署复杂度，生产第一阶段**使用本地执行方式**（Local Runtime Provider），即 Agent / Preview 进程直接运行在 Server 所在机器上；控制面仍通过 `RuntimeProvider` 抽象管理生命周期，未来可平滑替换为 Docker/K8s。
-5. **生产就绪默认**：强制安全密钥、Refresh Token、进程级隔离、Secrets 不落地、控制面可水平扩展。
+4. **执行面三层 Provider**：执行面统一通过 `RuntimeProvider` 抽象管理生命周期，按部署成熟度分为 Local Process、BoxLite Managed Sandbox、K8s Production Runtime 三层；控制面 API、Session、Deployment、Workspace 逻辑不得绑定具体底层。
+5. **生产就绪默认**：强制安全密钥、Refresh Token、进程级隔离、Secrets 不落地。Local 层服务于开发/PC/单机早期部署；BoxLite 层服务于托管 sandbox 隔离；K8s 层服务于多机、多用户、弹性伸缩的生产运维部署。
 
 ---
 
@@ -25,7 +25,7 @@
 | Web 不作为用户 Coding 入口 | 普通用户的终端、文件编辑、iframe 预览等操作不在 Web 端提供；后台 Coding 类 API 优先面向 Desktop Client。 |
 | Desktop Client 是主入口 | 用户的日常交互（登录、启动 Agent、查看终端、管理项目/Agent、触发 Preview）默认通过 Desktop Client 完成。 |
 | Web 管理面保留 | Admin 管理、用户/Agent/平台配置、状态展示等仍可通过 `client/` Web 管理台操作。 |
-| 执行面本地执行 | 第一阶段 Agent/Preview 在 Server 本机运行；通过抽象层封装，未来可替换为 Docker/K8s。 |
+| 执行面三层实现 | Local Process 便于开发/PC/单机部署；BoxLite 提供托管 sandbox 隔离；K8s 面向多机、多用户、弹性伸缩生产运维。 |
 | 向后兼容协议 | 现有 REST/WS 消息格式尽量保留，仅在鉴权层增强（WS 也带 token）。 |
 | 执行面抽象不变 | 继续沿用 `RuntimeProvider / ExecAdapter / FsAdapter / PreviewAdapter` 四层接口。 |
 
@@ -33,33 +33,29 @@
 
 ## 3. 方案选型
 
-### 方案 A：Desktop Client 内嵌本地后端
-Desktop Client 打包本地 Node.js 运行时，本机启动控制面 + Local Runtime。
+### 方案 A：Local Process Runtime
+Desktop Client 或 Self-Hosted Server 使用 **Local Runtime Provider**，Agent/Preview 作为本机进程运行。
 
-- **优点**：零服务器运维，开箱即用。
-- **缺点**：无法团队共享、执行面仍是本机、Secrets 分散在客户端。
-- **结论**：保留为开发/个人模式，**不作为生产主方案**。
+- **适用**：开发、个人 PC、本地调试、小团队单机部署。
+- **优点**：部署简单、无需外部 sandbox 或集群、调试成本低。
+- **缺点**：隔离性弱于 sandbox/K8s；需要 OS 用户、目录 jail、cgroups/systemd 加固。
+- **结论**：作为默认开发模式与单机早期部署基线。
 
-### 方案 B：Self-Hosted Server + 本地执行（推荐，第一阶段）
-每个团队/企业在服务器上部署一个 XEnsemble Server，使用 **Local Runtime Provider** 直接在本机运行 Agent/Preview；Desktop Client 远程连接，Web 管理面保留。
+### 方案 B：BoxLite Managed Sandbox Runtime
+控制面仍由 XEnsemble Server 负责，Runtime Provider 替换为 **BoxLiteRuntimeProvider**，通过 BoxLite API 创建 sandbox、执行 Agent、管理 workspace 与 preview。
 
-- **优点**：部署简单、无需 Docker/K8s、团队共享配置、运维可控、架构已为未来容器化预留扩展点。
-- **缺点**：Agent 代码与 Server 控制面在同一台机器运行，隔离性弱于容器；需通过 OS 用户/进程/目录 jail 加固。
-- **结论**：**本次生产架构第一阶段的基线方案**。
+- **适用**：需要比本地进程更强隔离，但不希望自建 Docker/K8s 的中期生产部署。
+- **优点**：隔离、资源限制、生命周期由托管 sandbox 承担；控制面改动集中在 Runtime Provider。
+- **缺点**：依赖第三方服务；需确认 PTY、workspace 持久化、preview 反代、snapshot/checkpoint、secret 注入能力。
+- **结论**：作为 Local 与 K8s 之间的推荐演进层。
 
-### 方案 C：Server + Docker/K8s Runtime（第二阶段）
-控制面不变，Runtime Provider 替换为 Docker 或 K8s，实现容器级隔离。
+### 方案 C：K8s Production Runtime
+控制面不变，Runtime Provider 替换为 **K8sRuntimeProvider**，由 Kubernetes 负责 Pod 调度、资源限制、网络隔离、服务发现与多节点弹性。
 
-- **优点**：强隔离、资源限额、弹性伸缩。
-- **缺点**：需要容器基础设施与运维能力。
-- **结论**：**第一阶段完成后演进**。
-
-### 方案 D：托管多租户云服务
-多租户控制面 + K8s Runtime Provider + 计费 + 子域名 Gateway。
-
-- **优点**：规模化、按需付费。
-- **缺点**：复杂度高，需要强租户隔离、网络策略、计费系统。
-- **结论**：远期演进方向，本次不实现。
+- **适用**：多机、多用户、高并发、企业私有化、统一观测与运维。
+- **优点**：标准化资源调度、强隔离、弹性伸缩、可观测、可对接企业基础设施。
+- **缺点**：需要 Kubernetes 基础设施、集群运维、镜像/存储/网络策略治理。
+- **结论**：作为规模化生产运维部署形态。
 
 ---
 
@@ -93,11 +89,13 @@ Desktop Client 打包本地 Node.js 运行时，本机启动控制面 + Local Ru
 │  └──────────────┘ └──────────────┘                                      │
 └─────────────────────────────────────────────────────────────────────────┘
                     │
-                    │ Local Runtime Provider
+                    │ RuntimeProvider
+                    │  Local Process / BoxLite Sandbox / K8s Runtime
                     ▼
         ┌─────────────────────┐
-        │  Agent PTY / Preview │  (运行在同一台 Server 上)
-        │  Local FS / Process  │
+        │  Agent PTY / Preview │
+        │  Workspace / FS      │
+        │  Runtime Lifecycle   │
         └─────────────────────┘
 
 ┌─────────────────────────────────┐
@@ -144,7 +142,7 @@ Desktop Client 打包本地 Node.js 运行时，本机启动控制面 + Local Ru
 | `auth/index.js` | 强制 `JWT_SECRET`/`ENCRYPTION_KEY`；引入 Refresh Token；PBKDF2 升级到 ≥210k 次或 Argon2id。 |
 | `auth/PolicyService.js` | 继续执行 quota / agent grant；增加 `checkUserActive` 全局钩子。 |
 | `auth/hooks.js` | `authenticate` 校验 Access Token；新增 `requireActive`、`requireAdmin`。 |
-| `runtime/*` | 保留接口；第一阶段使用 Local Provider；所有本地 FS/PTY 假设严格限制在 `Local*` 文件内。 |
+| `runtime/*` | 保留接口；按 Local Process、BoxLite Sandbox、K8s Production 三层实现 Provider；所有具体执行面假设严格限制在对应 Provider 内。 |
 | `session/SessionManager.js` | 仍只保存 bridge handle；scrollback 事实来源为 Runtime 侧（本地可由 sidecar/文件缓存实现）。 |
 | `deployments/DeploymentService.js` | 状态机不变；revision 必须指向真实 `gitSha` / `snapshotId` / `checkpointId`。 |
 | `llm/*` | 保留 session token 反代；移除全局 rebind 锁，改为 per-agent gateway key 或 header 路由。 |
@@ -154,21 +152,36 @@ Desktop Client 打包本地 Node.js 运行时，本机启动控制面 + Local Ru
 
 ### 5.4 执行面（Runtime Provider）
 
-第一阶段使用 **Local Runtime Provider**，即 Agent / Preview 直接运行在 Server 本机：
+执行面通过同一组接口封装：`RuntimeProvider / ExecAdapter / FsAdapter / PreviewAdapter`。前台用户拉起 Agent 时，控制面仍负责鉴权、quota、session、secrets、审计与 deployment 状态；具体进程、sandbox 或 Pod 的创建由当前 Provider 负责。
 
+#### 5.4.1 Local Process Runtime
+
+- **定位**：开发、PC 用户、单机自托管早期部署。
 - **LocalRuntimeProvider**：确保 workspace 目录存在；管理本地运行环境生命周期。
 - **LocalExecAdapter**：基于 `node-pty` 提供 `spawn`；实现 `exec` 用于短任务/构建探测。
 - **LocalFsAdapter**：受控文件列表/读取，严格路径 jail，禁止返回宿主机绝对路径；解析 symlink 防止越界。
 - **LocalPreviewAdapter**：在本地启动 preview 进程，声明端口，注册到 Gateway。
-- **存储**：workspace 目录位于 Server 本地文件系统；通过 Git 或对象存储实现 snapshot/checkpoint。
+- **安全边界**：Agent/Preview 以低权限 OS 用户运行；使用目录 jail、`RUNTIME_UID`/`RUNTIME_GID`、cgroups/systemd 加固；Secrets 仅注入环境变量，不写入 workspace。
 
-**本地执行的安全边界**：
-- Agent/Preview 以低权限 OS 用户运行（与 Server 进程不同用户）。
-- 使用 `chroot`/目录 jail / SELinux/AppArmor（可选）限制可访问路径。
-- 通过 cgroups/systemd 限制 CPU/内存/进程数。
-- Secrets 仅注入环境变量，不写入 workspace。
+#### 5.4.2 BoxLite Managed Sandbox Runtime（Phase 2 / 未来开发）
 
-Docker/K8s Provider 作为第二阶段实现，通过同一组接口替换 Local Provider。
+- **定位**：托管 sandbox 执行层，作为 Local 与自建 K8s 之间的演进层。
+- **BoxLiteRuntimeProvider**：通过 BoxLite API 创建、恢复、停止、销毁 sandbox，并维护 runtime 与 project/session 的映射。
+- **BoxLiteExecAdapter**：在 sandbox 内执行 Agent 命令；必须支持交互式 PTY 或等价的 stdin/stdout/resize/stream 能力。
+- **BoxLiteFsAdapter**：通过 sandbox 文件 API 管理 workspace；不得向客户端暴露 sandbox 内部路径或 sandbox id。
+- **BoxLitePreviewAdapter**：在 sandbox 内启动 preview，并由 XEnsemble Preview Gateway 反代；客户端仍访问 `/preview/:deploymentId`。
+- **约束**：Desktop/Web 不直接调用 BoxLite；BoxLite token、内部 URL、sandbox id 均为控制面内部细节。
+- **当前状态**：`server/src/runtime/BoxLite*.js` 已提供占位实现。可通过 `RUNTIME_PROVIDER=boxlite` 加载，但所有方法均返回 `501 Not Implemented`。
+
+#### 5.4.3 K8s Production Runtime（Phase 2 / 未来开发）
+
+- **定位**：多机、多用户、弹性伸缩、企业私有化和统一生产运维。
+- **K8sRuntimeProvider**：将 runtime/session/deployment 映射为 Pod/Job/Service/PVC 等 Kubernetes 资源。
+- **K8sExecAdapter**：通过 Kubernetes exec/attach/stream 或 sidecar 提供交互式 Agent 会话。
+- **K8sFsAdapter**：通过 PVC、对象存储或 sidecar 文件服务访问 workspace。
+- **K8sPreviewAdapter**：通过 Service/Gateway/Ingress 暴露 preview，仍由 XEnsemble Preview Gateway 执行 token、Host、用户状态与 deployment 状态校验。
+- **生产能力**：使用 requests/limits、ResourceQuota、NetworkPolicy、SecurityContext、ServiceAccount、日志与指标系统实现隔离、调度和观测。
+- **当前状态**：`server/src/runtime/K8s*.js` 已提供占位实现。可通过 `RUNTIME_PROVIDER=k8s` 加载，但所有方法均返回 `501 Not Implemented`。
 
 ### 5.5 LLM Gateway
 
@@ -212,7 +225,7 @@ Docker/K8s Provider 作为第二阶段实现，通过同一组接口替换 Local
 ### 6.3 WebSocket 终端
 
 - 路径：`/ws/v1/terminal?sessionId=...&access_token=...`
-- 必须携带 Access Token；后台校验 token、session 归属与 `status === 'running'`。
+- 必须携带 Access Token；后台校验 token、用户 `active`、session 归属与 `status === 'running'`。
 - 消息格式与现有协议保持一致。
 - HTTP(SSE+POST) 回退保留，供企业防火墙环境使用。
 - Web 管理面不再默认暴露 Web Terminal；仅 Desktop Client 使用。
@@ -221,8 +234,11 @@ Docker/K8s Provider 作为第二阶段实现，通过同一组接口替换 Local
 
 - Preview URL 形如 `https://<server>/preview/<deploymentId>/...`。
 - 使用 **deployment-scoped token**（短期、绑定 deploymentId），而非用户 JWT。
+  - 通过 `POST /api/v1/projects/:id/preview`、`POST /api/v1/deployments`、`POST /api/v1/deployments/:id/start` 生成/轮换。
+  - 已有 running deployment 可通过 `POST /api/v1/deployments/:id/preview-token` 签发新 token。
+  - 访问时通过 `x-preview-token` header 或 `?preview_token=...` query 携带。
 - Desktop Client 收到 URL 后调用系统浏览器打开；Web 管理面可展示“外部打开”链接，但不 iframe 嵌入。
-- Gateway 校验 token、deployment 状态、用户 `active`、project 归属。
+- Gateway 校验 Host 白名单、token、deployment 状态、用户 `active`、project 归属。
 
 ---
 
@@ -238,10 +254,10 @@ Docker/K8s Provider 作为第二阶段实现，通过同一组接口替换 Local
 - `users`（扩展 `status`、`last_login_at` 等）
 - `user_quotas`、`user_agent_grants`
 - `platform_settings`
-- `projects`（保留 `default_runtime_id`，`server_path` 为 Local 执行的实际工作目录）
-- `runtimes`（一等实体；第一阶段 provider = `local`）
+- `projects`（保留 `default_runtime_id`；`server_path` 仅为 Local Provider 内部字段，不得通过 API 暴露）
+- `runtimes`（一等实体；provider 可为 `local`、`boxlite`、`k8s`）
 - `sessions`（含 `runtime_id`、`stream_ref`、`recoverable`）
-- `deployments`（状态机 + `revision`）
+- `deployments`（状态机 + `revision` + `preview_token_hash`）
 - `events`
 - `repo_snapshots`、`workspace_checkpoints`、`dev_environment_profiles`
 
@@ -279,12 +295,12 @@ Docker/K8s Provider 作为第二阶段实现，通过同一组接口替换 Local
   - Session bridge 状态外置到 Redis / NATS，或 Runtime Provider 直接暴露 stream endpoint。
   - 配额/单飞状态使用 Redis-backed distributed lock。
   - 数据库使用 PostgreSQL 替代 SQLite。
-- **多 Runtime Provider**：通过 `runtime/registry.js` 插件化加载 Local / Docker / K8s provider。
+- **多 Runtime Provider**：通过 `runtime/registry.js` 插件化加载 Local Process / BoxLite Sandbox / K8s Production provider。
 - **LLM Gateway**：支持外部上游，控制面无状态转发。
 
 ---
 
-## 10. 部署拓扑（推荐，第一阶段）
+## 10. 部署拓扑（三层 Runtime）
 
 ### 10.1 单节点自托管
 
@@ -302,18 +318,23 @@ Docker/K8s Provider 作为第二阶段实现，通过同一组接口替换 Local
 [Admin Browser]   ──HTTPS──────▶ [Server] (Web 管理面)
 ```
 
-### 10.2 第二阶段：容器化
+### 10.2 BoxLite 托管 Sandbox
 
 ```
 [Server]
-  ├─ XEnsemble Server (Node.js)
+  ├─ XEnsemble Server (Node.js, port 3888)
   ├─ UniGateway
-  └─ Docker Daemon / K8s Cluster
+  ├─ SQLite / Postgres
+  └─ BoxLiteRuntimeProvider ──API──▶ [BoxLite Sandbox Fleet]
+                                      ├─ Agent PTY / stream
+                                      ├─ Workspace filesystem
+                                      └─ Preview process
 
-Runtime Provider 切换为 Docker/K8s，其他不变。
+[Desktop Clients] ──HTTPS/WSS──▶ [Server]
+[Preview Browser] ──HTTPS──────▶ [Server Preview Gateway] ──▶ [BoxLite Sandbox]
 ```
 
-### 10.3 高可用（远期）
+### 10.3 K8s 多机生产运维
 
 ```
 [Nginx / LB]
@@ -322,7 +343,11 @@ Runtime Provider 切换为 Docker/K8s，其他不变。
    └── Server Instance N
    [Shared Postgres]
    [Shared Redis]
-   [Docker/K8s Runtime Cluster]
+   [K8s Runtime Cluster]
+      ├─ Runtime / Session Pods
+      ├─ Preview Services
+      ├─ Workspace PVC / Object Storage
+      └─ Metrics / Logs / Events
 ```
 
 ---
@@ -340,7 +365,7 @@ Runtime Provider 切换为 Docker/K8s，其他不变。
 | 硬编码 JWT/加密密钥 | 删除回退 | 未配置则启动失败。 |
 | `trustProxy: true` 默认 | 关闭或白名单 | 防止 IP/协议欺骗。 |
 | CORS `origin: '*'` | 受限 | 只允许 Web 管理面与 Desktop Client origin。 |
-| Docker 作为第一阶段默认 | 推迟到第二阶段 | 先使用本地执行降低部署门槛。 |
+| K8s 作为第一阶段默认 | 推迟到生产运维层 | 先使用 Local Process 降低部署门槛；需要托管隔离时优先接 BoxLite。 |
 
 ---
 
@@ -365,14 +390,16 @@ Runtime Provider 切换为 Docker/K8s，其他不变。
 3. Quota / singleflight 使用 Redis。
 4. 支持 PostgreSQL。
 
-### Phase 3 — Docker/K8s Runtime Provider
-1. 实现 Docker/K8s Runtime Provider 全套 adapter。
-2. 通过配置切换 provider，保持 Desktop Client / Web 管理面不变。
+### Phase 3 — BoxLite Runtime Provider
+1. 实现 BoxLiteRuntimeProvider / BoxLiteExecAdapter / BoxLiteFsAdapter / BoxLitePreviewAdapter。
+2. 验证交互式 PTY、workspace 持久化、preview 反代、snapshot/checkpoint 与 secret 注入能力。
+3. 通过配置切换 provider，保持 Desktop Client / Web 管理面不变。
 
-### Phase 4 — 生产 Gateway & 多实例
-1. 子域名 Preview Gateway。
-2. 多控制面实例 + 负载均衡。
-3. 外部 UniGateway 生产部署。
+### Phase 4 — K8s Production Runtime Provider
+1. 实现 K8sRuntimeProvider 全套 adapter。
+2. 接入 Pod/Service/PVC/ResourceQuota/NetworkPolicy/SecurityContext。
+3. 支持多控制面实例 + 负载均衡 + Shared Postgres/Redis。
+4. 子域名 Preview Gateway 与外部 UniGateway 生产部署。
 
 ---
 

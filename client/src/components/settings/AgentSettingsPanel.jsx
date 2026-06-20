@@ -1,5 +1,4 @@
-import React, { useState, useEffect, useMemo, useContext } from 'react';
-import { AuthContext } from '../../App';
+import { useState, useEffect, useMemo } from 'react';
 import Button from '../Button';
 import SelectMenu from '../SelectMenu';
 import { useToast } from '../Toast';

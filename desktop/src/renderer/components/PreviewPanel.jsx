@@ -108,9 +108,9 @@ export function usePreview(projectId, token) {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Preview deploy failed');
       setDeployment(data);
-      if (data.status === 'running') {
-        const url = data.public_url && token
-          ? `${data.public_url}${data.public_url.includes('?') ? '&' : '?'}access_token=${encodeURIComponent(token)}`
+      if (data.status === 'running' && data.public_url) {
+        const url = data.preview_token
+          ? `${data.public_url}${data.public_url.includes('?') ? '&' : '?'}preview_token=${encodeURIComponent(data.preview_token)}`
           : null;
         if (url && !openPreviewWindow(url, previewWindowRef)) {
           showToast('error', 'Preview is running. Allow pop-ups to open the preview window.');
@@ -154,9 +154,9 @@ export function usePreview(projectId, token) {
       if (!res.ok) throw new Error(data.error || data.deployment?.last_error_message || 'Restart failed');
       const next = data.deployment || data;
       setDeployment(next);
-      if (next.status === 'running') {
-        const url = next.public_url && token
-          ? `${next.public_url}${next.public_url.includes('?') ? '&' : '?'}access_token=${encodeURIComponent(token)}`
+      if (next.status === 'running' && next.public_url) {
+        const url = next.preview_token
+          ? `${next.public_url}${next.public_url.includes('?') ? '&' : '?'}preview_token=${encodeURIComponent(next.preview_token)}`
           : null;
         if (url && !openPreviewWindow(url, previewWindowRef)) {
           showToast('error', 'Preview restarted. Allow pop-ups to open the preview window.');
@@ -170,10 +170,7 @@ export function usePreview(projectId, token) {
     }
   };
 
-  const previewUrl =
-    deployment?.public_url && token
-      ? `${deployment.public_url}${deployment.public_url.includes('?') ? '&' : '?'}access_token=${encodeURIComponent(token)}`
-      : null;
+  const previewUrl = deployment?.public_url && deployment?.status === 'running' ? deployment.public_url : null;
 
   const status = deployment?.status || 'none';
   const isBusy = loading || status === 'building' || status === 'pending';
@@ -186,10 +183,22 @@ export function usePreview(projectId, token) {
     showToast('error', deployment.last_error_message);
   }, [deployment?.id, deployment?.last_error_message, showToast, status]);
 
-  const openPreview = () => {
-    if (!previewUrl) return;
-    if (!openPreviewWindow(previewUrl, previewWindowRef)) {
-      showToast('error', 'Allow pop-ups to open the preview window.');
+  const openPreview = async () => {
+    if (!previewUrl || !deployment?.id) return;
+    try {
+      const res = await apiFetch(
+        `/api/v1/deployments/${encodeURIComponent(deployment.id)}/preview-token`,
+        { method: 'POST' },
+      );
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to issue preview token');
+      if (!data.preview_token || !deployment.public_url) return;
+      const url = `${deployment.public_url}${deployment.public_url.includes('?') ? '&' : '?'}preview_token=${encodeURIComponent(data.preview_token)}`;
+      if (!openPreviewWindow(url, previewWindowRef)) {
+        showToast('error', 'Allow pop-ups to open the preview window.');
+      }
+    } catch (e) {
+      showToast('error', e.message);
     }
   };
 
