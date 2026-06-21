@@ -29,6 +29,12 @@ function measureTerminalSize(terminal, container) {
     };
 }
 
+function isSinglePrintableChar(str) {
+    if (typeof str !== 'string' || str.length !== 1) return false;
+    const code = str.charCodeAt(0);
+    return code >= 32 && code <= 126;
+}
+
 function getArrowSequence(key, applicationCursorKeys) {
     const prefix = applicationCursorKeys ? '\x1bO' : '\x1b[';
     switch (key) {
@@ -97,6 +103,7 @@ export default function AgentConsole({
         const serverEndedRef = { current: false };
         const openedRef = { current: false };
         const wsRef = { current: null };
+        const pendingEchoes = [];
 
         const terminal = new Terminal({
             cols: 120,
@@ -201,6 +208,13 @@ export default function AgentConsole({
                 if (disposedRef.current) return;
                 const msg = parseWsMessage(event.data);
                 if (msg.type === 'output') {
+                    // If the server echoes back a character we already printed
+                    // locally, suppress it to avoid double-printing.
+                    if (msg.data.length === 1 && pendingEchoes.length > 0 && msg.data === pendingEchoes[0]) {
+                        pendingEchoes.shift();
+                        return;
+                    }
+                    pendingEchoes.length = 0;
                     terminal.write(msg.data);
                 } else if (msg.type === 'metrics') {
                     setMetrics(msg.data);
@@ -235,6 +249,23 @@ export default function AgentConsole({
             terminal.onData((data) => {
                 if (serverEndedRef.current || !wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
                 wsRef.current.send(JSON.stringify({ type: 'input', data }));
+
+                // Local echo for printable characters to mask network latency.
+                // We also keep a small queue of echoed characters so we can drop
+                // the identical character when the server echoes it back, avoiding
+                // double-printing in line-oriented shells.
+                for (const ch of data) {
+                    if (isSinglePrintableChar(ch)) {
+                        terminal.write(ch);
+                        pendingEchoes.push(ch);
+                        if (pendingEchoes.length > 32) pendingEchoes.shift();
+                    } else {
+                        // Control characters (Enter, arrows, backspace, etc.) change
+                        // the remote state in ways we can't predict locally; clear the
+                        // echo queue so we don't suppress unrelated output.
+                        pendingEchoes.length = 0;
+                    }
+                }
             });
         })();
 
