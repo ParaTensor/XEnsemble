@@ -19,6 +19,7 @@ const agentGatewayConfig = require('./admin/AgentGatewayConfig');
 const userAdmin = require('./admin/UserAdminService');
 const { startPreviewLifecycle } = require('./preview/lifecycle');
 const sessionManager = require('./session/SessionManager');
+const { reconcileRunningSessions } = require('./session/reconcileRunningSessions');
 
 const { db } = require('./db/index');
 const schema = require('./db/schema');
@@ -745,6 +746,17 @@ async function startServer() {
 
     const { resolvePort } = require('./config/defaultPort');
     const port = resolvePort();
+
+    try {
+        const reconcile = await reconcileRunningSessions(db, schema);
+        if (reconcile.reconciled > 0) {
+            fastify.log.info(
+                `[sessions] reconciled ${reconcile.reconciled} stale running session(s)`,
+            );
+        }
+    } catch (err) {
+        fastify.log.warn(err, '[sessions] failed to reconcile stale sessions');
+    }
 
     try {
         const sync = await userAdmin.syncInstalledAgentGrantsForAllUsers();
