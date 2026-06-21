@@ -9,60 +9,8 @@ const { recordEvent } = require('../events/recordEvent');
 const { db } = require('../db/index');
 const schema = require('../db/schema');
 const { eq } = require('drizzle-orm');
-const agentGatewayConfig = require('../admin/AgentGatewayConfig');
 
 const LLM_PROXY_PREFIX = '/api/v1/llm';
-
-function composeGatewayModelTarget(provider, model) {
-    const trimmedModel = (model ?? '').trim();
-    if (!trimmedModel) return '';
-    const trimmedProvider = (provider ?? '').trim();
-    return trimmedProvider ? `${trimmedProvider}/${trimmedModel}` : trimmedModel;
-}
-
-function buildModelObject(id, ownedBy) {
-    return {
-        id,
-        object: 'model',
-        created: 0,
-        owned_by: ownedBy || 'xensemble',
-    };
-}
-
-async function resolveAgentModelTarget(agentId, fallbackModel) {
-    const cfg = await agentGatewayConfig.getForAgent(agentId);
-    const model = cfg?.model?.trim() || (fallbackModel ?? '').trim();
-    if (!model) return null;
-    return composeGatewayModelTarget(cfg?.provider, model);
-}
-
-// TODO: This is a control-plane shim because UniGateway does not yet expose
-// /v1/models. Move this into the Rust gateway once it can list each bound
-// provider's available models.
-async function handleModelsEndpoint(request, reply, claims, path) {
-    const target = await resolveAgentModelTarget(claims.aid, claims.model);
-    if (!target) {
-        return reply.code(404).send({ error: 'No gateway model configured for this agent' });
-    }
-
-    if (path === '/v1/models') {
-        return reply.send({
-            object: 'list',
-            data: [buildModelObject(target, 'xensemble')],
-        });
-    }
-
-    const prefix = '/v1/models/';
-    if (path.startsWith(prefix)) {
-        const requestedId = decodeURIComponent(path.slice(prefix.length));
-        if (requestedId === target) {
-            return reply.send(buildModelObject(target, 'xensemble'));
-        }
-        return reply.code(404).send({ error: `Model "${requestedId}" not found` });
-    }
-
-    return reply.code(404).send({ error: 'Not found' });
-}
 
 const proxy = httpProxy.createProxyServer({
     xfwd: true,
@@ -165,10 +113,6 @@ async function proxyLlmRequest(request, reply) {
     }
 
     const path = stripLlmPrefix(request.url);
-    if (path === '/v1/models' || path.startsWith('/v1/models/')) {
-        return handleModelsEndpoint(request, reply, claims, path);
-    }
-
     const gateway = await resolveGatewayTarget(request.log);
     if (gateway.error) {
         return reply.code(gateway.status).send({ error: gateway.error });

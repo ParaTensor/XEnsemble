@@ -19,7 +19,7 @@ use tokio::sync::mpsc;
 use tower_http::cors::CorsLayer;
 use tower_http::trace::TraceLayer;
 use unigateway_config::core_sync::sync_core_pools;
-use unigateway_config::{GatewayState, ProviderModelOptions, RuntimeLimitError};
+use unigateway_config::{GatewayState, ProviderModelOptions, RuntimeLimitError, ServiceProvider};
 use unigateway_sdk::core::UniGatewayEngine;
 use unigateway_sdk::host::{
     HostContext, HostDispatchOutcome, HostDispatchTarget, HostFuture, HostProtocol, HostRequest,
@@ -120,6 +120,8 @@ async fn main() -> Result<()> {
         .route("/v1/chat/completions", post(openai_chat))
         .route("/v1/messages", post(anthropic_messages))
         .route("/v1/embeddings", post(openai_embeddings))
+        .route("/v1/models", get(openai_list_models))
+        .route("/v1/models/:model_id", get(openai_get_model))
         .route("/api/admin/modes", get(admin_modes))
         .route(
             "/api/admin/preferences/default-mode",
@@ -451,6 +453,119 @@ async fn openai_embeddings(
     response
 }
 
+/// Validate the gateway API key without consuming quota or runtime limits.
+/// Metadata endpoints such as `/v1/models` are reads and must not count
+/// against per-key request quota or rate limits.
+async fn authorize_gateway_readonly(
+    state: &AppState,
+    headers: &HeaderMap,
+) -> Result<unigateway_config::GatewayApiKey, ApiError> {
+    let raw_key = extract_gateway_key(headers).ok_or_else(|| {
+        ApiError::unauthorized("missing gateway API key (Authorization: Bearer or x-api-key)")
+    })?;
+    let gateway_key = state
+        .gateway
+        .find_gateway_api_key(&raw_key)
+        .await
+        .ok_or_else(|| ApiError::unauthorized("invalid gateway API key"))?;
+    if gateway_key.is_active == 0 {
+        return Err(ApiError::unauthorized("gateway API key is inactive"));
+    }
+    Ok(gateway_key)
+}
+
+/// Collect the OpenAI-shaped model ids available to a service, derived from the
+/// model_mapping aliases and default_model of every provider bound to it.
+/// Returns `(model_id, owned_by)` pairs, de-duplicated while preserving the
+/// provider binding order.
+///
+/// Clients reach the gateway through the control plane, which sends the routing
+/// target as the `model` field in `provider/model` form (see `split_provider_model`).
+/// To make `/v1/models` advertise exactly what callers will send back, every
+/// model alias is listed both as the `provider/model` composite and as the bare
+/// alias (covering providers configured without a provider hint).
+fn service_model_entries(providers: &[ServiceProvider]) -> Vec<(String, String)> {
+    let mut entries: Vec<(String, String)> = Vec::new();
+    let mut push_id = |id: String, owned_by: &str| {
+        if !id.is_empty() && !entries.iter().any(|(existing, _)| existing == &id) {
+            entries.push((id, owned_by.to_string()));
+        }
+    };
+    for provider in providers {
+        let mut aliases: Vec<String> = Vec::new();
+        if let Some(mapping) = provider.model_mapping.as_deref() {
+            let trimmed = mapping.trim();
+            if trimmed.starts_with('{')
+                && let Ok(map) = serde_json::from_str::<HashMap<String, String>>(trimmed)
+            {
+                let mut mapped: Vec<String> = map
+                    .keys()
+                    .map(|alias| alias.trim().to_string())
+                    .filter(|alias| !alias.is_empty())
+                    .collect();
+                mapped.sort();
+                aliases.extend(mapped);
+            }
+        }
+        if let Some(default_model) = provider.default_model.as_deref() {
+            let default_model = default_model.trim();
+            if !default_model.is_empty() {
+                aliases.push(default_model.to_string());
+            }
+        }
+        for alias in aliases {
+            push_id(format!("{}/{}", provider.name, alias), &provider.name);
+            push_id(alias, &provider.name);
+        }
+    }
+    entries
+}
+
+fn openai_model_object(id: &str, owned_by: &str) -> Value {
+    json!({
+        "id": id,
+        "object": "model",
+        "created": 0,
+        "owned_by": owned_by,
+    })
+}
+
+async fn openai_list_models(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Json<Value>, ApiError> {
+    let gateway_key = authorize_gateway_readonly(&state, &headers).await?;
+    let providers = state
+        .gateway
+        .select_all_providers_for_service(&gateway_key.service_id, "")
+        .await;
+    let data: Vec<Value> = service_model_entries(&providers)
+        .iter()
+        .map(|(id, owned_by)| openai_model_object(id, owned_by))
+        .collect();
+    Ok(Json(json!({
+        "object": "list",
+        "data": data,
+    })))
+}
+
+async fn openai_get_model(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(model_id): Path<String>,
+) -> Result<Json<Value>, ApiError> {
+    let gateway_key = authorize_gateway_readonly(&state, &headers).await?;
+    let providers = state
+        .gateway
+        .select_all_providers_for_service(&gateway_key.service_id, "")
+        .await;
+    let entries = service_model_entries(&providers);
+    match entries.iter().find(|(id, _)| id == &model_id) {
+        Some((id, owned_by)) => Ok(Json(openai_model_object(id, owned_by))),
+        None => Err(ApiError::not_found(format!("model '{model_id}' not found"))),
+    }
+}
+
 async fn admin_modes(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -764,6 +879,13 @@ impl ApiError {
     fn bad_request(message: impl Into<String>) -> Self {
         Self {
             status: StatusCode::BAD_REQUEST,
+            message: message.into(),
+        }
+    }
+
+    fn not_found(message: impl Into<String>) -> Self {
+        Self {
+            status: StatusCode::NOT_FOUND,
             message: message.into(),
         }
     }

@@ -1,8 +1,10 @@
 const { describe, it, before, after } = require('node:test');
 const assert = require('node:assert/strict');
+const http = require('node:http');
 const fastify = require('fastify');
 const { registerLlmProxy } = require('./proxy');
 const { issueSessionToken } = require('./sessionToken');
+const unigateway = require('../gateway/unigatewayManager');
 const { db } = require('../db/index');
 const schema = require('../db/schema');
 const { eq } = require('drizzle-orm');
@@ -11,15 +13,49 @@ const { resetLlmQuotaForTests } = require('./quota');
 const TEST_SESSION_ID = 'sess_proxy_models_test';
 const TEST_AGENT_ID = 'proxy-models-test';
 
-process.env.LLM_GATEWAY_UPSTREAM_URL = 'http://127.0.0.1:8741';
+const GATEWAY_MODELS = {
+    object: 'list',
+    data: [{ id: 'deepseek/deepseek-v4-flash', object: 'model', created: 0, owned_by: 'deepseek' }],
+};
 
 describe('LLM proxy /v1/models', () => {
     let app;
+    let stub;
+    let stubUrl;
     let testUserId;
     let originalConfig;
+    let originalEnsureRunning;
+    let originalEnsureSecrets;
+    const received = [];
 
     before(async () => {
         resetLlmQuotaForTests();
+
+        // Stand up a stub UniGateway. The control plane no longer synthesizes
+        // /v1/models itself; it forwards to the gateway, which owns the catalog.
+        stub = http.createServer((req, res) => {
+            received.push({ method: req.method, url: req.url, authorization: req.headers.authorization });
+            if (req.method === 'POST' && req.url === '/api/admin/api-keys') {
+                res.writeHead(200, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ success: true }));
+                return;
+            }
+            if (req.method === 'GET' && req.url === '/v1/models') {
+                res.writeHead(200, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify(GATEWAY_MODELS));
+                return;
+            }
+            res.writeHead(404, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: 'not found' }));
+        });
+        await new Promise((resolve) => stub.listen(0, '127.0.0.1', resolve));
+        stubUrl = `http://127.0.0.1:${stub.address().port}`;
+        process.env.LLM_GATEWAY_UPSTREAM_URL = stubUrl;
+
+        originalEnsureRunning = unigateway.ensureRunning;
+        originalEnsureSecrets = unigateway.ensureGatewaySecrets;
+        unigateway.ensureRunning = async () => ({ running: true, baseUrl: stubUrl, adminToken: '' });
+        unigateway.ensureGatewaySecrets = () => ({ gatewayKey: 'test-gateway-key' });
 
         const users = await db.select().from(schema.users).limit(1);
         assert.ok(users.length > 0, 'need at least one user in database');
@@ -54,6 +90,8 @@ describe('LLM proxy /v1/models', () => {
     });
 
     after(async () => {
+        unigateway.ensureRunning = originalEnsureRunning;
+        unigateway.ensureGatewaySecrets = originalEnsureSecrets;
         await db.delete(schema.sessions).where(eq(schema.sessions.id, TEST_SESSION_ID));
         const cfgRows = await db
             .select()
@@ -66,9 +104,10 @@ describe('LLM proxy /v1/models', () => {
                 .where(eq(schema.platformSettings.key, 'agent_gateway_config'));
         }
         if (app) await app.close();
+        if (stub) await new Promise((resolve) => stub.close(resolve));
     });
 
-    it('returns the configured gateway model from /v1/models', { timeout: 5000 }, async () => {
+    it('forwards /v1/models to the gateway and passes the catalog through', { timeout: 5000 }, async () => {
         const token = issueSessionToken({
             sessionId: TEST_SESSION_ID,
             userId: testUserId,
@@ -86,7 +125,13 @@ describe('LLM proxy /v1/models', () => {
         assert.equal(res.statusCode, 200, res.body);
         const body = JSON.parse(res.body);
         assert.equal(body.object, 'list');
-        assert.ok(Array.isArray(body.data));
         assert.ok(body.data.some((m) => m.id === 'deepseek/deepseek-v4-flash'));
+
+        // The request must actually reach the gateway with the per-agent key,
+        // rather than being answered locally.
+        const modelsCall = received.find((r) => r.method === 'GET' && r.url === '/v1/models');
+        assert.ok(modelsCall, 'gateway should receive GET /v1/models');
+        assert.ok(modelsCall.authorization?.startsWith('Bearer '));
+        assert.notEqual(modelsCall.authorization, `Bearer ${token}`);
     });
 });
