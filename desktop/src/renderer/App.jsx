@@ -4,6 +4,7 @@ import Login from './pages/Login';
 import SessionsPage from './pages/SessionsPage';
 import AgentsAdmin from './pages/AgentsAdmin';
 import UsersAdmin from './pages/UsersAdmin';
+import GatewayAdmin from './pages/GatewayAdmin';
 import AppSidebar from './components/AppSidebar';
 import SettingsModal from './components/SettingsModal';
 import { useWorkspaces } from './hooks/useWorkspaces';
@@ -49,6 +50,7 @@ function AuthenticatedLayout({
   const isSessions = location.pathname === '/sessions';
   const isAgentsAdmin = location.pathname === '/admin/agents';
   const isUsersAdmin = location.pathname === '/admin/users';
+  const isGatewayAdmin = location.pathname === '/admin/gateway';
 
   const offRouteClass = 'pointer-events-none invisible absolute inset-0 z-0';
 
@@ -118,6 +120,15 @@ function AuthenticatedLayout({
               aria-hidden={!isUsersAdmin}
             >
               <UsersAdmin />
+            </div>
+            <div
+              className={cn(
+                'flex min-h-0 flex-1 flex-col overflow-auto console-scroll-hidden',
+                isGatewayAdmin ? 'relative z-10' : offRouteClass,
+              )}
+              aria-hidden={!isGatewayAdmin}
+            >
+              <GatewayAdmin />
             </div>
           </>
         )}
@@ -220,6 +231,10 @@ function App() {
               />
               <Route
                 path="/admin/users"
+                element={user?.role === 'admin' ? null : <Navigate to="/sessions" replace />}
+              />
+              <Route
+                path="/admin/gateway"
                 element={user?.role === 'admin' ? null : <Navigate to="/sessions" replace />}
               />
             </Route>

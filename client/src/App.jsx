@@ -3,6 +3,7 @@ import { Routes, Route, Link, useNavigate, useLocation, Navigate } from 'react-r
 import Login from './pages/Login';
 import AgentsAdmin from './pages/AgentsAdmin';
 import UsersAdmin from './pages/UsersAdmin';
+import GatewayAdmin from './pages/GatewayAdmin';
 import UserMenu from './components/UserMenu';
 import BrandMark from './components/BrandMark';
 import SettingsModal from './components/SettingsModal';
@@ -18,7 +19,7 @@ import { getAccessToken, setTokens, clearTokens } from './lib/api';
 
 export const AuthContext = React.createContext(null);
 
-const ADMIN_PATHS = ['/admin/agents', '/admin/users'];
+const ADMIN_PATHS = ['/admin/agents', '/admin/users', '/admin/gateway'];
 
 function DesktopClientMessage() {
   return (
@@ -55,11 +56,19 @@ function Shell({ children, isAdmin, user, onLogout, setShowSettingsModal, compac
           </Link>
           <nav className="flex items-center gap-6">
             {isAdmin &&
-              ADMIN_PATHS.map((path) => (
-                <Link key={path} to={path} className={navLinkClass(path)}>
-                  {path === '/admin/agents' ? 'Agents' : 'Users'}
-                </Link>
-              ))}
+              ADMIN_PATHS.map((path) => {
+                const label =
+                  path === '/admin/agents'
+                    ? 'Agents'
+                    : path === '/admin/users'
+                      ? 'Users'
+                      : 'Gateway';
+                return (
+                  <Link key={path} to={path} className={navLinkClass(path)}>
+                    {label}
+                  </Link>
+                );
+              })}
             <div className="h-4 w-px bg-zinc-300" />
             <UserMenu
               username={user?.username}
@@ -162,6 +171,18 @@ function App() {
               token ? (
                 <AdminRoute user={user}>
                   {adminShell(<UsersAdmin />)}
+                </AdminRoute>
+              ) : (
+                <Navigate to="/login" replace />
+              )
+            }
+          />
+          <Route
+            path="/admin/gateway"
+            element={
+              token ? (
+                <AdminRoute user={user}>
+                  {adminShell(<GatewayAdmin />)}
                 </AdminRoute>
               ) : (
                 <Navigate to="/login" replace />

@@ -6,25 +6,17 @@ import {
   consoleSettingsTabActiveClass,
   consoleSettingsTabIdleClass,
 } from '../../lib/consoleTokens';
-import { useSecrets } from '../../hooks/useSecrets';
 import GeneralSettingsPanel from './GeneralSettingsPanel';
 import QuotaSettingsPanel from './QuotaSettingsPanel';
-import GatewaySettingsPanel from './GatewaySettingsPanel';
-import AgentSettingsPanel from './AgentSettingsPanel';
 
 const QUOTA_SECTION = { id: 'quota', label: 'Quota' };
 const GENERAL_SECTION = { id: 'general', label: 'General' };
-const BYOK_SECTION = { id: 'byok', label: 'BYOK' };
-const GATEWAY_SECTION = { id: 'gateway', label: 'Gateway' };
 export default function SettingsShell() {
   const { user } = useContext(AuthContext);
   const [section, setSection] = useState('general');
-  const secretsState = useSecrets();
 
   const sections = [
     GENERAL_SECTION,
-    ...(user?.role === 'admin' ? [GATEWAY_SECTION] : []),
-    BYOK_SECTION,
     QUOTA_SECTION,
   ];
 
@@ -48,8 +40,6 @@ export default function SettingsShell() {
 
       <div className={consoleSettingsPanelScrollClass}>
         {section === 'general' && <GeneralSettingsPanel />}
-        {section === 'gateway' && user?.role === 'admin' && <GatewaySettingsPanel />}
-        {section === 'byok' && <AgentSettingsPanel secretsState={secretsState} />}
         {section === 'quota' && <QuotaSettingsPanel />}
       </div>
     </div>

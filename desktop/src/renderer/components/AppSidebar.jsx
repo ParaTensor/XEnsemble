@@ -12,6 +12,7 @@ import {
   CircleUser,
   LogOut,
   Settings2,
+  Network,
 } from 'lucide-react';
 import {
   loadSidebarPrefs,
@@ -631,6 +632,9 @@ export default function AppSidebar({
             </NavLink>
             <NavLink to="/admin/agents" className={adminLinkClass}>
               Agents
+            </NavLink>
+            <NavLink to="/admin/gateway" className={adminLinkClass}>
+              Gateway
             </NavLink>
           </>
         )}
