@@ -83,6 +83,7 @@ export default React.forwardRef(function SessionsPage({
   const [launchModalError, setLaunchModalError] = useState(null);
   const [startSessionAfterCreate, setStartSessionAfterCreate] = useState(true);
   const [isLoading, setIsLoading] = useState(false);
+  const [launchingSession, setLaunchingSession] = useState(false);
   const [error, setError] = useState(null);
 
   // Workspace File Explorer states
@@ -342,23 +343,28 @@ export default React.forwardRef(function SessionsPage({
 
   const handleLaunchFromModal = async () => {
     setLaunchModalError(null);
-    if (launchModalMode === 'session') {
-      if (!launchWorkspaceId) {
-        setLaunchModalError('Select a workspace first.');
+    setLaunchingSession(true);
+    try {
+      if (launchModalMode === 'session') {
+        if (!launchWorkspaceId) {
+          setLaunchModalError('Select a workspace first.');
+          return;
+        }
+        const ws = projects.find((p) => p.id === launchWorkspaceId);
+        await handleStartSession(launchWorkspaceId, ws?.name || launchWorkspaceId, { closeLaunchModal: true });
         return;
       }
-      const ws = projects.find((p) => p.id === launchWorkspaceId);
-      await handleStartSession(launchWorkspaceId, ws?.name || launchWorkspaceId, { closeLaunchModal: true });
-      return;
-    }
-    const name = newProjectName.trim() || defaultWorkspaceName();
-    const created = await handleCreateProject(name);
-    if (!created) return;
-    if (startSessionAfterCreate) {
-      await handleStartSession(created.id, created.name, { closeLaunchModal: true });
-    } else {
-      fetchWorkspaces();
-      setShowNewInstanceModal(false);
+      const name = newProjectName.trim() || defaultWorkspaceName();
+      const created = await handleCreateProject(name);
+      if (!created) return;
+      if (startSessionAfterCreate) {
+        await handleStartSession(created.id, created.name, { closeLaunchModal: true });
+      } else {
+        fetchWorkspaces();
+        setShowNewInstanceModal(false);
+      }
+    } finally {
+      setLaunchingSession(false);
     }
   };
 
@@ -1010,8 +1016,8 @@ export default React.forwardRef(function SessionsPage({
       {/* Main area: terminal or empty state */}
       <div className="flex min-h-0 flex-1 w-full flex-row items-stretch">
         <div
-          className={`flex min-h-0 min-w-0 flex-1 flex-col ${activeSession ? '' : 'bg-white'}`}
-          style={activeSession ? { backgroundColor: preset.xterm.background } : undefined}
+          className={`flex min-h-0 min-w-0 flex-1 flex-col ${activeSession || launchingSession ? '' : 'bg-white'}`}
+          style={(activeSession || launchingSession) ? { backgroundColor: preset.xterm.background } : undefined}
         >
           {activeSession ? (
             <AgentConsole
