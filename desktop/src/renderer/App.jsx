@@ -10,7 +10,7 @@ import SettingsModal from './components/SettingsModal';
 import { useWorkspaces } from './hooks/useWorkspaces';
 import { cn } from './lib/utils';
 import { getAccessToken, setTokens, clearTokens } from './lib/auth';
-import { TerminalThemeProvider } from './hooks/useTerminalTheme.jsx';
+import { TerminalThemeProvider, useTerminalTheme } from './hooks/useTerminalTheme.jsx';
 
 export const AuthContext = React.createContext(null);
 
@@ -53,6 +53,8 @@ function AuthenticatedLayout({
   const isGatewayAdmin = location.pathname === '/admin/gateway';
 
   const offRouteClass = 'pointer-events-none invisible absolute inset-0 z-0';
+  const { preset } = useTerminalTheme();
+  const sessionsBg = isSessions && activeSession ? preset.xterm.background : undefined;
 
   return (
     <div className="h-full flex">
@@ -85,7 +87,10 @@ function AuthenticatedLayout({
         onOpenSettings={() => setShowSettingsModal(true)}
         onLogout={logout}
       />
-      <main className="relative flex h-full min-h-0 flex-1 flex-col min-w-0 bg-white">
+      <main
+        className="relative flex h-full min-h-0 flex-1 flex-col min-w-0 bg-white"
+        style={sessionsBg ? { backgroundColor: sessionsBg } : undefined}
+      >
         <SessionsPage
           ref={sessionsPageRef}
           token={token}
