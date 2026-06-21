@@ -36,6 +36,9 @@ async function resolveAgentModelTarget(agentId, fallbackModel) {
     return composeGatewayModelTarget(cfg?.provider, model);
 }
 
+// TODO: This is a control-plane shim because UniGateway does not yet expose
+// /v1/models. Move this into the Rust gateway once it can list each bound
+// provider's available models.
 async function handleModelsEndpoint(request, reply, claims, path) {
     const target = await resolveAgentModelTarget(claims.aid, claims.model);
     if (!target) {
