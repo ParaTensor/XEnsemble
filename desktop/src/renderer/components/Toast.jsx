@@ -12,12 +12,13 @@ function ToastItem({ message, type }) {
   const styles = {
     success: 'border-emerald-200 bg-emerald-50/95 text-emerald-900',
     error: 'border-red-200 bg-red-50/95 text-red-900',
+    warning: 'border-amber-200 bg-amber-50/95 text-amber-900',
     loading: 'border-blue-200 bg-blue-50/95 text-blue-900',
   };
 
   const Icon = type === 'success'
     ? CheckCircle2
-    : type === 'error'
+    : type === 'error' || type === 'warning'
       ? ShieldAlert
       : Loader2;
 
@@ -35,6 +36,7 @@ function ToastItem({ message, type }) {
           'mt-0.5 h-4 w-4 shrink-0',
           type === 'success' && 'text-emerald-600',
           type === 'error' && 'text-red-600',
+          type === 'warning' && 'text-amber-600',
           type === 'loading' && 'animate-spin text-blue-600',
         )}
         aria-hidden

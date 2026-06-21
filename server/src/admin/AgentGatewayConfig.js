@@ -76,14 +76,15 @@ async function setForAgent(agentId, { llm_auth_mode, provider, model, env_overri
     }
 
     const saved = all[agentId] || null;
+    let sync = null;
     if (saved?.llm_auth_mode === 'gateway' && saved.provider) {
         try {
-            await syncAgentServiceBinding(agentId);
-        } catch {
-            /* binding sync is best-effort; admin can restart gateway manually */
+            sync = await syncAgentServiceBinding(agentId);
+        } catch (err) {
+            sync = { synced: false, reason: 'sync_failed', error: err.message };
         }
     }
-    return saved;
+    return { config: saved, sync };
 }
 
 module.exports = {

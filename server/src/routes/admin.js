@@ -268,8 +268,11 @@ function registerAdminRoutes(fastify) {
 
     fastify.put('/api/v1/admin/gateway/agent-configs/:agentId', { preValidation: adminPre }, async (request, reply) => {
         try {
-            const config = await agentGatewayConfig.setForAgent(request.params.agentId, request.body || {});
-            return { ok: true, config };
+            const { config, sync } = await agentGatewayConfig.setForAgent(request.params.agentId, request.body || {});
+            const warning = sync && !sync.synced && sync.reason === 'provider_not_found'
+                ? `Provider "${sync.providerName}" does not exist in the gateway. Add it under Gateway before launching this agent.`
+                : undefined;
+            return { ok: true, config, warning };
         } catch (err) {
             return reply.code(500).send({ error: err.message || 'Failed to save agent gateway config' });
         }

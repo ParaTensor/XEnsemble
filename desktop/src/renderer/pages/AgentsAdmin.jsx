@@ -297,7 +297,11 @@ export default function AgentsAdmin() {
         }
       }
 
-      showToast('success', 'Agent configuration saved.');
+      if (data.warning) {
+        showToast('warning', data.warning, { durationMs: 12000 });
+      } else {
+        showToast('success', 'Agent configuration saved.');
+      }
       closeKeysDialog();
       fetchAgents({ silent: true });
     } catch (err) {
