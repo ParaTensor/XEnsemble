@@ -314,6 +314,26 @@ export default React.forwardRef(function SessionsPage({
         projectId,
         projectName: projectName || projectId,
       });
+      // Optimistically add the new session so useWorkspaces doesn't clear
+      // activeSession while the sessions list is still stale.
+      setSessions((prev) => {
+        if (prev.some((s) => s.id === data.session_id)) return prev;
+        const now = Date.now();
+        return [
+          ...prev,
+          {
+            id: data.session_id,
+            projectId,
+            agentId: selectedAgentId,
+            status: data.status || 'running',
+            memoryStatus: data.status || 'running',
+            alive: true,
+            projectName: projectName || projectId,
+            createdAt: now,
+            updatedAt: now,
+          },
+        ];
+      });
       fetchWorkspaces();
       if (closeLaunchModal) setShowNewInstanceModal(false);
       return true;
@@ -525,6 +545,26 @@ export default React.forwardRef(function SessionsPage({
         agentName: agent?.name || activeSession.agentName,
         projectId: activeSession.projectId,
         projectName: activeSession.projectName,
+      });
+      // Optimistically add the restarted session so useWorkspaces doesn't clear
+      // activeSession while the sessions list is still stale.
+      setSessions((prev) => {
+        if (prev.some((s) => s.id === data.session_id)) return prev;
+        const now = Date.now();
+        return [
+          ...prev,
+          {
+            id: data.session_id,
+            projectId: activeSession.projectId,
+            agentId,
+            status: data.status || 'running',
+            memoryStatus: data.status || 'running',
+            alive: true,
+            projectName: activeSession.projectName,
+            createdAt: now,
+            updatedAt: now,
+          },
+        ];
       });
       fetchWorkspaces();
       showToast('success', 'Session started.');
