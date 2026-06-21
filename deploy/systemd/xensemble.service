@@ -8,8 +8,8 @@ User=xinference
 Group=xinference
 WorkingDirectory=/home/xinference/github/XEnsemble/server
 EnvironmentFile=/home/xinference/github/XEnsemble/deploy/xensemble.env
-Environment=PATH=/home/xinference/.nvm/versions/node/v20.19.2/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-ExecStart=/home/xinference/.nvm/versions/node/v20.19.2/bin/node src/server.js
+Environment=PATH=/home/xinference/.nvm/versions/node/v20.20.2/bin:/home/xinference/.kimi-code/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+ExecStart=/home/xinference/.nvm/versions/node/v20.20.2/bin/node src/server.js
 Restart=on-failure
 RestartSec=5
 KillMode=mixed

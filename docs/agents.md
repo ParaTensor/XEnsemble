@@ -14,6 +14,43 @@ Agent 注册、`env_required`、Vault 注入与启动逻辑见 `server/src/db/in
 
 本文与 Architecture.md、Designs.md 共同作为开发对齐依据。实现或评审前须阅读对应文档。
 
+## 部署流程（强制）
+
+**严禁直接在服务器上修改源码。** 所有代码变更必须通过 GitHub 工作流进入生产环境：
+
+1. **本地开发与测试**  
+   在本地完成代码修改，运行相关测试/构建：
+   ```bash
+   cd server && npm test
+   cd client && npm run build
+   cd desktop && npm run build
+   cd gateway && cargo build --release
+   ```
+
+2. **提交并推送**  
+   使用清晰、原子化的 commit message：
+   ```bash
+   git add <files>
+   git commit -m "feat(scope): description"
+   git push origin <branch>
+   ```
+
+3. **服务器更新**  
+   登录服务器后执行仓库内的部署脚本：
+   ```bash
+   cd /home/xinference/github/XEnsemble
+   ./deploy/update.sh
+   ```
+   该脚本会执行 `git pull`、安装依赖、构建 UniGateway / web admin，并重启 `xensemble` 服务。
+
+4. **环境配置**  
+   `deploy/xensemble.env` 是服务器本地配置文件（不在 Git 中追踪）。如需调整 `CONTROL_PLANE_PUBLIC_URL`、`ALLOWED_ORIGINS` 等运行时参数，应在本地修改并记录变更说明，随后通过服务器上的 `deploy/xensemble.env` 应用，最后重启服务。禁止在 `/etc/systemd/system/xensemble.service` 或源码目录中直接覆盖文件。
+
+5. **回滚**  
+   若部署后异常，使用 `git` 回退到上一个可用 commit，然后重新执行 `./deploy/update.sh`。
+
+> 例外：服务器日志排查、临时 `curl` 验证、数据库只读查询允许；但任何对 `server/src/`、`client/src/`、`desktop/src/`、`gateway/src/` 或 `client/dist/` 的手动写入都属于禁止行为。
+
 ## Admin 表格行内操作
 
 Agents 管理页（`AgentsAdmin.jsx`）及同类 Admin 表格的行内操作**仅用图标**，对齐 Users 页（`UsersAdmin.jsx`）：
