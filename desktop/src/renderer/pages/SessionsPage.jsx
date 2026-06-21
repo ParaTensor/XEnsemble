@@ -1007,9 +1007,14 @@ export default React.forwardRef(function SessionsPage({
         </ConsoleInlineDialog>
       )}
 
+      const terminalBackground = preset.xterm.background;
+
       {/* Main area: terminal or empty state */}
       <div className="flex min-h-0 flex-1 w-full flex-row items-stretch">
-        <div className="flex min-h-0 min-w-0 flex-1 flex-col bg-white">
+        <div
+          className={`flex min-h-0 min-w-0 flex-1 flex-col ${activeSession ? '' : 'bg-white'}`}
+          style={activeSession ? { backgroundColor: terminalBackground } : undefined}
+        >
           {activeSession ? (
             <AgentConsole
               key={activeSession.sessionId}
