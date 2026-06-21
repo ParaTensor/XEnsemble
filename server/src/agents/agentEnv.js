@@ -15,6 +15,7 @@ const GATEWAY_BASE_URL_KEYS = [
     'ANTHROPIC_BASE_URL',
     'OPENAI_BASE_URL',
     'KIMI_BASE_URL',
+    'MOONSHOT_BASE_URL',
     'OPENROUTER_BASE_URL',
 ];
 
@@ -29,7 +30,12 @@ const GATEWAY_MODEL_ENV_KEYS = [
     'ANTHROPIC_MODEL',
     'ANTHROPIC_SMALL_FAST_MODEL',
     'LLM_MODEL',
+    'KIMI_MODEL',
+    'MOONSHOT_MODEL',
 ];
+
+const KIMI_CODE_AGENT_IDS = new Set(['kimi-code']);
+const KIMI_CODE_DEFAULT_MAX_CONTEXT = String(256 * 1024);
 
 const GATEWAY_API_KEY_KEYS = [
     'ANTHROPIC_API_KEY',
@@ -37,6 +43,7 @@ const GATEWAY_API_KEY_KEYS = [
     'OPENAI_API_KEY',
     'OPENROUTER_API_KEY',
     'KIMI_API_KEY',
+    'MOONSHOT_API_KEY',
     'DASHSCOPE_API_KEY',
     'ZAI_API_KEY',
     'MINIMAX_API_KEY',
@@ -134,6 +141,24 @@ function findMissing(env, envRequired) {
  * - gateway: platform vault (+ LLM_ROUTER_URL synthesis); users do not supply keys.
  * - byok: user vault for env_required only; interactive-login agents use empty env_required.
  */
+function applyKimiCodeGatewayEnv(env) {
+    const routerUrl = env.LLM_ROUTER_URL?.trim();
+    const routerKey = env.LLM_ROUTER_API_KEY?.trim();
+    const model = env.KIMI_MODEL?.trim()
+        || env.MOONSHOT_MODEL?.trim()
+        || env.OPENAI_MODEL?.trim()
+        || env.LLM_MODEL?.trim();
+    if (!routerUrl || !routerKey || !model) return env;
+    return {
+        ...env,
+        KIMI_MODEL_NAME: model,
+        KIMI_MODEL_API_KEY: routerKey,
+        KIMI_MODEL_BASE_URL: routerUrl,
+        KIMI_MODEL_PROVIDER_TYPE: 'openai',
+        KIMI_MODEL_MAX_CONTEXT_SIZE: env.KIMI_MODEL_MAX_CONTEXT_SIZE?.trim() || KIMI_CODE_DEFAULT_MAX_CONTEXT,
+    };
+}
+
 async function applyAgentGatewayModel(agentId, env) {
     const cfg = await agentGatewayConfig.getForAgent(agentId);
     if (!cfg?.model?.trim()) return env;
@@ -143,6 +168,9 @@ async function applyAgentGatewayModel(agentId, env) {
     }
     if (agentId === 'hermes') {
         out.HERMES_MODEL = cfg.model.trim();
+    }
+    if (KIMI_CODE_AGENT_IDS.has(agentId)) {
+        return applyKimiCodeGatewayEnv(out);
     }
     return out;
 }
@@ -227,6 +255,10 @@ async function buildGatewaySpawnEnv(agentId, envRequired, { draftModel, draftEnv
         env = applyAgentEnvOverrides(env, { env_overrides: draftEnvOverrides });
     } else {
         env = applyAgentEnvOverrides(env, cfg);
+    }
+
+    if (KIMI_CODE_AGENT_IDS.has(agentId)) {
+        env = applyKimiCodeGatewayEnv(env);
     }
 
     return { env, cfg, model, platform, defaults };
