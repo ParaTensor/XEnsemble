@@ -121,7 +121,7 @@ async fn main() -> Result<()> {
         .route("/v1/messages", post(anthropic_messages))
         .route("/v1/embeddings", post(openai_embeddings))
         .route("/v1/models", get(openai_list_models))
-        .route("/v1/models/:model_id", get(openai_get_model))
+        .route("/v1/models/*model_id", get(openai_get_model))
         .route("/api/admin/modes", get(admin_modes))
         .route(
             "/api/admin/preferences/default-mode",
