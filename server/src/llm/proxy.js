@@ -1,3 +1,4 @@
+const { Readable } = require('stream');
 const httpProxy = require('http-proxy');
 const unigateway = require('../gateway/unigatewayManager');
 const { verifySessionToken } = require('./sessionToken');
@@ -68,15 +69,21 @@ function forwardToGateway(request, reply, { targetBaseUrl, gatewayKey, path }) {
         reply.hijack();
         request.raw.url = path;
         request.raw.headers.authorization = `Bearer ${gatewayKey}`;
-        proxy.web(
-            request.raw,
-            reply.raw,
-            { target: targetBaseUrl, changeOrigin: true },
-            (err) => {
-                if (err) reject(err);
-                else resolve();
-            },
-        );
+        const options = { target: targetBaseUrl, changeOrigin: true };
+        // Fastify's content-type parser already drained request.raw, so hand the
+        // buffered body to http-proxy explicitly; otherwise the upstream waits
+        // for a body that never arrives and the request hangs.
+        const body = request.body;
+        if (Buffer.isBuffer(body) && body.length > 0) {
+            const bodyStream = new Readable();
+            bodyStream.push(body);
+            bodyStream.push(null);
+            options.buffer = bodyStream;
+        }
+        proxy.web(request.raw, reply.raw, options, (err) => {
+            if (err) reject(err);
+            else resolve();
+        });
     });
 }
 
@@ -155,12 +162,25 @@ async function proxyLlmRequest(request, reply) {
 }
 
 async function registerLlmProxy(fastify) {
-    const proxyOpts = {
-        method: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS'],
-        handler: proxyLlmRequest,
-    };
-    fastify.route({ url: LLM_PROXY_PREFIX, ...proxyOpts });
-    fastify.route({ url: `${LLM_PROXY_PREFIX}/*`, ...proxyOpts });
+    // Encapsulate the proxy routes so their raw-body parser does not affect the
+    // rest of the app. The body is kept as an untouched Buffer (preserving the
+    // exact bytes and content-length) and streamed to the gateway by
+    // forwardToGateway; the default JSON parser would consume it instead.
+    await fastify.register(async (instance) => {
+        // Drop inherited parsers (notably the default application/json parser,
+        // which is more specific than '*' and would otherwise win) so every
+        // content type is kept as a raw Buffer for forwarding.
+        instance.removeAllContentTypeParsers();
+        instance.addContentTypeParser('*', { parseAs: 'buffer' }, (req, body, done) => {
+            done(null, body);
+        });
+        const proxyOpts = {
+            method: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS'],
+            handler: proxyLlmRequest,
+        };
+        instance.route({ url: LLM_PROXY_PREFIX, ...proxyOpts });
+        instance.route({ url: `${LLM_PROXY_PREFIX}/*`, ...proxyOpts });
+    });
 }
 
 module.exports = { registerLlmProxy, LLM_PROXY_PREFIX };
