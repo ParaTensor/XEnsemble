@@ -1,7 +1,6 @@
 const { db } = require('../db/index');
 const schema = require('../db/schema');
 const { eq } = require('drizzle-orm');
-const { syncAgentServiceBinding } = require('../llm/agentServiceSync');
 const DEFAULT_AUTH_MODE = 'byok';
 
 const CONFIG_KEY = 'agent_gateway_config';
@@ -78,6 +77,9 @@ async function setForAgent(agentId, { llm_auth_mode, provider, model, env_overri
     const saved = all[agentId] || null;
     let sync = null;
     if (saved?.llm_auth_mode === 'gateway' && saved.provider) {
+        // Required lazily to avoid a load-time cycle with agentServiceSync,
+        // which requires this module back.
+        const { syncAgentServiceBinding } = require('../llm/agentServiceSync');
         try {
             sync = await syncAgentServiceBinding(agentId);
         } catch (err) {
