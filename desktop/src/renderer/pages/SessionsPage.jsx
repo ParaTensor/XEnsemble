@@ -135,6 +135,10 @@ export default React.forwardRef(function SessionsPage({
   }, [getAgentLabel, projects, setActiveSession]);
 
   useEffect(() => {
+    if (activeSession) setLaunchingSession(false);
+  }, [activeSession]);
+
+  useEffect(() => {
     if (!activeSession?.agentId || agents.length === 0) return;
     const name = agents.find((a) => a.id === activeSession.agentId)?.name;
     if (name && name !== activeSession.agentName) {
@@ -344,6 +348,7 @@ export default React.forwardRef(function SessionsPage({
   const handleLaunchFromModal = async () => {
     setLaunchModalError(null);
     setLaunchingSession(true);
+    let started = false;
     try {
       if (launchModalMode === 'session') {
         if (!launchWorkspaceId) {
@@ -351,20 +356,23 @@ export default React.forwardRef(function SessionsPage({
           return;
         }
         const ws = projects.find((p) => p.id === launchWorkspaceId);
-        await handleStartSession(launchWorkspaceId, ws?.name || launchWorkspaceId, { closeLaunchModal: true });
+        started = await handleStartSession(launchWorkspaceId, ws?.name || launchWorkspaceId, { closeLaunchModal: true });
         return;
       }
       const name = newProjectName.trim() || defaultWorkspaceName();
       const created = await handleCreateProject(name);
       if (!created) return;
       if (startSessionAfterCreate) {
-        await handleStartSession(created.id, created.name, { closeLaunchModal: true });
+        started = await handleStartSession(created.id, created.name, { closeLaunchModal: true });
       } else {
         fetchWorkspaces();
         setShowNewInstanceModal(false);
       }
     } finally {
-      setLaunchingSession(false);
+      // On success keep the workspace dark until activeSession commits (cleared
+      // by the effect below). Clearing here would leave a 1-frame gap where both
+      // launchingSession and activeSession are false, flashing the white empty state.
+      if (!started) setLaunchingSession(false);
     }
   };
 
@@ -1035,6 +1043,8 @@ export default React.forwardRef(function SessionsPage({
               workspaceOpen={workspaceOpen}
               onToggleWorkspace={() => setWorkspaceOpen((v) => !v)}
             />
+          ) : launchingSession ? (
+            <div className="flex-1" />
           ) : (
             <div className="flex h-full flex-col items-center justify-center p-8 text-center text-[#5F6368]">
               <TerminalSquare className="w-12 h-12 mb-4 text-[#9AA0A6]" strokeWidth={1} />

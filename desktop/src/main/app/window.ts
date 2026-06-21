@@ -7,12 +7,18 @@ export function createMainWindow(): BrowserWindow {
     height: 800,
     minWidth: 900,
     minHeight: 600,
+    show: false,
+    backgroundColor: '#09090b',
     webPreferences: {
       preload: path.join(__dirname, '../preload/index.mjs'),
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: false
     }
+  });
+
+  mainWindow.once('ready-to-show', () => {
+    mainWindow.show();
   });
 
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
