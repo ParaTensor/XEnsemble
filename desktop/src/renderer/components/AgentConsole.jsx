@@ -298,7 +298,10 @@ export default function AgentConsole({
     const terminalBackground = preset.xterm.background;
 
     return (
-        <div className="flex h-full min-h-0 flex-col bg-white">
+        <div
+            className="flex h-full min-h-0 flex-col"
+            style={{ backgroundColor: terminalBackground }}
+        >
             <div className="h-10 bg-[#FAFBFC] border-b border-[#E8EAED] flex items-center justify-between px-4 shrink-0">
                 <div className="flex items-center gap-2">
                     <div className={`w-2 h-2 rounded-full ${ended ? 'bg-[#9AA0A6]' : 'bg-[#4A7C59] animate-pulse'}`}></div>
