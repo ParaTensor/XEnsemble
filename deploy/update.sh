@@ -24,8 +24,13 @@ echo "==> Build UniGateway"
 echo "==> Web admin build"
 (cd client && npm install && npm run build)
 
-echo "==> Restart control plane"
+echo "==> Update systemd service (if changed)"
+NODE_BIN="$(nvm which current)"
+sed "s|/home/xinference/.nvm/versions/node/v20.19.2/bin/node|$NODE_BIN|g" \
+  deploy/systemd/xensemble.service | sudo tee /etc/systemd/system/xensemble.service >/dev/null
 sudo systemctl daemon-reload
+
+echo "==> Restart control plane"
 sudo systemctl restart xensemble
 
 echo "==> Done"
