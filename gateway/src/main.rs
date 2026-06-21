@@ -19,7 +19,7 @@ use tokio::sync::mpsc;
 use tower_http::cors::CorsLayer;
 use tower_http::trace::TraceLayer;
 use unigateway_config::core_sync::sync_core_pools;
-use unigateway_config::{GatewayState, ProviderModelOptions, RuntimeLimitError, ServiceProvider};
+use unigateway_config::{AuthError, GatewayState, ProviderModelOptions, RuntimeLimitError};
 use unigateway_sdk::core::UniGatewayEngine;
 use unigateway_sdk::host::{
     HostContext, HostDispatchOutcome, HostDispatchTarget, HostFuture, HostProtocol, HostRequest,
@@ -27,7 +27,7 @@ use unigateway_sdk::host::{
 };
 use unigateway_sdk::protocol::{
     ProtocolHttpResponse, ProtocolResponseBody, anthropic_payload_to_chat_request,
-    openai_payload_to_chat_request, openai_payload_to_embed_request,
+    openai_model_object, openai_payload_to_chat_request, openai_payload_to_embed_request,
 };
 
 #[derive(Clone)]
@@ -463,71 +463,14 @@ async fn authorize_gateway_readonly(
     let raw_key = extract_gateway_key(headers).ok_or_else(|| {
         ApiError::unauthorized("missing gateway API key (Authorization: Bearer or x-api-key)")
     })?;
-    let gateway_key = state
+    state
         .gateway
-        .find_gateway_api_key(&raw_key)
+        .authorize_readonly(&raw_key)
         .await
-        .ok_or_else(|| ApiError::unauthorized("invalid gateway API key"))?;
-    if gateway_key.is_active == 0 {
-        return Err(ApiError::unauthorized("gateway API key is inactive"));
-    }
-    Ok(gateway_key)
-}
-
-/// Collect the OpenAI-shaped model ids available to a service, derived from the
-/// model_mapping aliases and default_model of every provider bound to it.
-/// Returns `(model_id, owned_by)` pairs, de-duplicated while preserving the
-/// provider binding order.
-///
-/// Clients reach the gateway through the control plane, which sends the routing
-/// target as the `model` field in `provider/model` form (see `split_provider_model`).
-/// To make `/v1/models` advertise exactly what callers will send back, every
-/// model alias is listed both as the `provider/model` composite and as the bare
-/// alias (covering providers configured without a provider hint).
-fn service_model_entries(providers: &[ServiceProvider]) -> Vec<(String, String)> {
-    let mut entries: Vec<(String, String)> = Vec::new();
-    let mut push_id = |id: String, owned_by: &str| {
-        if !id.is_empty() && !entries.iter().any(|(existing, _)| existing == &id) {
-            entries.push((id, owned_by.to_string()));
-        }
-    };
-    for provider in providers {
-        let mut aliases: Vec<String> = Vec::new();
-        if let Some(mapping) = provider.model_mapping.as_deref() {
-            let trimmed = mapping.trim();
-            if trimmed.starts_with('{')
-                && let Ok(map) = serde_json::from_str::<HashMap<String, String>>(trimmed)
-            {
-                let mut mapped: Vec<String> = map
-                    .keys()
-                    .map(|alias| alias.trim().to_string())
-                    .filter(|alias| !alias.is_empty())
-                    .collect();
-                mapped.sort();
-                aliases.extend(mapped);
-            }
-        }
-        if let Some(default_model) = provider.default_model.as_deref() {
-            let default_model = default_model.trim();
-            if !default_model.is_empty() {
-                aliases.push(default_model.to_string());
-            }
-        }
-        for alias in aliases {
-            push_id(format!("{}/{}", provider.name, alias), &provider.name);
-            push_id(alias, &provider.name);
-        }
-    }
-    entries
-}
-
-fn openai_model_object(id: &str, owned_by: &str) -> Value {
-    json!({
-        "id": id,
-        "object": "model",
-        "created": 0,
-        "owned_by": owned_by,
-    })
+        .map_err(|err| match err {
+            AuthError::InvalidKey => ApiError::unauthorized("invalid gateway API key"),
+            AuthError::InactiveKey => ApiError::unauthorized("gateway API key is inactive"),
+        })
 }
 
 async fn openai_list_models(
@@ -535,11 +478,10 @@ async fn openai_list_models(
     headers: HeaderMap,
 ) -> Result<Json<Value>, ApiError> {
     let gateway_key = authorize_gateway_readonly(&state, &headers).await?;
-    let providers = state
+    let data: Vec<Value> = state
         .gateway
-        .select_all_providers_for_service(&gateway_key.service_id, "")
-        .await;
-    let data: Vec<Value> = service_model_entries(&providers)
+        .list_service_model_ids(&gateway_key.service_id)
+        .await
         .iter()
         .map(|(id, owned_by)| openai_model_object(id, owned_by))
         .collect();
@@ -555,11 +497,10 @@ async fn openai_get_model(
     Path(model_id): Path<String>,
 ) -> Result<Json<Value>, ApiError> {
     let gateway_key = authorize_gateway_readonly(&state, &headers).await?;
-    let providers = state
+    let entries = state
         .gateway
-        .select_all_providers_for_service(&gateway_key.service_id, "")
+        .list_service_model_ids(&gateway_key.service_id)
         .await;
-    let entries = service_model_entries(&providers);
     match entries.iter().find(|(id, _)| id == &model_id) {
         Some((id, owned_by)) => Ok(Json(openai_model_object(id, owned_by))),
         None => Err(ApiError::not_found(format!("model '{model_id}' not found"))),

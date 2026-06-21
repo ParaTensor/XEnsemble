@@ -1440,9 +1440,9 @@ checksum = "e6e4313cd5fcd3dad5cafa179702e2b244f760991f45397d14d4ebf38247da75"
 
 [[package]]
 name = "unigateway-config"
-version = "2.4.0"
+version = "2.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cb14ad0b6f7f8a42399d227eb8f632b0444aefb8e19a55ac02d69120f084d999"
+checksum = "8247ae8c41c5483cb8e72cb8097cbee0facbdfec7703012e11bf7569a00a5c31"
 dependencies = [
  "anyhow",
  "llm_providers",
@@ -1491,9 +1491,9 @@ dependencies = [
 
 [[package]]
 name = "unigateway-protocol"
-version = "2.4.0"
+version = "2.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8f50ad7f01bf2713cb461a64b5fdf77188124c5ae483affad90e364d0b8f28fc"
+checksum = "d4888b4faea72137aacbee9adb28081d85d0436b2b4bb4ba8a5edc1043efc8fa"
 dependencies = [
  "anyhow",
  "bytes",
@@ -1507,9 +1507,9 @@ dependencies = [
 
 [[package]]
 name = "unigateway-sdk"
-version = "2.4.0"
+version = "2.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "887b1e348cdcb58929e73759944cd1ae18b03326ef113d5467e6b16d2d23c748"
+checksum = "8374d29c601ac1abde782a0f164ef09efda89ea090e7ebb411ce1cfd75847949"
 dependencies = [
  "unigateway-core",
  "unigateway-host",
