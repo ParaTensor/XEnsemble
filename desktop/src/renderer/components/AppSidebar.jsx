@@ -44,19 +44,6 @@ import {
 const SESSION_PREVIEW_LIMIT = 5;
 const RECENT_DISPLAY_LIMIT = 2;
 
-function getVisibleWorkspaceSessionIds(workspaces, expandedWorkspaces, expandedSessionLists) {
-  const ids = new Set();
-  for (const ws of workspaces) {
-    if (!expandedWorkspaces.has(ws.id)) continue;
-    const listExpanded = expandedSessionLists.has(ws.id);
-    const visible = listExpanded
-      ? ws.sessions
-      : ws.sessions.slice(0, SESSION_PREVIEW_LIMIT);
-    for (const s of visible) ids.add(s.id);
-  }
-  return ids;
-}
-
 function formatRelativeTime(ts) {
   if (!ts) return '';
   const diff = Date.now() - ts;
@@ -475,13 +462,7 @@ export default function AppSidebar({
     }),
     sidebarPrefs,
   );
-  const visibleInExpandedTrees = getVisibleWorkspaceSessionIds(
-    workspaces,
-    expandedWorkspaces,
-    expandedSessionLists,
-  );
   const recentSessions = getRecentSessions(sessions, sidebarPrefs, { validProjectIds })
-    .filter((s) => !visibleInExpandedTrees.has(s.id))
     .slice(0, RECENT_DISPLAY_LIMIT);
   const runningCount = sessions.filter((s) => s.alive === true).length;
   const hasSidebarSectionsAboveWorkspaces = true; // Recently is always rendered above
