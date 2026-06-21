@@ -59,7 +59,7 @@ const SLUG_WORDS = [
 
 function defaultWorkspaceName() {
   const pick = () => SLUG_WORDS[Math.floor(Math.random() * SLUG_WORDS.length)];
-  return `${pick()}-${pick()}-${pick()}`;
+  return `${pick()}-${pick()}`;
 }
 
 export default React.forwardRef(function SessionsPage({
@@ -355,7 +355,7 @@ export default React.forwardRef(function SessionsPage({
       setNewProjectName(workspace.name);
     } else {
       setLaunchWorkspaceId('');
-      setNewProjectName(defaultWorkspaceName());
+      setNewProjectName('');
     }
     const prefs = loadSidebarPrefs();
     const sorted = sortAgentsByRecentUsage(agents, prefs);
@@ -903,10 +903,10 @@ export default React.forwardRef(function SessionsPage({
                     type="text"
                     value={newProjectName}
                     onChange={e => setNewProjectName(e.target.value)}
-                    placeholder="quiet-forest-door"
+                    placeholder="my-workspace"
                     className={consoleInputClass}
                   />
-                  <p className={`text-xs ${textPlaceholder} mt-2`}>Isolated directory for agent sessions.</p>
+                  <p className={`text-xs ${textPlaceholder} mt-2`}>Leave blank to get a two-word auto-generated name.</p>
                 </div>
               ) : (
                 <div>

@@ -224,6 +224,9 @@ if (!sessionColsAfter.some((c) => c.name === 'stream_ref')) {
 if (!sessionColsAfter.some((c) => c.name === 'recoverable')) {
     sqlite.exec(`ALTER TABLE sessions ADD COLUMN recoverable INTEGER DEFAULT 0`);
 }
+if (!sessionColsAfter.some((c) => c.name === 'title')) {
+    sqlite.exec(`ALTER TABLE sessions ADD COLUMN title TEXT`);
+}
 
 const deploymentCols = sqlite.prepare(`PRAGMA table_info(deployments)`).all();
 if (!deploymentCols.some((c) => c.name === 'preview_token_hash')) {

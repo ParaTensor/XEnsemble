@@ -1,4 +1,9 @@
 const { removeScrollback } = require('../runtime/LocalScrollbackBuffer');
+const titleService = require('./titleService');
+
+const TITLE_HISTORY_THRESHOLD = Number(process.env.SESSION_TITLE_HISTORY_THRESHOLD) || 200;
+const TITLE_DEBOUNCE_MS = Number(process.env.SESSION_TITLE_DEBOUNCE_MS) || 5000;
+const TITLE_EXIT_MIN_HISTORY = 30;
 
 /**
  * SessionManager — 管理活跃 agent session 的 bridge handle 与转发缓存。
@@ -21,6 +26,8 @@ class SessionManager {
             status: 'running',
             exitCode: null,
             exitListeners: new Set(),
+            titleGenerated: false,
+            titleTimeout: null,
         };
 
         const scrollback = require('../runtime/LocalScrollbackBuffer').readScrollback(handle.streamRef);
@@ -31,11 +38,13 @@ class SessionManager {
             if (session.history.length > 100000) {
                 session.history = session.history.slice(-100000);
             }
+            this._scheduleTitleGeneration(sessionId);
         });
 
         handle.onExit(({ exitCode, signal }) => {
             session.status = 'exited';
             session.exitCode = exitCode ?? signal ?? null;
+            this._maybeGenerateTitleOnExit(sessionId);
             for (const listener of session.exitListeners) {
                 try { listener(session.exitCode); } catch (_) { /* ignore */ }
             }
@@ -68,19 +77,59 @@ class SessionManager {
 
     deleteSession(sessionId) {
         const session = this.sessions.get(sessionId);
-        if (session && session.handle) {
-            try {
-                session.handle.kill();
-            } catch (e) {
-                console.error(`Kill process error: ${e.message}`);
+        if (session) {
+            if (session.titleTimeout) {
+                clearTimeout(session.titleTimeout);
+                session.titleTimeout = null;
             }
-            try {
-                removeScrollback(session.handle.streamRef);
-            } catch (e) {
-                console.error(`Remove scrollback error: ${e.message}`);
+            if (session.handle) {
+                try {
+                    session.handle.kill();
+                } catch (e) {
+                    console.error(`Kill process error: ${e.message}`);
+                }
+                try {
+                    removeScrollback(session.handle.streamRef);
+                } catch (e) {
+                    console.error(`Remove scrollback error: ${e.message}`);
+                }
             }
         }
         this.sessions.delete(sessionId);
+    }
+
+    _scheduleTitleGeneration(sessionId) {
+        const session = this.sessions.get(sessionId);
+        if (!session || session.titleGenerated) return;
+        if (session.history.length < TITLE_HISTORY_THRESHOLD) return;
+
+        if (session.titleTimeout) {
+            clearTimeout(session.titleTimeout);
+        }
+        session.titleTimeout = setTimeout(() => {
+            session.titleTimeout = null;
+            titleService.generateSessionTitle(sessionId)
+                .then((title) => {
+                    if (title) session.titleGenerated = true;
+                })
+                .catch((err) => {
+                    console.error(`Generate session title error: ${err.message}`);
+                });
+        }, TITLE_DEBOUNCE_MS);
+    }
+
+    _maybeGenerateTitleOnExit(sessionId) {
+        const session = this.sessions.get(sessionId);
+        if (!session || session.titleGenerated) return;
+        if ((session.history || '').length < TITLE_EXIT_MIN_HISTORY) return;
+
+        titleService.generateSessionTitle(sessionId)
+            .then((title) => {
+                if (title) session.titleGenerated = true;
+            })
+            .catch((err) => {
+                console.error(`Generate session title on exit error: ${err.message}`);
+            });
     }
 }
 

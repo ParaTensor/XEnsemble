@@ -364,7 +364,8 @@ export default function AppSidebar({
     const isActive = activeSession?.sessionId === s.id;
     const isLive = s.alive === true;
     const pinned = isPinnedSession(sidebarPrefs, s.id);
-    const label = getAgentLabel(s.agentId);
+    const agentLabel = getAgentLabel(s.agentId);
+    const label = s.title?.trim() || agentLabel;
 
     return (
       <div

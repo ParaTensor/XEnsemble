@@ -62,6 +62,7 @@ const sessions = sqliteTable('sessions', {
   streamRef: text('stream_ref'),
   recoverable: integer('recoverable', { mode: 'boolean' }).default(false),
   status: text('status').default('running'),
+  title: text('title'),
   createdAt: integer('created_at').notNull()
 });
 
