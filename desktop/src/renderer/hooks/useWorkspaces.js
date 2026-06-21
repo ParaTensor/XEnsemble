@@ -67,8 +67,11 @@ export function useWorkspaces(user) {
   useEffect(() => {
     if (sessions.length === 0) return;
     if (activeSession?.sessionId) {
-      const live = sessions.find((s) => s.id === activeSession.sessionId && s.alive === true);
-      if (!live) {
+      // Keep the active session visible even after it stops/exits so the toolbar
+      // (restart/disconnect) remains available. Only clear it if the session has
+      // been removed entirely (e.g., deleted elsewhere).
+      const exists = sessions.some((s) => s.id === activeSession.sessionId);
+      if (!exists) {
         setActiveSession(null);
         const userId = getCacheUserId(user);
         if (userId) saveConsoleCache(userId, { agents, sessions, projects, activeSession: null });
