@@ -71,7 +71,7 @@ function ensureGatewaySecrets() {
         fs.writeFileSync(ADMIN_TOKEN_PATH, `${adminToken}\n`, { mode: 0o600 });
     }
 
-    if (process.env.NODE_ENV === 'production' || !fs.existsSync(CONFIG_PATH)) {
+    if (!fs.existsSync(CONFIG_PATH)) {
         fs.writeFileSync(
             CONFIG_PATH,
             buildDefaultToml({ gatewayKey, adminToken }),

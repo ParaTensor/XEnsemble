@@ -2,6 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const agentGatewayConfig = require('../admin/AgentGatewayConfig');
 const unigateway = require('../gateway/unigatewayManager');
+const { parseProvidersFromToml } = require('../gateway/readProviderSecrets');
 
 const DATA_DIR = path.join(__dirname, '../../data');
 const CONFIG_PATH = path.join(DATA_DIR, 'unigateway.toml');
@@ -56,6 +57,12 @@ async function syncAgentServiceBinding(agentId, log = console) {
     }
 
     const before = fs.readFileSync(CONFIG_PATH, 'utf8');
+    const providers = parseProvidersFromToml(before);
+    const providerExists = providers.some((p) => p.name === providerName);
+    if (!providerExists) {
+        return { synced: false, reason: 'provider_not_found', providerName };
+    }
+
     const after = appendAgentService(before, agentId, providerName);
     if (after === before) return { synced: true, changed: false, agentId, providerName };
 

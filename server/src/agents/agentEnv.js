@@ -317,6 +317,14 @@ async function resolveSpawnEnv({ userId, agentId, envRequired, sessionToken, pro
             };
         }
         env = await applyAgentGatewayModel(agentId, applySpawnDefaults({ ...platform, ...env }, envRequired));
+        if (KIMI_CODE_AGENT_IDS.has(agentId) && !env.KIMI_MODEL_NAME?.trim()) {
+            return {
+                mode,
+                env: null,
+                missing: ['model'],
+                error: 'A model must be selected for Kimi Code in gateway mode. Configure it under Agents → Keys.',
+            };
+        }
         env = applyGatewayAgentEnv(agentId, env, platform, envRequired);
         return finish(env, missing);
     }
