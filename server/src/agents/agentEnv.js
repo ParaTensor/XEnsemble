@@ -159,15 +159,29 @@ function applyKimiCodeGatewayEnv(env) {
     };
 }
 
+/**
+ * Compose the routing target the agent sends to the gateway as the `model` field.
+ * The gateway host resolves `provider/model` by selecting the provider via the
+ * `provider` part and the upstream model via the `model` part, so a bare model id
+ * (which the gateway treats as a provider hint) no longer fails routing.
+ */
+function composeGatewayModelTarget(provider, model) {
+    const trimmedModel = (model ?? '').trim();
+    if (!trimmedModel) return '';
+    const trimmedProvider = (provider ?? '').trim();
+    return trimmedProvider ? `${trimmedProvider}/${trimmedModel}` : trimmedModel;
+}
+
 async function applyAgentGatewayModel(agentId, env) {
     const cfg = await agentGatewayConfig.getForAgent(agentId);
     if (!cfg?.model?.trim()) return env;
+    const target = composeGatewayModelTarget(cfg.provider, cfg.model);
     const out = { ...env };
     for (const key of GATEWAY_MODEL_ENV_KEYS) {
-        out[key] = cfg.model.trim();
+        out[key] = target;
     }
     if (agentId === 'hermes') {
-        out.HERMES_MODEL = cfg.model.trim();
+        out.HERMES_MODEL = target;
     }
     if (KIMI_CODE_AGENT_IDS.has(agentId)) {
         return applyKimiCodeGatewayEnv(out);
@@ -232,16 +246,18 @@ function mergeSpawnEnvLayers({ platformSpawnEnv, themeSpawnEnv, secretEnv, cfg }
     return applyAgentEnvOverrides(env, cfg);
 }
 
-async function buildGatewaySpawnEnv(agentId, envRequired, { draftModel, draftEnvOverrides, sessionToken, forPreview = false } = {}) {
+async function buildGatewaySpawnEnv(agentId, envRequired, { draftModel, draftProvider, draftEnvOverrides, sessionToken, forPreview = false } = {}) {
     const cfg = await agentGatewayConfig.getForAgent(agentId);
     const model = (draftModel ?? cfg?.model ?? '').trim();
+    const provider = (draftProvider ?? cfg?.provider ?? '').trim();
     const platform = applyGatewaySynthesis(await resolvePlatformSecrets({ sessionToken, forPreview }));
 
     let env = pickEnvRequired(platform, envRequired);
     if (model) {
         env = { ...env };
-        for (const key of GATEWAY_MODEL_ENV_KEYS) env[key] = model;
-        if (agentId === 'hermes') env.HERMES_MODEL = model;
+        const target = composeGatewayModelTarget(provider, model);
+        for (const key of GATEWAY_MODEL_ENV_KEYS) env[key] = target;
+        if (agentId === 'hermes') env.HERMES_MODEL = target;
     }
     env = applySpawnDefaults({ ...platform, ...env }, envRequired);
     env = applyGatewayAgentEnv(agentId, env, platform, envRequired);
@@ -394,7 +410,7 @@ function describeGatewayEnvSource(key) {
     return 'Platform gateway';
 }
 
-async function previewGatewaySpawnEnv(agentId, { envRequired = [], cmd, args = [], draftModel, draftEnvOverrides, draftAuthMode } = {}) {
+async function previewGatewaySpawnEnv(agentId, { envRequired = [], cmd, args = [], draftModel, draftProvider, draftEnvOverrides, draftAuthMode } = {}) {
     const savedMode = await resolveAgentAuthMode(agentId);
     const mode = draftAuthMode === 'gateway' || draftAuthMode === 'byok' ? draftAuthMode : savedMode;
     const gateway = unigateway.getStatus();
@@ -410,6 +426,7 @@ async function previewGatewaySpawnEnv(agentId, { envRequired = [], cmd, args = [
 
     const { env, model, platform, defaults } = await buildGatewaySpawnEnv(agentId, envRequired, {
         draftModel,
+        draftProvider,
         draftEnvOverrides,
         forPreview: true,
     });
