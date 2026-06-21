@@ -319,13 +319,20 @@ export default function AgentsAdmin() {
     fetchAgents({ silent: agents.length > 0 });
   }, [fetchAgents]);
 
-  useEffect(() => {
-    
-    apiFetch('/api/v1/admin/gateway/providers')
-      .then((res) => (res.ok ? res.json() : null))
-      .then((data) => setGatewayProviders(data?.data || []))
-      .catch(() => {});
+  const fetchGatewayProviders = useCallback(async () => {
+    try {
+      const res = await apiFetch('/api/v1/admin/gateway/providers');
+      if (!res.ok) return;
+      const data = await res.json();
+      setGatewayProviders(data?.data || []);
+    } catch {
+      /* ignore */
+    }
   }, []);
+
+  useEffect(() => {
+    fetchGatewayProviders();
+  }, [fetchGatewayProviders]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -368,6 +375,7 @@ export default function AgentsAdmin() {
       provider: agent.gateway_config?.provider || '',
       model: agent.gateway_config?.model || '',
     });
+    fetchGatewayProviders();
   };
 
   const closeKeysDialog = () => {
