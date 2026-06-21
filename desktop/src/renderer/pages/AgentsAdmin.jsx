@@ -494,7 +494,7 @@ export default function AgentsAdmin() {
         >
               <h2 className="font-bold text-lg text-zinc-900 mb-4">Register new agent</h2>
               <form onSubmit={handleSubmit} className="space-y-4">
-                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <div className="grid grid-cols-1 gap-4">
                   <div>
                     <label className={`block mb-1 ${consoleSectionLabelClass}`}>ID</label>
                     <Input
@@ -531,7 +531,7 @@ export default function AgentsAdmin() {
                       className="h-9 py-1.5 font-mono"
                     />
                   </div>
-                  <div className="sm:col-span-2">
+                  <div>
                     <label className={`block mb-1 ${consoleSectionLabelClass}`}>Required env (JSON)</label>
                     <Input
                       required
@@ -709,27 +709,26 @@ export default function AgentsAdmin() {
           <table className="w-full text-left text-sm whitespace-nowrap">
             <thead className="border-b border-zinc-200 bg-white">
               <tr>
-                <th className={`${consoleTableHeadCellClass}`}>Name / ID</th>
+                <th className={`${consoleTableHeadCellClass}`}>Name</th>
                 <th className={`${consoleTableHeadCellClass}`}>Status</th>
                 <th className={`${consoleTableHeadCellClass}`}>Version</th>
                 <th className={`${consoleTableHeadCellClass}`}>Path</th>
                 <th className={`${consoleTableHeadCellClass}`}>Executable</th>
-                <th className={`${consoleTableHeadCellClass}`}>Auth</th>
+                <th className={`${consoleTableHeadCellClass}`}>Auth / Ready</th>
                 <th className={`${consoleTableHeadCellClass}`}>Model</th>
-                <th className={`${consoleTableHeadCellClass}`}>Ready</th>
                 <th className={`${consoleTableHeadCellClass}`}>Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-zinc-100">
               {loading && agents.length === 0 ? (
                 <tr>
-                  <td colSpan={9} className={`${consoleTableBodyCellClass} text-zinc-500`}>
+                  <td colSpan={8} className={`${consoleTableBodyCellClass} text-zinc-500`}>
                     Loading...
                   </td>
                 </tr>
               ) : agents.length === 0 ? (
                 <tr>
-                  <td colSpan={9} className={`${consoleTableBodyCellClass} text-zinc-500`}>
+                  <td colSpan={8} className={`${consoleTableBodyCellClass} text-zinc-500`}>
                     No agents registered yet.
                   </td>
                 </tr>
@@ -739,8 +738,10 @@ export default function AgentsAdmin() {
                 return (
                   <tr key={agent.id} className="hover:bg-zinc-50/50">
                     <td className={consoleTableBodyCellClass}>
-                      <div className="font-medium text-zinc-900">{agent.name}</div>
-                      <div className="font-mono text-xs text-zinc-400">{agent.id}</div>
+                      <div className="truncate text-zinc-900" title={`${agent.name} (${agent.id})`}>
+                        <span className="font-medium">{agent.name}</span>
+                        <span className="ml-1 font-mono text-xs text-zinc-400">({agent.id})</span>
+                      </div>
                     </td>
                     <td className={consoleTableBodyCellClass}>
                       <div className="space-y-1">
@@ -786,8 +787,22 @@ export default function AgentsAdmin() {
                       </span>
                     </td>
                     <td className={consoleTableBodyCellClass}>
-                      <span className="text-xs font-medium text-zinc-700 capitalize">
-                        {isGateway ? 'Gateway' : 'BYOK'}
+                      <span className="text-xs text-zinc-700">
+                        <span className="font-medium capitalize">{isGateway ? 'Gateway' : 'BYOK'}</span>
+                        <span
+                          className={`ml-1 ${
+                            isGateway
+                              ? (agent.keys_ready ? 'text-emerald-600' : 'text-amber-600')
+                              : 'text-zinc-500'
+                          }`}
+                          title={
+                            isGateway
+                              ? (agent.keys_ready ? 'Gateway model configured' : 'Select a model under Configure.')
+                              : 'Users supply API keys before launching.'
+                          }
+                        >
+                          ({isGateway ? (agent.keys_ready ? 'Ready' : 'Needs model') : 'User keys'})
+                        </span>
                       </span>
                     </td>
                     <td className={consoleTableBodyCellClass}>
@@ -796,20 +811,6 @@ export default function AgentsAdmin() {
                       ) : (
                         <span className="text-xs text-zinc-400">—</span>
                       )}
-                    </td>
-                    <td className={consoleTableBodyCellClass}>
-                      <span className={`inline-flex rounded border px-1.5 py-0.5 text-xs font-medium ${
-                        isGateway
-                          ? (agent.keys_ready
-                            ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
-                            : 'border-amber-200 bg-amber-50 text-amber-700')
-                          : 'border-zinc-200 bg-zinc-50 text-zinc-600'
-                      }`}
-                      >
-                        {isGateway
-                          ? (agent.keys_ready ? 'Ready' : 'Needs model')
-                          : 'User keys'}
-                      </span>
                     </td>
                     <td className={consoleTableBodyCellClass}>
                       <div className="flex items-center gap-1">

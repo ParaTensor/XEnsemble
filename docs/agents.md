@@ -60,6 +60,20 @@ Agents 管理页（`AgentsAdmin.jsx`）及同类 Admin 表格的行内操作**�
 - 必须设 `title` 作无障碍提示；图标尺寸 `w-3.5 h-3.5`（lucide-react）。
 - **禁止**使用文件类图标（如 `File`）；安装 `Download`、卸载 `Trash2`、检查并更新 `RefreshCw`、密钥 `KeyRound`、编辑 executable `Pencil`。
 
+## 表格单元格信息密度
+
+- 若一个单元格需要展示两项相关但独立的信息（如 Auth 模式 + Ready 状态，或 Name + ID），**合并成一行并用括号括起次要信息**，例如：
+  - `Gateway (Ready)` / `Gateway (Needs model)` / `BYOK (User keys)`
+  - `Kimi Code (kimi-code)`
+- 不要为了增加列数而把同一组状态拆成两行或多列。
+
+## 表单布局规范
+
+- **表单项必须垂直堆叠**：每个字段独占一行，整体放在一列内。
+- 禁止在同一行并排放置两个输入/选择框（如 `grid-cols-2` 表单布局）。
+- 如果字段很多，使用单列滚动；必要时通过分组卡片分隔，而不是多列并排。
+- 详情弹窗中的关键状态卡片同样遵循“一列、多行”原则，不要把两个状态并排放在同一行。
+
 ## 内置 LLM 网关（UniGateway）
 
 控制面在启动时拉起 `gateway/` 下的 Rust 二进制 `xensemble-unigateway`（嵌入 [UniGateway](https://github.com/EeroEternal/unigateway) crates）。默认监听 `127.0.0.1:8741`（仅内网），配置 `server/data/unigateway.toml`。

@@ -689,7 +689,7 @@ export default function AgentsAdmin() {
         >
               <h2 className="font-bold text-lg text-zinc-900 mb-4">Register new agent</h2>
               <form onSubmit={handleSubmit} className="space-y-4">
-                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <div className="grid grid-cols-1 gap-4">
                   <div>
                     <label className={`block mb-1 ${consoleSectionLabelClass}`}>ID</label>
                     <Input
@@ -726,7 +726,7 @@ export default function AgentsAdmin() {
                       className="h-9 py-1.5 font-mono"
                     />
                   </div>
-                  <div className="sm:col-span-2">
+                  <div>
                     <label className={`block mb-1 ${consoleSectionLabelClass}`}>Required env (JSON)</label>
                     <Input
                       required
@@ -926,30 +926,33 @@ export default function AgentsAdmin() {
               </div>
             </ConsoleStructuredDialogHeader>
             <ConsoleStructuredDialogBody>
-              <div className={`${consoleCardClass} flex items-center justify-between gap-4 bg-zinc-50/70 p-4`}>
-                <div className="min-w-0">
+              <div className={`${consoleCardClass} space-y-3 bg-zinc-50/70 p-4`}>
+                <div>
+                  <p className={consoleSectionLabelClass}>Auth</p>
+                  <p className="mt-1 text-sm font-medium text-zinc-900">
+                    {auth.mode}
+                    <span className={`ml-1 text-sm ${auth.hintClass}`}>({auth.hint})</span>
+                  </p>
+                </div>
+                <div>
                   <p className={consoleSectionLabelClass}>Session readiness</p>
                   <p className={`mt-1 text-base font-semibold ${auth.hintClass}`}>{auth.hint}</p>
-                </div>
-                <div className="shrink-0 text-right">
-                  <p className={consoleSectionLabelClass}>Auth</p>
-                  <p className="mt-1 text-sm font-medium text-zinc-900">{auth.mode}</p>
                 </div>
               </div>
 
               <div className={`${consoleCardClass} space-y-3 bg-zinc-50/70 p-4`}>
                 <p className={consoleSectionLabelClass}>Runtime</p>
-                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <div className="grid grid-cols-1 gap-4">
                   <DetailField label="Version" mono>
                     {detailsAgent.local_version ? `v${detailsAgent.local_version}` : '—'}
                   </DetailField>
                   <DetailField label="Model" mono>
                     {model}
                   </DetailField>
-                  <DetailField label="Path" className="min-w-0 sm:col-span-2" mono>
+                  <DetailField label="Path" className="min-w-0" mono>
                     {path}
                   </DetailField>
-                  <DetailField label="Executable" className="min-w-0 sm:col-span-2" mono>
+                  <DetailField label="Executable" className="min-w-0" mono>
                     {executable}
                   </DetailField>
                 </div>
@@ -1013,11 +1016,9 @@ export default function AgentsAdmin() {
                 return (
                   <tr key={agent.id} className="hover:bg-zinc-50/50">
                     <td className={`${consoleTableBodyCellClass} min-w-0`}>
-                      <div className="truncate font-medium text-zinc-900" title={agent.name}>
-                        {agent.name}
-                      </div>
-                      <div className="truncate font-mono text-xs text-zinc-400" title={agent.id}>
-                        {agent.id}
+                      <div className="truncate text-zinc-900" title={`${agent.name} (${agent.id})`}>
+                        <span className="font-medium">{agent.name}</span>
+                        <span className="ml-1 font-mono text-xs text-zinc-400">({agent.id})</span>
                       </div>
                     </td>
                     <td className={consoleTableBodyCellClass}>
@@ -1039,19 +1040,21 @@ export default function AgentsAdmin() {
                       </span>
                     </td>
                     <td className={consoleTableBodyCellClass}>
-                      <div className="text-xs font-medium text-zinc-700">{authSummary.mode}</div>
-                      <div
-                        className={`text-xs ${authSummary.hintClass}`}
-                        title={
-                          agent.llm_auth_mode === 'gateway'
-                            ? (agent.keys_ready
-                              ? 'Gateway model configured; agent can launch.'
-                              : 'Select a model under Configure.')
-                            : 'Users supply API keys in Settings → BYOK.'
-                        }
-                      >
-                        {authSummary.hint}
-                      </div>
+                      <span className="text-xs text-zinc-700">
+                        <span className="font-medium">{authSummary.mode}</span>
+                        <span
+                          className={`ml-1 ${authSummary.hintClass}`}
+                          title={
+                            agent.llm_auth_mode === 'gateway'
+                              ? (agent.keys_ready
+                                ? 'Gateway model configured; agent can launch.'
+                                : 'Select a model under Configure.')
+                              : 'Users supply API keys before launching.'
+                          }
+                        >
+                          ({authSummary.hint})
+                        </span>
+                      </span>
                     </td>
                     <td className={`${consoleTableBodyCellClass} w-12`}>
                       <AgentActionsMenu
