@@ -19,7 +19,7 @@ use tokio::sync::mpsc;
 use tower_http::cors::CorsLayer;
 use tower_http::trace::TraceLayer;
 use unigateway_config::core_sync::sync_core_pools;
-use unigateway_config::{GatewayState, ProviderModelOptions, RuntimeLimitError};
+use unigateway_config::{AuthError, GatewayState, ProviderModelOptions, RuntimeLimitError};
 use unigateway_sdk::core::UniGatewayEngine;
 use unigateway_sdk::host::{
     HostContext, HostDispatchOutcome, HostDispatchTarget, HostFuture, HostProtocol, HostRequest,
@@ -27,7 +27,7 @@ use unigateway_sdk::host::{
 };
 use unigateway_sdk::protocol::{
     ProtocolHttpResponse, ProtocolResponseBody, anthropic_payload_to_chat_request,
-    openai_payload_to_chat_request, openai_payload_to_embed_request,
+    openai_model_object, openai_payload_to_chat_request, openai_payload_to_embed_request,
 };
 
 #[derive(Clone)]
@@ -120,6 +120,8 @@ async fn main() -> Result<()> {
         .route("/v1/chat/completions", post(openai_chat))
         .route("/v1/messages", post(anthropic_messages))
         .route("/v1/embeddings", post(openai_embeddings))
+        .route("/v1/models", get(openai_list_models))
+        .route("/v1/models/*model_id", get(openai_get_model))
         .route("/api/admin/modes", get(admin_modes))
         .route(
             "/api/admin/preferences/default-mode",
@@ -451,6 +453,60 @@ async fn openai_embeddings(
     response
 }
 
+/// Validate the gateway API key without consuming quota or runtime limits.
+/// Metadata endpoints such as `/v1/models` are reads and must not count
+/// against per-key request quota or rate limits.
+async fn authorize_gateway_readonly(
+    state: &AppState,
+    headers: &HeaderMap,
+) -> Result<unigateway_config::GatewayApiKey, ApiError> {
+    let raw_key = extract_gateway_key(headers).ok_or_else(|| {
+        ApiError::unauthorized("missing gateway API key (Authorization: Bearer or x-api-key)")
+    })?;
+    state
+        .gateway
+        .authorize_readonly(&raw_key)
+        .await
+        .map_err(|err| match err {
+            AuthError::InvalidKey => ApiError::unauthorized("invalid gateway API key"),
+            AuthError::InactiveKey => ApiError::unauthorized("gateway API key is inactive"),
+        })
+}
+
+async fn openai_list_models(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Json<Value>, ApiError> {
+    let gateway_key = authorize_gateway_readonly(&state, &headers).await?;
+    let data: Vec<Value> = state
+        .gateway
+        .list_service_model_ids(&gateway_key.service_id)
+        .await
+        .iter()
+        .map(|(id, owned_by)| openai_model_object(id, owned_by))
+        .collect();
+    Ok(Json(json!({
+        "object": "list",
+        "data": data,
+    })))
+}
+
+async fn openai_get_model(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(model_id): Path<String>,
+) -> Result<Json<Value>, ApiError> {
+    let gateway_key = authorize_gateway_readonly(&state, &headers).await?;
+    let entries = state
+        .gateway
+        .list_service_model_ids(&gateway_key.service_id)
+        .await;
+    match entries.iter().find(|(id, _)| id == &model_id) {
+        Some((id, owned_by)) => Ok(Json(openai_model_object(id, owned_by))),
+        None => Err(ApiError::not_found(format!("model '{model_id}' not found"))),
+    }
+}
+
 async fn admin_modes(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -764,6 +820,13 @@ impl ApiError {
     fn bad_request(message: impl Into<String>) -> Self {
         Self {
             status: StatusCode::BAD_REQUEST,
+            message: message.into(),
+        }
+    }
+
+    fn not_found(message: impl Into<String>) -> Self {
+        Self {
+            status: StatusCode::NOT_FOUND,
             message: message.into(),
         }
     }
