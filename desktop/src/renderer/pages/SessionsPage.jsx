@@ -102,7 +102,7 @@ export default React.forwardRef(function SessionsPage({
   const [configLoading, setConfigLoading] = useState(false);
   const [configError, setConfigError] = useState(null);
   const { showToast } = useToast();
-  const { themeId } = useTerminalTheme();
+  const { themeId, preset } = useTerminalTheme();
   const [deletingSessionId, setDeletingSessionId] = useState(null);
   const [restartingSession, setRestartingSession] = useState(false);
   const [stoppingSession, setStoppingSession] = useState(false);
@@ -1007,13 +1007,11 @@ export default React.forwardRef(function SessionsPage({
         </ConsoleInlineDialog>
       )}
 
-      const terminalBackground = preset.xterm.background;
-
       {/* Main area: terminal or empty state */}
       <div className="flex min-h-0 flex-1 w-full flex-row items-stretch">
         <div
           className={`flex min-h-0 min-w-0 flex-1 flex-col ${activeSession ? '' : 'bg-white'}`}
-          style={activeSession ? { backgroundColor: terminalBackground } : undefined}
+          style={activeSession ? { backgroundColor: preset.xterm.background } : undefined}
         >
           {activeSession ? (
             <AgentConsole
