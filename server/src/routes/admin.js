@@ -284,6 +284,7 @@ function registerAdminRoutes(fastify) {
         if (rows.length === 0) return reply.code(404).send({ error: 'Agent not found' });
         const row = rows[0];
         const draftModel = request.query?.model;
+        const draftProvider = request.query?.provider;
         const draftAuthMode = request.query?.llm_auth_mode;
         let draftEnvOverrides;
         if (typeof request.query?.env_overrides === 'string' && request.query.env_overrides.trim()) {
@@ -299,6 +300,7 @@ function registerAdminRoutes(fastify) {
                 cmd: row.cmd,
                 args: JSON.parse(row.args),
                 draftModel: typeof draftModel === 'string' ? draftModel : undefined,
+                draftProvider: typeof draftProvider === 'string' ? draftProvider : undefined,
                 draftAuthMode: typeof draftAuthMode === 'string' ? draftAuthMode : undefined,
                 draftEnvOverrides,
             });

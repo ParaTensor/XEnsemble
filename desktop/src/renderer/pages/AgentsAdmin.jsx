@@ -194,11 +194,12 @@ export default function AgentsAdmin() {
     spawnHydratedRef.current = false;
   };
 
-  const fetchGatewayPreview = useCallback(async (agentId, model, llmAuthMode) => {
+  const fetchGatewayPreview = useCallback(async (agentId, model, llmAuthMode, provider) => {
     setGatewayPreviewLoading(true);
     try {
       const params = new URLSearchParams();
       if (model?.trim()) params.set('model', model.trim());
+      if (provider?.trim()) params.set('provider', provider.trim());
       if (llmAuthMode) params.set('llm_auth_mode', llmAuthMode);
       const qs = params.toString();
       const res = await apiFetch(`/api/v1/admin/agents/${agentId}/gateway-spawn-preview${qs ? `?${qs}` : ''}`);
@@ -216,9 +217,9 @@ export default function AgentsAdmin() {
       setGatewayPreview(null);
       return undefined;
     }
-    fetchGatewayPreview(keysAgent.id, authDraft.model, authDraft.llm_auth_mode);
+    fetchGatewayPreview(keysAgent.id, authDraft.model, authDraft.llm_auth_mode, authDraft.provider);
     return undefined;
-  }, [keysAgent, authDraft.llm_auth_mode, authDraft.model, fetchGatewayPreview]);
+  }, [keysAgent, authDraft.llm_auth_mode, authDraft.model, authDraft.provider, fetchGatewayPreview]);
 
   const gatewaySpawnFields = useMemo(
     () => getGatewaySpawnFieldDefs(keysAgent),

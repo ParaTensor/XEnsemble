@@ -313,6 +313,18 @@ async fn dispatch_for_service(
     }
 }
 
+/// Split a routing target of the form `provider/model` into a provider hint and
+/// the upstream model name. When no `/` is present the whole string is used both
+/// as the routing hint and the model, keeping provider-name targets working.
+fn split_provider_model(raw: &str) -> (String, String) {
+    match raw.split_once('/') {
+        Some((provider, model)) if !provider.is_empty() && !model.is_empty() => {
+            (provider.to_string(), model.to_string())
+        }
+        _ => (raw.to_string(), raw.to_string()),
+    }
+}
+
 async fn openai_chat(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -321,11 +333,11 @@ async fn openai_chat(
     let gateway_key = authorize_gateway(&state, &headers).await?;
     let service_id = gateway_key.service_id.clone();
 
-    let default_model = payload
+    let raw_model = payload
         .get("model")
         .and_then(Value::as_str)
-        .unwrap_or("gpt-4o-mini")
-        .to_string();
+        .unwrap_or("gpt-4o-mini");
+    let (provider_hint, default_model) = split_provider_model(raw_model);
 
     let request = openai_payload_to_chat_request(&payload, &default_model)
         .map_err(|error| ApiError::bad_request(error.to_string()))?;
@@ -334,7 +346,7 @@ async fn openai_chat(
         &state,
         &service_id,
         HostProtocol::OpenAiChat,
-        Some(&default_model),
+        Some(&provider_hint),
         HostRequest::Chat(request),
         "/v1/chat/completions",
     )
@@ -367,11 +379,11 @@ async fn anthropic_messages(
     let gateway_key = authorize_gateway(&state, &headers).await?;
     let service_id = gateway_key.service_id.clone();
 
-    let default_model = payload
+    let raw_model = payload
         .get("model")
         .and_then(Value::as_str)
-        .unwrap_or("claude-sonnet-4-20250514")
-        .to_string();
+        .unwrap_or("claude-sonnet-4-20250514");
+    let (provider_hint, default_model) = split_provider_model(raw_model);
 
     let request = anthropic_payload_to_chat_request(&payload, &default_model)
         .map_err(|error| ApiError::bad_request(error.to_string()))?;
@@ -380,7 +392,7 @@ async fn anthropic_messages(
         &state,
         &service_id,
         HostProtocol::AnthropicMessages,
-        Some(&default_model),
+        Some(&provider_hint),
         HostRequest::Chat(request),
         "/v1/messages",
     )
@@ -407,11 +419,11 @@ async fn openai_embeddings(
     let gateway_key = authorize_gateway(&state, &headers).await?;
     let service_id = gateway_key.service_id.clone();
 
-    let default_model = payload
+    let raw_model = payload
         .get("model")
         .and_then(Value::as_str)
-        .unwrap_or("text-embedding-3-small")
-        .to_string();
+        .unwrap_or("text-embedding-3-small");
+    let (provider_hint, default_model) = split_provider_model(raw_model);
 
     let request = openai_payload_to_embed_request(&payload, &default_model)
         .map_err(|error| ApiError::bad_request(error.to_string()))?;
@@ -420,7 +432,7 @@ async fn openai_embeddings(
         &state,
         &service_id,
         HostProtocol::OpenAiEmbeddings,
-        Some(&default_model),
+        Some(&provider_hint),
         HostRequest::Embeddings(request),
         "/v1/embeddings",
     )
