@@ -40,12 +40,12 @@ class PullRequestService {
         return 'open';
     }
 
-    async create(project, { title, body, sourceBranch, targetBranch }, actorUserId) {
+    async create(project, { title, body, sourceBranch, source_branch, targetBranch, target_branch }, actorUserId) {
         const { owner, repo } = this.parseFullName(project.githubFullName);
         const token = await this.gitConnectionService.getDecryptedToken(project.userId);
 
-        const src = sourceBranch ?? project.currentBranch;
-        const tgt = targetBranch ?? project.repoDefaultBranch ?? 'main';
+        const src = sourceBranch || source_branch || project.currentBranch;
+        const tgt = targetBranch || target_branch || project.repoDefaultBranch || 'main';
         if (!src) {
             throw new Error('sourceBranch is required and project.currentBranch is not set');
         }

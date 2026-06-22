@@ -167,6 +167,31 @@ describe('PullRequestService', { concurrency: false }, () => {
         assert.strictEqual(events[0].userId, userId);
     });
 
+    it('create respects snake_case target_branch', async () => {
+        const project = {
+            id: projectId,
+            userId,
+            githubFullName: 'owner/repo',
+            currentBranch: 'feature',
+            repoDefaultBranch: 'main',
+        };
+
+        const result = await service.create(
+            project,
+            { title: 'Snake case PR', body: 'Body', source_branch: 'snake-feature', target_branch: 'snake-base' },
+            userId,
+        );
+
+        assert.strictEqual(result.sourceBranch, 'snake-feature');
+        assert.strictEqual(result.targetBranch, 'snake-base');
+
+        assert.strictEqual(mocks.gitOperationService.pushBranchCalls.at(-1).branchName, 'snake-feature');
+
+        const createCall = mocks.gitHubService.createPrCalls.at(-1);
+        assert.strictEqual(createCall.head, 'snake-feature');
+        assert.strictEqual(createCall.base, 'snake-base');
+    });
+
     it('sync updates PR status from GitHub', async () => {
         const prId = `pr_${Date.now()}`;
         const now = Date.now();
