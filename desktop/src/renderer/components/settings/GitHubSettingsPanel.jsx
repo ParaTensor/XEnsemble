@@ -49,7 +49,10 @@ export default function GitHubSettingsPanel() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
-      setSettings(data);
+      setSettings({
+        ...data,
+        GITHUB_CLIENT_SECRET: data.GITHUB_CLIENT_SECRET || '',
+      });
       showToast('success', 'GitHub settings saved.');
     } catch (err) {
       showToast('error', err.message);

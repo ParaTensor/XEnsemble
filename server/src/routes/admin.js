@@ -55,11 +55,21 @@ async function runRecordedLifecycle(agent, action, fn) {
 }
 
 function isValidUrl(value) {
+    const trimmed = String(value ?? '').trim();
+    if (!trimmed) return false;
     try {
-        new URL(value);
-        return true;
+        const url = new URL(trimmed);
+        return url.protocol === 'http:' || url.protocol === 'https:';
     } catch {
         return false;
+    }
+}
+
+function safeGetPlatformSecret(value) {
+    try {
+        return platformSecrets.getPlatformSecret(value) || '';
+    } catch {
+        return '';
     }
 }
 
@@ -176,7 +186,7 @@ function registerAdminRoutes(fastify) {
 
     fastify.get('/api/v1/admin/platform-settings', { preValidation: adminPre }, async () => {
         const settings = await platformSettings.getAll();
-        settings.GITHUB_CLIENT_SECRET = platformSecrets.getPlatformSecret(settings.GITHUB_CLIENT_SECRET) || '';
+        settings.GITHUB_CLIENT_SECRET = safeGetPlatformSecret(settings.GITHUB_CLIENT_SECRET);
         return settings;
     });
 
@@ -221,6 +231,8 @@ function registerAdminRoutes(fastify) {
                 if (key === 'GITHUB_CLIENT_SECRET') {
                     if (body[key] !== '') {
                         await platformSettings.set(key, platformSecrets.setPlatformSecret(key, body[key]));
+                    } else {
+                        await platformSettings.set(key, '');
                     }
                 } else {
                     await platformSettings.set(key, body[key]);
@@ -230,7 +242,7 @@ function registerAdminRoutes(fastify) {
         }
         try {
             const settings = await platformSettings.updateAll(body);
-            settings.GITHUB_CLIENT_SECRET = platformSecrets.getPlatformSecret(settings.GITHUB_CLIENT_SECRET) || '';
+            settings.GITHUB_CLIENT_SECRET = safeGetPlatformSecret(settings.GITHUB_CLIENT_SECRET);
             return settings;
         } catch (err) {
             return reply.code(err.statusCode || 400).send({ error: err.message });
