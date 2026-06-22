@@ -31,6 +31,11 @@ function hasProvider(name) {
 
 // ── Register built-in adapters ──
 const { GitHubAdapter } = require('./GitHubAdapter');
+const { GitLabAdapter } = require('./GitLabAdapter');
+const { GiteaAdapter } = require('./GiteaAdapter');
+
 registerProvider('github', GitHubAdapter);
+registerProvider('gitlab', GitLabAdapter);
+registerProvider('gitea', GiteaAdapter);
 
 module.exports = { registerProvider, getProvider, listProviders, hasProvider };
