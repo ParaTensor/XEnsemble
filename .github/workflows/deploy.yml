@@ -15,11 +15,14 @@ jobs:
     steps:
       - name: Deploy to xensemble.dev
         uses: appleboy/ssh-action@v1.2.0
+        env:
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
         with:
           host: ${{ secrets.DEPLOY_HOST }}
           username: ${{ secrets.DEPLOY_USER }}
           key: ${{ secrets.DEPLOY_SSH_KEY }}
           port: ${{ secrets.DEPLOY_PORT }}
+          envs: DEEPSEEK_API_KEY
           script_stop: true
           script: |
             set -euo pipefail

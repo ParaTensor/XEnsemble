@@ -4,6 +4,20 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
+set_env_value() {
+  local key="$1"
+  local value="$2"
+  local file="$3"
+  if [ -z "${value:-}" ]; then
+    return 0
+  fi
+  if [ -f "$file" ]; then
+    grep -v "^${key}=" "$file" > "$file.tmp" || true
+    mv "$file.tmp" "$file"
+  fi
+  echo "${key}=${value}" >> "$file"
+}
+
 export NVM_DIR="$HOME/.nvm"
 # shellcheck disable=SC1091
 [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"
@@ -41,6 +55,9 @@ if [ ! -f deploy/xensemble.env ]; then
     sed -i "s/change-me-to-a-long-random-admin-token/$ADMIN/" deploy/xensemble.env
   fi
 fi
+
+# Inject secrets from CI/GitHub Actions without committing them to the repo.
+set_env_value DEEPSEEK_API_KEY "${DEEPSEEK_API_KEY:-}" deploy/xensemble.env
 
 if ! command -v systemctl >/dev/null 2>&1; then
   echo "==> No systemd on this host; skipping systemd/nginx. Start manually:"
