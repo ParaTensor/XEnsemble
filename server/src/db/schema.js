@@ -1,4 +1,4 @@
-const { sqliteTable, text, integer, unique, uniqueIndex } = require('drizzle-orm/sqlite-core');
+const { sqliteTable, text, integer, unique, uniqueIndex, index } = require('drizzle-orm/sqlite-core');
 
 const users = sqliteTable('users', {
   id: text('id').primaryKey(),
@@ -208,7 +208,9 @@ const githubOAuthStates = sqliteTable('github_oauth_states', {
   state: text('state').primaryKey(),
   userId: text('user_id').notNull(),
   expiresAt: integer('expires_at').notNull(),
-});
+}, (table) => ({
+  expiresIdx: index('idx_github_oauth_states_expires').on(table.expiresAt),
+}));
 
 const projectBranches = sqliteTable('project_branches', {
   id: text('id').primaryKey(),
