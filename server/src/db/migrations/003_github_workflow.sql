@@ -1,16 +1,12 @@
 -- GitHub workflow schema extension
 
--- Extend projects table with GitHub-related columns
-ALTER TABLE projects ADD COLUMN current_branch TEXT;
-ALTER TABLE projects ADD COLUMN github_repo_id INTEGER;
-ALTER TABLE projects ADD COLUMN github_full_name TEXT;
-ALTER TABLE projects ADD COLUMN clone_status TEXT DEFAULT 'pending';
-ALTER TABLE projects ADD COLUMN clone_error TEXT;
+-- NOTE: These schema changes are now applied idempotently by server/src/db/index.js.
+-- This file is kept as documentation/reference only; do not run it directly.
 
 -- GitHub OAuth connections (one per user)
 CREATE TABLE IF NOT EXISTS github_connections (
   id TEXT PRIMARY KEY,
-  user_id TEXT NOT NULL UNIQUE,
+  user_id TEXT NOT NULL,
   github_user_id INTEGER NOT NULL,
   github_username TEXT NOT NULL,
   github_avatar TEXT,

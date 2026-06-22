@@ -161,6 +161,66 @@ sqlite.exec(`
     FOREIGN KEY(base_snapshot_id) REFERENCES repo_snapshots(id)
   );
 
+  CREATE TABLE IF NOT EXISTS github_connections (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    github_user_id INTEGER NOT NULL,
+    github_username TEXT NOT NULL,
+    github_avatar TEXT,
+    access_token_enc TEXT NOT NULL,
+    token_scope TEXT,
+    connected_at INTEGER NOT NULL,
+    last_used_at INTEGER,
+    revoked_at INTEGER,
+    FOREIGN KEY(user_id) REFERENCES users(id)
+  );
+
+  CREATE UNIQUE INDEX IF NOT EXISTS idx_github_connections_user_id ON github_connections(user_id);
+
+  CREATE TABLE IF NOT EXISTS github_oauth_states (
+    state TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    expires_at INTEGER NOT NULL
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_github_oauth_states_expires ON github_oauth_states(expires_at);
+
+  CREATE TABLE IF NOT EXISTS project_branches (
+    id TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL,
+    branch_name TEXT NOT NULL,
+    base_branch TEXT,
+    is_active INTEGER DEFAULT 0,
+    last_commit_sha TEXT,
+    ahead_count INTEGER DEFAULT 0,
+    behind_count INTEGER DEFAULT 0,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL,
+    FOREIGN KEY(project_id) REFERENCES projects(id),
+    UNIQUE(project_id, branch_name)
+  );
+
+  CREATE TABLE IF NOT EXISTS pull_requests (
+    id TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL,
+    github_pr_number INTEGER NOT NULL,
+    github_pr_url TEXT NOT NULL,
+    title TEXT NOT NULL,
+    description TEXT,
+    source_branch TEXT NOT NULL,
+    target_branch TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'open',
+    github_state TEXT,
+    merge_sha TEXT,
+    created_by TEXT,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL,
+    last_synced_at INTEGER,
+    FOREIGN KEY(project_id) REFERENCES projects(id),
+    FOREIGN KEY(created_by) REFERENCES users(id),
+    UNIQUE(project_id, github_pr_number)
+  );
+
   CREATE TABLE IF NOT EXISTS refresh_tokens (
     id TEXT PRIMARY KEY,
     user_id TEXT NOT NULL,
@@ -212,6 +272,21 @@ if (!projectCols.some((c) => c.name === 'last_snapshot_id')) {
 }
 if (!projectCols.some((c) => c.name === 'dev_profile_id')) {
     sqlite.exec(`ALTER TABLE projects ADD COLUMN dev_profile_id TEXT`);
+}
+if (!projectCols.some((c) => c.name === 'current_branch')) {
+    sqlite.exec(`ALTER TABLE projects ADD COLUMN current_branch TEXT`);
+}
+if (!projectCols.some((c) => c.name === 'github_repo_id')) {
+    sqlite.exec(`ALTER TABLE projects ADD COLUMN github_repo_id INTEGER`);
+}
+if (!projectCols.some((c) => c.name === 'github_full_name')) {
+    sqlite.exec(`ALTER TABLE projects ADD COLUMN github_full_name TEXT`);
+}
+if (!projectCols.some((c) => c.name === 'clone_status')) {
+    sqlite.exec(`ALTER TABLE projects ADD COLUMN clone_status TEXT DEFAULT 'pending'`);
+}
+if (!projectCols.some((c) => c.name === 'clone_error')) {
+    sqlite.exec(`ALTER TABLE projects ADD COLUMN clone_error TEXT`);
 }
 
 const sessionColsAfter = sqlite.prepare(`PRAGMA table_info(sessions)`).all();
