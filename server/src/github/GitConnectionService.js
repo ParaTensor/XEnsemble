@@ -27,7 +27,7 @@ class GitConnectionService {
             throw new Error('GitHub OAuth is not configured');
         }
 
-        const state = `ghstate_${crypto.randomBytes(8).toString('hex')}`;
+        const state = crypto.randomBytes(16).toString('hex');
         const expiresAt = Date.now() + STATE_TTL_MS;
 
         await db.insert(schema.githubOAuthStates).values({
@@ -39,12 +39,15 @@ class GitConnectionService {
         const params = new URLSearchParams({
             client_id: String(clientId),
             state,
-            scope: 'repo,user:email',
+            scope: 'repo',
         });
 
-        const redirectUri = await PlatformSettings.get('GITHUB_CALLBACK_URL');
-        if (redirectUri) {
-            params.set('redirect_uri', String(redirectUri));
+        const callbackUrl = await PlatformSettings.get('GITHUB_CALLBACK_URL')
+            || (process.env.CONTROL_PLANE_PUBLIC_URL
+                ? `${process.env.CONTROL_PLANE_PUBLIC_URL}/api/v1/github/callback`
+                : undefined);
+        if (callbackUrl) {
+            params.set('redirect_uri', String(callbackUrl));
         }
 
         return {
@@ -92,7 +95,7 @@ class GitConnectionService {
             ));
 
         if (rows.length === 0) {
-            return null;
+            throw new Error('github_not_connected');
         }
 
         const row = rows[0];
@@ -166,14 +169,12 @@ class GitConnectionService {
         const encrypted = auth.encryptSecrets({ token });
         const now = Date.now();
 
-        const existing = await db
-            .select()
-            .from(schema.githubConnections)
-            .where(eq(schema.githubConnections.userId, userId));
+        const id = `ghconn_${crypto.randomBytes(8).toString('hex')}`;
 
-        const id = existing.length > 0
-            ? existing[0].id
-            : `ghconn_${crypto.randomBytes(8).toString('hex')}`;
+        // Always create a fresh connection record; remove any prior rows for this user.
+        await db
+            .delete(schema.githubConnections)
+            .where(eq(schema.githubConnections.userId, userId));
 
         const connection = {
             id,
@@ -182,20 +183,13 @@ class GitConnectionService {
             githubUsername: ghUser.login,
             githubAvatar: ghUser.avatar_url || null,
             accessTokenEnc: encrypted,
-            tokenScope: null,
-            connectedAt: existing.length > 0 ? existing[0].connectedAt : now,
+            tokenScope: 'repo',
+            connectedAt: now,
             lastUsedAt: now,
             revokedAt: null,
         };
 
-        if (existing.length > 0) {
-            await db
-                .update(schema.githubConnections)
-                .set(connection)
-                .where(eq(schema.githubConnections.id, id));
-        } else {
-            await db.insert(schema.githubConnections).values(connection);
-        }
+        await db.insert(schema.githubConnections).values(connection);
 
         await recordEvent({
             userId,
@@ -214,14 +208,13 @@ class GitConnectionService {
     _formatConnection(row) {
         return {
             id: row.id,
-            userId: row.userId,
-            githubUserId: row.githubUserId,
-            githubUsername: row.githubUsername,
-            githubAvatar: row.githubAvatar,
-            tokenScope: row.tokenScope,
-            connectedAt: row.connectedAt,
-            lastUsedAt: row.lastUsedAt,
-            revokedAt: row.revokedAt,
+            user_id: row.userId,
+            github_user_id: row.githubUserId,
+            github_username: row.githubUsername,
+            github_avatar: row.githubAvatar,
+            token_scope: row.tokenScope,
+            connected_at: row.connectedAt,
+            last_used_at: row.lastUsedAt,
         };
     }
 

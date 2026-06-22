@@ -1,3 +1,4 @@
+const crypto = require('crypto');
 const { describe, it, before, after } = require('node:test');
 const assert = require('node:assert/strict');
 const { eq, and, inArray } = require('drizzle-orm');
@@ -69,13 +70,14 @@ describe('GitConnectionService', { concurrency: false }, () => {
     it('initiateOAuth creates a state and returns a GitHub auth URL', async () => {
         const { authUrl, state } = await service.initiateOAuth(userId);
 
-        assert.ok(state.startsWith('ghstate_'));
+        assert.match(state, /^[0-9a-f]{32}$/);
 
         const parsed = new URL(authUrl);
         assert.strictEqual(parsed.hostname, 'github.com');
         assert.strictEqual(parsed.pathname, '/login/oauth/authorize');
         assert.strictEqual(parsed.searchParams.get('client_id'), 'test-client-id');
         assert.strictEqual(parsed.searchParams.get('state'), state);
+        assert.strictEqual(parsed.searchParams.get('scope'), 'repo');
         assert.strictEqual(parsed.searchParams.get('redirect_uri'), 'http://localhost/callback');
 
         const rows = await db
@@ -93,10 +95,11 @@ describe('GitConnectionService', { concurrency: false }, () => {
         const conn = await service.completeOAuthFromCallback('auth-code', state);
 
         assert.ok(conn.id.startsWith('ghconn_'));
-        assert.strictEqual(conn.userId, userId);
-        assert.strictEqual(conn.githubUserId, 42);
-        assert.strictEqual(conn.githubUsername, 'octocat');
-        assert.strictEqual(conn.revokedAt, null);
+        assert.strictEqual(conn.user_id, userId);
+        assert.strictEqual(conn.github_user_id, 42);
+        assert.strictEqual(conn.github_username, 'octocat');
+        assert.strictEqual(conn.token_scope, 'repo');
+        assert.strictEqual(conn.revoked_at, undefined);
 
         const stored = await service.getConnection(userId);
         assert.ok(stored);
@@ -157,5 +160,48 @@ describe('GitConnectionService', { concurrency: false }, () => {
                 eq(schema.events.subjectId, conn.id),
             ));
         assert.strictEqual(events.length, 1);
+    });
+
+    it('rejects an expired OAuth state', async () => {
+        const expiredState = crypto.randomBytes(16).toString('hex');
+        await db.insert(schema.githubOAuthStates).values({
+            state: expiredState,
+            userId,
+            expiresAt: Date.now() - 1000,
+        });
+
+        await assert.rejects(
+            service.completeOAuthFromCallback('auth-code', expiredState),
+            (err) => {
+                assert.ok(err.message.includes('Invalid or expired'));
+                return true;
+            },
+        );
+    });
+
+    it('does not store the raw token in the database', async () => {
+        const { state } = await service.initiateOAuth(userId);
+        const conn = await service.completeOAuthFromCallback('auth-code', state);
+
+        const rows = await db
+            .select()
+            .from(schema.githubConnections)
+            .where(eq(schema.githubConnections.id, conn.id));
+        assert.strictEqual(rows.length, 1);
+        assert.notStrictEqual(rows[0].accessTokenEnc, 'gho_plaintext_token');
+    });
+
+    it('stores tokenScope as repo', async () => {
+        const { state } = await service.initiateOAuth(userId);
+        const conn = await service.completeOAuthFromCallback('auth-code', state);
+
+        assert.strictEqual(conn.token_scope, 'repo');
+
+        const rows = await db
+            .select()
+            .from(schema.githubConnections)
+            .where(eq(schema.githubConnections.id, conn.id));
+        assert.strictEqual(rows.length, 1);
+        assert.strictEqual(rows[0].tokenScope, 'repo');
     });
 });
