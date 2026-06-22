@@ -45,13 +45,11 @@ function registerGitHubRoutes(fastify) {
     fastify.get('/api/v1/github/connection', {
         preValidation: [fastify.authenticate, fastify.requireActive],
     }, async (request, reply) => {
-        try {
-            const connection = await connectionService.getConnection(request.user.id);
-            return { connection };
-        } catch (err) {
-            request.log.error(err);
-            return reply.code(500).send({ error: 'Failed to get GitHub connection' });
+        const connection = await connectionService.getConnection(request.user.id);
+        if (!connection) {
+            return reply.code(404).send({ error: 'GitHub not connected' });
         }
+        return connection;
     });
 
     fastify.post('/api/v1/github/connect', {
@@ -145,6 +143,12 @@ function registerGitHubRoutes(fastify) {
             const code = err.status || 500;
             return reply.code(code).send({ error: err.message });
         }
+    });
+
+    fastify.post('/api/v1/projects/import-github', {
+        preValidation: [fastify.authenticate, fastify.requireActive],
+    }, async (request, reply) => {
+        return reply.code(501).send({ error: 'Not implemented' });
     });
 }
 
