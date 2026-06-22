@@ -4,6 +4,14 @@ const PlatformSecrets = require('../admin/PlatformSecrets');
 const DEFAULT_API_BASE = 'https://api.github.com';
 const GITHUB_API_VERSION = '2022-11-28';
 
+class GitHubError extends Error {
+    constructor(message, code, status) {
+        super(message);
+        this.code = code;
+        this.status = status;
+    }
+}
+
 async function getApiBase() {
     const value = await PlatformSettings.get('GITHUB_API_BASE');
     if (!value) return DEFAULT_API_BASE;
@@ -31,10 +39,15 @@ function authHeaders(token) {
 
 function apiError(message, status) {
     const code = status === 401 ? 'token_expired' : status === 403 ? 'insufficient_scope' : status === 404 ? 'repo_not_found' : 'github_api_error';
-    const err = new Error(message);
-    err.code = code;
-    err.status = status;
-    return err;
+    return new GitHubError(message, code, status);
+}
+
+async function githubFetch(url, options) {
+    try {
+        return await fetch(url, options);
+    } catch (cause) {
+        throw new GitHubError(`GitHub request failed: ${cause.message}`, 'network_error');
+    }
 }
 
 async function checkResponse(res, context) {
@@ -52,9 +65,9 @@ async function checkResponse(res, context) {
 async function exchangeOAuthCode(code) {
     const { clientId, clientSecret } = await getClientCredentials();
     if (!clientId || !clientSecret) {
-        throw Object.assign(new Error('GitHub OAuth credentials are not configured'), { code: 'not_configured' });
+        throw new GitHubError('GitHub OAuth credentials are not configured', 'not_configured');
     }
-    const res = await fetch('https://github.com/login/oauth/access_token', {
+    const res = await githubFetch('https://github.com/login/oauth/access_token', {
         method: 'POST',
         headers: {
             Accept: 'application/json',
@@ -69,17 +82,17 @@ async function exchangeOAuthCode(code) {
     const data = await res.json();
     if (!res.ok || data.error) {
         const message = data.error_description || data.error || `OAuth exchange failed with status ${res.status}`;
-        throw Object.assign(new Error(message), { code: data.error || 'oauth_error' });
+        throw new GitHubError(message, data.error || 'oauth_error');
     }
     if (!data.access_token) {
-        throw Object.assign(new Error('OAuth response did not contain an access token'), { code: 'oauth_error' });
+        throw new GitHubError('OAuth response did not contain an access token', 'oauth_error');
     }
     return data.access_token;
 }
 
 async function getAuthenticatedUser(token) {
     const base = await getApiBase();
-    const res = await fetch(`${base}/user`, {
+    const res = await githubFetch(`${base}/user`, {
         headers: authHeaders(token),
     });
     await checkResponse(res, 'getAuthenticatedUser');
@@ -98,7 +111,7 @@ async function listUserRepos(token, { page = 1, perPage = 30, affiliation = 'own
     url.searchParams.set('per_page', String(perPage));
     if (affiliation) url.searchParams.set('affiliation', affiliation);
     url.searchParams.set('sort', 'updated');
-    const res = await fetch(url.toString(), {
+    const res = await githubFetch(url.toString(), {
         headers: authHeaders(token),
     });
     await checkResponse(res, 'listUserRepos');
@@ -107,7 +120,7 @@ async function listUserRepos(token, { page = 1, perPage = 30, affiliation = 'own
 
 async function getRepo(token, owner, repo) {
     const base = await getApiBase();
-    const res = await fetch(`${base}/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`, {
+    const res = await githubFetch(`${base}/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`, {
         headers: authHeaders(token),
     });
     await checkResponse(res, 'getRepo');
@@ -116,7 +129,7 @@ async function getRepo(token, owner, repo) {
 
 async function createPullRequest(token, owner, repo, { title, body, head, base }) {
     const baseUrl = await getApiBase();
-    const res = await fetch(`${baseUrl}/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/pulls`, {
+    const res = await githubFetch(`${baseUrl}/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/pulls`, {
         method: 'POST',
         headers: {
             ...authHeaders(token),
@@ -130,7 +143,7 @@ async function createPullRequest(token, owner, repo, { title, body, head, base }
 
 async function getPullRequest(token, owner, repo, number) {
     const base = await getApiBase();
-    const res = await fetch(`${base}/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/pulls/${number}`, {
+    const res = await githubFetch(`${base}/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/pulls/${number}`, {
         headers: authHeaders(token),
     });
     await checkResponse(res, 'getPullRequest');
@@ -143,7 +156,7 @@ async function listPullRequests(token, owner, repo, { state = 'open', page = 1, 
     url.searchParams.set('state', state);
     url.searchParams.set('page', String(page));
     url.searchParams.set('per_page', String(perPage));
-    const res = await fetch(url.toString(), {
+    const res = await githubFetch(url.toString(), {
         headers: authHeaders(token),
     });
     await checkResponse(res, 'listPullRequests');
@@ -156,6 +169,7 @@ async function revokeToken(token) {
 }
 
 module.exports = {
+    GitHubError,
     exchangeOAuthCode,
     getAuthenticatedUser,
     listUserRepos,

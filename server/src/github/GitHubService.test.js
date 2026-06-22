@@ -181,4 +181,97 @@ describe('GitHubService', { concurrency: false }, () => {
         const result = await service.revokeToken('token');
         assert.strictEqual(result, true);
     });
+
+    it('getAuthenticatedUser returns normalized user', async () => {
+        global.fetch = async (url, options) => {
+            assert.strictEqual(url, 'https://api.github.com/user');
+            assert.strictEqual(options.headers.Authorization, 'Bearer token');
+            return {
+                ok: true,
+                json: async () => ({ id: 123, login: 'octocat', avatar_url: 'https://example.com/avatar.png' }),
+            };
+        };
+        const user = await service.getAuthenticatedUser('token');
+        assert.deepStrictEqual(user, { id: 123, login: 'octocat', avatar_url: 'https://example.com/avatar.png' });
+    });
+
+    it('listUserRepos returns repos with query params', async () => {
+        global.fetch = async (url) => {
+            assert.ok(url.startsWith('https://api.github.com/user/repos'));
+            const parsed = new URL(url);
+            assert.strictEqual(parsed.searchParams.get('page'), '1');
+            assert.strictEqual(parsed.searchParams.get('per_page'), '10');
+            assert.strictEqual(parsed.searchParams.get('affiliation'), 'owner');
+            assert.strictEqual(parsed.searchParams.get('sort'), 'updated');
+            return {
+                ok: true,
+                json: async () => [{ id: 1, name: 'repo' }],
+            };
+        };
+        const repos = await service.listUserRepos('token', { page: 1, perPage: 10, affiliation: 'owner' });
+        assert.strictEqual(repos.length, 1);
+        assert.strictEqual(repos[0].name, 'repo');
+    });
+
+    it('getRepo returns repository data', async () => {
+        global.fetch = async (url, options) => {
+            assert.strictEqual(url, 'https://api.github.com/repos/owner/repo');
+            assert.strictEqual(options.headers.Authorization, 'Bearer token');
+            return {
+                ok: true,
+                json: async () => ({ id: 42, full_name: 'owner/repo' }),
+            };
+        };
+        const repo = await service.getRepo('token', 'owner', 'repo');
+        assert.strictEqual(repo.full_name, 'owner/repo');
+    });
+
+    it('getPullRequest returns pull request data', async () => {
+        global.fetch = async (url, options) => {
+            assert.strictEqual(url, 'https://api.github.com/repos/owner/repo/pulls/7');
+            assert.strictEqual(options.headers.Authorization, 'Bearer token');
+            return {
+                ok: true,
+                json: async () => ({ number: 7, title: 'Fix bug' }),
+            };
+        };
+        const pr = await service.getPullRequest('token', 'owner', 'repo', 7);
+        assert.strictEqual(pr.number, 7);
+    });
+
+    it('throws oauth_error when OAuth response lacks access_token', async () => {
+        global.fetch = async () => ({
+            ok: true,
+            status: 200,
+            json: async () => ({ scope: 'repo', token_type: 'bearer' }),
+        });
+        await assert.rejects(service.exchangeOAuthCode('code'), (err) => {
+            assert.strictEqual(err.code, 'oauth_error');
+            assert.strictEqual(err.message, 'OAuth response did not contain an access token');
+            return true;
+        });
+    });
+
+    it('handles non-JSON error bodies from GitHub API', async () => {
+        global.fetch = async () => ({
+            ok: false,
+            status: 500,
+            json: async () => { throw new Error('invalid json'); },
+        });
+        await assert.rejects(service.getRepo('token', 'owner', 'repo'), (err) => {
+            assert.strictEqual(err.code, 'github_api_error');
+            assert.strictEqual(err.status, 500);
+            assert.ok(err.message.includes('getRepo failed with status 500'));
+            return true;
+        });
+    });
+
+    it('throws network_error when fetch fails', async () => {
+        global.fetch = async () => { throw new Error('net::ERR_FAILED'); };
+        await assert.rejects(service.getAuthenticatedUser('token'), (err) => {
+            assert.strictEqual(err.code, 'network_error');
+            assert.ok(err.message.includes('GitHub request failed'));
+            return true;
+        });
+    });
 });
