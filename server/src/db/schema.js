@@ -1,4 +1,4 @@
-const { sqliteTable, text, integer } = require('drizzle-orm/sqlite-core');
+const { sqliteTable, text, integer, unique } = require('drizzle-orm/sqlite-core');
 
 const users = sqliteTable('users', {
   id: text('id').primaryKey(),
@@ -49,6 +49,11 @@ const projects = sqliteTable('projects', {
   lastSyncSha: text('last_sync_sha'),
   lastSnapshotId: text('last_snapshot_id'),
   devProfileId: text('dev_profile_id'),
+  currentBranch: text('current_branch'),
+  githubRepoId: integer('github_repo_id'),
+  githubFullName: text('github_full_name'),
+  cloneStatus: text('clone_status').default('pending'),
+  cloneError: text('clone_error'),
   createdAt: integer('created_at').notNull()
 });
 
@@ -184,6 +189,60 @@ const refreshTokens = sqliteTable('refresh_tokens', {
   revokedAt: integer('revoked_at'),
 });
 
+const githubConnections = sqliteTable('github_connections', {
+  id: text('id').primaryKey(),
+  userId: text('user_id').notNull().references(() => users.id).unique(),
+  githubUserId: integer('github_user_id').notNull(),
+  githubUsername: text('github_username').notNull(),
+  githubAvatar: text('github_avatar'),
+  accessTokenEnc: text('access_token_enc').notNull(),
+  tokenScope: text('token_scope'),
+  connectedAt: integer('connected_at').notNull(),
+  lastUsedAt: integer('last_used_at'),
+  revokedAt: integer('revoked_at'),
+});
+
+const githubOAuthStates = sqliteTable('github_oauth_states', {
+  state: text('state').primaryKey(),
+  userId: text('user_id').notNull().references(() => users.id),
+  expiresAt: integer('expires_at').notNull(),
+});
+
+const projectBranches = sqliteTable('project_branches', {
+  id: text('id').primaryKey(),
+  projectId: text('project_id').notNull().references(() => projects.id),
+  branchName: text('branch_name').notNull(),
+  baseBranch: text('base_branch'),
+  isActive: integer('is_active', { mode: 'boolean' }).default(false),
+  lastCommitSha: text('last_commit_sha'),
+  aheadCount: integer('ahead_count').default(0),
+  behindCount: integer('behind_count').default(0),
+  createdAt: integer('created_at').notNull(),
+  updatedAt: integer('updated_at').notNull(),
+}, (table) => ({
+  unqProjectBranch: unique().on(table.projectId, table.branchName),
+}));
+
+const pullRequests = sqliteTable('pull_requests', {
+  id: text('id').primaryKey(),
+  projectId: text('project_id').notNull().references(() => projects.id),
+  githubPrNumber: integer('github_pr_number').notNull(),
+  githubPrUrl: text('github_pr_url'),
+  title: text('title'),
+  description: text('description'),
+  sourceBranch: text('source_branch'),
+  targetBranch: text('target_branch'),
+  status: text('status').default('open'),
+  githubState: text('github_state'),
+  mergeSha: text('merge_sha'),
+  createdBy: text('created_by').references(() => users.id),
+  createdAt: integer('created_at').notNull(),
+  updatedAt: integer('updated_at').notNull(),
+  lastSyncedAt: integer('last_synced_at'),
+}, (table) => ({
+  unqProjectPr: unique().on(table.projectId, table.githubPrNumber),
+}));
+
 module.exports = {
   users,
   userQuotas,
@@ -201,4 +260,8 @@ module.exports = {
   repoSnapshots,
   workspaceCheckpoints,
   refreshTokens,
+  githubConnections,
+  githubOAuthStates,
+  projectBranches,
+  pullRequests,
 };
