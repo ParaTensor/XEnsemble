@@ -235,7 +235,7 @@ function registerGitHubRoutes(fastify) {
             return reply.code(400).send({ error: err.message });
         }
 
-        const projectName = String(name || '').trim();
+        const projectName = String(name || repo).trim();
         if (!projectName) {
             return reply.code(400).send({ error: 'name is required' });
         }
@@ -264,7 +264,9 @@ function registerGitHubRoutes(fastify) {
         const serverPath = projectDir(userId, projectId);
         const createdAt = Date.now();
         const baseBranch = branch || ghRepo.default_branch || 'main';
-        const currentBranch = auto_create_branch && work_branch_name ? work_branch_name : baseBranch;
+        const autoCreateBranch = auto_create_branch !== false;
+        const workBranchName = work_branch_name || `xensemble/${Date.now()}`;
+        const currentBranch = autoCreateBranch ? workBranchName : baseBranch;
 
         const projectRow = {
             id: projectId,
@@ -302,10 +304,10 @@ function registerGitHubRoutes(fastify) {
                 });
 
                 let branchSha = cloneResult.sha;
-                if (auto_create_branch && work_branch_name) {
+                if (autoCreateBranch) {
                     const createResult = await gitOperationService.createBranch(
                         project,
-                        work_branch_name,
+                        workBranchName,
                         baseBranch,
                     );
                     branchSha = createResult.sha;
@@ -334,8 +336,13 @@ function registerGitHubRoutes(fastify) {
         })();
 
         return reply.code(202).send({
-            project_id: projectId,
+            id: projectId,
+            name: projectName,
+            github_full_name: ghRepo.full_name || github_repo_full_name,
+            repo_url: ghRepo.clone_url || `https://github.com/${owner}/${repo}.git`,
+            current_branch: currentBranch,
             status: 'cloning',
+            created_at: createdAt,
         });
     });
 
@@ -412,6 +419,31 @@ function registerGitHubRoutes(fastify) {
         try {
             await gitOperationService._execGit(project, ['pull']);
             return { ok: true };
+        } catch (err) {
+            request.log.error(err);
+            return reply.code(500).send({ error: err.message });
+        }
+    });
+
+    fastify.post('/api/v1/projects/:id/git/clone', {
+        preValidation: [fastify.authenticate, fastify.requireActive],
+    }, async (request, reply) => {
+        const project = await getProjectForUser(request.user.id, request.params.id);
+        if (!project) return reply.code(404).send({ error: 'Project not found' });
+        return reply.code(501).send({ error: 'Re-clone route is not implemented yet' });
+    });
+
+    fastify.get('/api/v1/projects/:id/git/log', {
+        preValidation: [fastify.authenticate, fastify.requireActive],
+    }, async (request, reply) => {
+        const project = await getProjectForUser(request.user.id, request.params.id);
+        if (!project) return reply.code(404).send({ error: 'Project not found' });
+        try {
+            const log = await gitOperationService.getLog(project, {
+                branch: request.query?.branch,
+                limit: request.query?.limit ? Number(request.query.limit) : 20,
+            });
+            return { log };
         } catch (err) {
             request.log.error(err);
             return reply.code(500).send({ error: err.message });
@@ -500,6 +532,24 @@ function registerGitHubRoutes(fastify) {
                     eq(schema.projectBranches.branchName, name),
                 ));
             return { ok: true };
+        } catch (err) {
+            request.log.error(err);
+            return reply.code(500).send({ error: err.message });
+        }
+    });
+
+    fastify.post('/api/v1/projects/:id/branches/merge', {
+        preValidation: [fastify.authenticate, fastify.requireActive],
+    }, async (request, reply) => {
+        const project = await getProjectForUser(request.user.id, request.params.id);
+        if (!project) return reply.code(404).send({ error: 'Project not found' });
+        const fromBranch = String(request.body?.from_branch || '').trim();
+        const toBranch = String(request.body?.to_branch || project.currentBranch || '').trim();
+        if (!fromBranch) return reply.code(400).send({ error: 'from_branch is required' });
+        if (!toBranch) return reply.code(400).send({ error: 'to_branch is required' });
+        try {
+            const result = await gitOperationService.mergeBranch(project, fromBranch, toBranch);
+            return result;
         } catch (err) {
             request.log.error(err);
             return reply.code(500).send({ error: err.message });

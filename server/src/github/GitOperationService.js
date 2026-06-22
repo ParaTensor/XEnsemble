@@ -253,6 +253,13 @@ class GitOperationService {
         return stdout;
     }
 
+    async mergeBranch(project, fromBranch, toBranch) {
+        await this.switchBranch(project, toBranch);
+        await this._execGit(project, ['merge', fromBranch, '-m', `Merge ${fromBranch} into ${toBranch}`]);
+        const sha = await this._revParse(project, 'HEAD');
+        return { sha };
+    }
+
     async getLog(project, { branch, limit = 20 } = {}) {
         const args = ['log'];
         if (branch) {

@@ -268,7 +268,7 @@ function scaffoldXEnsemble(projectDir, opts = {}) {
     const configPath = path.join(baseDir, 'config.json');
     const config = {
         version: 1,
-        auto_commit_on_exit: Boolean(opts.autoCommitOnExit),
+        auto_commit_on_exit: opts.autoCommitOnExit !== false,
         base_branch: opts.baseBranch || 'main',
         default_work_branch_prefix: 'xensemble/',
     };
