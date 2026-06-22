@@ -54,6 +54,8 @@ const projects = sqliteTable('projects', {
   githubFullName: text('github_full_name'),
   cloneStatus: text('clone_status').default('pending'),
   cloneError: text('clone_error'),
+  remoteRepoId: text('remote_repo_id'),
+  remoteFullName: text('remote_full_name'),
   createdAt: integer('created_at').notNull()
 });
 
@@ -247,6 +249,57 @@ const pullRequests = sqliteTable('pull_requests', {
   unqProjectPr: unique().on(table.projectId, table.githubPrNumber),
 }));
 
+// ── Multi-provider Git tables (Phase 1.5) ──
+
+const gitConnections = sqliteTable('git_connections', {
+  id: text('id').primaryKey(),
+  userId: text('user_id').notNull().references(() => users.id),
+  provider: text('provider').notNull(),
+  providerConfig: text('provider_config'),
+  remoteUserId: text('remote_user_id').notNull(),
+  remoteUsername: text('remote_username').notNull(),
+  remoteAvatar: text('remote_avatar'),
+  accessTokenEnc: text('access_token_enc').notNull(),
+  refreshTokenEnc: text('refresh_token_enc'),
+  tokenScope: text('token_scope'),
+  tokenExpiresAt: integer('token_expires_at'),
+  connectedAt: integer('connected_at').notNull(),
+  lastUsedAt: integer('last_used_at'),
+  revokedAt: integer('revoked_at'),
+}, (table) => ({
+  unqUserProvider: unique().on(table.userId, table.provider, table.providerConfig),
+}));
+
+const gitOAuthStates = sqliteTable('git_oauth_states', {
+  state: text('state').primaryKey(),
+  userId: text('user_id').notNull(),
+  provider: text('provider').notNull(),
+  expiresAt: integer('expires_at').notNull(),
+}, (table) => ({
+  expiresIdx: index('idx_git_oauth_states_expires').on(table.expiresAt),
+}));
+
+const mergeRequests = sqliteTable('merge_requests', {
+  id: text('id').primaryKey(),
+  projectId: text('project_id').notNull().references(() => projects.id),
+  provider: text('provider').notNull(),
+  remoteMrNumber: integer('remote_mr_number').notNull(),
+  remoteMrUrl: text('remote_mr_url').notNull(),
+  title: text('title').notNull(),
+  description: text('description'),
+  sourceBranch: text('source_branch').notNull(),
+  targetBranch: text('target_branch').notNull(),
+  status: text('status').notNull().default('open'),
+  remoteState: text('remote_state'),
+  mergeSha: text('merge_sha'),
+  createdBy: text('created_by').references(() => users.id),
+  createdAt: integer('created_at').notNull(),
+  updatedAt: integer('updated_at').notNull(),
+  lastSyncedAt: integer('last_synced_at'),
+}, (table) => ({
+  unqProjectProviderMr: unique().on(table.projectId, table.provider, table.remoteMrNumber),
+}));
+
 module.exports = {
   users,
   userQuotas,
@@ -268,4 +321,7 @@ module.exports = {
   githubOAuthStates,
   projectBranches,
   pullRequests,
+  gitConnections,
+  gitOAuthStates,
+  mergeRequests,
 };

@@ -6,7 +6,7 @@ const schema = require('../db/schema');
 const auth = require('../auth/index');
 const { recordEvent } = require('../events/recordEvent');
 const PlatformSettings = require('../admin/PlatformSettings');
-const { GitHubService } = require('./GitHubService');
+const { GitHubService, getOAuthBase } = require('./GitHubService');
 
 const STATE_TTL_MS = 5 * 60 * 1000;
 
@@ -50,8 +50,9 @@ class GitConnectionService {
             params.set('redirect_uri', String(callbackUrl));
         }
 
+        const oauthBase = await getOAuthBase();
         return {
-            authUrl: `https://github.com/login/oauth/authorize?${params.toString()}`,
+            authUrl: `${oauthBase}/login/oauth/authorize?${params.toString()}`,
             state,
         };
     }

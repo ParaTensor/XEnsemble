@@ -1,0 +1,270 @@
+const { GitProviderService } = require('./GitProviderService');
+
+const DEFAULT_API_BASE = 'https://gitlab.com';
+
+class GitLabError extends Error {
+    constructor(message, code, status) {
+        super(message);
+        this.name = 'GitLabError';
+        this.code = code;
+        this.status = status;
+    }
+}
+
+function normalizeBase(apiBase) {
+    const base = (apiBase || DEFAULT_API_BASE).replace(/\/+$/, '');
+    return base.endsWith('/api/v4') ? base : `${base}/api/v4`;
+}
+
+function webBase(apiBase) {
+    return (apiBase || DEFAULT_API_BASE).replace(/\/api\/v4\/?$/, '').replace(/\/+$/, '');
+}
+
+function mapStatusToCode(status) {
+    if (status === 401) return 'token_expired';
+    if (status === 403) return 'insufficient_scope';
+    if (status === 404) return 'repo_not_found';
+    return 'gitlab_api_error';
+}
+
+async function gitlabFetch(token, apiBase, path, opts = {}) {
+    const base = normalizeBase(apiBase);
+    const url = `${base}${path}`;
+    const options = {
+        ...opts,
+        headers: {
+            Authorization: `Bearer ${token}`,
+            ...opts.headers,
+        },
+    };
+
+    let res;
+    try {
+        res = await fetch(url, options);
+    } catch (cause) {
+        throw new GitLabError(`GitLab request failed: ${cause.message}`, 'network_error');
+    }
+
+    if (res.ok) return res.json();
+
+    let body = null;
+    try { body = await res.json(); } catch { body = null; }
+    const message = body?.message || body?.error || `${path} failed with status ${res.status}`;
+    throw new GitLabError(
+        typeof message === 'object' ? JSON.stringify(message) : message,
+        mapStatusToCode(res.status),
+        res.status,
+    );
+}
+
+function normalizeRepoInfo(glProject, apiBase) {
+    return {
+        id: String(glProject.id),
+        fullName: glProject.path_with_namespace,
+        cloneUrl: glProject.http_url_to_repo,
+        defaultBranch: glProject.default_branch || 'main',
+        private: glProject.visibility === 'private',
+        description: glProject.description || null,
+        language: null,
+        updatedAt: glProject.last_activity_at || null,
+    };
+}
+
+function normalizeMRInfo(glMr, apiBase) {
+    const base = webBase(apiBase);
+    return {
+        number: glMr.iid,
+        url: glMr.web_url || `${base}/${glMr.references?.full || ''}`,
+        title: glMr.title,
+        body: glMr.description || null,
+        state: glMr.state === 'merged' ? 'closed' : glMr.state,
+        merged: glMr.state === 'merged',
+        headRef: glMr.source_branch || null,
+        baseRef: glMr.target_branch || null,
+        mergeCommitSha: glMr.merge_commit_sha || null,
+    };
+}
+
+class GitLabAdapter extends GitProviderService {
+    get name() { return 'gitlab'; }
+    get displayName() { return 'GitLab'; }
+    get prTerminology() {
+        return { singular: 'Merge Request', plural: 'Merge Requests', abbreviation: 'MR' };
+    }
+
+    get requiresTokenRefresh() { return true; }
+
+    // ── OAuth ──
+
+    buildAuthUrl({ clientId, callbackUrl, state, scope, apiBase }) {
+        const base = webBase(apiBase);
+        const params = new URLSearchParams({
+            client_id: clientId,
+            redirect_uri: callbackUrl || '',
+            response_type: 'code',
+            state,
+            scope: scope || 'api',
+        });
+        return `${base}/oauth/authorize?${params.toString()}`;
+    }
+
+    async exchangeCode(code, { clientId, clientSecret, callbackUrl, apiBase }) {
+        const base = webBase(apiBase);
+        let res;
+        try {
+            res = await fetch(`${base}/oauth/token`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    client_id: clientId,
+                    client_secret: clientSecret,
+                    code,
+                    grant_type: 'authorization_code',
+                    redirect_uri: callbackUrl || '',
+                }),
+            });
+        } catch (cause) {
+            throw new GitLabError(`GitLab OAuth request failed: ${cause.message}`, 'network_error');
+        }
+
+        const data = await res.json();
+        if (!res.ok || data.error) {
+            const message = data.error_description || data.error || `OAuth exchange failed (${res.status})`;
+            throw new GitLabError(message, data.error || 'oauth_failed');
+        }
+        if (!data.access_token) {
+            throw new GitLabError('OAuth response did not contain an access_token', 'oauth_failed');
+        }
+
+        return {
+            accessToken: data.access_token,
+            refreshToken: data.refresh_token || null,
+            expiresIn: data.expires_in || null,
+            scope: data.scope || null,
+        };
+    }
+
+    async refreshAccessToken(refreshToken, { clientId, clientSecret, apiBase }) {
+        const base = webBase(apiBase);
+        let res;
+        try {
+            res = await fetch(`${base}/oauth/token`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    client_id: clientId,
+                    client_secret: clientSecret,
+                    refresh_token: refreshToken,
+                    grant_type: 'refresh_token',
+                }),
+            });
+        } catch (cause) {
+            throw new GitLabError(`GitLab token refresh failed: ${cause.message}`, 'network_error');
+        }
+
+        const data = await res.json();
+        if (!res.ok || data.error) {
+            throw new GitLabError(data.error_description || data.error || 'token refresh failed', 'refresh_failed');
+        }
+
+        return {
+            accessToken: data.access_token,
+            refreshToken: data.refresh_token || null,
+            expiresIn: data.expires_in || null,
+        };
+    }
+
+    // ── User ──
+
+    async getAuthenticatedUser(token, { apiBase } = {}) {
+        const user = await gitlabFetch(token, apiBase, '/user');
+        return {
+            id: String(user.id),
+            username: user.username,
+            displayName: user.name || user.username,
+            avatarUrl: user.avatar_url || null,
+            email: user.email || null,
+        };
+    }
+
+    // ── Repositories ──
+
+    async listUserRepos(token, { page = 1, perPage = 30, search, apiBase } = {}) {
+        const query = new URLSearchParams();
+        query.set('page', String(page));
+        query.set('per_page', String(perPage));
+        query.set('membership', 'true');
+        query.set('order_by', 'updated_at');
+        query.set('sort', 'desc');
+        if (search) query.set('search', search);
+        const projects = await gitlabFetch(token, apiBase, `/projects?${query.toString()}`);
+        return {
+            repos: projects.map((p) => normalizeRepoInfo(p, apiBase)),
+            hasMore: projects.length === perPage,
+        };
+    }
+
+    async getRepo(token, repoIdentifier, { apiBase } = {}) {
+        const encoded = encodeURIComponent(repoIdentifier);
+        const project = await gitlabFetch(token, apiBase, `/projects/${encoded}`);
+        return normalizeRepoInfo(project, apiBase);
+    }
+
+    // ── Merge Requests ──
+
+    async createPR(token, repoIdentifier, { title, body, head, base: baseBranch, apiBase }) {
+        const encoded = encodeURIComponent(repoIdentifier);
+        const mr = await gitlabFetch(token, apiBase,
+            `/projects/${encoded}/merge_requests`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    title,
+                    description: body,
+                    source_branch: head,
+                    target_branch: baseBranch,
+                }),
+            });
+        return normalizeMRInfo(mr, apiBase);
+    }
+
+    async getPR(token, repoIdentifier, mrIid, { apiBase } = {}) {
+        const encoded = encodeURIComponent(repoIdentifier);
+        const mr = await gitlabFetch(token, apiBase,
+            `/projects/${encoded}/merge_requests/${mrIid}`);
+        return normalizeMRInfo(mr, apiBase);
+    }
+
+    async listPRs(token, repoIdentifier, { state = 'opened', page = 1, perPage = 30, apiBase } = {}) {
+        const encoded = encodeURIComponent(repoIdentifier);
+        const query = new URLSearchParams();
+        // Map generic 'open' → GitLab 'opened'
+        query.set('state', state === 'open' ? 'opened' : state);
+        query.set('page', String(page));
+        query.set('per_page', String(perPage));
+        const mrs = await gitlabFetch(token, apiBase,
+            `/projects/${encoded}/merge_requests?${query.toString()}`);
+        return mrs.map((mr) => normalizeMRInfo(mr, apiBase));
+    }
+
+    // ── Utility ──
+
+    parseRepoIdentifier(fullName) {
+        if (!fullName || typeof fullName !== 'string') {
+            throw new Error('Repository path is required');
+        }
+        const parts = fullName.split('/');
+        if (parts.length < 2) {
+            throw new Error(`Invalid GitLab repo identifier: ${fullName}`);
+        }
+        // GitLab supports nested groups: group/subgroup/repo
+        return { owner: parts.slice(0, -1).join('/'), repo: parts[parts.length - 1] };
+    }
+
+    buildCloneUrl(repoIdentifier, { apiBase } = {}) {
+        const base = webBase(apiBase);
+        return `${base}/${repoIdentifier}.git`;
+    }
+}
+
+module.exports = { GitLabAdapter, GitLabError };
