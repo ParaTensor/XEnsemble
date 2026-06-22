@@ -23,6 +23,7 @@ describe('reconcileRunningSessions', () => {
                 stream_ref TEXT,
                 recoverable INTEGER DEFAULT 0,
                 status TEXT DEFAULT 'running',
+                title TEXT,
                 created_at INTEGER NOT NULL
             );
         `);
