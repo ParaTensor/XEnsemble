@@ -185,8 +185,11 @@ function registerAdminRoutes(fastify) {
     });
 
     fastify.get('/api/v1/admin/platform-settings', { preValidation: adminPre }, async () => {
+        const MASK = '••••••••';
         const settings = await platformSettings.getAll();
-        settings.GITHUB_CLIENT_SECRET = settings.GITHUB_CLIENT_SECRET ? '••••••••' : '';
+        settings.GITHUB_CLIENT_SECRET = settings.GITHUB_CLIENT_SECRET ? MASK : '';
+        settings.GITHUB_APP_PRIVATE_KEY = settings.GITHUB_APP_PRIVATE_KEY ? MASK : '';
+        settings.GITHUB_APP_WEBHOOK_SECRET = settings.GITHUB_APP_WEBHOOK_SECRET ? MASK : '';
         return settings;
     });
 
@@ -243,9 +246,29 @@ function registerAdminRoutes(fastify) {
                 delete body[key];
             }
         }
+        // GitHub App config keys
+        const appSecretKeys = ['GITHUB_APP_PRIVATE_KEY', 'GITHUB_APP_WEBHOOK_SECRET'];
+        for (const key of appSecretKeys) {
+            if (body[key] !== undefined) {
+                if (body[key] === MASK) {
+                    // preserve existing
+                } else if (body[key] === '') {
+                    await platformSettings.set(key, '');
+                } else if (body[key]) {
+                    await platformSettings.set(key, platformSecrets.setPlatformSecret(key, body[key]));
+                }
+                delete body[key];
+            }
+        }
+        if (body.GITHUB_APP_ID !== undefined) {
+            await platformSettings.set('GITHUB_APP_ID', body.GITHUB_APP_ID);
+            delete body.GITHUB_APP_ID;
+        }
         try {
             const settings = await platformSettings.updateAll(body);
             settings.GITHUB_CLIENT_SECRET = settings.GITHUB_CLIENT_SECRET ? MASK : '';
+            settings.GITHUB_APP_PRIVATE_KEY = settings.GITHUB_APP_PRIVATE_KEY ? MASK : '';
+            settings.GITHUB_APP_WEBHOOK_SECRET = settings.GITHUB_APP_WEBHOOK_SECRET ? MASK : '';
             return settings;
         } catch (err) {
             return reply.code(err.statusCode || 400).send({ error: err.message });
