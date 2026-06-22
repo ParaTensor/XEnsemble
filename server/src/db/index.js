@@ -288,6 +288,89 @@ if (!projectCols.some((c) => c.name === 'clone_status')) {
 if (!projectCols.some((c) => c.name === 'clone_error')) {
     sqlite.exec(`ALTER TABLE projects ADD COLUMN clone_error TEXT`);
 }
+if (!projectCols.some((c) => c.name === 'remote_repo_id')) {
+    sqlite.exec(`ALTER TABLE projects ADD COLUMN remote_repo_id TEXT`);
+}
+if (!projectCols.some((c) => c.name === 'remote_full_name')) {
+    sqlite.exec(`ALTER TABLE projects ADD COLUMN remote_full_name TEXT`);
+}
+
+// ── Multi-provider Git tables (Phase 1.5) ──
+sqlite.exec(`
+  CREATE TABLE IF NOT EXISTS git_connections (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL REFERENCES users(id),
+    provider TEXT NOT NULL,
+    provider_config TEXT,
+    remote_user_id TEXT NOT NULL,
+    remote_username TEXT NOT NULL,
+    remote_avatar TEXT,
+    access_token_enc TEXT NOT NULL,
+    refresh_token_enc TEXT,
+    token_scope TEXT,
+    token_expires_at INTEGER,
+    connected_at INTEGER NOT NULL,
+    last_used_at INTEGER,
+    revoked_at INTEGER,
+    UNIQUE(user_id, provider, provider_config)
+  );
+
+  CREATE TABLE IF NOT EXISTS git_oauth_states (
+    state TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    provider TEXT NOT NULL,
+    expires_at INTEGER NOT NULL
+  );
+
+  CREATE TABLE IF NOT EXISTS merge_requests (
+    id TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL REFERENCES projects(id),
+    provider TEXT NOT NULL,
+    remote_mr_number INTEGER NOT NULL,
+    remote_mr_url TEXT NOT NULL,
+    title TEXT NOT NULL,
+    description TEXT,
+    source_branch TEXT NOT NULL,
+    target_branch TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'open',
+    remote_state TEXT,
+    merge_sha TEXT,
+    created_by TEXT REFERENCES users(id),
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL,
+    last_synced_at INTEGER,
+    UNIQUE(project_id, provider, remote_mr_number)
+  );
+`);
+
+// Data migration: copy existing github_connections → git_connections
+try {
+    const ghConns = sqlite.prepare(`SELECT * FROM github_connections WHERE id NOT IN (SELECT id FROM git_connections)`).all();
+    const insertGitConn = sqlite.prepare(`
+      INSERT OR IGNORE INTO git_connections (id, user_id, provider, remote_user_id, remote_username, remote_avatar, access_token_enc, token_scope, connected_at, last_used_at, revoked_at)
+      VALUES (?, ?, 'github', ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+    for (const row of ghConns) {
+        insertGitConn.run(row.id, row.user_id, String(row.github_user_id), row.github_username, row.github_avatar, row.access_token_enc, row.token_scope, row.connected_at, row.last_used_at, row.revoked_at);
+    }
+} catch { /* github_connections table may not exist yet in fresh installs */ }
+
+// Data migration: copy existing pull_requests → merge_requests
+try {
+    const prs = sqlite.prepare(`SELECT * FROM pull_requests WHERE id NOT IN (SELECT id FROM merge_requests)`).all();
+    const insertMr = sqlite.prepare(`
+      INSERT OR IGNORE INTO merge_requests (id, project_id, provider, remote_mr_number, remote_mr_url, title, description, source_branch, target_branch, status, remote_state, merge_sha, created_by, created_at, updated_at, last_synced_at)
+      VALUES (?, ?, 'github', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+    for (const row of prs) {
+        insertMr.run(row.id, row.project_id, row.github_pr_number, row.github_pr_url, row.title, row.description, row.source_branch, row.target_branch, row.status, row.github_state, row.merge_sha, row.created_by, row.created_at, row.updated_at, row.last_synced_at);
+    }
+} catch { /* pull_requests table may not exist yet in fresh installs */ }
+
+// Data migration: backfill projects.remote_repo_id / remote_full_name from GitHub-specific fields
+try {
+    sqlite.exec(`UPDATE projects SET remote_repo_id = CAST(github_repo_id AS TEXT), remote_full_name = github_full_name WHERE github_repo_id IS NOT NULL AND remote_repo_id IS NULL`);
+} catch { /* ignore if columns don't exist */ }
 
 const sessionColsAfter = sqlite.prepare(`PRAGMA table_info(sessions)`).all();
 if (!sessionColsAfter.some((c) => c.name === 'runtime_id')) {

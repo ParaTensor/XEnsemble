@@ -33,6 +33,7 @@ const { registerAdminRoutes } = require('./routes/admin');
 const { registerUserRoutes } = require('./routes/user');
 const { registerTerminalHttpRoutes } = require('./routes/terminalHttp');
 const { registerGitHubRoutes } = require('./routes/github');
+const { registerGitRoutes } = require('./routes/git');
 const { applyTerminalMessage, subscribeTerminal } = require('./session/terminalBridge');
 const unigateway = require('./gateway/unigatewayManager');
 const { registerGatewayAdminRoutes } = require('./gateway/adminProxy');
@@ -81,6 +82,7 @@ registerUserRoutes(fastify);
 registerTerminalHttpRoutes(fastify);
 registerGatewayAdminRoutes(fastify);
 registerGitHubRoutes(fastify);
+registerGitRoutes(fastify);
 
 // -- API Routes --
 
