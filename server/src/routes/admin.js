@@ -166,7 +166,9 @@ function registerAdminRoutes(fastify) {
     });
 
     fastify.get('/api/v1/admin/platform-settings', { preValidation: adminPre }, async () => {
-        return platformSettings.getAll();
+        const settings = await platformSettings.getAll();
+        settings.GITHUB_CLIENT_SECRET = platformSecrets.getPlatformSecret(settings.GITHUB_CLIENT_SECRET) || '';
+        return settings;
     });
 
     fastify.put('/api/v1/admin/platform-settings', { preValidation: adminPre }, async (request, reply) => {
@@ -197,8 +199,22 @@ function registerAdminRoutes(fastify) {
                 }
             }
         }
+        const body = { ...(request.body || {}) };
+        const githubKeys = ['GITHUB_CLIENT_ID', 'GITHUB_CLIENT_SECRET', 'GITHUB_CALLBACK_URL', 'GITHUB_API_BASE'];
+        for (const key of githubKeys) {
+            if (body[key] !== undefined) {
+                if (key === 'GITHUB_CLIENT_SECRET') {
+                    await platformSettings.set(key, platformSecrets.setPlatformSecret(key, body[key]));
+                } else {
+                    await platformSettings.set(key, body[key]);
+                }
+                delete body[key];
+            }
+        }
         try {
-            return await platformSettings.updateAll(request.body || {});
+            const settings = await platformSettings.updateAll(body);
+            settings.GITHUB_CLIENT_SECRET = platformSecrets.getPlatformSecret(settings.GITHUB_CLIENT_SECRET) || '';
+            return settings;
         } catch (err) {
             return reply.code(err.statusCode || 400).send({ error: err.message });
         }

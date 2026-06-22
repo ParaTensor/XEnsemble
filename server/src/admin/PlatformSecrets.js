@@ -3,6 +3,17 @@ const schema = require('../db/schema');
 const { eq } = require('drizzle-orm');
 const auth = require('../auth/index');
 
+function setPlatformSecret(key, value) {
+    if (!value) return null;
+    return auth.encryptSecrets({ secret: value });
+}
+
+function getPlatformSecret(encryptedValue) {
+    if (!encryptedValue) return null;
+    const decrypted = auth.decryptSecrets(encryptedValue);
+    return decrypted?.secret || null;
+}
+
 const PLATFORM_SECRETS_KEY = 'agent_secrets_encrypted';
 
 async function getRaw() {
@@ -38,6 +49,8 @@ async function merge(updates) {
 }
 
 module.exports = {
+    setPlatformSecret,
+    getPlatformSecret,
     getRaw,
     getHints,
     merge,

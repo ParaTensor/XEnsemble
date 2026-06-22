@@ -7,11 +7,13 @@ import {
   consoleSettingsTabIdleClass,
 } from '../../lib/consoleTheme';
 import GeneralSettingsPanel from './GeneralSettingsPanel';
+import GitHubSettingsPanel from './GitHubSettingsPanel';
 import QuotaSettingsPanel from './QuotaSettingsPanel';
 import TerminalSettingsPanel from './TerminalSettingsPanel';
 
 const QUOTA_SECTION = { id: 'quota', label: 'Quota' };
 const GENERAL_SECTION = { id: 'general', label: 'General' };
+const GITHUB_SECTION = { id: 'github', label: 'GitHub' };
 const TERMINAL_SECTION = { id: 'terminal', label: 'Terminal' };
 export default function SettingsShell() {
   const { user, token } = useContext(AuthContext);
@@ -19,6 +21,7 @@ export default function SettingsShell() {
 
   const sections = [
     GENERAL_SECTION,
+    GITHUB_SECTION,
     TERMINAL_SECTION,
     QUOTA_SECTION,
   ];
@@ -43,6 +46,7 @@ export default function SettingsShell() {
 
       <div className={consoleSettingsPanelScrollClass}>
         {section === 'general' && <GeneralSettingsPanel />}
+        {section === 'github' && <GitHubSettingsPanel />}
         {section === 'terminal' && <TerminalSettingsPanel />}
         {section === 'quota' && <QuotaSettingsPanel />}
       </div>
