@@ -5,10 +5,12 @@ import { FitAddon } from '@xterm/addon-fit';
 import '@xterm/xterm/css/xterm.css';
 import { usePreview, PreviewControlGroup } from './PreviewPanel';
 import TerminalThemePicker from './TerminalThemePicker';
+import BranchSelector from './github/BranchSelector';
 import { getWsUrl, getAccessToken, getBackendURL } from '../lib/api';
 import { useTerminalTheme } from '../hooks/useTerminalTheme.jsx';
 import { XTERM_MINIMUM_CONTRAST_RATIO } from '../lib/terminalThemes.js';
 import { useToast } from './Toast';
+import { useGitStatus } from '../hooks/useGitStatus.js';
 
 function parseWsMessage(message) {
     const raw = typeof message === 'string' ? message : message.toString();
@@ -73,6 +75,7 @@ export default function AgentConsole({
     const { preset, themeRevision } = useTerminalTheme();
     const preview = usePreview(projectId, token);
     const { showToast } = useToast();
+    const gitStatus = useGitStatus(projectId);
     const containerRef = useRef(null);
     const terminalPaneRef = useRef(null);
     const terminalRef = useRef(null);
@@ -303,11 +306,21 @@ export default function AgentConsole({
             style={{ backgroundColor: terminalBackground }}
         >
             <div className="h-10 bg-[#FAFBFC] border-b border-[#E8EAED] flex items-center justify-between px-4 shrink-0">
-                <div className="flex items-center gap-2">
+                <div className="flex min-w-0 items-center gap-2">
                     <div className={`w-2 h-2 rounded-full ${ended ? 'bg-[#9AA0A6]' : 'bg-[#4A7C59] animate-pulse'}`}></div>
                     <span className="text-xs font-mono font-medium text-[#202124]">
                         {agentName}
                     </span>
+                    {projectId && (
+                        <>
+                            <div className="hidden sm:block h-4 w-px bg-[#E8EAED] shrink-0" aria-hidden />
+                            <BranchSelector
+                                projectId={projectId}
+                                currentBranch={gitStatus.status?.branch}
+                                onBranchChanged={() => gitStatus.fetchStatus({ silent: true })}
+                            />
+                        </>
+                    )}
                 </div>
                 <div className="flex items-center gap-2 text-xs font-mono text-[#5F6368] min-w-0">
                     <TerminalThemePicker />

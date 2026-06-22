@@ -74,6 +74,7 @@ function AuthenticatedLayout({
         }
         onCreateWorkspace={() => sessionsPageRef.current?.openLaunchModal?.('workspace')}
         onCreateSessionInWorkspace={(ws) => sessionsPageRef.current?.openLaunchModal?.('session', ws)}
+        onImportFromGitHub={() => sessionsPageRef.current?.openImportDialog?.()}
         onRequestDeleteSession={(session, ws) =>
           sessionsPageRef.current?.requestDeleteSession?.(session, ws)
         }

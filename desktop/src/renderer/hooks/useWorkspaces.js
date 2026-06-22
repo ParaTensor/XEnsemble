@@ -36,6 +36,15 @@ export function useWorkspaces(user) {
           id: p.id,
           name: p.name,
           createdAt: p.created_at ?? p.createdAt ?? 0,
+          repoProvider: p.repo_provider ?? p.repoProvider ?? 'none',
+          repoUrl: p.repo_url ?? p.repoUrl ?? null,
+          repoDefaultBranch: p.repo_default_branch ?? p.repoDefaultBranch ?? 'main',
+          currentBranch: p.current_branch ?? p.currentBranch ?? null,
+          githubRepoId: p.github_repo_id ?? p.githubRepoId ?? null,
+          githubFullName: p.github_full_name ?? p.githubFullName ?? null,
+          cloneStatus: p.clone_status ?? p.cloneStatus ?? 'pending',
+          cloneError: p.clone_error ?? p.cloneError ?? null,
+          workspaceMode: p.workspace_mode ?? p.workspaceMode ?? 'local',
         })));
       }
     } catch {

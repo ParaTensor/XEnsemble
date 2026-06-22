@@ -2,6 +2,9 @@ import { apiFetch } from '../lib/api.ts';
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import AgentConsole from '../components/AgentConsole';
 import WorkspaceFileTree from '../components/WorkspaceFileTree';
+import GitStatusBar from '../components/github/GitStatusBar';
+import PRListPanel from '../components/github/PRListPanel';
+import RepoImportDialog from '../components/github/RepoImportDialog';
 import SelectMenu from '../components/SelectMenu';
 import { ConsoleDialogShell, ConsoleInlineDialog } from '../components/ConsoleDialog';
 import SecretFields from '../components/settings/SecretFields';
@@ -110,11 +113,13 @@ export default React.forwardRef(function SessionsPage({
   const [deleteConfirmSession, setDeleteConfirmSession] = useState(null);
   const [deletingWorkspaceId, setDeletingWorkspaceId] = useState(null);
   const [deleteConfirmWorkspace, setDeleteConfirmWorkspace] = useState(null);
+  const [showImportDialog, setShowImportDialog] = useState(false);
 
   React.useImperativeHandle(ref, () => ({
     openLaunchModal,
     requestDeleteSession,
     requestDeleteWorkspace,
+    openImportDialog: () => setShowImportDialog(true),
   }));
 
   const getAgentLabel = useCallback(
@@ -176,6 +181,10 @@ export default React.forwardRef(function SessionsPage({
   }, [activeSession]);
 
   const selectedAgent = agents.find(a => a.id === selectedAgentId);
+  const activeProject = useMemo(
+    () => projects.find((p) => p.id === activeSession?.projectId) || null,
+    [projects, activeSession?.projectId],
+  );
 
   const openConfigModal = async () => {
     const required = selectedAgent?.env_required || [];
@@ -1068,21 +1077,26 @@ export default React.forwardRef(function SessionsPage({
           style={(activeSession || launchingSession) ? { backgroundColor: preset.xterm.background } : undefined}
         >
           {activeSession ? (
-            <AgentConsole
-              key={activeSession.sessionId}
-              sessionId={activeSession.sessionId}
-              agentName={activeSession.agentName}
-              projectId={activeSession.projectId}
-              token={token}
-              sessionLive={sessions.find((s) => s.id === activeSession.sessionId)?.alive === true}
-              onSessionEnd={handleSessionEnd}
-              onStart={handleRestartSession}
-              onStop={handleStopSession}
-              sessionControlPending={restartingSession || stoppingSession}
-              onDisconnect={() => setActiveSession(null)}
-              workspaceOpen={workspaceOpen}
-              onToggleWorkspace={() => setWorkspaceOpen((v) => !v)}
-            />
+            <>
+              <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+                <AgentConsole
+                  key={activeSession.sessionId}
+                  sessionId={activeSession.sessionId}
+                  agentName={activeSession.agentName}
+                  projectId={activeSession.projectId}
+                  token={token}
+                  sessionLive={sessions.find((s) => s.id === activeSession.sessionId)?.alive === true}
+                  onSessionEnd={handleSessionEnd}
+                  onStart={handleRestartSession}
+                  onStop={handleStopSession}
+                  sessionControlPending={restartingSession || stoppingSession}
+                  onDisconnect={() => setActiveSession(null)}
+                  workspaceOpen={workspaceOpen}
+                  onToggleWorkspace={() => setWorkspaceOpen((v) => !v)}
+                />
+              </div>
+              <GitStatusBar projectId={activeSession.projectId} project={activeProject} />
+            </>
           ) : launchingSession ? (
             <div className="flex-1" />
           ) : (
@@ -1124,9 +1138,25 @@ export default React.forwardRef(function SessionsPage({
                 />
               )}
             </div>
+            {activeSession.projectId && (
+              <div className="h-1/2 min-h-0 shrink-0 border-t border-[#E8EAED]">
+                <PRListPanel projectId={activeSession.projectId} />
+              </div>
+            )}
           </div>
         )}
       </div>
+
+      {showImportDialog && (
+        <RepoImportDialog
+          open={showImportDialog}
+          onClose={() => setShowImportDialog(false)}
+          onImported={() => {
+            fetchWorkspaces();
+          }}
+          fetchWorkspaces={fetchWorkspaces}
+        />
+      )}
     </div>
   );
 });

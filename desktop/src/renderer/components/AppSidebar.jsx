@@ -12,7 +12,7 @@ import {
   CircleUser,
   LogOut,
   Settings2,
-  Network,
+  Github,
 } from 'lucide-react';
 import {
   loadSidebarPrefs,
@@ -239,6 +239,7 @@ export default function AppSidebar({
   onRequestDeleteSession,
   onRequestDeleteWorkspace,
   onArchiveSession,
+  onImportFromGitHub,
   user,
   onOpenSettings,
   onLogout,
@@ -488,6 +489,15 @@ export default function AppSidebar({
               </span>
             )}
           </div>
+          <button
+            type="button"
+            title="Import from GitHub"
+            disabled={!onImportFromGitHub}
+            onClick={onImportFromGitHub}
+            className={`p-1 rounded-md ${textPlaceholder} hover:text-[#202124] hover:bg-[#E8EAED] ${transitionBase} disabled:opacity-40`}
+          >
+            <Github className="w-3.5 h-3.5" />
+          </button>
           <button
             type="button"
             title="New workspace"
