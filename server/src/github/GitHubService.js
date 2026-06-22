@@ -2,6 +2,7 @@ const PlatformSettings = require('../admin/PlatformSettings');
 const PlatformSecrets = require('../admin/PlatformSecrets');
 
 const DEFAULT_API_BASE = 'https://api.github.com';
+const DEFAULT_OAUTH_BASE = 'https://github.com';
 const GITHUB_API_VERSION = '2022-11-28';
 
 class GitHubError extends Error {
@@ -18,6 +19,18 @@ async function getApiBase() {
     if (!value) return DEFAULT_API_BASE;
     const trimmed = String(value).trim().replace(/\/+$/, '');
     return trimmed || DEFAULT_API_BASE;
+}
+
+async function getOAuthBase() {
+    const apiBase = await getApiBase();
+    if (apiBase === DEFAULT_API_BASE) return DEFAULT_OAUTH_BASE;
+    // GHE: API base is https://ghe.corp.com/api/v3 → OAuth base is https://ghe.corp.com
+    try {
+        const url = new URL(apiBase);
+        return `${url.protocol}//${url.host}`;
+    } catch {
+        return DEFAULT_OAUTH_BASE;
+    }
 }
 
 async function getClientCredentials() {
@@ -85,9 +98,10 @@ class GitHubService {
             throw new GitHubError('GitHub OAuth credentials are not configured', 'not_configured');
         }
 
+        const oauthBase = await getOAuthBase();
         let res;
         try {
-            res = await fetch('https://github.com/login/oauth/access_token', {
+            res = await fetch(`${oauthBase}/login/oauth/access_token`, {
                 method: 'POST',
                 headers: {
                     Accept: 'application/json',
@@ -156,4 +170,4 @@ class GitHubService {
     }
 }
 
-module.exports = { GitHubService, GitHubError };
+module.exports = { GitHubService, GitHubError, getOAuthBase };

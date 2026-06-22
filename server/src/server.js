@@ -469,6 +469,13 @@ fastify.post('/api/v1/session/start', { preValidation: [fastify.authenticate] },
             .set({ status: 'exited' })
             .where(eq(schema.sessions.id, sessionId))
             .catch((err) => fastify.log.error(err, 'Failed to persist session exit status'));
+
+        if (project && project.workspaceMode === 'git') {
+            const { GitOperationService } = require('./github/GitOperationService');
+            const gitOps = new GitOperationService({ getToken: () => null });
+            gitOps.commitAll(project, `chore(xensemble): auto-checkpoint session ${sessionId}`)
+                .catch(() => { /* best-effort: ignore if nothing to commit or workspace missing */ });
+        }
     });
 
     const streamRef = handle.streamRef ?? null;
