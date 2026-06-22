@@ -31,7 +31,6 @@ CREATE TABLE IF NOT EXISTS github_oauth_states (
   expires_at INTEGER NOT NULL
 );
 
-CREATE INDEX IF NOT EXISTS idx_github_oauth_states_user ON github_oauth_states(user_id);
 CREATE INDEX IF NOT EXISTS idx_github_oauth_states_expires ON github_oauth_states(expires_at);
 
 -- Project branches (local tracking of repo branches)
@@ -49,9 +48,6 @@ CREATE TABLE IF NOT EXISTS project_branches (
   FOREIGN KEY(project_id) REFERENCES projects(id),
   UNIQUE(project_id, branch_name)
 );
-
-CREATE INDEX IF NOT EXISTS idx_project_branches_project ON project_branches(project_id);
-CREATE INDEX IF NOT EXISTS idx_project_branches_active ON project_branches(project_id, is_active);
 
 -- Pull requests synced from GitHub
 CREATE TABLE IF NOT EXISTS pull_requests (
@@ -74,6 +70,3 @@ CREATE TABLE IF NOT EXISTS pull_requests (
   FOREIGN KEY(created_by) REFERENCES users(id),
   UNIQUE(project_id, github_pr_number)
 );
-
-CREATE INDEX IF NOT EXISTS idx_pull_requests_project ON pull_requests(project_id);
-CREATE INDEX IF NOT EXISTS idx_pull_requests_status ON pull_requests(project_id, status);
