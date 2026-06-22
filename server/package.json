@@ -12,7 +12,7 @@
     "manage-user": "node scripts/manage-user.js",
     "postinstall": "chmod +x node_modules/node-pty/prebuilds/*/spawn-helper 2>/dev/null || true",
     "build:gateway": "cargo build --release --manifest-path ../gateway/Cargo.toml",
-    "test": "node --test src/llm/*.test.js src/config/*.test.js src/runtime/*.test.js src/auth/*.test.js src/session/*.test.js src/github/*.test.js src/git/providers/*.test.js",
+    "test": "node --test src/llm/*.test.js src/config/*.test.js src/runtime/*.test.js src/auth/*.test.js src/session/*.test.js src/github/*.test.js src/git/providers/*.test.js src/git/LocalGitService.test.js",
     "test:llm-acceptance": "RUN_LLM_ACCEPTANCE=1 node --test src/llm/proxy.acceptance.test.js",
     "gateway": "UNIGATEWAY_CONFIG_PATH=./data/unigateway.toml UNIGATEWAY_BIND_ADDR=127.0.0.1:8741 ../gateway/target/release/xensemble-unigateway"
   },

@@ -34,6 +34,7 @@ const { registerUserRoutes } = require('./routes/user');
 const { registerTerminalHttpRoutes } = require('./routes/terminalHttp');
 const { registerGitHubRoutes } = require('./routes/github');
 const { registerGitRoutes } = require('./routes/git');
+const { LocalGitService } = require('./git/LocalGitService');
 const { applyTerminalMessage, subscribeTerminal } = require('./session/terminalBridge');
 const unigateway = require('./gateway/unigatewayManager');
 const { registerGatewayAdminRoutes } = require('./gateway/adminProxy');
@@ -235,6 +236,15 @@ fastify.post('/api/v1/projects', { preValidation: [fastify.authenticate] }, asyn
         return reply.code(500).send({ error: 'Failed to create project directory' });
     }
 
+    // Initialize built-in Git repo (Layer 1) for the new project
+    try {
+        const localGit = new LocalGitService();
+        const fullProject = { id: projectId, userId: request.user.id };
+        await localGit.initRepo(fullProject);
+    } catch (err) {
+        request.log.warn({ err, projectId }, 'Local git init failed (non-fatal)');
+    }
+
     return {
         id: projectId,
         name,
@@ -315,8 +325,95 @@ fastify.post('/api/v1/projects/:projectId/checkpoints', { preValidation: [fastif
         if (rows.length === 0) return reply.code(404).send({ error: 'Session not found for this project' });
     }
 
+    // Use LocalGitService for git-mode projects to execute real git commit
+    if (project.workspaceMode === 'git') {
+        try {
+            const localGit = new LocalGitService();
+            const meta = {
+                sessionId: sessionId || null,
+                trigger: request.body?.trigger || 'manual',
+                summary: request.body?.summary || '',
+                userId: request.user.id,
+            };
+            const checkpoint = await localGit.commitCheckpoint(project, meta);
+            return reply.code(201).send(checkpoint);
+        } catch (err) {
+            request.log.error(err);
+            return reply.code(500).send({ error: 'Failed to create git checkpoint' });
+        }
+    }
+
     const checkpoint = await repositoryEnvironment.createCheckpoint(project, request.body || {}, request.user.id);
     return reply.code(201).send(checkpoint);
+});
+
+// Restore checkpoint
+fastify.post('/api/v1/projects/:projectId/checkpoints/:checkpointId/restore', {
+    preValidation: [fastify.authenticate],
+}, async (request, reply) => {
+    const project = await getProjectForUser(request.user.id, request.params.projectId);
+    if (!project) return reply.code(404).send({ error: 'Project not found' });
+
+    const localGit = new LocalGitService();
+    try {
+        const result = await localGit.restoreCheckpoint(
+            project,
+            request.params.checkpointId,
+            { cleanUntracked: request.body?.clean_untracked !== false },
+        );
+        return result;
+    } catch (err) {
+        request.log.error(err);
+        const code = err.statusCode || 500;
+        return reply.code(code).send({ error: err.message });
+    }
+});
+
+// Repository log
+fastify.get('/api/v1/projects/:projectId/repository/log', {
+    preValidation: [fastify.authenticate],
+}, async (request, reply) => {
+    const project = await getProjectForUser(request.user.id, request.params.projectId);
+    if (!project) return reply.code(404).send({ error: 'Project not found' });
+
+    const localGit = new LocalGitService();
+    try {
+        const count = request.query?.count ? Number(request.query.count) : 20;
+        const log = await localGit.getLog(project, { count });
+        return { commits: log };
+    } catch (err) {
+        request.log.error(err);
+        return reply.code(500).send({ error: 'Failed to get repository log' });
+    }
+});
+
+// Checkpoint diff
+fastify.get('/api/v1/projects/:projectId/checkpoints/:checkpointId/diff', {
+    preValidation: [fastify.authenticate],
+}, async (request, reply) => {
+    const project = await getProjectForUser(request.user.id, request.params.projectId);
+    if (!project) return reply.code(404).send({ error: 'Project not found' });
+
+    const rows = await db.select().from(schema.workspaceCheckpoints)
+        .where(and(
+            eq(schema.workspaceCheckpoints.id, request.params.checkpointId),
+            eq(schema.workspaceCheckpoints.projectId, project.id),
+        ));
+    if (rows.length === 0) return reply.code(404).send({ error: 'Checkpoint not found' });
+
+    const checkpoint = rows[0];
+    if (!checkpoint.gitSha) return reply.code(409).send({ error: 'Checkpoint has no git_sha' });
+
+    const localGit = new LocalGitService();
+    try {
+        const full = request.query?.full === 'true';
+        const result = await localGit.getDiff(project, checkpoint.gitSha, { full });
+        return result;
+    } catch (err) {
+        request.log.error(err);
+        const code = err.statusCode || 500;
+        return reply.code(code).send({ error: err.message });
+    }
 });
 
 // Sessions — list
