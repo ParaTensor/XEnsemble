@@ -37,9 +37,11 @@ require.cache[secretsPath] = {
     exports: mockSecrets,
 };
 
-const service = require('./GitHubService');
+const { GitHubService, GitHubError } = require('./GitHubService');
 
 describe('GitHubService', { concurrency: false }, () => {
+    const service = new GitHubService();
+
     after(() => {
         global.fetch = originalFetch;
         if (originalSettingsModule) {
@@ -53,6 +55,11 @@ describe('GitHubService', { concurrency: false }, () => {
             delete require.cache[secretsPath];
         }
         delete require.cache[require.resolve('./GitHubService')];
+    });
+
+    it('exports a class and GitHubError with correct name', () => {
+        assert.strictEqual(typeof GitHubService, 'function');
+        assert.strictEqual(new GitHubError('m', 'c').name, 'GitHubError');
     });
 
     it('exchanges OAuth code and returns access_token', async () => {
@@ -239,15 +246,15 @@ describe('GitHubService', { concurrency: false }, () => {
         assert.strictEqual(pr.number, 7);
     });
 
-    it('throws oauth_error when OAuth response lacks access_token', async () => {
+    it('throws oauth_failed when OAuth response lacks access_token', async () => {
         global.fetch = async () => ({
             ok: true,
             status: 200,
             json: async () => ({ scope: 'repo', token_type: 'bearer' }),
         });
         await assert.rejects(service.exchangeOAuthCode('code'), (err) => {
-            assert.strictEqual(err.code, 'oauth_error');
-            assert.strictEqual(err.message, 'OAuth response did not contain an access token');
+            assert.strictEqual(err.code, 'oauth_failed');
+            assert.strictEqual(err.message, 'OAuth response did not contain an access_token');
             return true;
         });
     });
@@ -261,7 +268,7 @@ describe('GitHubService', { concurrency: false }, () => {
         await assert.rejects(service.getRepo('token', 'owner', 'repo'), (err) => {
             assert.strictEqual(err.code, 'github_api_error');
             assert.strictEqual(err.status, 500);
-            assert.ok(err.message.includes('getRepo failed with status 500'));
+            assert.ok(err.message.includes('failed with status 500'));
             return true;
         });
     });
