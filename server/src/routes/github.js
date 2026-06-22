@@ -1,11 +1,20 @@
 const { GitConnectionService } = require('../github/GitConnectionService');
 const { GitHubService } = require('../github/GitHubService');
 
+function escapeHtml(str) {
+    return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+
 function callbackHtml(success, message) {
     const title = success ? 'GitHub Connected' : 'GitHub Connection Failed';
     const body = success
         ? 'GitHub connected, you can close this tab.'
-        : (message || 'Failed to connect GitHub. Please try again.');
+        : escapeHtml(message || 'Failed to connect GitHub. Please try again.');
     return `<!DOCTYPE html>
 <html lang="en">
 <head>
