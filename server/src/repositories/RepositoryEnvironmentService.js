@@ -262,7 +262,7 @@ function scaffoldXEnsemble(projectDir, opts = {}) {
 
     const gitignorePath = path.join(baseDir, '.gitignore');
     if (!fs.existsSync(gitignorePath)) {
-        fs.writeFileSync(gitignorePath, '*\n!.gitignore\n', 'utf8');
+        fs.writeFileSync(gitignorePath, '# XEnsemble workspace metadata — do not commit\n*\n!.gitignore\n', 'utf8');
     }
 
     const configPath = path.join(baseDir, 'config.json');
