@@ -186,7 +186,7 @@ function registerAdminRoutes(fastify) {
 
     fastify.get('/api/v1/admin/platform-settings', { preValidation: adminPre }, async () => {
         const settings = await platformSettings.getAll();
-        settings.GITHUB_CLIENT_SECRET = safeGetPlatformSecret(settings.GITHUB_CLIENT_SECRET);
+        settings.GITHUB_CLIENT_SECRET = settings.GITHUB_CLIENT_SECRET ? '••••••••' : '';
         return settings;
     });
 
@@ -225,14 +225,17 @@ function registerAdminRoutes(fastify) {
             return reply.code(400).send({ error: 'invalid_url', field: 'GITHUB_API_BASE' });
         }
         const body = { ...(request.body || {}) };
+        const MASK = '••••••••';
         const githubKeys = ['GITHUB_CLIENT_ID', 'GITHUB_CLIENT_SECRET', 'GITHUB_CALLBACK_URL', 'GITHUB_API_BASE'];
         for (const key of githubKeys) {
             if (body[key] !== undefined) {
                 if (key === 'GITHUB_CLIENT_SECRET') {
-                    if (body[key] !== '') {
-                        await platformSettings.set(key, platformSecrets.setPlatformSecret(key, body[key]));
-                    } else {
+                    if (body[key] === MASK) {
+                        // preserve existing secret
+                    } else if (body[key] === '') {
                         await platformSettings.set(key, '');
+                    } else if (body[key]) {
+                        await platformSettings.set(key, platformSecrets.setPlatformSecret(key, body[key]));
                     }
                 } else {
                     await platformSettings.set(key, body[key]);
@@ -242,7 +245,7 @@ function registerAdminRoutes(fastify) {
         }
         try {
             const settings = await platformSettings.updateAll(body);
-            settings.GITHUB_CLIENT_SECRET = safeGetPlatformSecret(settings.GITHUB_CLIENT_SECRET);
+            settings.GITHUB_CLIENT_SECRET = settings.GITHUB_CLIENT_SECRET ? MASK : '';
             return settings;
         } catch (err) {
             return reply.code(err.statusCode || 400).send({ error: err.message });

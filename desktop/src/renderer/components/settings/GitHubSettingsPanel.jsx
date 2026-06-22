@@ -6,6 +6,8 @@ import { useToast } from '../Toast';
 import { consoleSectionLabelClass } from '../../lib/consoleTheme';
 import { apiFetch } from '../../lib/api.ts';
 
+const MASK = '••••••••';
+
 export default function GitHubSettingsPanel() {
   const { user } = useContext(AuthContext);
   const { showToast } = useToast();
@@ -21,7 +23,10 @@ export default function GitHubSettingsPanel() {
       .then(async (res) => {
         if (!res.ok) throw new Error('failed');
         const data = await res.json();
-        setSettings(data);
+        setSettings({
+          ...data,
+          GITHUB_CLIENT_SECRET: data.GITHUB_CLIENT_SECRET ? MASK : '',
+        });
       })
       .catch((err) => {
         setSettings(null);
@@ -51,7 +56,7 @@ export default function GitHubSettingsPanel() {
       if (!res.ok) throw new Error(data.error);
       setSettings({
         ...data,
-        GITHUB_CLIENT_SECRET: data.GITHUB_CLIENT_SECRET || '',
+        GITHUB_CLIENT_SECRET: data.GITHUB_CLIENT_SECRET ? MASK : '',
       });
       showToast('success', 'GitHub settings saved.');
     } catch (err) {
