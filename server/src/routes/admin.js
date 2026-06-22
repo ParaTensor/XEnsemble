@@ -208,10 +208,10 @@ function registerAdminRoutes(fastify) {
                 }
             }
         }
-        if (request.body?.GITHUB_CALLBACK_URL !== undefined && !isValidUrl(request.body.GITHUB_CALLBACK_URL)) {
+        if (request.body?.GITHUB_CALLBACK_URL && !isValidUrl(request.body.GITHUB_CALLBACK_URL)) {
             return reply.code(400).send({ error: 'invalid_url', field: 'GITHUB_CALLBACK_URL' });
         }
-        if (request.body?.GITHUB_API_BASE !== undefined && !isValidUrl(request.body.GITHUB_API_BASE)) {
+        if (request.body?.GITHUB_API_BASE && !isValidUrl(request.body.GITHUB_API_BASE)) {
             return reply.code(400).send({ error: 'invalid_url', field: 'GITHUB_API_BASE' });
         }
         const body = { ...(request.body || {}) };

@@ -30,8 +30,9 @@ export default function GitHubSettingsPanel() {
   };
 
   useEffect(() => {
+    if (!isAdmin) return;
     loadSettings();
-  }, []);
+  }, [isAdmin]);
 
   const handleSave = async (e) => {
     e.preventDefault();

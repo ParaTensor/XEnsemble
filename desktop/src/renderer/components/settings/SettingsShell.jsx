@@ -5,6 +5,7 @@ import {
   consoleSettingsPanelScrollClass,
   consoleSettingsTabActiveClass,
   consoleSettingsTabIdleClass,
+  consoleSectionLabelClass,
 } from '../../lib/consoleTheme';
 import GeneralSettingsPanel from './GeneralSettingsPanel';
 import GitHubSettingsPanel from './GitHubSettingsPanel';
@@ -16,7 +17,7 @@ const GENERAL_SECTION = { id: 'general', label: 'General' };
 const GITHUB_SECTION = { id: 'github', label: 'GitHub' };
 const TERMINAL_SECTION = { id: 'terminal', label: 'Terminal' };
 export default function SettingsShell() {
-  const { user, token } = useContext(AuthContext);
+  const { user } = useContext(AuthContext);
   const [section, setSection] = useState('general');
   const isAdmin = user?.role === 'admin';
 
@@ -47,7 +48,12 @@ export default function SettingsShell() {
 
       <div className={consoleSettingsPanelScrollClass}>
         {section === 'general' && <GeneralSettingsPanel />}
-        {section === 'github' && <GitHubSettingsPanel />}
+        {section === 'github' && (isAdmin ? <GitHubSettingsPanel /> : (
+          <div className="space-y-4">
+            <h3 className={consoleSectionLabelClass}>GitHub</h3>
+            <p className="text-sm text-red-600">Not authorized</p>
+          </div>
+        ))}
         {section === 'terminal' && <TerminalSettingsPanel />}
         {section === 'quota' && <QuotaSettingsPanel />}
       </div>
