@@ -1,4 +1,6 @@
 const crypto = require('crypto');
+const path = require('path');
+const fs = require('fs');
 const { eq, and } = require('drizzle-orm');
 const { db } = require('../db/index');
 const schema = require('../db/schema');
@@ -251,6 +253,30 @@ async function createCheckpoint(project, input = {}, actorUserId = null) {
     return formatCheckpoint(row);
 }
 
+function scaffoldXEnsemble(projectDir, opts = {}) {
+    const baseDir = path.join(projectDir, '.xensemble');
+    const subdirs = ['rules', 'memory', 'prompts', 'workflows', 'cache'];
+    for (const sub of subdirs) {
+        fs.mkdirSync(path.join(baseDir, sub), { recursive: true });
+    }
+
+    const gitignorePath = path.join(baseDir, '.gitignore');
+    if (!fs.existsSync(gitignorePath)) {
+        fs.writeFileSync(gitignorePath, '*\n!.gitignore\n', 'utf8');
+    }
+
+    const configPath = path.join(baseDir, 'config.json');
+    const config = {
+        version: 1,
+        auto_commit_on_exit: Boolean(opts.autoCommitOnExit),
+        base_branch: opts.baseBranch || 'main',
+        default_work_branch_prefix: 'xensemble/',
+    };
+    fs.writeFileSync(configPath, JSON.stringify(config, null, 2) + '\n', 'utf8');
+
+    return { baseDir };
+}
+
 module.exports = {
     formatRepository,
     updateRepository,
@@ -260,4 +286,5 @@ module.exports = {
     createSnapshot,
     listCheckpoints,
     createCheckpoint,
+    scaffoldXEnsemble,
 };

@@ -420,6 +420,12 @@ fastify.post('/api/v1/session/start', { preValidation: [fastify.authenticate] },
         return reply.code(400).send({ error: resolved.error });
     }
 
+    if (project && project.repoProvider === 'github') {
+        resolved.env.XENSEMBLE_GIT_BRANCH = project.currentBranch || '';
+        resolved.env.XENSEMBLE_GIT_BASE_BRANCH = project.repoDefaultBranch || '';
+        resolved.env.XENSEMBLE_REPO_URL = project.githubFullName || '';
+    }
+
     await db.insert(schema.sessions).values({
         id: sessionId,
         userId: request.user.id,
