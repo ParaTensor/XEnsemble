@@ -10,7 +10,7 @@ const crypto = require('crypto');
 
 const { db } = require('../db/index');
 const schema = require('../db/schema');
-const { GitConnectionService } = require('../git/GitConnectionService');
+const { GitConnectionService, getProviderConfig } = require('../git/GitConnectionService');
 const { MergeRequestService } = require('../git/MergeRequestService');
 const { GitOperationService } = require('../git/GitOperationService');
 const { listProviders, getProvider, hasProvider } = require('../git/providers/registry');
@@ -152,11 +152,13 @@ function registerGitRoutes(fastify) {
         try {
             const token = await connectionService.getDecryptedToken(request.user.id, providerName);
             const provider = getProvider(providerName);
+            const config = await getProviderConfig(providerName);
             const { page, per_page, affiliation } = request.query || {};
             const result = await provider.listUserRepos(token, {
                 page: page ? Number(page) : 1,
                 perPage: per_page ? Number(per_page) : 30,
                 affiliation,
+                apiBase: config?.apiBase,
             });
             return result;
         } catch (err) {
@@ -168,15 +170,18 @@ function registerGitRoutes(fastify) {
         }
     });
 
-    fastify.get('/api/v1/git/repos/:owner/:repo', {
+    fastify.get('/api/v1/git/repos/*', {
         preValidation: [fastify.authenticate, fastify.requireActive],
     }, async (request, reply) => {
         const providerName = request.query?.provider || 'github';
+        // Wildcard captures the full path: owner/repo (GitHub, Gitea) or group/subgroup/repo (GitLab)
+        const repoPath = request.params['*'];
+        if (!repoPath) return reply.code(400).send({ error: 'repo path is required' });
         try {
             const token = await connectionService.getDecryptedToken(request.user.id, providerName);
             const provider = getProvider(providerName);
-            const { owner, repo } = request.params;
-            const repoInfo = await provider.getRepo(token, `${owner}/${repo}`);
+            const config = await getProviderConfig(providerName);
+            const repoInfo = await provider.getRepo(token, repoPath, { apiBase: config?.apiBase });
             return { repo: repoInfo };
         } catch (err) {
             request.log.error(err);

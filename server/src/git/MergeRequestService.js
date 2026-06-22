@@ -6,7 +6,7 @@ const schema = require('../db/schema');
 const { recordEvent } = require('../events/recordEvent');
 const { getProvider } = require('./providers/registry');
 const { GitConnectionService, getProviderConfig } = require('./GitConnectionService');
-const { GitOperationService } = require('../github/GitOperationService');
+const { GitOperationService } = require('./GitOperationService');
 
 class MergeRequestService {
     constructor(deps = {}) {
