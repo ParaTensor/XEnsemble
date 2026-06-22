@@ -54,6 +54,15 @@ async function runRecordedLifecycle(agent, action, fn) {
     }
 }
 
+function isValidUrl(value) {
+    try {
+        new URL(value);
+        return true;
+    } catch {
+        return false;
+    }
+}
+
 function registerAdminRoutes(fastify) {
     const adminPre = [fastify.authenticate, fastify.requireAdmin];
 
@@ -199,12 +208,20 @@ function registerAdminRoutes(fastify) {
                 }
             }
         }
+        if (request.body?.GITHUB_CALLBACK_URL !== undefined && !isValidUrl(request.body.GITHUB_CALLBACK_URL)) {
+            return reply.code(400).send({ error: 'invalid_url', field: 'GITHUB_CALLBACK_URL' });
+        }
+        if (request.body?.GITHUB_API_BASE !== undefined && !isValidUrl(request.body.GITHUB_API_BASE)) {
+            return reply.code(400).send({ error: 'invalid_url', field: 'GITHUB_API_BASE' });
+        }
         const body = { ...(request.body || {}) };
         const githubKeys = ['GITHUB_CLIENT_ID', 'GITHUB_CLIENT_SECRET', 'GITHUB_CALLBACK_URL', 'GITHUB_API_BASE'];
         for (const key of githubKeys) {
             if (body[key] !== undefined) {
                 if (key === 'GITHUB_CLIENT_SECRET') {
-                    await platformSettings.set(key, platformSecrets.setPlatformSecret(key, body[key]));
+                    if (body[key] !== '') {
+                        await platformSettings.set(key, platformSecrets.setPlatformSecret(key, body[key]));
+                    }
                 } else {
                     await platformSettings.set(key, body[key]);
                 }

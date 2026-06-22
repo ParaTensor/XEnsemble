@@ -18,10 +18,11 @@ const TERMINAL_SECTION = { id: 'terminal', label: 'Terminal' };
 export default function SettingsShell() {
   const { user, token } = useContext(AuthContext);
   const [section, setSection] = useState('general');
+  const isAdmin = user?.role === 'admin';
 
   const sections = [
     GENERAL_SECTION,
-    GITHUB_SECTION,
+    ...(isAdmin ? [GITHUB_SECTION] : []),
     TERMINAL_SECTION,
     QUOTA_SECTION,
   ];

@@ -11,18 +11,26 @@ export default function GitHubSettingsPanel() {
   const { showToast } = useToast();
   const [settings, setSettings] = useState(null);
   const [saving, setSaving] = useState(false);
+  const [error, setError] = useState(null);
   const isAdmin = user?.role === 'admin';
 
-  useEffect(() => {
+  const loadSettings = () => {
+    setError(null);
+    setSettings(null);
     apiFetch('/api/v1/admin/platform-settings')
       .then(async (res) => {
         if (!res.ok) throw new Error('failed');
         const data = await res.json();
         setSettings(data);
       })
-      .catch(() => {
+      .catch((err) => {
         setSettings(null);
+        setError(err.message || 'Failed to load settings');
       });
+  };
+
+  useEffect(() => {
+    loadSettings();
   }, []);
 
   const handleSave = async (e) => {
@@ -56,6 +64,16 @@ export default function GitHubSettingsPanel() {
   );
 
   if (isAdmin) {
+    if (error) {
+      return (
+        <div className="space-y-4">
+          <h3 className={consoleSectionLabelClass}>GitHub OAuth App</h3>
+          <p className="text-sm text-red-600">{error}</p>
+          <Button type="button" size="md" onClick={loadSettings}>Retry</Button>
+        </div>
+      );
+    }
+
     if (!settings) {
       return <p className="text-sm text-[#5F6368]">Loading…</p>;
     }
