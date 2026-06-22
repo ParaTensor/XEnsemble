@@ -1,4 +1,4 @@
-const { sqliteTable, text, integer, unique } = require('drizzle-orm/sqlite-core');
+const { sqliteTable, text, integer, unique, uniqueIndex } = require('drizzle-orm/sqlite-core');
 
 const users = sqliteTable('users', {
   id: text('id').primaryKey(),
@@ -191,7 +191,7 @@ const refreshTokens = sqliteTable('refresh_tokens', {
 
 const githubConnections = sqliteTable('github_connections', {
   id: text('id').primaryKey(),
-  userId: text('user_id').notNull().references(() => users.id).unique(),
+  userId: text('user_id').notNull().references(() => users.id),
   githubUserId: integer('github_user_id').notNull(),
   githubUsername: text('github_username').notNull(),
   githubAvatar: text('github_avatar'),
@@ -200,11 +200,13 @@ const githubConnections = sqliteTable('github_connections', {
   connectedAt: integer('connected_at').notNull(),
   lastUsedAt: integer('last_used_at'),
   revokedAt: integer('revoked_at'),
-});
+}, (table) => ({
+  idxGithubConnectionsUserId: uniqueIndex('idx_github_connections_user_id').on(table.userId),
+}));
 
 const githubOAuthStates = sqliteTable('github_oauth_states', {
   state: text('state').primaryKey(),
-  userId: text('user_id').notNull().references(() => users.id),
+  userId: text('user_id').notNull(),
   expiresAt: integer('expires_at').notNull(),
 });
 
@@ -227,12 +229,12 @@ const pullRequests = sqliteTable('pull_requests', {
   id: text('id').primaryKey(),
   projectId: text('project_id').notNull().references(() => projects.id),
   githubPrNumber: integer('github_pr_number').notNull(),
-  githubPrUrl: text('github_pr_url'),
-  title: text('title'),
+  githubPrUrl: text('github_pr_url').notNull(),
+  title: text('title').notNull(),
   description: text('description'),
-  sourceBranch: text('source_branch'),
-  targetBranch: text('target_branch'),
-  status: text('status').default('open'),
+  sourceBranch: text('source_branch').notNull(),
+  targetBranch: text('target_branch').notNull(),
+  status: text('status').notNull().default('open'),
   githubState: text('github_state'),
   mergeSha: text('merge_sha'),
   createdBy: text('created_by').references(() => users.id),

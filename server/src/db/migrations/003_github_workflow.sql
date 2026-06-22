@@ -22,14 +22,13 @@ CREATE TABLE IF NOT EXISTS github_connections (
   FOREIGN KEY(user_id) REFERENCES users(id)
 );
 
-CREATE INDEX IF NOT EXISTS idx_github_connections_user ON github_connections(user_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_github_connections_user_id ON github_connections(user_id);
 
 -- GitHub OAuth state tokens (temporary, short-lived)
 CREATE TABLE IF NOT EXISTS github_oauth_states (
   state TEXT PRIMARY KEY,
   user_id TEXT NOT NULL,
-  expires_at INTEGER NOT NULL,
-  FOREIGN KEY(user_id) REFERENCES users(id)
+  expires_at INTEGER NOT NULL
 );
 
 CREATE INDEX IF NOT EXISTS idx_github_oauth_states_user ON github_oauth_states(user_id);
@@ -59,12 +58,12 @@ CREATE TABLE IF NOT EXISTS pull_requests (
   id TEXT PRIMARY KEY,
   project_id TEXT NOT NULL,
   github_pr_number INTEGER NOT NULL,
-  github_pr_url TEXT,
-  title TEXT,
+  github_pr_url TEXT NOT NULL,
+  title TEXT NOT NULL,
   description TEXT,
-  source_branch TEXT,
-  target_branch TEXT,
-  status TEXT DEFAULT 'open',
+  source_branch TEXT NOT NULL,
+  target_branch TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'open',
   github_state TEXT,
   merge_sha TEXT,
   created_by TEXT,
