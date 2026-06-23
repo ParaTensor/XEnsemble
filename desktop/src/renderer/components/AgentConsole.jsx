@@ -56,10 +56,13 @@ function applyXtermSurfaceStyles(container, pane, theme) {
     }
 }
 
+const GIT_PROVIDERS = new Set(['github', 'gitlab', 'gitea', 'local_git']);
+
 export default function AgentConsole({
     sessionId,
     agentName,
     projectId,
+    project,
     token,
     onSessionEnd,
     onStart,
@@ -70,12 +73,13 @@ export default function AgentConsole({
     workspaceOpen,
     onToggleWorkspace,
 }) {
+    const isGitProject = GIT_PROVIDERS.has(project?.repoProvider);
     const [metrics, setMetrics] = useState({ cpu: 0, memory: 0 });
     const [ended, setEnded] = useState(!sessionLive);
     const { preset, themeRevision } = useTerminalTheme();
     const preview = usePreview(projectId, token);
     const { showToast } = useToast();
-    const gitStatus = useGitStatus(projectId);
+    const gitStatus = useGitStatus(isGitProject ? projectId : null);
     const containerRef = useRef(null);
     const terminalPaneRef = useRef(null);
     const terminalRef = useRef(null);
@@ -311,7 +315,7 @@ export default function AgentConsole({
                     <span className="text-xs font-mono font-medium text-[#202124]">
                         {agentName}
                     </span>
-                    {projectId && (
+                    {projectId && isGitProject && (
                         <>
                             <div className="hidden sm:block h-4 w-px bg-[#E8EAED] shrink-0" aria-hidden />
                             <BranchSelector

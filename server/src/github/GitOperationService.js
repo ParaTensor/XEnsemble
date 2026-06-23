@@ -11,6 +11,10 @@ class GitError extends Error {
 }
 
 async function defaultGetToken(project) {
+    const provider = project.repoProvider;
+    if (!provider || provider === 'none' || provider === 'local_git') {
+        return undefined;
+    }
     const { GitConnectionService } = require('./GitConnectionService');
     return new GitConnectionService().getDecryptedToken(project.userId);
 }

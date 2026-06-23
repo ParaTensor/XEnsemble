@@ -23,15 +23,16 @@ import {
   hoverBgSecondary,
 } from '../../lib/consoleTheme';
 
+const GIT_PROVIDERS = new Set(['github', 'gitlab', 'gitea', 'local_git']);
+
 export default function GitStatusBar({ projectId, project }) {
-  const { status, operation, commit, push, pull } = useGitStatus(projectId);
+  const isGitProject = Boolean(projectId && project?.repoProvider && GIT_PROVIDERS.has(project.repoProvider));
+  const { status, operation, commit, push, pull } = useGitStatus(isGitProject ? projectId : null);
   const [showCommitDialog, setShowCommitDialog] = useState(false);
   const [commitMessage, setCommitMessage] = useState('');
   const [committing, setCommitting] = useState(false);
   const [createPROpen, setCreatePROpen] = useState(false);
 
-  if (!projectId || !project?.repoProvider) return null;
-  const isGitProject = ['github', 'gitlab', 'gitea', 'local_git'].includes(project.repoProvider);
   if (!isGitProject) return null;
 
   const dirtyCount = status?.dirty
