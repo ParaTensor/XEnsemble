@@ -30,7 +30,9 @@ export default function GitStatusBar({ projectId, project }) {
   const [committing, setCommitting] = useState(false);
   const [createPROpen, setCreatePROpen] = useState(false);
 
-  if (!projectId || project?.repoProvider !== 'github') return null;
+  if (!projectId || !project?.repoProvider) return null;
+  const isGitProject = ['github', 'gitlab', 'gitea', 'local_git'].includes(project.repoProvider);
+  if (!isGitProject) return null;
 
   const dirtyCount = status?.dirty
     ? (Number(status.staged || 0) + Number(status.unstaged || 0) + Number(status.untracked || 0))
@@ -132,16 +134,18 @@ export default function GitStatusBar({ projectId, project }) {
               <Download className="h-3.5 w-3.5" />
             )}
           </button>
-          <button
-            type="button"
-            onClick={() => setCreatePROpen(true)}
-            disabled={!status?.branch}
-            title="Create pull request"
-            aria-label="Create pull request"
-            className={consoleIconButtonClass}
-          >
-            <GitPullRequest className="h-3.5 w-3.5" />
-          </button>
+          {project?.repoProvider !== 'local_git' && (
+            <button
+              type="button"
+              onClick={() => setCreatePROpen(true)}
+              disabled={!status?.branch}
+              title={project?.repoProvider === 'gitlab' ? 'Create merge request' : 'Create pull request'}
+              aria-label={project?.repoProvider === 'gitlab' ? 'Create merge request' : 'Create pull request'}
+              className={consoleIconButtonClass}
+            >
+              <GitPullRequest className="h-3.5 w-3.5" />
+            </button>
+          )}
         </div>
       </div>
 
