@@ -6,6 +6,7 @@ import {
   Pin,
   Plus,
   Trash2,
+  Archive,
   ChevronRight,
   ChevronDown,
   ChevronUp,
@@ -411,7 +412,7 @@ export default function AppSidebar({
             onClick={(e) => handleArchiveSession(e, s.id)}
             className={`p-1 rounded-md ${textPlaceholder} ${hoverTextPrimary} ${hoverBgTertiary} opacity-0 group-hover/session:opacity-100 focus:opacity-100 transition-opacity`}
           >
-            <Trash2 className="w-3 h-3" />
+            <Archive className="w-3 h-3" />
           </button>
           {!compact && (
             <button
