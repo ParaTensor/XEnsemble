@@ -4,7 +4,8 @@ import AgentConsole from '../components/AgentConsole';
 import WorkspaceFileTree from '../components/WorkspaceFileTree';
 import GitStatusBar from '../components/github/GitStatusBar';
 import PRListPanel from '../components/github/PRListPanel';
-import RepoImportDialog from '../components/github/RepoImportDialog';
+import MergeRequestListPanel from '../components/git/MergeRequestListPanel';
+import RepoImportDialog from '../components/git/RepoImportDialog';
 import SelectMenu from '../components/SelectMenu';
 import { ConsoleDialogShell, ConsoleInlineDialog } from '../components/ConsoleDialog';
 import SecretFields from '../components/settings/SecretFields';
@@ -1140,7 +1141,11 @@ export default React.forwardRef(function SessionsPage({
             </div>
             {activeSession.projectId && (
               <div className="h-1/2 min-h-0 shrink-0 border-t border-[#E8EAED]">
-                <PRListPanel projectId={activeSession.projectId} />
+                {activeProject?.repoProvider && activeProject.repoProvider !== 'github' ? (
+                  <MergeRequestListPanel projectId={activeSession.projectId} provider={activeProject.repoProvider} />
+                ) : (
+                  <PRListPanel projectId={activeSession.projectId} />
+                )}
               </div>
             )}
           </div>

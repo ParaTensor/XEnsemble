@@ -9,12 +9,14 @@ import {
 } from '../../lib/consoleTheme';
 import GeneralSettingsPanel from './GeneralSettingsPanel';
 import GitHubSettingsPanel from './GitHubSettingsPanel';
+import GitProvidersSettingsPanel from './GitProvidersSettingsPanel';
 import QuotaSettingsPanel from './QuotaSettingsPanel';
 import TerminalSettingsPanel from './TerminalSettingsPanel';
 
 const QUOTA_SECTION = { id: 'quota', label: 'Quota' };
 const GENERAL_SECTION = { id: 'general', label: 'General' };
 const GITHUB_SECTION = { id: 'github', label: 'GitHub' };
+const GIT_PROVIDERS_SECTION = { id: 'git-providers', label: 'Git' };
 const TERMINAL_SECTION = { id: 'terminal', label: 'Terminal' };
 export default function SettingsShell() {
   const { user } = useContext(AuthContext);
@@ -23,7 +25,7 @@ export default function SettingsShell() {
 
   const sections = [
     GENERAL_SECTION,
-    ...(isAdmin ? [GITHUB_SECTION] : []),
+    ...(isAdmin ? [GIT_PROVIDERS_SECTION] : [GITHUB_SECTION]),
     TERMINAL_SECTION,
     QUOTA_SECTION,
   ];
@@ -48,12 +50,8 @@ export default function SettingsShell() {
 
       <div className={consoleSettingsPanelScrollClass}>
         {section === 'general' && <GeneralSettingsPanel />}
-        {section === 'github' && (isAdmin ? <GitHubSettingsPanel /> : (
-          <div className="space-y-4">
-            <h3 className={consoleSectionLabelClass}>GitHub</h3>
-            <p className="text-sm text-red-600">Not authorized</p>
-          </div>
-        ))}
+        {section === 'git-providers' && <GitProvidersSettingsPanel />}
+        {section === 'github' && <GitHubSettingsPanel />}
         {section === 'terminal' && <TerminalSettingsPanel />}
         {section === 'quota' && <QuotaSettingsPanel />}
       </div>
