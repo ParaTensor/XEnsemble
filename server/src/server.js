@@ -418,6 +418,205 @@ fastify.get('/api/v1/projects/:projectId/checkpoints/:checkpointId/diff', {
     }
 });
 
+// ── Phase 4: Advanced Git APIs ──
+
+// Git blame
+fastify.get('/api/v1/projects/:projectId/repository/blame', {
+    preValidation: [fastify.authenticate],
+}, async (request, reply) => {
+    const project = await getProjectForUser(request.user.id, request.params.projectId);
+    if (!project) return reply.code(404).send({ error: 'Project not found' });
+
+    const { path: filePath, ref, start_line, end_line } = request.query || {};
+    if (!filePath) return reply.code(400).send({ error: 'path query parameter is required' });
+
+    const localGit = new LocalGitService();
+    try {
+        const entries = await localGit.blame(project, filePath, {
+            ref,
+            startLine: start_line ? Number(start_line) : undefined,
+            endLine: end_line ? Number(end_line) : undefined,
+        });
+        return { path: filePath, ref: ref || 'HEAD', entries };
+    } catch (err) {
+        request.log.error(err);
+        const code = err.statusCode || 500;
+        return reply.code(code).send({ error: err.message });
+    }
+});
+
+// Detailed commit log (with files changed, author info)
+fastify.get('/api/v1/projects/:projectId/repository/log/detailed', {
+    preValidation: [fastify.authenticate],
+}, async (request, reply) => {
+    const project = await getProjectForUser(request.user.id, request.params.projectId);
+    if (!project) return reply.code(404).send({ error: 'Project not found' });
+
+    const localGit = new LocalGitService();
+    try {
+        const count = request.query?.count ? Number(request.query.count) : 20;
+        const filePath = request.query?.path || undefined;
+        const commits = await localGit.logDetailed(project, { count, path: filePath });
+        return { commits };
+    } catch (err) {
+        request.log.error(err);
+        return reply.code(500).send({ error: 'Failed to get detailed log' });
+    }
+});
+
+// Conflict check (dry-run merge to detect conflicts)
+fastify.get('/api/v1/projects/:projectId/repository/conflict-check', {
+    preValidation: [fastify.authenticate],
+}, async (request, reply) => {
+    const project = await getProjectForUser(request.user.id, request.params.projectId);
+    if (!project) return reply.code(404).send({ error: 'Project not found' });
+
+    const targetBranch = request.query?.target || project.repoDefaultBranch || 'main';
+    const localGit = new LocalGitService();
+    try {
+        const result = await localGit.conflictCheck(project, targetBranch);
+        return { target_branch: targetBranch, ...result };
+    } catch (err) {
+        request.log.error(err);
+        return reply.code(500).send({ error: 'Failed to check conflicts' });
+    }
+});
+
+// List conflict files (working tree)
+fastify.get('/api/v1/projects/:projectId/repository/conflicts', {
+    preValidation: [fastify.authenticate],
+}, async (request, reply) => {
+    const project = await getProjectForUser(request.user.id, request.params.projectId);
+    if (!project) return reply.code(404).send({ error: 'Project not found' });
+
+    const localGit = new LocalGitService();
+    try {
+        const conflicts = await localGit.listConflicts(project);
+        return { conflicts };
+    } catch (err) {
+        request.log.error(err);
+        return reply.code(500).send({ error: 'Failed to list conflicts' });
+    }
+});
+
+// Resolve a conflict file
+fastify.post('/api/v1/projects/:projectId/repository/conflicts/resolve', {
+    preValidation: [fastify.authenticate],
+}, async (request, reply) => {
+    const project = await getProjectForUser(request.user.id, request.params.projectId);
+    if (!project) return reply.code(404).send({ error: 'Project not found' });
+
+    const { path: filePath, strategy } = request.body || {};
+    if (!filePath) return reply.code(400).send({ error: 'path is required' });
+    if (!strategy || !['ours', 'theirs', 'manual'].includes(strategy)) {
+        return reply.code(400).send({ error: 'strategy must be ours, theirs, or manual' });
+    }
+
+    const localGit = new LocalGitService();
+    try {
+        const result = await localGit.resolveConflict(project, filePath, strategy);
+        return result;
+    } catch (err) {
+        request.log.error(err);
+        const code = err.statusCode || 500;
+        return reply.code(code).send({ error: err.message });
+    }
+});
+
+// Show file content at a specific ref (for conflict side-by-side view)
+fastify.get('/api/v1/projects/:projectId/repository/file', {
+    preValidation: [fastify.authenticate],
+}, async (request, reply) => {
+    const project = await getProjectForUser(request.user.id, request.params.projectId);
+    if (!project) return reply.code(404).send({ error: 'Project not found' });
+
+    const { path: filePath, ref } = request.query || {};
+    if (!filePath) return reply.code(400).send({ error: 'path query parameter is required' });
+
+    const localGit = new LocalGitService();
+    try {
+        const result = await localGit.showFile(project, filePath, ref || 'HEAD');
+        return result;
+    } catch (err) {
+        request.log.error(err);
+        const code = err.statusCode || 500;
+        return reply.code(code).send({ error: err.message });
+    }
+});
+
+// PR/MR Reviews (Code Review integration)
+fastify.get('/api/v1/projects/:projectId/merge-requests/:mrId/reviews', {
+    preValidation: [fastify.authenticate],
+}, async (request, reply) => {
+    const project = await getProjectForUser(request.user.id, request.params.projectId);
+    if (!project) return reply.code(404).send({ error: 'Project not found' });
+
+    const providerName = project.repoProvider;
+    if (!providerName || providerName === 'local_git' || providerName === 'none') {
+        return { reviews: [] };
+    }
+
+    try {
+        const { GitConnectionService } = require('./git/GitConnectionService');
+        const { getProvider } = require('./git/providers/registry');
+        const connService = new GitConnectionService();
+        const token = await connService.getDecryptedToken(project.userId, providerName);
+        if (!token) return { reviews: [] };
+
+        const adapter = getProvider(providerName);
+        const mrRows = await db.select().from(schema.mergeRequests)
+            .where(eq(schema.mergeRequests.id, request.params.mrId));
+        if (mrRows.length === 0) return reply.code(404).send({ error: 'Merge request not found' });
+        const mr = mrRows[0];
+        const prNumber = mr.remoteNumber;
+        if (!prNumber) return { reviews: [] };
+
+        const repoId = project.remoteFullName || project.githubFullName;
+        const reviews = await adapter.listReviews(token, repoId, prNumber, {});
+        return { reviews };
+    } catch (err) {
+        request.log.error(err);
+        return reply.code(500).send({ error: 'Failed to fetch reviews' });
+    }
+});
+
+// PR/MR Review comments (inline code comments)
+fastify.get('/api/v1/projects/:projectId/merge-requests/:mrId/comments', {
+    preValidation: [fastify.authenticate],
+}, async (request, reply) => {
+    const project = await getProjectForUser(request.user.id, request.params.projectId);
+    if (!project) return reply.code(404).send({ error: 'Project not found' });
+
+    const providerName = project.repoProvider;
+    if (!providerName || providerName === 'local_git' || providerName === 'none') {
+        return { comments: [] };
+    }
+
+    try {
+        const { GitConnectionService } = require('./git/GitConnectionService');
+        const { getProvider } = require('./git/providers/registry');
+        const connService = new GitConnectionService();
+        const token = await connService.getDecryptedToken(project.userId, providerName);
+        if (!token) return { comments: [] };
+
+        const adapter = getProvider(providerName);
+        const mrRows = await db.select().from(schema.mergeRequests)
+            .where(eq(schema.mergeRequests.id, request.params.mrId));
+        if (mrRows.length === 0) return reply.code(404).send({ error: 'Merge request not found' });
+        const mr = mrRows[0];
+        const prNumber = mr.remoteNumber;
+        if (!prNumber) return { comments: [] };
+
+        const repoId = project.remoteFullName || project.githubFullName;
+        const page = request.query?.page ? Number(request.query.page) : 1;
+        const comments = await adapter.listReviewComments(token, repoId, prNumber, { page });
+        return { comments };
+    } catch (err) {
+        request.log.error(err);
+        return reply.code(500).send({ error: 'Failed to fetch review comments' });
+    }
+});
+
 // Sessions — list
 fastify.get('/api/v1/sessions', { preValidation: [fastify.authenticate] }, async (request, reply) => {
     const rows = await db.select().from(schema.sessions).where(eq(schema.sessions.userId, request.user.id));
