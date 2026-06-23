@@ -247,6 +247,43 @@ class GitLabAdapter extends GitProviderService {
         return mrs.map((mr) => normalizeMRInfo(mr, apiBase));
     }
 
+    // ── Reviews (Phase 4) ──
+
+    async listReviews(token, repoIdentifier, mrIid, { apiBase } = {}) {
+        const encoded = encodeURIComponent(repoIdentifier);
+        const approvals = await gitlabFetch(token, apiBase,
+            `/projects/${encoded}/merge_requests/${mrIid}/approvals`);
+        // GitLab doesn't have "reviews" like GitHub; approximate from approvals + notes
+        const reviewers = (approvals.approved_by || []).map((a) => ({
+            id: a.user?.id,
+            user: { login: a.user?.username, avatarUrl: a.user?.avatar_url },
+            state: 'APPROVED',
+            body: null,
+            submittedAt: null,
+            htmlUrl: null,
+        }));
+        return reviewers;
+    }
+
+    async listReviewComments(token, repoIdentifier, mrIid, { apiBase, page = 1, perPage = 30 } = {}) {
+        const encoded = encodeURIComponent(repoIdentifier);
+        const query = new URLSearchParams({ page: String(page), per_page: String(perPage) });
+        const notes = await gitlabFetch(token, apiBase,
+            `/projects/${encoded}/merge_requests/${mrIid}/notes?${query}`);
+        return notes.filter((n) => !n.system).map((n) => ({
+            id: n.id,
+            path: n.position?.new_path || n.position?.old_path || null,
+            line: n.position?.new_line || n.position?.old_line || null,
+            side: n.position?.new_line ? 'RIGHT' : 'LEFT',
+            user: { login: n.author?.username, avatarUrl: n.author?.avatar_url },
+            body: n.body || '',
+            createdAt: n.created_at,
+            updatedAt: n.updated_at,
+            inReplyToId: null,
+            diffHunk: null,
+        }));
+    }
+
     // ── Utility ──
 
     parseRepoIdentifier(fullName) {

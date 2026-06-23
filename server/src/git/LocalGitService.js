@@ -380,6 +380,263 @@ class LocalGitService {
         const result = await this._git(workspacePath, args, { timeoutMs: 60_000 });
         return { from: fromSha, to: toSha || 'working-tree', diff: result.stdout };
     }
+
+    // ── Phase 4: Advanced Git Features ──
+
+    /**
+     * Git blame for a file.
+     * @returns {Array<{ sha, author, date, lineNumber, content }>}
+     */
+    async blame(project, filePath, options = {}) {
+        const { workspacePath } = await this.ensureProjectRuntime(project);
+
+        // Validate file path (no traversal)
+        const normalized = path.normalize(filePath);
+        if (normalized.startsWith('..') || path.isAbsolute(normalized)) {
+            const err = new Error('Invalid file path');
+            err.statusCode = 400;
+            throw err;
+        }
+
+        const args = ['blame', '--porcelain'];
+        if (options.startLine && options.endLine) {
+            args.push(`-L`, `${options.startLine},${options.endLine}`);
+        }
+        if (options.ref) {
+            args.push(options.ref);
+        }
+        args.push('--', normalized);
+
+        let result;
+        try {
+            result = await this._git(workspacePath, args, { timeoutMs: 60_000 });
+        } catch (err) {
+            if (err.message?.includes('no such path') || err.message?.includes('fatal:')) {
+                const e = new Error(`File not found: ${filePath}`);
+                e.statusCode = 404;
+                throw e;
+            }
+            throw err;
+        }
+
+        return parseBlameOutput(result.stdout);
+    }
+
+    /**
+     * Detailed commit log with file changes and author info.
+     * @returns {Array<{ sha, message, author, email, timestamp, files }>}
+     */
+    async logDetailed(project, options = {}) {
+        const { workspacePath } = await this.ensureProjectRuntime(project);
+        const count = Math.min(options.count || 20, 100);
+        const args = [
+            'log', `-n`, String(count),
+            `--format=COMMIT_START%n%H%n%an%n%ae%n%ct%n%s%n%b%nCOMMIT_BODY_END`,
+            '--name-status',
+        ];
+        if (options.path) {
+            args.push('--', options.path);
+        }
+
+        const result = await this._git(workspacePath, args, { timeoutMs: 60_000 });
+        return parseDetailedLog(result.stdout);
+    }
+
+    /**
+     * Check for merge conflicts between current branch and a target branch.
+     * Performs a dry-run merge (no actual changes).
+     * @returns {{ canMerge, conflictFiles, aheadBehind }}
+     */
+    async conflictCheck(project, targetBranch) {
+        const { workspacePath } = await this.ensureProjectRuntime(project);
+
+        // Get ahead/behind counts
+        let ahead = 0, behind = 0;
+        try {
+            const abResult = await this._git(workspacePath, [
+                'rev-list', '--left-right', '--count', `HEAD...origin/${targetBranch}`,
+            ]);
+            const parts = abResult.stdout.trim().split(/\s+/);
+            ahead = Number(parts[0]) || 0;
+            behind = Number(parts[1]) || 0;
+        } catch {
+            // Branch may not exist on remote
+        }
+
+        // Dry-run merge to detect conflicts
+        let canMerge = true;
+        let conflictFiles = [];
+
+        try {
+            // Fetch latest target
+            await this._git(workspacePath, ['fetch', 'origin', targetBranch], { timeoutMs: 60_000 });
+        } catch {
+            // Fetch failed — can't check
+            return { canMerge: null, conflictFiles: [], aheadBehind: { ahead, behind } };
+        }
+
+        try {
+            await this._git(workspacePath, ['merge-tree', '--write-tree', 'HEAD', `origin/${targetBranch}`]);
+        } catch (err) {
+            // merge-tree exits non-zero when there are conflicts
+            canMerge = false;
+            // Parse conflict files from output
+            const output = err.message || '';
+            conflictFiles = parseMergeTreeConflicts(output);
+        }
+
+        return { canMerge, conflictFiles, aheadBehind: { ahead, behind } };
+    }
+
+    /**
+     * List files with merge conflicts in the working tree (after a merge attempt).
+     * @returns {Array<{ path, status, ours, theirs }>}
+     */
+    async listConflicts(project) {
+        const { workspacePath } = await this.ensureProjectRuntime(project);
+
+        const result = await this._git(workspacePath, ['diff', '--name-only', '--diff-filter=U']);
+        const files = result.stdout.trim().split('\n').filter(Boolean);
+
+        const conflicts = [];
+        for (const file of files) {
+            conflicts.push({
+                path: file,
+                status: 'conflicted',
+            });
+        }
+        return conflicts;
+    }
+
+    /**
+     * Resolve a conflict by choosing a strategy (ours/theirs/manual).
+     */
+    async resolveConflict(project, filePath, strategy) {
+        const { workspacePath } = await this.ensureProjectRuntime(project);
+
+        const normalized = path.normalize(filePath);
+        if (normalized.startsWith('..') || path.isAbsolute(normalized)) {
+            const err = new Error('Invalid file path');
+            err.statusCode = 400;
+            throw err;
+        }
+
+        if (strategy === 'ours') {
+            await this._git(workspacePath, ['checkout', '--ours', '--', normalized]);
+            await this._git(workspacePath, ['add', normalized]);
+        } else if (strategy === 'theirs') {
+            await this._git(workspacePath, ['checkout', '--theirs', '--', normalized]);
+            await this._git(workspacePath, ['add', normalized]);
+        } else {
+            // 'manual' — just mark as resolved (file was already edited)
+            await this._git(workspacePath, ['add', normalized]);
+        }
+
+        return { path: normalized, resolved: true, strategy };
+    }
+
+    /**
+     * Get file content at a specific ref (for conflict visualization).
+     */
+    async showFile(project, filePath, ref = 'HEAD') {
+        const { workspacePath } = await this.ensureProjectRuntime(project);
+
+        const normalized = path.normalize(filePath);
+        if (normalized.startsWith('..') || path.isAbsolute(normalized)) {
+            const err = new Error('Invalid file path');
+            err.statusCode = 400;
+            throw err;
+        }
+
+        try {
+            const result = await this._git(workspacePath, ['show', `${ref}:${normalized}`]);
+            return { path: normalized, ref, content: result.stdout };
+        } catch {
+            const err = new Error(`File not found at ref ${ref}: ${filePath}`);
+            err.statusCode = 404;
+            throw err;
+        }
+    }
 }
 
-module.exports = { LocalGitService, bareRepoPath, formatCheckpointMessage, BARE_REPO_ROOT };
+// ── Parsers ──
+
+function parseBlameOutput(output) {
+    const lines = output.split('\n');
+    const entries = [];
+    let current = null;
+    let lineNumber = 0;
+
+    for (const line of lines) {
+        if (/^[0-9a-f]{40}/.test(line)) {
+            const parts = line.split(' ');
+            const sha = parts[0];
+            lineNumber = Number(parts[2]) || lineNumber + 1;
+            current = { sha, lineNumber, author: null, date: null, content: '' };
+        } else if (line.startsWith('author ') && current) {
+            current.author = line.slice(7);
+        } else if (line.startsWith('author-time ') && current) {
+            current.date = Number(line.slice(12)) || null;
+        } else if (line.startsWith('\t') && current) {
+            current.content = line.slice(1);
+            entries.push(current);
+            current = null;
+        }
+    }
+
+    return entries;
+}
+
+function parseDetailedLog(output) {
+    const commits = [];
+    const blocks = output.split('COMMIT_START\n').filter(Boolean);
+
+    for (const block of blocks) {
+        const bodyEnd = block.indexOf('COMMIT_BODY_END');
+        const headerPart = block.slice(0, bodyEnd);
+        const filePart = block.slice(bodyEnd + 'COMMIT_BODY_END'.length);
+
+        const headerLines = headerPart.split('\n');
+        const sha = headerLines[0];
+        const author = headerLines[1];
+        const email = headerLines[2];
+        const timestamp = Number(headerLines[3]) || 0;
+        const subject = headerLines[4] || '';
+        const body = headerLines.slice(5).join('\n').trim();
+
+        const files = filePart.trim().split('\n').filter(Boolean).map((fl) => {
+            const match = fl.match(/^([AMDRC]\d*)\t(.+)$/);
+            if (!match) return null;
+            return { status: match[1][0], path: match[2] };
+        }).filter(Boolean);
+
+        if (sha) {
+            commits.push({
+                sha,
+                message: subject,
+                body: body || null,
+                author,
+                email,
+                timestamp,
+                files,
+            });
+        }
+    }
+
+    return commits;
+}
+
+function parseMergeTreeConflicts(output) {
+    const files = [];
+    const lines = output.split('\n');
+    for (const line of lines) {
+        // merge-tree conflict output format varies; look for conflict markers
+        const match = line.match(/CONFLICT \([^)]+\): (.+)/);
+        if (match) {
+            files.push(match[1].trim());
+        }
+    }
+    return files;
+}
+
+module.exports = { LocalGitService, bareRepoPath, formatCheckpointMessage, BARE_REPO_ROOT, parseBlameOutput, parseDetailedLog };

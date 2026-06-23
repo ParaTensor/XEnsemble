@@ -209,6 +209,43 @@ class GitHubAdapter extends GitProviderService {
         return ghPrs.map(normalizePRInfo);
     }
 
+    // ── Reviews (Phase 4) ──
+
+    async listReviews(token, repoIdentifier, prNumber, { apiBase } = {}) {
+        const base = apiBase || DEFAULT_API_BASE;
+        const { owner, repo } = this.parseRepoIdentifier(repoIdentifier);
+        const reviews = await githubFetch(token, base,
+            `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/pulls/${prNumber}/reviews`);
+        return reviews.map((r) => ({
+            id: r.id,
+            user: { login: r.user?.login, avatarUrl: r.user?.avatar_url },
+            state: r.state, // APPROVED, CHANGES_REQUESTED, COMMENTED, DISMISSED, PENDING
+            body: r.body || null,
+            submittedAt: r.submitted_at || null,
+            htmlUrl: r.html_url || null,
+        }));
+    }
+
+    async listReviewComments(token, repoIdentifier, prNumber, { apiBase, page = 1, perPage = 30 } = {}) {
+        const base = apiBase || DEFAULT_API_BASE;
+        const { owner, repo } = this.parseRepoIdentifier(repoIdentifier);
+        const query = new URLSearchParams({ page: String(page), per_page: String(perPage) });
+        const comments = await githubFetch(token, base,
+            `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/pulls/${prNumber}/comments?${query}`);
+        return comments.map((c) => ({
+            id: c.id,
+            path: c.path || null,
+            line: c.line || c.original_line || null,
+            side: c.side || null,
+            user: { login: c.user?.login, avatarUrl: c.user?.avatar_url },
+            body: c.body || '',
+            createdAt: c.created_at,
+            updatedAt: c.updated_at,
+            inReplyToId: c.in_reply_to_id || null,
+            diffHunk: c.diff_hunk || null,
+        }));
+    }
+
     // ── Utility ──
 
     parseRepoIdentifier(fullName) {

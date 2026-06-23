@@ -117,6 +117,32 @@ class GitProviderService {
         throw new Error('GitProviderService.listPRs not implemented');
     }
 
+    // ── Reviews (Phase 4) ──
+
+    /**
+     * List reviews/approvals on a PR/MR.
+     * @param {string} token
+     * @param {string} repoIdentifier
+     * @param {number} prNumber
+     * @param {object} opts - { apiBase? }
+     * @returns {Promise<Array<{ id, user: { login, avatarUrl }, state, body, submittedAt, htmlUrl }>>}
+     */
+    async listReviews(token, repoIdentifier, prNumber, opts) {
+        return [];
+    }
+
+    /**
+     * List inline review comments on a PR/MR.
+     * @param {string} token
+     * @param {string} repoIdentifier
+     * @param {number} prNumber
+     * @param {object} opts - { apiBase?, page?, perPage? }
+     * @returns {Promise<Array<{ id, path, line, side, user, body, createdAt, updatedAt, inReplyToId, diffHunk }>>}
+     */
+    async listReviewComments(token, repoIdentifier, prNumber, opts) {
+        return [];
+    }
+
     // ── Utility ──
 
     /**
