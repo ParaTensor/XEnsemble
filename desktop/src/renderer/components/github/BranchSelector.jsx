@@ -109,7 +109,7 @@ export default function BranchSelector({ projectId, currentBranch, onBranchChang
         position: 'fixed',
         top: menuRect.top,
         left: menuRect.left,
-        width: menuRect.width,
+        width: Math.max(menuRect.width, 224),
       }}
       className={`${consoleMenuDropdownZClass} ${consoleDropdownPanelClass} max-h-80 overflow-hidden shadow-md`}
     >
