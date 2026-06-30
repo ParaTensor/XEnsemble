@@ -54,16 +54,16 @@ class RuntimeProvider {
 // ─── ExecAdapter：命令执行 ───
 
 class ExecAdapter {
-    /** @returns {StreamHandle} */
-    spawn(cmd, args, env, options) { throw new Error('ExecAdapter.spawn not implemented'); }
+    /** @returns {Promise<StreamHandle>} */
+    async spawn(cmd, args, env, options) { throw new Error('ExecAdapter.spawn not implemented'); }
     async exec(cmd, args, env, options) { throw new Error('ExecAdapter.exec not implemented'); }
 }
 
 // ─── FsAdapter：受控文件读写 ───
 
 class FsAdapter {
-    async fsList(rootDir, relativePath) { throw new Error('FsAdapter.fsList not implemented'); }
-    async fsRead(rootDir, relativePath) { throw new Error('FsAdapter.fsRead not implemented'); }
+    async fsList(rootDir, relativePath, opts = {}) { throw new Error('FsAdapter.fsList not implemented'); }
+    async fsRead(rootDir, relativePath, opts = {}) { throw new Error('FsAdapter.fsRead not implemented'); }
 }
 
 // ─── PreviewAdapter：预览进程 ───

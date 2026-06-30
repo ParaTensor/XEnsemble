@@ -1,7 +1,18 @@
 import React from 'react';
 import { GitBranch, Loader2, Unlink } from 'lucide-react';
 import { cn } from '../../lib/utils';
-import { consoleIconButtonClass } from '../../lib/consoleTheme';
+import {
+  bgActive,
+  bgInverse,
+  textInverse,
+  textPlaceholder,
+  textPrimary,
+  textSecondary,
+  hoverBgSecondary,
+  hoverTextPrimary,
+  transitionBase,
+  consoleIconButtonClass,
+} from '../../lib/consoleTheme';
 
 const PROVIDER_LABELS = {
   github: 'GitHub',
@@ -31,15 +42,15 @@ export default function GitConnectButton({
             className="h-6 w-6 rounded-full"
           />
         ) : (
-          <div className="flex h-6 w-6 items-center justify-center rounded-full bg-zinc-100">
-            <GitBranch className="h-3.5 w-3.5 text-zinc-600" />
+          <div className={`flex h-6 w-6 items-center justify-center rounded-full ${bgActive}`}>
+            <GitBranch className={`h-3.5 w-3.5 ${textSecondary}`} />
           </div>
         )}
         <div className="min-w-0">
-          <p className="truncate text-sm font-medium text-zinc-900">
+          <p className={`truncate text-sm font-medium ${textPrimary}`}>
             {username || label}
           </p>
-          <p className="text-xs text-zinc-500">Connected to {label}</p>
+          <p className={`text-xs ${textSecondary}`}>Connected to {label}</p>
         </div>
         <button
           type="button"
@@ -65,7 +76,7 @@ export default function GitConnectButton({
       onClick={onConnect}
       disabled={loading}
       className={cn(
-        'inline-flex items-center justify-center gap-2 rounded-md bg-black px-4 py-2 text-sm font-medium text-white hover:bg-zinc-800 disabled:opacity-50',
+        `inline-flex h-9 items-center justify-center gap-2 rounded-md px-4 text-sm font-medium ${bgInverse} ${textInverse} ${textPrimary} hover:bg-[#3C4043] disabled:opacity-50 ${transitionBase}`,
         className,
       )}
     >

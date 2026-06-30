@@ -90,6 +90,22 @@ async function createPreview(userId, project) {
     const checkpoint = await createCheckpoint(project, { status: 'ready' }, userId);
     const revision = `checkpoint:${checkpoint.id}`;
 
+    // BoxLite 部署 revision 持久化：为该 checkpoint 拍 blink 快照
+    const prov = process.env.RUNTIME_PROVIDER || 'local';
+    if (prov === 'boxlite') {
+        try {
+            const ready = await ensureProjectRuntime(project);
+            const ref = ready.runtime && ready.runtime.runtimeRef;
+            const rtt = getRuntime();
+            if (ref && typeof rtt.provider.checkpoint === 'function') {
+                await rtt.provider.checkpoint(ref, checkpoint.id);
+                await db.update(schema.workspaceCheckpoints)
+                    .set({ storageRef: `blink:${checkpoint.id}` })
+                    .where(eq(schema.workspaceCheckpoints.id, checkpoint.id));
+            }
+        } catch (_) {}
+    }
+
     await db.insert(schema.deployments).values({
         id,
         userId,
@@ -129,7 +145,12 @@ async function getByPreviewToken(deploymentId, rawToken) {
 
 async function startPreview(userId, project, deployment) {
     return singleflight(`preview:start:${deployment.id}`, async () => {
-        const { runtime, workspacePath } = await ensureProjectRuntime(project);
+        let ensureOpts = {};
+        if (deployment.revision && deployment.revision.startsWith('checkpoint:')) {
+            const ckId = deployment.revision.split(':')[1];
+            ensureOpts = { checkpointId: ckId };
+        }
+        const { runtime, workspacePath } = await ensureProjectRuntime(project, ensureOpts);
         const now = Date.now();
         const rt = getRuntime();
 

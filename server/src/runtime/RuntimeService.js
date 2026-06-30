@@ -84,9 +84,9 @@ async function getOrCreateDefaultRuntime(project) {
     }
 
     const rt = getRuntime();
-    const provision = await rt.provider.ensureReady(project);
-    const now = Date.now();
     const runtimeId = `rt_${crypto.randomBytes(6).toString('hex')}`;
+    const provision = await rt.provider.ensureReady(project, { runtimeId });
+    const now = Date.now();
 
     await db.insert(schema.runtimes).values({
         id: runtimeId,

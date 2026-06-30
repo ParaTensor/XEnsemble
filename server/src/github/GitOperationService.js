@@ -37,7 +37,9 @@ class GitOperationService {
     }
 
     async _execGit(project, args, options = {}) {
-        const { workspacePath } = await this.ensureProjectRuntime(project);
+        const ready = await this.ensureProjectRuntime(project);
+        const workspacePath = ready.workspacePath;
+        const runtimeRef = ready.runtime ? ready.runtime.runtimeRef : undefined;
         const token = await this._resolveToken(project);
         const credentials = token ? buildCredentialEnv(token) : null;
 
@@ -47,7 +49,7 @@ class GitOperationService {
                 'git',
                 args,
                 credentials ? credentials.env : {},
-                { cwd: workspacePath, timeoutMs: 120_000, ...options },
+                { cwd: workspacePath, runtimeRef, timeoutMs: 120_000, ...options },
             );
 
             if (result.exitCode !== 0) {

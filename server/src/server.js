@@ -12,6 +12,7 @@ const { AgentSpawnError, RuntimeError } = require('./runtime/interfaces');
 const { ensureProjectRuntime, formatRuntime } = require('./runtime/RuntimeService');
 const deploymentService = require('./deployments/DeploymentService');
 const repositoryEnvironment = require('./repositories/RepositoryEnvironmentService');
+const { recordEvent } = require('./events/recordEvent');
 const { registerPreviewGateway } = require('./preview/gateway');
 const { registerLlmProxy } = require('./llm/proxy');
 const { issueSessionToken } = require('./llm/sessionToken');
@@ -328,6 +329,7 @@ fastify.post('/api/v1/projects/:projectId/checkpoints', { preValidation: [fastif
     }
 
     // Use LocalGitService for git-mode projects to execute real git commit
+    let checkpoint;
     if (project.workspaceMode === 'git') {
         try {
             const localGit = new LocalGitService();
@@ -337,15 +339,37 @@ fastify.post('/api/v1/projects/:projectId/checkpoints', { preValidation: [fastif
                 summary: request.body?.summary || '',
                 userId: request.user.id,
             };
-            const checkpoint = await localGit.commitCheckpoint(project, meta);
-            return reply.code(201).send(checkpoint);
+            checkpoint = await localGit.commitCheckpoint(project, meta);
         } catch (err) {
             request.log.error(err);
             return reply.code(500).send({ error: 'Failed to create git checkpoint' });
         }
+    } else {
+        checkpoint = await repositoryEnvironment.createCheckpoint(project, request.body || {}, request.user.id);
     }
 
-    const checkpoint = await repositoryEnvironment.createCheckpoint(project, request.body || {}, request.user.id);
+    // BoxLite/Blink 持久化：创建 blink checkpoint（VM 磁盘快照），记录到 storageRef
+    const PROVIDER_NOW = process.env.RUNTIME_PROVIDER || 'local';
+    if (PROVIDER_NOW === 'boxlite') {
+        try {
+            const ready = await ensureProjectRuntime(project);
+            const ref = ready.runtime && ready.runtime.runtimeRef;
+            const rtNow = getRuntime();
+            if (ref && typeof rtNow.provider.checkpoint === 'function') {
+                const snapName = (checkpoint && checkpoint.id) || `ckpt_${Date.now().toString(36)}`;
+                await rtNow.provider.checkpoint(ref, snapName);
+                await db.update(schema.workspaceCheckpoints)
+                    .set({ storageRef: `blink:${snapName}` })
+                    .where(eq(schema.workspaceCheckpoints.id, (checkpoint && checkpoint.id) || snapName));
+                if (checkpoint) {
+                    checkpoint.storage_ref = `blink:${snapName}`;
+                }
+            }
+        } catch (e) {
+            request.log.warn(e, '[boxlite] blink checkpoint best-effort failed');
+        }
+    }
+
     return reply.code(201).send(checkpoint);
 });
 
@@ -356,11 +380,47 @@ fastify.post('/api/v1/projects/:projectId/checkpoints/:checkpointId/restore', {
     const project = await getProjectForUser(request.user.id, request.params.projectId);
     if (!project) return reply.code(404).send({ error: 'Project not found' });
 
+    const ckId = request.params.checkpointId;
+    const ckRows = await db.select().from(schema.workspaceCheckpoints)
+        .where(and(
+            eq(schema.workspaceCheckpoints.id, ckId),
+            eq(schema.workspaceCheckpoints.projectId, project.id),
+        ));
+    const ck = ckRows[0] || null;
+
+    // BoxLite 优先使用 blink restore（VM 快照）
+    const PROVIDER_NOW = process.env.RUNTIME_PROVIDER || 'local';
+    if (PROVIDER_NOW === 'boxlite') {
+        try {
+            const ready = await ensureProjectRuntime(project);
+            const ref = ready.runtime && ready.runtime.runtimeRef;
+            const rtNow = getRuntime();
+            let snap = ckId;
+            if (ck && ck.storageRef && ck.storageRef.startsWith('blink:')) {
+                snap = ck.storageRef.slice(6);
+            }
+            if (ref && typeof rtNow.provider.restore === 'function') {
+                await rtNow.provider.restore(ref, snap);
+                await recordEvent({
+                    userId: request.user.id,
+                    projectId: project.id,
+                    subjectType: 'workspace_checkpoint',
+                    subjectId: ckId,
+                    type: 'workspace_checkpoint.restored',
+                    data: { provider: 'boxlite', snap },
+                });
+                return { id: ckId, restored: true, provider: 'boxlite' };
+            }
+        } catch (e) {
+            request.log.warn(e, '[boxlite] blink restore failed, fallback to git');
+        }
+    }
+
     const localGit = new LocalGitService();
     try {
         const result = await localGit.restoreCheckpoint(
             project,
-            request.params.checkpointId,
+            ckId,
             { cleanUntracked: request.body?.clean_untracked !== false },
         );
         return result;
@@ -741,13 +801,14 @@ fastify.post('/api/v1/session/start', { preValidation: [fastify.authenticate] },
 
     let handle;
     try {
-        handle = runtime.exec.spawn(
+        handle = await runtime.exec.spawn(
             agentMeta.cmd,
             agentMeta.args,
             resolved.env,
             {
                 name: agentMeta.name,
                 cwd: workspacePath,
+                runtimeRef: ready.runtime ? ready.runtime.runtimeRef : undefined,
                 uid: process.env.RUNTIME_UID,
                 gid: process.env.RUNTIME_GID,
             }
@@ -998,8 +1059,9 @@ fastify.get('/api/v1/workspace/files', { preValidation: [fastify.authenticate] }
 
     try {
         const relativePath = request.query.path || '';
-        const { workspacePath } = await ensureProjectRuntime(project);
-        return runtime.fs.fsList(workspacePath, relativePath);
+        const ready = await ensureProjectRuntime(project);
+        const ref = ready.runtime ? ready.runtime.runtimeRef : undefined;
+        return runtime.fs.fsList(ready.workspacePath, relativePath, { runtimeRef: ref });
     } catch (err) {
         request.log.error(err);
         return reply.code(500).send({ error: 'Failed to list workspace files' });
@@ -1016,8 +1078,9 @@ fastify.get('/api/v1/workspace/file', { preValidation: [fastify.authenticate] },
     if (!project) return reply.code(404).send({ error: 'Project not found' });
 
     try {
-        const { workspacePath } = await ensureProjectRuntime(project);
-        const content = await runtime.fs.fsRead(workspacePath, filePath);
+        const ready = await ensureProjectRuntime(project);
+        const ref = ready.runtime ? ready.runtime.runtimeRef : undefined;
+        const content = await runtime.fs.fsRead(ready.workspacePath, filePath, { runtimeRef: ref });
         return { content };
     } catch (err) {
         request.log.error(err);
@@ -1043,6 +1106,17 @@ async function startServer() {
     await registerPreviewGateway(fastify);
     await registerLlmProxy(fastify);
     startPreviewLifecycle();
+
+    if ((process.env.RUNTIME_PROVIDER || 'local') === 'boxlite') {
+        try {
+            const BoxLiteClient = require('./runtime/BoxLiteClient');
+            const bc = new BoxLiteClient();
+            await bc.health();
+            fastify.log.info('[boxlite] blink-server reachable at ' + (process.env.BLINK_API_URL || 'http://127.0.0.1:8787'));
+        } catch (e) {
+            fastify.log.warn('[boxlite] blink-server not reachable yet; ensure it is running before agent sessions: ' + e.message);
+        }
+    }
 
     const staticRoot = path.join(__dirname, '../../client/dist');
     if (fs.existsSync(staticRoot)) {

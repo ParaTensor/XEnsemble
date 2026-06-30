@@ -30,7 +30,10 @@ class SessionManager {
             titleTimeout: null,
         };
 
-        const scrollback = require('../runtime/LocalScrollbackBuffer').readScrollback(handle.streamRef);
+        let scrollback = '';
+        if (handle && handle.streamRef && typeof handle.streamRef === 'string' && handle.streamRef.startsWith('local:')) {
+            scrollback = require('../runtime/LocalScrollbackBuffer').readScrollback(handle.streamRef);
+        }
         session.history = scrollback;
 
         handle.onData((data) => {
@@ -89,7 +92,10 @@ class SessionManager {
                     console.error(`Kill process error: ${e.message}`);
                 }
                 try {
-                    removeScrollback(session.handle.streamRef);
+                    const sr = session.handle.streamRef;
+                    if (sr && typeof sr === 'string' && sr.startsWith('local:')) {
+                        removeScrollback(sr);
+                    }
                 } catch (e) {
                     console.error(`Remove scrollback error: ${e.message}`);
                 }

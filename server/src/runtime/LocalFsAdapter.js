@@ -11,7 +11,7 @@ class LocalFsAdapter extends FsAdapter {
      * @param {string} relativePath 相对路径（可选）
      * @returns {Promise<Array<{ name, path, type }>>}
      */
-    async fsList(rootDir, relativePath = '.') {
+    async fsList(rootDir, relativePath = '.', opts = {}) {
         const target = resolveSafePath(rootDir, relativePath);
         if (!target) throw new RuntimeError('Access denied', 403);
         if (!fs.existsSync(target)) return [];
@@ -45,7 +45,7 @@ class LocalFsAdapter extends FsAdapter {
      * @param {string} relativePath 相对路径
      * @returns {Promise<string>}
      */
-    async fsRead(rootDir, relativePath) {
+    async fsRead(rootDir, relativePath, opts = {}) {
         const absolutePath = resolveSafePath(rootDir, relativePath);
         if (!absolutePath) throw new RuntimeError('Access denied', 403);
         if (!fs.existsSync(absolutePath)) throw new RuntimeError('File not found', 404);

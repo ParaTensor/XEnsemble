@@ -45,21 +45,6 @@ import {
 const SESSION_PREVIEW_LIMIT = 5;
 const RECENT_DISPLAY_LIMIT = 2;
 
-function formatRelativeTime(ts) {
-  if (!ts) return '';
-  const diff = Date.now() - ts;
-  const minutes = Math.floor(diff / 60000);
-  if (minutes < 1) return 'now';
-  if (minutes < 60) return `${minutes}m`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h`;
-  const days = Math.floor(hours / 24);
-  if (days < 7) return `${days}d`;
-  const weeks = Math.floor(days / 7);
-  if (weeks < 5) return `${weeks}w`;
-  return new Date(ts).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
-}
-
 function sortSessions(list, prefs) {
   return [...list].sort((a, b) => {
     const aPin = isPinnedSession(prefs, a.id) ? 1 : 0;
@@ -393,9 +378,6 @@ export default function AppSidebar({
           )}
         </button>
         <div className="flex items-center gap-0.5 shrink-0">
-          <span className={`text-[11px] ${textPlaceholder} tabular-nums ${compact ? '' : 'hidden group-hover/session:inline'}`}>
-            {formatRelativeTime(s.createdAt)}
-          </span>
           <button
             type="button"
             title={pinned ? 'Unpin' : 'Pin'}
@@ -490,24 +472,26 @@ export default function AppSidebar({
               </span>
             )}
           </div>
-          <button
-            type="button"
-            title="Import from GitHub"
-            disabled={!onImportFromGitHub}
-            onClick={onImportFromGitHub}
-            className={`p-1 rounded-md ${textPlaceholder} hover:text-[#202124] hover:bg-[#E8EAED] ${transitionBase} disabled:opacity-40`}
-          >
-            <Github className="w-3.5 h-3.5" />
-          </button>
-          <button
-            type="button"
-            title="New workspace"
-            disabled={!onCreateWorkspace}
-            onClick={onCreateWorkspace}
-            className={`p-1 rounded-md ${textPlaceholder} hover:text-[#202124] hover:bg-[#E8EAED] ${transitionBase} disabled:opacity-40`}
-          >
-            <Plus className="w-3.5 h-3.5" />
-          </button>
+          <div className="flex items-center gap-1">
+            <button
+              type="button"
+              title="Import from GitHub"
+              disabled={!onImportFromGitHub}
+              onClick={onImportFromGitHub}
+              className={`p-1 rounded-md ${textPlaceholder} hover:text-[#202124] hover:bg-[#E8EAED] ${transitionBase} disabled:opacity-40`}
+            >
+              <Github className="w-3.5 h-3.5" />
+            </button>
+            <button
+              type="button"
+              title="New workspace"
+              disabled={!onCreateWorkspace}
+              onClick={onCreateWorkspace}
+              className={`p-1 rounded-md ${textPlaceholder} hover:text-[#202124] hover:bg-[#E8EAED] ${transitionBase} disabled:opacity-40`}
+            >
+              <Plus className="w-3.5 h-3.5" />
+            </button>
+          </div>
         </div>
 
         <div className="mb-3">

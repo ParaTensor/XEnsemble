@@ -193,9 +193,9 @@ class LocalExecAdapter extends ExecAdapter {
      * @param {string[]} args
      * @param {object} env
      * @param {{ cwd: string, name?: string, uid?: number, gid?: number }} options
-     * @returns {LocalStreamHandle}
+     * @returns {Promise<LocalStreamHandle>}
      */
-    spawn(cmd, args, env, options = {}) {
+    async spawn(cmd, args, env, options = {}) {
         const workspaceDir = options.cwd;
         if (!workspaceDir || typeof workspaceDir !== 'string') {
             throw new AgentSpawnError('Project workspace directory is required to start an agent.');

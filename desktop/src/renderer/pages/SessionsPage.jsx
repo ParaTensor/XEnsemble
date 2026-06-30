@@ -916,20 +916,17 @@ export default React.forwardRef(function SessionsPage({
                     placeholder="my-workspace"
                     className={consoleInputClass}
                   />
-                  <div className="flex items-center justify-between mt-2">
-                    <p className={`text-xs ${textPlaceholder}`}>Leave blank to get a two-word auto-generated name.</p>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setShowNewInstanceModal(false);
-                        setLaunchModalError(null);
-                        setShowImportDialog(true);
-                      }}
-                      className={`text-xs font-medium ${textPlaceholder} hover:text-[#202124] flex items-center gap-1 shrink-0 ${transitionBase}`}
-                    >
-                      <Github className="w-3 h-3" /> Import from GitHub
-                    </button>
-                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowNewInstanceModal(false);
+                      setLaunchModalError(null);
+                      setShowImportDialog(true);
+                    }}
+                    className={`mt-3 h-9 w-full rounded-md border ${borderHairline} bg-[#F4F5F6] px-3 text-sm font-medium ${textPrimary} hover:bg-[#E8EAED] flex items-center justify-center gap-1.5 ${transitionBase}`}
+                  >
+                    <Github className="w-3.5 h-3.5" /> Import from GitHub
+                  </button>
                 </div>
               ) : (
                 <div>
