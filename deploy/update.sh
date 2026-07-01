@@ -22,7 +22,7 @@ echo "==> Build UniGateway"
 (cd server && npm run build:gateway)
 
 echo "==> Web admin build"
-(cd client && npm install && npm run build)
+(cd web && npm install && npm run build)
 
 echo "==> Update systemd service (if changed)"
 NODE_BIN="$(nvm which current)"

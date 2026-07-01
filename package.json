@@ -5,10 +5,10 @@
   "scripts": {
     "dev:server": "cd server && npm run dev",
     "dev:desktop": "cd desktop && npm run dev",
-    "dev:client": "cd client && npm run dev",
+    "dev:web": "cd web && npm run dev",
     "dev": "concurrently \"npm run dev:server\" \"npm run dev:desktop\"",
     "build:desktop": "cd desktop && npm run build",
-    "build:client": "cd client && npm run build",
+    "build:web": "cd web && npm run build",
     "build:gateway": "cd gateway && cargo build --release"
   },
   "devDependencies": {

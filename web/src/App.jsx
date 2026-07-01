@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Routes, Route, Link, useNavigate, useLocation, Navigate } from 'react-router-dom';
 import Login from './pages/Login';
-import Console from './pages/Console';
+import Sessions from './pages/Sessions';
 import AgentsAdmin from './pages/AgentsAdmin';
 import UsersAdmin from './pages/UsersAdmin';
 import GatewayAdmin from './pages/GatewayAdmin';
@@ -29,11 +29,11 @@ function AdminRoute({ user, children }) {
 function Shell({ children, isAdmin, user, onLogout, setShowSettingsModal, compactMain = false }) {
   const location = useLocation();
 
-  const isConsoleActive = location.pathname === '/' || location.pathname.startsWith('/console');
+  const isSessionsActive = location.pathname === '/sessions';
   const navLinkClass = (path) =>
     cn(
       'rounded-full px-3 py-1.5 text-sm font-medium transition-all',
-      (path === '/console' ? isConsoleActive : location.pathname === path)
+      (path === '/sessions' ? isSessionsActive : location.pathname === path)
         ? consoleNavActiveClass
         : consoleNavIdleClass,
     );
@@ -42,13 +42,13 @@ function Shell({ children, isAdmin, user, onLogout, setShowSettingsModal, compac
     <div className="h-full flex flex-col bg-zinc-50">
       <header className="sticky top-0 z-50 flex-none border-b border-zinc-200 bg-white">
         <div className={cn('mx-auto flex h-14 items-center justify-between', APP_SHELL_MAX_CLASS, APP_SHELL_PAD_CLASS)}>
-          <Link to="/console" className="flex items-center gap-2.5 text-zinc-900">
+          <Link to="/sessions" className="flex items-center gap-2.5 text-zinc-900">
             <BrandMark className="h-8 w-8" />
             <span className="text-lg font-bold tracking-tight text-black">XEnsemble</span>
           </Link>
           <nav className="flex items-center gap-6">
-            <Link to="/console" className={navLinkClass('/console')}>
-              Console
+            <Link to="/sessions" className={navLinkClass('/sessions')}>
+              Sessions
             </Link>
             {isAdmin &&
               ADMIN_PATHS.map((path) => {
@@ -106,7 +106,7 @@ function App() {
     localStorage.setItem('user', JSON.stringify(userData));
     setToken(accessToken);
     setUser(userData);
-    navigate(userData?.role === 'admin' ? '/admin/agents' : '/console');
+    navigate(userData?.role === 'admin' ? '/admin/agents' : '/sessions');
   };
 
   const logout = () => {
@@ -135,28 +135,18 @@ function App() {
         <Routes>
           <Route
             path="/login"
-            element={!token ? <Login /> : <Navigate to={isAdmin ? '/admin/agents' : '/console'} replace />}
+            element={!token ? <Login /> : <Navigate to={isAdmin ? '/admin/agents' : '/sessions'} replace />}
           />
           <Route
             path="/"
-            element={
-              token ? (
-                <Shell
-                  isAdmin={isAdmin}
-                  user={user}
-                  onLogout={logout}
-                  setShowSettingsModal={setShowSettingsModal}
-                  compactMain
-                >
-                  <Console />
-                </Shell>
-              ) : (
-                <Navigate to="/login" replace />
-              )
-            }
+            element={<Navigate to={token ? '/sessions' : '/login'} replace />}
           />
           <Route
             path="/console"
+            element={<Navigate to={token ? '/sessions' : '/login'} replace />}
+          />
+          <Route
+            path="/sessions"
             element={
               token ? (
                 <Shell
@@ -166,7 +156,7 @@ function App() {
                   setShowSettingsModal={setShowSettingsModal}
                   compactMain
                 >
-                  <Console />
+                  <Sessions />
                 </Shell>
               ) : (
                 <Navigate to="/login" replace />
@@ -209,11 +199,7 @@ function App() {
               )
             }
           />
-          <Route
-            path="/sessions"
-            element={<Navigate to={token ? '/console' : '/login'} replace />}
-          />
-          <Route path="*" element={<Navigate to={token ? '/console' : '/login'} replace />} />
+          <Route path="*" element={<Navigate to={token ? '/sessions' : '/login'} replace />} />
         </Routes>
       </div>
       {showSettingsModal && (

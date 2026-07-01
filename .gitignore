@@ -4,7 +4,7 @@ emdash_source/
 deploy/xensemble.env
 server/data/
 gateway/target/
-client/dist
+web/dist
 .cursor/
 .kimi-code/
 server/test.db

@@ -1119,7 +1119,7 @@ async function startServer() {
         }
     }
 
-    const staticRoot = path.join(__dirname, '../../client/dist');
+    const staticRoot = path.join(__dirname, '../../web/dist');
     if (fs.existsSync(staticRoot)) {
         await fastify.register(require('@fastify/static'), {
             root: staticRoot,
