@@ -729,8 +729,9 @@ fastify.post('/api/v1/session/start', { preValidation: [fastify.authenticate] },
     let workspacePath;
     let runtimeId;
     let recoverable;
+    let ready;
     try {
-        const ready = await ensureProjectRuntime(project);
+        ready = await ensureProjectRuntime(project);
         workspacePath = ready.workspacePath;
         runtimeId = ready.runtime.id;
         recoverable = ready.recoverable;
