@@ -7,11 +7,31 @@ class BoxLiteRuntimeProvider extends RuntimeProvider {
         this.client = new BoxLiteClient();
     }
 
+    workspacePath() {
+        return process.env.XENSEMBLE_WORKSPACE_PATH
+            || process.env.WORKSPACE_PATH
+            || '/workspace';
+    }
+
+    async ensureWorkspacePath(runtimeRef, workspacePath) {
+        const result = await this.client.execForResult(
+            runtimeRef,
+            'sh',
+            ['-lc', `mkdir -p ${JSON.stringify(workspacePath)}`],
+            {},
+            '/'
+        );
+        if (result.exitCode !== 0) {
+            throw new RuntimeError(`BoxLite ensureReady failed: create workspace path failed with exit code ${result.exitCode}`, 502);
+        }
+    }
+
     async ensureReady(project, opts = {}) {
         const runtimeId = opts && opts.runtimeId ? opts.runtimeId : null;
         const name = runtimeId || `p_${project.id}`;
         const image = opts.image || process.env.BLINK_IMAGE || undefined;
         const warm = !!opts.warm;
+        const workspacePath = this.workspacePath();
         try {
             await this.client.openSession(name, image, warm);
         } catch (e) {
@@ -27,7 +47,8 @@ class BoxLiteRuntimeProvider extends RuntimeProvider {
                 // snapshot may not exist yet or first provision; continue
             }
         }
-        return { runtimeRef: name, workspacePath: '/workspace' };
+        await this.ensureWorkspacePath(name, workspacePath);
+        return { runtimeRef: name, workspacePath };
     }
 
     async attach(runtimeRef) {
