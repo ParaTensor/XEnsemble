@@ -1,5 +1,4 @@
-import { useState, useContext } from 'react';
-import { AuthContext } from '../../App';
+import { useState } from 'react';
 import { cn } from '../../lib/utils';
 import {
   consoleSettingsPanelScrollClass,
@@ -12,7 +11,6 @@ import QuotaSettingsPanel from './QuotaSettingsPanel';
 const QUOTA_SECTION = { id: 'quota', label: 'Quota' };
 const GENERAL_SECTION = { id: 'general', label: 'General' };
 export default function SettingsShell() {
-  const { user } = useContext(AuthContext);
   const [section, setSection] = useState('general');
 
   const sections = [
