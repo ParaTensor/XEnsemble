@@ -19,6 +19,12 @@ export function getWsBase() {
   return 'ws://localhost:3888';
 }
 
+export function getWsUrl(sessionId, accessToken) {
+  const params = new URLSearchParams({ sessionId });
+  if (accessToken) params.set('access_token', accessToken);
+  return `${getWsBase()}/ws/v1/terminal?${params.toString()}`;
+}
+
 export function publicFetch(path, options = {}) {
   return fetch(`${getApiBase()}${path}`, options);
 }

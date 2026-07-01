@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Routes, Route, Link, useNavigate, useLocation, Navigate } from 'react-router-dom';
 import Login from './pages/Login';
+import Sessions from './pages/Sessions';
 import AgentsAdmin from './pages/AgentsAdmin';
 import UsersAdmin from './pages/UsersAdmin';
 import GatewayAdmin from './pages/GatewayAdmin';
@@ -21,18 +22,6 @@ export const AuthContext = React.createContext(null);
 
 const ADMIN_PATHS = ['/admin/agents', '/admin/users', '/admin/gateway'];
 
-function DesktopClientMessage() {
-  return (
-    <div
-      className="flex flex-1 flex-col items-center justify-center text-center text-zinc-500"
-      role="status"
-    >
-      <p className="text-lg font-medium">Please use the XEnsemble Desktop Client.</p>
-      <p className="text-sm">Web Console is available to administrators only.</p>
-    </div>
-  );
-}
-
 function AdminRoute({ user, children }) {
   return user?.role === 'admin' ? children : <Navigate to="/" replace />;
 }
@@ -40,21 +29,27 @@ function AdminRoute({ user, children }) {
 function Shell({ children, isAdmin, user, onLogout, setShowSettingsModal, compactMain = false }) {
   const location = useLocation();
 
+  const isSessionsActive = location.pathname === '/sessions';
   const navLinkClass = (path) =>
     cn(
       'rounded-full px-3 py-1.5 text-sm font-medium transition-all',
-      location.pathname === path ? consoleNavActiveClass : consoleNavIdleClass,
+      (path === '/sessions' ? isSessionsActive : location.pathname === path)
+        ? consoleNavActiveClass
+        : consoleNavIdleClass,
     );
 
   return (
     <div className="h-full flex flex-col bg-zinc-50">
       <header className="sticky top-0 z-50 flex-none border-b border-zinc-200 bg-white">
         <div className={cn('mx-auto flex h-14 items-center justify-between', APP_SHELL_MAX_CLASS, APP_SHELL_PAD_CLASS)}>
-          <Link to={isAdmin ? '/admin/agents' : '/'} className="flex items-center gap-2.5 text-zinc-900">
+          <Link to="/sessions" className="flex items-center gap-2.5 text-zinc-900">
             <BrandMark className="h-8 w-8" />
             <span className="text-lg font-bold tracking-tight text-black">XEnsemble</span>
           </Link>
           <nav className="flex items-center gap-6">
+            <Link to="/sessions" className={navLinkClass('/sessions')}>
+              Sessions
+            </Link>
             {isAdmin &&
               ADMIN_PATHS.map((path) => {
                 const label =
@@ -111,7 +106,7 @@ function App() {
     localStorage.setItem('user', JSON.stringify(userData));
     setToken(accessToken);
     setUser(userData);
-    navigate(userData?.role === 'admin' ? '/admin/agents' : '/');
+    navigate(userData?.role === 'admin' ? '/admin/agents' : '/sessions');
   };
 
   const logout = () => {
@@ -138,16 +133,31 @@ function App() {
     <AuthContext.Provider value={{ token, user, login, logout }}>
       <div className="h-full">
         <Routes>
-          <Route path="/login" element={!token ? <Login /> : <Navigate to="/" replace />} />
+          <Route
+            path="/login"
+            element={!token ? <Login /> : <Navigate to={isAdmin ? '/admin/agents' : '/sessions'} replace />}
+          />
           <Route
             path="/"
+            element={<Navigate to={token ? '/sessions' : '/login'} replace />}
+          />
+          <Route
+            path="/console"
+            element={<Navigate to={token ? '/sessions' : '/login'} replace />}
+          />
+          <Route
+            path="/sessions"
             element={
               token ? (
-                isAdmin ? (
-                  <Navigate to="/admin/agents" replace />
-                ) : (
-                  <DesktopClientMessage />
-                )
+                <Shell
+                  isAdmin={isAdmin}
+                  user={user}
+                  onLogout={logout}
+                  setShowSettingsModal={setShowSettingsModal}
+                  compactMain
+                >
+                  <Sessions />
+                </Shell>
               ) : (
                 <Navigate to="/login" replace />
               )
@@ -189,15 +199,7 @@ function App() {
               )
             }
           />
-          <Route
-            path="/sessions"
-            element={<Navigate to={token && isAdmin ? '/admin/agents' : '/'} replace />}
-          />
-          <Route
-            path="/console"
-            element={<Navigate to={token && isAdmin ? '/admin/agents' : '/'} replace />}
-          />
-          <Route path="*" element={<Navigate to={token ? '/' : '/login'} replace />} />
+          <Route path="*" element={<Navigate to={token ? '/sessions' : '/login'} replace />} />
         </Routes>
       </div>
       {showSettingsModal && (

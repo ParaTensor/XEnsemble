@@ -33,8 +33,8 @@ echo "==> Build UniGateway"
 echo "==> Server dependencies"
 (cd server && npm install)
 
-echo "==> Client build"
-(cd client && npm install && npm run build)
+echo "==> Web build"
+(cd web && npm install && npm run build)
 
 echo "==> Ensure data directory"
 mkdir -p server/data
