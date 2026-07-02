@@ -27,16 +27,29 @@ function escapeHtml(str) {
         .replace(/'/g, '&#39;');
 }
 
-function callbackHtml(success, message) {
+function callbackHtml(success, message, provider) {
     const title = success ? 'Git Connected' : 'Git Connection Failed';
     const body = success
-        ? 'Connected successfully. You can close this tab.'
+        ? 'Connected successfully. This window will close automatically.'
         : escapeHtml(message || 'Failed to connect. Please try again.');
+    const payload = JSON.stringify({
+        type: 'git-oauth-result',
+        provider: provider || null,
+        status: success ? 'success' : 'error',
+        message: success ? null : String(message || 'Failed to connect'),
+    }).replace(/</g, '\\u003c');
     return `<!DOCTYPE html>
 <html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
 <title>${title}</title>
 <style>body{font-family:system-ui,-apple-system,sans-serif;display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0;background:#f6f8fa;color:#1f2328}.card{background:#fff;border:1px solid #d1d9e0;border-radius:8px;padding:32px;max-width:480px;text-align:center;box-shadow:0 4px 12px rgba(0,0,0,.05)}h1{font-size:20px;margin:0 0 12px}p{margin:0;line-height:1.5;color:#656d76}.error h1{color:#cf222e}</style>
-</head><body class="${success ? '' : 'error'}"><div class="card"><h1>${title}</h1><p>${body}</p></div></body></html>`;
+</head><body class="${success ? '' : 'error'}"><div class="card"><h1>${title}</h1><p>${body}</p></div>
+<script>
+(function(){
+  try{if(window.opener&&!window.opener.closed){window.opener.postMessage(${payload},'*');}}catch(e){}
+  if(${success ? 'true' : 'false'}){setTimeout(function(){window.close();},1200);}
+})();
+</script>
+</body></html>`;
 }
 
 function newId(prefix) {
@@ -110,8 +123,8 @@ function registerGitRoutes(fastify) {
     fastify.get('/api/v1/git/callback', async (request, reply) => {
         const { code, state } = request.query || {};
         try {
-            await connectionService.completeOAuthFromCallback(code, state);
-            return reply.type('text/html').send(callbackHtml(true));
+            const connection = await connectionService.completeOAuthFromCallback(code, state);
+            return reply.type('text/html').send(callbackHtml(true, null, connection?.provider));
         } catch (err) {
             request.log.error(err);
             return reply.type('text/html').code(400).send(callbackHtml(false, err.message));
