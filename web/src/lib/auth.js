@@ -1,6 +1,13 @@
 const LS_ACCESS = 'xe_access_token';
 const LS_REFRESH = 'xe_refresh_token';
 
+function apiUrl(path) {
+  const env = import.meta.env.VITE_API_BASE?.trim();
+  if (env) return `${env.replace(/\/+$/, '')}${path}`;
+  if (import.meta.env.PROD) return path;
+  return `http://localhost:3888${path}`;
+}
+
 export function getAccessToken() {
   return localStorage.getItem(LS_ACCESS);
 }
@@ -27,7 +34,7 @@ export async function refreshAccessToken() {
     try {
       const refreshToken = getRefreshToken();
       if (!refreshToken) return null;
-      const res = await fetch('/api/v1/auth/refresh', {
+      const res = await fetch(apiUrl('/api/v1/auth/refresh'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ refresh_token: refreshToken }),
@@ -54,12 +61,13 @@ export async function apiFetch(path, options = {}) {
     headers['Content-Type'] = 'application/json';
   }
 
-  const res = await fetch(path, { ...options, headers });
+  const url = apiUrl(path);
+  const res = await fetch(url, { ...options, headers });
   if (res.status === 401) {
     const newToken = await refreshAccessToken();
     if (newToken) {
       headers.Authorization = `Bearer ${newToken}`;
-      return fetch(path, { ...options, headers });
+      return fetch(url, { ...options, headers });
     }
   }
   return res;

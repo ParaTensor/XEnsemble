@@ -1,6 +1,6 @@
 {
   "name": "agent-backend",
-  "version": "2.0.1",
+  "version": "2.0.2",
   "description": "Enterprise-level heterogeneous Agent Web hosting platform (Node.js MVP)",
   "main": "src/server.js",
   "engines": {

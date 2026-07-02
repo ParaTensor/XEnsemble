@@ -127,3 +127,32 @@ export function ConsoleDialogShell({
   );
 }
 
+/** Inline anchored dialog used for native desktop style confirmations/modals. */
+export function ConsoleInlineDialog({ onClose, panelClassName, children }) {
+  useConsoleDialogEscape(onClose);
+
+  useEffect(() => {
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = prev;
+    };
+  }, []);
+
+  return createPortal(
+    <>
+      <ConsoleDialogBackdrop className="z-[100]" onClick={onClose} />
+      <div className="fixed inset-0 z-[110] flex items-start justify-center p-4 pointer-events-none">
+        <div
+          role="dialog"
+          aria-modal="true"
+          className={cn('pointer-events-auto mt-[12vh] min-w-[260px] rounded-lg border shadow-lg', panelClassName)}
+        >
+          {children}
+        </div>
+      </div>
+    </>,
+    document.body,
+  );
+}
+

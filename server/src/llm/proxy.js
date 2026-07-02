@@ -41,8 +41,22 @@ function stripLlmPrefix(url) {
     } else if (path.startsWith(`${LLM_PROXY_PREFIX}/`)) {
         path = path.slice(LLM_PROXY_PREFIX.length) || '/';
     }
+    path = normalizeUpstreamPath(path);
     const qs = search.startsWith('?') ? search.slice(1) : search;
     return qs ? `${path}?${qs}` : path;
+}
+
+/** OpenAI-compatible clients disagree on whether the base URL includes `/v1`. */
+function normalizeUpstreamPath(path) {
+    const [pathname, search = ''] = path.split('?');
+    const aliases = {
+        '/chat/completions': '/v1/chat/completions',
+        '/embeddings': '/v1/embeddings',
+    };
+    const normalized = aliases[pathname] || pathname;
+    if (!search) return normalized;
+    const qs = search.startsWith('?') ? search.slice(1) : search;
+    return qs ? `${normalized}?${qs}` : normalized;
 }
 
 async function assertSessionAuthorized(claims) {
@@ -182,4 +196,4 @@ async function registerLlmProxy(fastify) {
     });
 }
 
-module.exports = { registerLlmProxy, LLM_PROXY_PREFIX };
+module.exports = { registerLlmProxy, LLM_PROXY_PREFIX, stripLlmPrefix, normalizeUpstreamPath };

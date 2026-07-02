@@ -1,0 +1,615 @@
+import { useState, useEffect, useCallback, useMemo, useRef, useLayoutEffect } from 'react';
+import { createPortal } from 'react-dom';
+import { NavLink } from 'react-router-dom';
+import {
+  FolderOpen,
+  FolderPlus,
+  Pin,
+  Trash2,
+  Archive,
+  ChevronRight,
+  ChevronDown,
+  LogOut,
+  Settings2,
+  Search,
+  ListFilter,
+  PenSquare,
+  Users,
+  Bot,
+  Globe,
+} from 'lucide-react';
+import { formatRelativeTime } from '../lib/formatRelativeTime';
+import {
+  loadSidebarPrefs,
+  togglePinnedWorkspace,
+  archiveSession,
+  isPinnedSession,
+  isPinnedWorkspace,
+  isArchivedSession,
+  selectActiveSession,
+} from '../lib/sidebarPrefs';
+import {
+  textPrimary,
+  textSecondary,
+  textPlaceholder,
+  accentGreen,
+  accentRed,
+  accentRedBg,
+  transitionBase,
+  hoverTextPrimary,
+  hoverBgTertiary,
+  bgSecondary,
+  bgCanvas,
+  consoleMenuDropdownZClass,
+  consoleDropdownPanelClass,
+} from '../lib/consoleTheme.js';
+
+const SESSION_PREVIEW_LIMIT = 8;
+
+function sortSessions(list, prefs) {
+  return [...list].sort((a, b) => {
+    const aPin = isPinnedSession(prefs, a.id) ? 1 : 0;
+    const bPin = isPinnedSession(prefs, b.id) ? 1 : 0;
+    if (aPin !== bPin) return bPin - aPin;
+    const aLive = a.alive === true ? 1 : 0;
+    const bLive = b.alive === true ? 1 : 0;
+    if (aLive !== bLive) return bLive - aLive;
+    return (b.createdAt || 0) - (a.createdAt || 0);
+  });
+}
+
+function buildWorkspaces(projects, sessions, prefs) {
+  const visible = sessions.filter((s) => !isArchivedSession(prefs, s.id));
+  const byProject = {};
+  for (const s of visible) {
+    const pid = s.projectId || '_orphan';
+    if (!byProject[pid]) byProject[pid] = [];
+    byProject[pid].push(s);
+  }
+  const list = projects.map((p) => {
+    const sess = sortSessions(byProject[p.id] || [], prefs);
+    const lastActivity = Math.max(
+      p.createdAt || 0,
+      ...sess.map((s) => s.createdAt || 0),
+    );
+    return { id: p.id, name: p.name, sessions: sess, lastActivity };
+  });
+  if (byProject._orphan?.length) {
+    const sess = sortSessions(byProject._orphan, prefs);
+    list.push({
+      id: '_orphan',
+      name: 'Unassigned',
+      sessions: sess,
+      lastActivity: Math.max(...sess.map((s) => s.createdAt || 0)),
+    });
+  }
+  return list.sort((a, b) => {
+    const aPin = isPinnedWorkspace(prefs, a.id) ? 1 : 0;
+    const bPin = isPinnedWorkspace(prefs, b.id) ? 1 : 0;
+    if (aPin !== bPin) return bPin - aPin;
+    return b.lastActivity - a.lastActivity;
+  });
+}
+
+function SidebarAccountMenu({ user, onOpenSettings, onLogout, adminLinkClass }) {
+  const [open, setOpen] = useState(false);
+  const [menuRect, setMenuRect] = useState(null);
+  const rootRef = useRef(null);
+  const menuRef = useRef(null);
+  const isAdmin = user?.role === 'admin';
+
+  const updateMenuRect = useCallback(() => {
+    const el = rootRef.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    setMenuRect({
+      left: rect.left,
+      bottom: window.innerHeight - rect.top + 6,
+      width: Math.max(rect.width, 200),
+    });
+  }, []);
+
+  useLayoutEffect(() => {
+    if (!open) {
+      setMenuRect(null);
+      return;
+    }
+    updateMenuRect();
+    window.addEventListener('resize', updateMenuRect);
+    window.addEventListener('scroll', updateMenuRect, true);
+    return () => {
+      window.removeEventListener('resize', updateMenuRect);
+      window.removeEventListener('scroll', updateMenuRect, true);
+    };
+  }, [open, updateMenuRect]);
+
+  useEffect(() => {
+    if (!open) return;
+    const onPointerDown = (e) => {
+      if (rootRef.current?.contains(e.target)) return;
+      if (menuRef.current?.contains(e.target)) return;
+      setOpen(false);
+    };
+    const onKeyDown = (e) => {
+      if (e.key === 'Escape') setOpen(false);
+    };
+    document.addEventListener('pointerdown', onPointerDown);
+    document.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.removeEventListener('pointerdown', onPointerDown);
+      document.removeEventListener('keydown', onKeyDown);
+    };
+  }, [open]);
+
+  const close = () => setOpen(false);
+
+  const menuItemClass =
+    `flex w-full items-center gap-2 px-3 py-2 text-xs text-[#5F6368] hover:bg-[#F4F5F6] hover:text-[#202124] ${transitionBase}`;
+
+  const menu = open && menuRect ? (
+    <div
+      ref={menuRef}
+      role="menu"
+      style={{
+        position: 'fixed',
+        left: menuRect.left,
+        bottom: menuRect.bottom,
+        width: menuRect.width,
+      }}
+      className={`${consoleMenuDropdownZClass} ${consoleDropdownPanelClass} py-1 shadow-md`}
+    >
+      {user?.email && (
+        <p className="px-3 py-2 text-[11px] text-[#9AA0A6] truncate border-b border-[#E8EAED]">
+          {user.email}
+        </p>
+      )}
+      {isAdmin && (
+        <>
+          <NavLink to="/admin/users" className={adminLinkClass} onClick={close}>
+            <Users className="w-3.5 h-3.5 shrink-0" strokeWidth={1.75} />
+            Users
+          </NavLink>
+          <NavLink to="/admin/agents" className={adminLinkClass} onClick={close}>
+            <Bot className="w-3.5 h-3.5 shrink-0" strokeWidth={1.75} />
+            Agents
+          </NavLink>
+          <NavLink to="/admin/gateway" className={adminLinkClass} onClick={close}>
+            <Globe className="w-3.5 h-3.5 shrink-0" strokeWidth={1.75} />
+            Gateway
+          </NavLink>
+          <div className="my-1 border-t border-[#E8EAED]" />
+        </>
+      )}
+      {onOpenSettings && (
+        <button
+          type="button"
+          role="menuitem"
+          onClick={() => {
+            close();
+            onOpenSettings?.();
+          }}
+          className={menuItemClass}
+        >
+          <Settings2 className="w-3.5 h-3.5 shrink-0" />
+          Settings
+        </button>
+      )}
+      <button
+        type="button"
+        role="menuitem"
+        onClick={() => {
+          close();
+          onLogout?.();
+        }}
+        className={menuItemClass}
+      >
+        <LogOut className="w-3.5 h-3.5 shrink-0" />
+        Log out
+      </button>
+    </div>
+  ) : null;
+
+  return (
+    <div ref={rootRef} className="relative min-w-0">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+        aria-haspopup="menu"
+        aria-label={isAdmin ? 'Admin menu' : 'Account menu'}
+        className={`flex w-full items-center gap-2 rounded-lg px-2 py-2 text-left ${transitionBase} hover:bg-[#FAFBFC] ${
+          open ? 'bg-[#FAFBFC]' : ''
+        }`}
+      >
+        <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[#FDECEA] text-[#C06C5D] text-xs font-semibold">
+          {(user?.username || 'U').charAt(0).toUpperCase()}
+        </div>
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-[13px] font-medium text-[#202124]">
+            {isAdmin ? 'Admin' : (user?.username || 'User')}
+          </p>
+          {isAdmin && (
+            <p className="truncate text-[10px] text-[#9AA0A6]">{user?.username || 'User'}</p>
+          )}
+        </div>
+        <ChevronDown
+          className={`h-4 w-4 shrink-0 text-[#9AA0A6] transition-transform duration-150 ${open ? 'rotate-180' : ''}`}
+          strokeWidth={2}
+        />
+      </button>
+      {menu && createPortal(menu, document.body)}
+    </div>
+  );
+}
+
+export default function AppSidebar({
+  agents,
+  projects,
+  sessions,
+  activeSession,
+  onSelectSession,
+  onCreateWorkspace,
+  onNewAgent,
+  onRequestDeleteSession,
+  onRequestDeleteWorkspace,
+  onArchiveSession,
+  user,
+  onOpenSettings,
+  onLogout,
+}) {
+  const [sidebarPrefs, setSidebarPrefs] = useState(() => loadSidebarPrefs());
+  const [expandedWorkspaces, setExpandedWorkspaces] = useState(() => {
+    const ids = new Set();
+    if (activeSession?.projectId) ids.add(activeSession.projectId);
+    return ids;
+  });
+  const [expandedSessionLists, setExpandedSessionLists] = useState(() => new Set());
+  const [searchQuery, setSearchQuery] = useState('');
+  const [activeOnlyFilter, setActiveOnlyFilter] = useState(false);
+
+  const refreshSidebarPrefs = useCallback(() => setSidebarPrefs(loadSidebarPrefs()), []);
+
+  useEffect(() => {
+    refreshSidebarPrefs();
+  }, [sessions, projects, refreshSidebarPrefs]);
+
+
+  useEffect(() => {
+    if (!activeSession?.projectId) return;
+    setExpandedWorkspaces((prev) => {
+      if (prev.has(activeSession.projectId)) return prev;
+      const next = new Set(prev);
+      next.add(activeSession.projectId);
+      return next;
+    });
+  }, [activeSession?.projectId]);
+
+  useEffect(() => {
+    const runningIds = [...new Set(sessions.filter((s) => s.alive && s.projectId).map((s) => s.projectId))];
+    if (runningIds.length === 0) return;
+    setExpandedWorkspaces((prev) => {
+      const next = new Set(prev);
+      let changed = false;
+      for (const id of runningIds) {
+        if (!next.has(id)) {
+          next.add(id);
+          changed = true;
+        }
+      }
+      return changed ? next : prev;
+    });
+  }, [sessions]);
+
+  const getAgentLabel = useCallback(
+    (agentId) => agents.find((a) => a.id === agentId)?.name || agentId,
+    [agents],
+  );
+
+  const selectSession = useCallback((s, ws) => {
+    const projectName = s.projectName || ws?.name;
+    selectActiveSession(s.id, {
+      agentId: s.agentId ?? null,
+      projectId: s.projectId ?? null,
+      projectName: projectName ?? null,
+      createdAt: s.createdAt ?? Date.now(),
+    });
+    refreshSidebarPrefs();
+    onSelectSession({ ...s, projectName });
+    if (s.projectId) {
+      setExpandedWorkspaces((prev) => {
+        if (prev.has(s.projectId)) return prev;
+        const next = new Set(prev);
+        next.add(s.projectId);
+        return next;
+      });
+    }
+  }, [onSelectSession, refreshSidebarPrefs]);
+
+  const toggleWorkspaceExpanded = (workspaceId) => {
+    setExpandedWorkspaces((prev) => {
+      const next = new Set(prev);
+      if (next.has(workspaceId)) next.delete(workspaceId);
+      else next.add(workspaceId);
+      return next;
+    });
+  };
+
+  const toggleSessionListExpanded = (key) => {
+    setExpandedSessionLists((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  };
+
+  const handleArchiveSession = (e, sessionId) => {
+    e.stopPropagation();
+    archiveSession(sessionId);
+    refreshSidebarPrefs();
+    onArchiveSession?.(sessionId);
+  };
+
+  const handlePinWorkspace = (e, workspaceId) => {
+    e.stopPropagation();
+    togglePinnedWorkspace(workspaceId);
+    refreshSidebarPrefs();
+  };
+
+  const handleRequestDeleteWorkspace = (e, ws) => {
+    e.stopPropagation();
+    const rect = e.currentTarget.getBoundingClientRect();
+    onRequestDeleteWorkspace?.(ws, {
+      top: rect.top,
+      left: rect.left,
+      right: rect.right,
+      bottom: rect.bottom,
+      width: rect.width,
+      height: rect.height,
+    });
+  };
+
+  const sessionMatchesQuery = useCallback((s, ws) => {
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return true;
+    const label = (s.title?.trim() || getAgentLabel(s.agentId)).toLowerCase();
+    const wsName = (ws?.name || '').toLowerCase();
+    return label.includes(q) || wsName.includes(q);
+  }, [searchQuery, getAgentLabel]);
+
+  const renderNestedSessionRow = (s, ws) => {
+    const isActive = activeSession?.sessionId === s.id;
+    const isLive = s.alive === true;
+    const label = s.title?.trim() || getAgentLabel(s.agentId);
+    const timestamp = s.createdAt ? formatRelativeTime(s.createdAt) : '';
+
+    return (
+      <div
+        key={s.id}
+        className={`group/session relative flex items-center gap-1 rounded-md pl-6 pr-1.5 py-1.5 ${transitionBase} ${
+          isActive ? bgCanvas : hoverBgTertiary
+        } ${!isLive ? 'opacity-70' : ''}`}
+      >
+        <button
+          type="button"
+          onClick={() => selectSession(s, ws)}
+          className="flex flex-1 min-w-0 items-center gap-2 text-left"
+          title={label}
+        >
+          <span className={`flex-1 truncate text-[13px] ${isActive ? 'font-medium text-[#202124]' : 'text-[#3C4043]'}`}>
+            {label}
+          </span>
+          {timestamp && (
+            <span className={`shrink-0 text-[11px] ${textPlaceholder}`}>{timestamp}</span>
+          )}
+        </button>
+        <div className="flex items-center shrink-0 opacity-0 group-hover/session:opacity-100 focus-within:opacity-100">
+          <button
+            type="button"
+            title="Archive"
+            onClick={(e) => handleArchiveSession(e, s.id)}
+            className={`p-1 rounded-md ${textPlaceholder} ${hoverTextPrimary} hover:bg-[#E8EAED]`}
+          >
+            <Archive className="w-3 h-3" />
+          </button>
+          <button
+            type="button"
+            title={isLive ? 'Stop and remove' : 'Remove'}
+            onClick={(e) => {
+              e.stopPropagation();
+              onRequestDeleteSession?.(s, ws);
+            }}
+            className={`p-1 rounded-md ${textPlaceholder} ${accentRed} ${accentRedBg}`}
+          >
+            <Trash2 className="w-3 h-3" />
+          </button>
+        </div>
+      </div>
+    );
+  };
+
+  const renderSessionList = (sessionList, ws, listKey) => {
+    const filtered = sessionList.filter((s) => sessionMatchesQuery(s, ws));
+    if (filtered.length === 0) {
+      return (
+        <p className={`py-1.5 pl-6 pr-2 text-xs ${textPlaceholder}`}>
+          {searchQuery.trim() ? 'No matching sessions' : 'No sessions yet'}
+        </p>
+      );
+    }
+    const expanded = expandedSessionLists.has(listKey);
+    const visible = expanded ? filtered : filtered.slice(0, SESSION_PREVIEW_LIMIT);
+    const hasMore = filtered.length > SESSION_PREVIEW_LIMIT;
+
+    return (
+      <>
+        {visible.map((s) => renderNestedSessionRow(s, ws))}
+        {hasMore && !expanded && (
+          <button
+            type="button"
+            onClick={() => toggleSessionListExpanded(listKey)}
+            className={`pl-6 pr-2 py-1 text-xs ${textPlaceholder} ${hoverTextPrimary} text-left ${transitionBase}`}
+          >
+            More
+          </button>
+        )}
+      </>
+    );
+  };
+
+  const workspaces = buildWorkspaces(projects, sessions, sidebarPrefs);
+
+  const filteredWorkspaces = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    return workspaces.filter((ws) => {
+      if (activeOnlyFilter && ws.id !== '_orphan' && !ws.sessions.some((s) => s.alive)) {
+        return false;
+      }
+      if (!q) return true;
+      if (ws.name.toLowerCase().includes(q)) return true;
+      return ws.sessions.some((s) => sessionMatchesQuery(s, ws));
+    });
+  }, [workspaces, searchQuery, activeOnlyFilter, sessionMatchesQuery]);
+
+  const adminLinkClass = ({ isActive }) =>
+    `flex w-full items-center gap-2 px-3 py-2 text-xs font-medium transition-colors ${
+      isActive
+        ? 'bg-[#F4F5F6] text-[#202124]'
+        : 'text-[#5F6368] hover:bg-[#F4F5F6] hover:text-[#202124]'
+    }`;
+
+  const sidebarNavItemClass =
+    `flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-[13px] font-medium text-[#3C4043] ${hoverBgTertiary} ${transitionBase}`;
+
+  return (
+    <aside className={`h-full w-[272px] ${bgSecondary} border-r border-[#E8EAED] flex flex-col flex-shrink-0 select-none`}>
+      <div className="shrink-0 px-2 pt-2 pb-2 space-y-0.5 border-b border-[#E8EAED]">
+        <button
+          type="button"
+          disabled={!onNewAgent}
+          onClick={onNewAgent}
+          className={`${sidebarNavItemClass} disabled:opacity-40`}
+        >
+          <PenSquare className="w-4 h-4 shrink-0" strokeWidth={1.75} />
+          New Agent
+        </button>
+        <label className={`${sidebarNavItemClass} cursor-text`}>
+          <Search className="w-4 h-4 shrink-0 text-[#9AA0A6]" strokeWidth={1.75} />
+          <input
+            type="search"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Search"
+            className="min-w-0 flex-1 bg-transparent text-[13px] text-[#3C4043] placeholder:text-[#9AA0A6] outline-none"
+          />
+        </label>
+      </div>
+
+      <div className="flex-1 min-h-0 overflow-auto px-2 py-3">
+        <div className="flex flex-col gap-0.5">
+          <div className="flex items-center justify-between px-1.5 mb-1">
+            <h3 className="text-xs font-medium text-[#9AA0A6]">Workspaces</h3>
+            <div className="flex items-center gap-0.5">
+              <button
+                type="button"
+                title={activeOnlyFilter ? 'Show all workspaces' : 'Show active workspaces'}
+                onClick={() => setActiveOnlyFilter((v) => !v)}
+                className={`p-1 rounded-md ${transitionBase} ${
+                  activeOnlyFilter
+                    ? `text-[#202124] ${bgCanvas}`
+                    : `${textPlaceholder} hover:text-[#202124] ${hoverBgTertiary}`
+                }`}
+              >
+                <ListFilter className="w-3.5 h-3.5" strokeWidth={1.75} />
+              </button>
+              <button
+                type="button"
+                title="New workspace"
+                disabled={!onCreateWorkspace}
+                onClick={onCreateWorkspace}
+                className={`p-1 rounded-md ${textPlaceholder} hover:text-[#202124] ${hoverBgTertiary} ${transitionBase} disabled:opacity-40`}
+              >
+                <FolderPlus className="w-3.5 h-3.5" strokeWidth={1.75} />
+              </button>
+            </div>
+          </div>
+          {filteredWorkspaces.length === 0 ? (
+            <p className={`text-xs ${textSecondary} px-2.5 py-2`}>
+              {projects.length === 0
+                ? 'No workspaces yet. Create one, then start a New Agent.'
+                : 'No matching workspaces.'}
+            </p>
+          ) : (
+            filteredWorkspaces.map((ws) => {
+              const expanded = expandedWorkspaces.has(ws.id) || !!searchQuery.trim();
+              const liveInWs = ws.sessions.filter((s) => s.alive === true).length;
+              const isOrphan = ws.id === '_orphan';
+              const wsPinned = isPinnedWorkspace(sidebarPrefs, ws.id);
+              const visibleSessions = ws.sessions.filter((s) => sessionMatchesQuery(s, ws));
+              return (
+                <div key={ws.id} className="rounded-lg">
+                  <div className={`group flex items-center gap-0.5 rounded-lg hover:bg-[#FAFBFC] ${expanded ? 'bg-[#FAFBFC]' : ''}`}>
+                    <button
+                      type="button"
+                      onClick={() => toggleWorkspaceExpanded(ws.id)}
+                      className={`p-1.5 ${textPlaceholder} ${hoverTextPrimary} shrink-0 ${transitionBase}`}
+                      aria-expanded={expanded}
+                    >
+                      {expanded ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
+                    </button>
+                    <FolderOpen className={`w-3.5 h-3.5 ${textPlaceholder} shrink-0`} strokeWidth={1.75} />
+                    <button
+                      type="button"
+                      onClick={() => toggleWorkspaceExpanded(ws.id)}
+                      className={`flex-1 min-w-0 text-left py-2 pr-1 truncate text-[13px] ${textPrimary}`}
+                      title={ws.name}
+                    >
+                      {ws.name}
+                      {liveInWs > 0 && (
+                        <span className={`ml-1.5 text-[10px] font-medium ${accentGreen}`}>{liveInWs}</span>
+                      )}
+                    </button>
+                    {!isOrphan && (
+                      <button
+                        type="button"
+                        title={wsPinned ? 'Unpin workspace' : 'Pin workspace'}
+                        onClick={(e) => handlePinWorkspace(e, ws.id)}
+                        className={`p-1.5 rounded-lg ${textPlaceholder} ${hoverTextPrimary} hover:bg-[#E8EAED] transition-opacity ${
+                          wsPinned ? `opacity-100 ${textSecondary}` : 'opacity-0 group-hover:opacity-100 focus:opacity-100'
+                        }`}
+                      >
+                        <Pin className={`w-3.5 h-3.5 ${wsPinned ? 'fill-current' : ''}`} />
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      title={isOrphan ? 'Clear unassigned sessions' : 'Delete workspace'}
+                      onClick={(e) => handleRequestDeleteWorkspace(e, ws)}
+                      className={`p-1.5 mr-0.5 ${textPlaceholder} ${accentRed} ${accentRedBg} rounded-lg opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity ${transitionBase}`}
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                  {expanded && (
+                    <div className="flex flex-col pb-0.5">
+                      {renderSessionList(visibleSessions, ws, ws.id)}
+                    </div>
+                  )}
+                </div>
+              );
+            })
+          )}
+        </div>
+      </div>
+
+      <div className="shrink-0 border-t border-[#E8EAED] px-2 py-2">
+        <SidebarAccountMenu
+          user={user}
+          onOpenSettings={onOpenSettings}
+          onLogout={onLogout}
+          adminLinkClass={adminLinkClass}
+        />
+      </div>
+    </aside>
+  );
+}

@@ -18,7 +18,7 @@ import {
   consoleIconButtonClass,
   consoleMenuDropdownZClass,
   consoleStructuredDialogPanelClass,
-  consolePageStackClass,
+  consoleAdminPageClass,
   consoleSectionLabelClass,
   consoleTableBodyCellClass,
   consoleTableHeadCellClass,
@@ -669,7 +669,7 @@ export default function AgentsAdmin() {
   }, [gatewayProviders, authDraft.provider]);
 
   return (
-    <div className={`w-full ${consolePageStackClass}`}>
+    <div className={consoleAdminPageClass}>
       <PageHeader
         title="Agents"
         description={

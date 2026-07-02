@@ -1,866 +1,815 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ChevronDown, ChevronRight, Loader2, Plus, RefreshCw, Square, Trash2 } from 'lucide-react';
-
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import { useNavigate, useLocation } from 'react-router-dom';
 import AgentConsole from '../components/AgentConsole';
-import Button from '../components/Button';
-import Input, { FormLabel } from '../components/Input';
-import PageHeader from '../components/PageHeader';
-import SelectMenu from '../components/SelectMenu';
-import SecretFields from '../components/settings/SecretFields';
-import {
-  ConsoleDialogShell,
-  ConsoleStructuredDialogBody,
-  ConsoleStructuredDialogFooter,
-  ConsoleStructuredDialogHeader,
-} from '../components/ConsoleDialog';
-import { useSecrets } from '../hooks/useSecrets';
-import { useToast } from '../components/Toast';
 import { apiFetch } from '../lib/api';
-import { cn } from '../lib/utils';
 import {
-  consoleCardClass,
-  consoleDialogLgClass,
-  consoleEmptyStateClass,
-  consoleIconButtonClass,
-  consoleIconButtonDangerClass,
-  consolePageStackClass,
-  consolePageTitleClass,
-  consoleStatusBadgeClass,
-  consoleStatusIconSlotClass,
-  consoleToolPageClass,
-} from '../lib/consoleTokens';
+  ConsoleInlineDialog,
+} from '../components/ConsoleDialog';
+import SelectMenu from '../components/SelectMenu';
+import { useToast } from '../components/Toast';
+import { useTerminalTheme } from '../hooks/useTerminalTheme.jsx';
+import { TerminalSquare, Play, Settings2, X, RefreshCw, Plus, Bot } from 'lucide-react';
+import { getSecretLabel } from '../lib/secretLabels';
 import { formatQuotaExceeded } from '../lib/quotaLabels';
+import {
+  archiveSession,
+  loadSidebarPrefs,
+  purgeWorkspaceSidebarPrefs,
+  rememberRecentSession,
+  replaceRecentSessionId,
+  sortAgentsByRecentUsage,
+  rememberRecentAgent,
+} from '../lib/sidebarPrefs';
+import {
+  consoleDialogPanelClass,
+  consoleStructuredDialogHeaderClass,
+  consoleStructuredDialogFooterClass,
+  consoleInputClass,
+  bgCanvas,
+  textPrimary,
+  textPlaceholder,
+  borderHairline,
+  transitionBase,
+  hoverBgSecondary,
+} from '../lib/consoleTheme.js';
 
-const DEFAULT_TERMINAL_THEME_ID = 'nord';
+const DEFAULT_AGENT_ID = 'kimi-code';
+
+function pickDefaultAgentId(agents, preferredId) {
+  if (preferredId && agents.some((a) => a.id === preferredId)) return preferredId;
+  const preferred = agents.find((a) => a.id === DEFAULT_AGENT_ID) || agents[0];
+  return preferred?.id || '';
+}
+
 const SLUG_WORDS = [
-  'calm', 'bright', 'silent', 'swift', 'clear', 'fresh', 'gentle', 'bold', 'warm', 'quiet',
-  'stone', 'river', 'forest', 'cloud', 'north', 'south', 'east', 'west', 'field', 'spark',
+  'small', 'heavy', 'many', 'quiet', 'swift', 'bright', 'calm', 'bold', 'brave', 'clear',
+  'dark', 'fast', 'fresh', 'grand', 'keen', 'light', 'neat', 'proud', 'sharp', 'warm',
 ];
-const ORPHAN_ID = '_orphan';
 
 function defaultWorkspaceName() {
   const pick = () => SLUG_WORDS[Math.floor(Math.random() * SLUG_WORDS.length)];
   return `${pick()}-${pick()}`;
 }
 
-function sessionStatusLabel(session) {
-  if (session?.alive) return session.status || 'running';
-  return session?.status || 'ended';
-}
+export default React.forwardRef(function Sessions({
+  /* token, user kept for API compat */
+  agents,
+  projects,
+  setProjects,
+  sessions,
+  setSessions,
+  activeSession,
+  setActiveSession,
+  fetchWorkspaces,
+  className,
+}, ref) {
+  const navigate = useNavigate();
+  const location = useLocation();
+  const goToSessions = useCallback(() => {
+    if (location.pathname !== '/sessions') navigate('/sessions');
+  }, [location.pathname, navigate]);
 
-function sortSessionRows(list) {
-  return [...list].sort((a, b) => {
-    const aLive = a.alive === true ? 1 : 0;
-    const bLive = b.alive === true ? 1 : 0;
-    if (aLive !== bLive) return bLive - aLive;
-    const aTs = new Date(a.created_at || a.createdAt || a.updated_at || a.updatedAt || 0).getTime();
-    const bTs = new Date(b.created_at || b.createdAt || b.updated_at || b.updatedAt || 0).getTime();
-    return bTs - aTs;
-  });
-}
-
-function buildWorkspaces(projects, sessions) {
-  const byProject = new Map();
-  const projectOrder = new Map(projects.map((project, index) => [project.id, index]));
-
-  projects.forEach((project) => {
-    byProject.set(project.id, {
-      id: project.id,
-      name: project.name,
-      createdAt: project.created_at || project.createdAt || 0,
-      sessions: [],
-    });
-  });
-
-  sessions.forEach((session) => {
-    const key = session.projectId || ORPHAN_ID;
-    if (!byProject.has(key)) {
-      byProject.set(key, {
-        id: key,
-        name: 'Unassigned',
-        createdAt: 0,
-        sessions: [],
-      });
-    }
-    byProject.get(key).sessions.push(session);
-  });
-
-  return [...byProject.values()]
-    .map((workspace) => {
-      const sessionsForWorkspace = sortSessionRows(workspace.sessions);
-      const lastActivity = Math.max(
-        workspace.createdAt ? new Date(workspace.createdAt).getTime() : 0,
-        ...sessionsForWorkspace.map((session) => new Date(session.created_at || session.createdAt || session.updated_at || session.updatedAt || 0).getTime()),
-      );
-      return {
-        ...workspace,
-        sessions: sessionsForWorkspace,
-        liveCount: sessionsForWorkspace.filter((session) => session.alive === true).length,
-        lastActivity: Number.isFinite(lastActivity) ? lastActivity : 0,
-      };
-    })
-    .sort((a, b) => {
-      const aIndex = projectOrder.has(a.id) ? projectOrder.get(a.id) : Number.MAX_SAFE_INTEGER;
-      const bIndex = projectOrder.has(b.id) ? projectOrder.get(b.id) : Number.MAX_SAFE_INTEGER;
-      if (aIndex !== bIndex) return aIndex - bIndex;
-      return b.lastActivity - a.lastActivity;
-    });
-}
-
-function SessionStatusPill({ session }) {
-  const label = sessionStatusLabel(session);
-  const live = session.alive === true;
-  const tone = live
-    ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
-    : label === 'starting' || label === 'pending'
-      ? 'border-amber-200 bg-amber-50 text-amber-700'
-      : 'border-zinc-200 bg-zinc-50 text-zinc-600';
-
-  return (
-    <span className={cn(consoleStatusBadgeClass, 'rounded-full border px-2.5 py-0.5', tone)}>
-      <span className={consoleStatusIconSlotClass} aria-hidden>
-        <span className={cn('h-2 w-2 rounded-full', live ? 'bg-emerald-500' : 'bg-zinc-400')} />
-      </span>
-      <span className="truncate">{label}</span>
-    </span>
-  );
-}
-
-function WorkspaceRow({
-  workspace,
-  expanded,
-  onToggle,
-  onSelectSession,
-  onOpenNewSession,
-  onStopOrDelete,
-  busySessionId,
-  busySessionAction,
-  selectedSessionId,
-}) {
-  return (
-    <div className="rounded-lg border border-zinc-200 bg-white">
-      <div className="flex items-center gap-2 border-b border-zinc-200 px-3 py-2">
-        <button
-          type="button"
-          className="flex min-w-0 flex-1 items-center gap-2 text-left"
-          onClick={onToggle}
-        >
-          {expanded ? <ChevronDown className="h-4 w-4 shrink-0 text-zinc-500" /> : <ChevronRight className="h-4 w-4 shrink-0 text-zinc-500" />}
-          <span className="min-w-0 truncate text-sm font-medium text-zinc-900">{workspace.name}</span>
-          <span className="text-xs text-zinc-500">({workspace.sessions.length})</span>
-          {workspace.liveCount > 0 ? (
-            <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-xs text-emerald-700">
-              <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
-              {workspace.liveCount} live
-            </span>
-          ) : null}
-        </button>
-        <button
-          type="button"
-          className={consoleIconButtonClass}
-          title="New session in workspace"
-          onClick={onOpenNewSession}
-        >
-          <Plus className="h-4 w-4" />
-        </button>
-      </div>
-      {expanded ? (
-        <div className="divide-y divide-zinc-100">
-          {workspace.sessions.length === 0 ? (
-            <div className="px-4 py-3 text-sm text-zinc-500">No sessions in this workspace.</div>
-          ) : (
-            workspace.sessions.map((session) => {
-              const selected = session.id === selectedSessionId;
-              const isBusy = busySessionId === session.id;
-              return (
-                <div
-                  key={session.id}
-                  className={cn(
-                    'flex items-start justify-between gap-3 px-4 py-3',
-                    selected ? 'bg-zinc-50' : 'bg-white hover:bg-zinc-50/70',
-                  )}
-                >
-                  <button
-                    type="button"
-                    className="min-w-0 flex-1 text-left"
-                    onClick={() => onSelectSession(session.id)}
-                  >
-                    <div className="flex min-w-0 items-center gap-2">
-                      <span className={cn('h-2.5 w-2.5 shrink-0 rounded-full', session.alive ? 'bg-emerald-500 animate-pulse' : 'bg-zinc-400')} />
-                      <span className="truncate text-sm font-medium text-zinc-900">
-                        {session.agentName || session.agentId}
-                      </span>
-                      <SessionStatusPill session={session} />
-                    </div>
-                    <p className="mt-1 truncate text-xs text-zinc-500">
-                      {session.projectName || workspace.name}
-                    </p>
-                  </button>
-                  <div className="flex items-center gap-1">
-                    {session.alive ? (
-                      <button
-                        type="button"
-                        aria-label="Stop session"
-                        title="Stop session"
-                        onClick={() => onStopOrDelete(session)}
-                        disabled={isBusy}
-                        className={consoleIconButtonClass}
-                      >
-                        {isBusy && busySessionAction === 'stop' ? (
-                          <Loader2 className="h-4 w-4 animate-spin" />
-                        ) : (
-                          <Square className="h-4 w-4" />
-                        )}
-                      </button>
-                    ) : null}
-                    <button
-                      type="button"
-                      aria-label="Delete session"
-                      title="Delete session"
-                      onClick={() => onStopOrDelete(session)}
-                      disabled={isBusy}
-                      className={consoleIconButtonDangerClass}
-                    >
-                      {isBusy && busySessionAction === 'delete' ? (
-                        <Loader2 className="h-4 w-4 animate-spin" />
-                      ) : (
-                        <Trash2 className="h-4 w-4" />
-                      )}
-                    </button>
-                  </div>
-                </div>
-              );
-            })
-          )}
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
-export default function Sessions() {
-  const { secrets, saveSecrets } = useSecrets();
-  const { showToast } = useToast();
-  const [agents, setAgents] = useState([]);
-  const [projects, setProjects] = useState([]);
-  const [sessions, setSessions] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
-  const [selectedSessionId, setSelectedSessionId] = useState(null);
   const [selectedAgentId, setSelectedAgentId] = useState('');
-  const [launchOpen, setLaunchOpen] = useState(false);
-  const [launchMode, setLaunchMode] = useState('new');
-  const [launchProjectId, setLaunchProjectId] = useState('');
-  const [launchWorkspaceName, setLaunchWorkspaceName] = useState(defaultWorkspaceName());
-  const [launchError, setLaunchError] = useState('');
-  const [launching, setLaunching] = useState(false);
-  const [busySessionId, setBusySessionId] = useState(null);
-  const [busySessionAction, setBusySessionAction] = useState(null);
-  const [secretsDialogOpen, setSecretsDialogOpen] = useState(false);
-  const [pendingLaunch, setPendingLaunch] = useState(null);
-  const [secretDrafts, setSecretDrafts] = useState({});
-  const [expandedWorkspaceIds, setExpandedWorkspaceIds] = useState(() => new Set());
-  const launchBusyRef = useRef(false);
+  const [newProjectName, setNewProjectName] = useState('');
+  const [launchModalMode, setLaunchModalMode] = useState('workspace');
+  const [launchWorkspaceId, setLaunchWorkspaceId] = useState('');
+  const [projectCreating, setProjectCreating] = useState(false);
+  const [launchModalError, setLaunchModalError] = useState(null);
+  const [startSessionAfterCreate, setStartSessionAfterCreate] = useState(true);
+  const [isLoading, setIsLoading] = useState(false);
+  const [launchingSession, setLaunchingSession] = useState(false);
+  // eslint-disable-next-line no-unused-vars
+  const [_error, setError] = useState(null);
 
-  const fetchAgents = useCallback(async () => {
-    const res = await apiFetch('/api/v1/agents');
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || 'Failed to load agents');
-    setAgents(Array.isArray(data) ? data : []);
-  }, []);
+  // eslint-disable-next-line no-unused-vars
+  const [showConfigModal, setShowConfigModal] = useState(false);
+  const [configKeys, setConfigKeys] = useState({});
+  const [savedConfigKeys, setSavedConfigKeys] = useState({});
+  // eslint-disable-next-line no-unused-vars
+  const [_configSaving, setConfigSaving] = useState(false);
+  // eslint-disable-next-line no-unused-vars
+  const [_configLoading, setConfigLoading] = useState(false);
+  // eslint-disable-next-line no-unused-vars
+  const [_configError, setConfigError] = useState(null);
+  const { showToast } = useToast();
+  const { themeId, preset } = useTerminalTheme();
+  // eslint-disable-next-line no-unused-vars
+  const [_deletingSessionId, setDeletingSessionId] = useState(null);
+  const [restartingSession, setRestartingSession] = useState(false);
+  const [stoppingSession, setStoppingSession] = useState(false);
+  const [deleteConfirmSession, setDeleteConfirmSession] = useState(null);
+  // eslint-disable-next-line no-unused-vars
+  const [_deleteConfirmWorkspace, setDeleteConfirmWorkspace] = useState(null);
 
-  const fetchProjects = useCallback(async () => {
-    const res = await apiFetch('/api/v1/projects');
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || 'Failed to load workspaces');
-    setProjects(Array.isArray(data) ? data : []);
-  }, []);
+  const [showNewInstanceModal, setShowNewInstanceModal] = useState(false);
+  const [createNewWorkspaceInline, setCreateNewWorkspaceInline] = useState(false);
 
-  const fetchSessions = useCallback(async () => {
-    const res = await apiFetch('/api/v1/sessions');
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || 'Failed to load sessions');
-    setSessions(Array.isArray(data) ? data : []);
-  }, []);
-
-  const refresh = useCallback(async ({ silent = false } = {}) => {
-    setRefreshing(true);
-    const errors = [];
-    await Promise.all([
-      fetchAgents().catch((err) => errors.push(`Agents: ${err.message}`)),
-      fetchProjects().catch((err) => errors.push(`Workspaces: ${err.message}`)),
-      fetchSessions().catch((err) => errors.push(`Sessions: ${err.message}`)),
-    ]);
-    setRefreshing(false);
-    if (errors.length > 0 && !silent) {
-      showToast('error', errors[0]);
-    }
-  }, [fetchAgents, fetchProjects, fetchSessions, showToast]);
-
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      setLoading(true);
-      await refresh({ silent: true });
-      if (!cancelled) setLoading(false);
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [refresh]);
-
-  useEffect(() => {
-    const interval = window.setInterval(() => {
-      refresh({ silent: true });
-    }, 5000);
-    return () => window.clearInterval(interval);
-  }, [refresh]);
-
-  useEffect(() => {
-    if (agents.length === 0) return;
-    if (!selectedAgentId || !agents.some((agent) => agent.id === selectedAgentId)) {
-      setSelectedAgentId(agents[0].id);
-    }
-  }, [agents, selectedAgentId]);
-
-  const workspaces = useMemo(() => buildWorkspaces(projects, sessions), [projects, sessions]);
-
-  useEffect(() => {
-    if (workspaces.length === 0) {
-      setSelectedSessionId(null);
-      return;
-    }
-    const selectedSession = sessions.find((session) => session.id === selectedSessionId);
-    if (!selectedSession || !sessions.some((session) => session.id === selectedSessionId)) {
-      const next = sessions.find((session) => session.alive) ?? sessions[0];
-      setSelectedSessionId(next?.id || null);
-    }
-  }, [selectedSessionId, sessions, workspaces.length]);
-
-  const selectedSession = useMemo(
-    () => sessions.find((session) => session.id === selectedSessionId) || null,
-    [selectedSessionId, sessions],
-  );
-
-  useEffect(() => {
-    if (!selectedSession?.projectId) return;
-    setExpandedWorkspaceIds((prev) => {
-      if (prev.has(selectedSession.projectId)) return prev;
-      const next = new Set(prev);
-      next.add(selectedSession.projectId);
-      return next;
-    });
-  }, [selectedSession?.projectId]);
-
-  useEffect(() => {
-    if (launchMode === 'existing' && !projects.some((project) => project.id === launchProjectId)) {
-      setLaunchProjectId(projects[0]?.id || '');
-      if (projects.length === 0) setLaunchMode('new');
-    }
-  }, [launchMode, launchProjectId, projects]);
-
-  const selectedAgent = useMemo(
-    () => agents.find((agent) => agent.id === selectedAgentId) || null,
-    [agents, selectedAgentId],
-  );
-
-  const agentOptions = useMemo(
-    () => agents.map((agent) => ({ value: agent.id, label: agent.name })),
+  const getAgentLabel = useCallback(
+    (agentId) => agents.find((a) => a.id === agentId)?.name || agentId,
     [agents],
   );
 
-  const openLaunchModal = useCallback((mode = 'new', workspaceId = '') => {
-    setLaunchError('');
-    setLaunchMode(mode);
-    setLaunchProjectId(workspaceId || '');
-    setLaunchWorkspaceName(mode === 'new' ? defaultWorkspaceName() : '');
-    setLaunchOpen(true);
-    if (selectedAgentId) return;
-    if (agents[0]?.id) setSelectedAgentId(agents[0].id);
-  }, [agents, selectedAgentId]);
+  useEffect(() => {
+    if (activeSession) setLaunchingSession(false);
+  }, [activeSession]);
 
-  const createProject = useCallback(async (name) => {
-    const res = await apiFetch('/api/v1/projects', {
-      method: 'POST',
-      body: JSON.stringify({ name }),
-    });
-    const data = await res.json();
-    if (!res.ok) {
-      if (data.error === 'quota_exceeded') {
-        throw new Error(formatQuotaExceeded(data.dimension || 'max_projects', data.current, data.limit));
-      }
-      throw new Error(data.error || 'Failed to create workspace');
-    }
-    const project = { id: data.id, name: data.name || name };
-    setProjects((prev) => (prev.some((item) => item.id === project.id) ? prev : [project, ...prev]));
-    return project;
-  }, []);
-
-  const openSecretsModal = useCallback((launchContext) => {
-    const agent = agents.find((item) => item.id === launchContext.agentId) || null;
-    const required = agent?.env_required || [];
-    setPendingLaunch(launchContext);
-    setSecretDrafts(required.reduce((acc, key) => {
-      acc[key] = '';
-      return acc;
-    }, {}));
-    setSecretsDialogOpen(true);
+  useEffect(() => {
+    if (agents.length === 0) return;
+    setSelectedAgentId((prev) => pickDefaultAgentId(agents, prev));
   }, [agents]);
 
-  const startSession = useCallback(async ({ agentId, projectId, projectName }, { allowSecretsPrompt = true } = {}) => {
-    const agent = agents.find((item) => item.id === agentId) || null;
-    if (!agent) {
-      showToast('error', 'Select an agent first.');
-      return false;
-    }
-    if (!projectId) {
-      showToast('error', 'Select or create a workspace first.');
-      return false;
-    }
+  const selectedAgent = agents.find(a => a.id === selectedAgentId);
 
-    const required = agent.llm_auth_mode === 'gateway' ? [] : (agent.env_required || []);
-    const missing = required.filter((key) => !secrets[key]);
-    if (allowSecretsPrompt && missing.length > 0) {
-      openSecretsModal({ agentId, projectId, projectName });
-      return false;
-    }
-
-    if (launchBusyRef.current) return false;
-    launchBusyRef.current = true;
-    setLaunching(true);
+  const openConfigModal = async () => {
+    const required = selectedAgent?.env_required || [];
+    const initialKeys = {};
+    required.forEach((k) => { initialKeys[k] = ''; });
+    setConfigKeys(initialKeys);
+    setSavedConfigKeys({});
+    setConfigError(null);
+    setError(null);
+    setShowConfigModal(true);
+    setConfigLoading(true);
     try {
-      const res = await apiFetch('/api/v1/session/start', {
+      const res = await apiFetch('/api/v1/secrets');
+      const data = await res.json();
+      if (res.ok) {
+        const saved = {};
+        const loaded = {};
+        required.forEach((k) => {
+          if (data[k]) saved[k] = true;
+          if (data[k] && data[k] !== '***') loaded[k] = data[k];
+          else loaded[k] = '';
+        });
+        setSavedConfigKeys(saved);
+        setConfigKeys(loaded);
+      }
+    } catch {
+      setConfigError('Could not load saved keys.');
+    } finally {
+      setConfigLoading(false);
+    }
+  };
+
+  const configRequiredKeys = selectedAgent?.env_required || [];
+  // eslint-disable-next-line no-unused-vars
+  const configMissingKeys = useMemo(
+    () => configRequiredKeys.filter((k) => !savedConfigKeys[k] && !configKeys[k]?.trim()),
+    [configRequiredKeys, savedConfigKeys, configKeys],
+  );
+
+  const ensureAgentSecrets = async (agent) => {
+    const required = agent?.env_required || [];
+    if (required.length === 0 || agent?.llm_auth_mode === 'gateway') return true;
+    try {
+      const res = await apiFetch('/api/v1/secrets');
+      const data = await res.json();
+      if (!res.ok) return false;
+      const missing = required.filter((k) => !data[k]);
+      if (missing.length === 0) return true;
+      openConfigModal();
+      return false;
+    } catch {
+      openConfigModal();
+      return false;
+    }
+  };
+
+  const handleCreateProject = async (nameOverride) => {
+    const name = (nameOverride ?? newProjectName).trim() || defaultWorkspaceName();
+    setProjectCreating(true);
+    setError(null);
+    try {
+      const res = await apiFetch('/api/v1/projects', {
         method: 'POST',
-        body: JSON.stringify({
-          agent_id: agentId,
-          project_id: projectId,
-          terminal_theme_id: DEFAULT_TERMINAL_THEME_ID,
-        }),
+        body: JSON.stringify({ name })
       });
       const data = await res.json();
       if (!res.ok) {
-        const message = data.error || data.message || 'Failed to start session';
+        if (data.error === 'quota_exceeded') {
+          throw new Error(formatQuotaExceeded(data.dimension || 'max_projects', data.current, data.limit));
+        }
+        throw new Error(data.error || 'Failed to create workspace');
+      }
+      return { id: data.id, name: data.name || name };
+    } catch (err) {
+      setLaunchModalError(err.message);
+      return null;
+    } finally {
+      setProjectCreating(false);
+    }
+  };
+
+  const handleStartSession = async (projectId, projectName, { closeLaunchModal = true } = {}) => {
+    if (!selectedAgentId || !selectedAgent) return false;
+    if (!projectId) {
+      setLaunchModalError('Could not create workspace for this session.');
+      return false;
+    }
+    setIsLoading(true);
+    setLaunchModalError(null);
+    setError(null);
+    try {
+      const ready = await ensureAgentSecrets(selectedAgent);
+      if (!ready) {
+        setLaunchModalError('Configure required API keys before launching.');
+        return false;
+      }
+
+      const response = await apiFetch('/api/v1/session/start', {
+        method: 'POST',
+        body: JSON.stringify({
+          agent_id: selectedAgentId,
+          project_id: projectId,
+          terminal_theme_id: themeId,
+        })
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        const msg = data.error || data.message || 'Failed to start session';
         if (data.error === 'agent_not_granted') {
-          showToast('error', 'You do not have permission to use this agent.');
+          setLaunchModalError('You do not have permission to use this agent.');
           return false;
         }
         if (data.error === 'quota_exceeded') {
-          showToast('error', formatQuotaExceeded(data.dimension, data.current, data.limit));
+          setLaunchModalError(formatQuotaExceeded(data.dimension, data.current, data.limit));
+          fetchWorkspaces();
           return false;
         }
-        if (/Missing required env|Secrets Vault/i.test(message)) {
-          if (allowSecretsPrompt) openSecretsModal({ agentId, projectId, projectName });
-          else showToast('error', message);
-          return false;
-        }
-        throw new Error(message);
+        throw new Error(msg);
       }
 
-      const sessionRow = {
+      rememberRecentSession({
         id: data.session_id,
-        agentId,
+        agentId: selectedAgentId,
         projectId,
-        projectName,
-        status: data.status || 'running',
-        alive: true,
-        created_at: new Date().toISOString(),
-      };
-      setSessions((prev) => [sessionRow, ...prev.filter((session) => session.id !== sessionRow.id)]);
-      setSelectedSessionId(sessionRow.id);
-      setExpandedWorkspaceIds((prev) => {
-        const next = new Set(prev);
-        next.add(projectId);
-        return next;
+        projectName: projectName || projectId,
+        createdAt: Date.now(),
       });
-      showToast('success', 'Session started.');
-      refresh({ silent: true });
+      rememberRecentAgent(selectedAgentId);
+      setActiveSession({
+        sessionId: data.session_id,
+        agentId: selectedAgentId,
+        agentName: selectedAgent.name,
+        projectId,
+        projectName: projectName || projectId,
+      });
+      goToSessions();
+      setSessions((prev) => {
+        if (prev.some((s) => s.id === data.session_id)) return prev;
+        const now = Date.now();
+        return [
+          ...prev,
+          {
+            id: data.session_id,
+            projectId,
+            agentId: selectedAgentId,
+            status: data.status || 'running',
+            alive: true,
+            projectName: projectName || projectId,
+            createdAt: now,
+          },
+        ];
+      });
+      fetchWorkspaces();
+      if (closeLaunchModal) setShowNewInstanceModal(false);
       return true;
-    } catch (error) {
-      showToast('error', error.message);
+    } catch (err) {
+      setLaunchModalError(err.message);
+      setError(err.message);
       return false;
     } finally {
-      setLaunching(false);
-      launchBusyRef.current = false;
+      setIsLoading(false);
     }
-  }, [agents, openSecretsModal, refresh, secrets, showToast]);
+  };
 
-  const handleLaunch = useCallback(async (event) => {
-    event.preventDefault();
-    setLaunchError('');
-    if (!selectedAgent) {
-      setLaunchError('Select an agent first.');
-      return;
+  const resolveDefaultWorkspace = useCallback(() => {
+    if (activeSession?.projectId) {
+      const ws = projects.find((p) => p.id === activeSession.projectId);
+      if (ws) return ws;
     }
-
-    let project;
-    if (launchMode === 'existing') {
-      project = projects.find((item) => item.id === launchProjectId) || null;
-      if (!project) {
-        setLaunchError('Select a workspace first.');
-        return;
+    const prefs = loadSidebarPrefs();
+    for (const sessionId of prefs.recentSessionIds || []) {
+      const snap = prefs.recentSessionSnapshots?.[sessionId];
+      if (snap?.projectId) {
+        const ws = projects.find((p) => p.id === snap.projectId);
+        if (ws) return ws;
       }
+    }
+    if (projects.length === 0) return null;
+    return [...projects].sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0))[0];
+  }, [activeSession?.projectId, projects]);
+
+  const openLaunchModal = (mode = 'session', workspace = null) => {
+    setLaunchModalError(null);
+    setCreateNewWorkspaceInline(false);
+    if (mode === 'workspace') {
+      setLaunchModalMode('workspace');
+      setStartSessionAfterCreate(false);
+      setLaunchWorkspaceId('');
+      setNewProjectName('');
+    } else if (projects.length === 0) {
+      setLaunchModalMode('quickstart');
+      setStartSessionAfterCreate(true);
+      setLaunchWorkspaceId('');
+      setNewProjectName('');
     } else {
-      const name = launchWorkspaceName.trim() || defaultWorkspaceName();
-      try {
-        project = await createProject(name);
-      } catch (error) {
-        setLaunchError(error.message);
-        showToast('error', error.message);
-        return;
+      setLaunchModalMode('session');
+      setStartSessionAfterCreate(true);
+      const ws = workspace || resolveDefaultWorkspace();
+      if (ws) {
+        setLaunchWorkspaceId(ws.id);
+        setNewProjectName(ws.name);
+      } else {
+        setLaunchWorkspaceId('');
+        setNewProjectName('');
       }
     }
-
-    const started = await startSession({
-      agentId: selectedAgent.id,
-      projectId: project.id,
-      projectName: project.name,
-    });
-    if (started) {
-      setLaunchOpen(false);
-      setLaunchError('');
+    const prefs = loadSidebarPrefs();
+    const sorted = sortAgentsByRecentUsage(agents, prefs);
+    if (sorted.length > 0) {
+      setSelectedAgentId(sorted[0].id);
     }
-  }, [createProject, launchMode, launchProjectId, launchWorkspaceName, projects, selectedAgent, startSession, showToast]);
+    setShowNewInstanceModal(true);
+  };
 
-  const handleSaveSecrets = useCallback(async (event) => {
-    event.preventDefault();
-    if (!pendingLaunch) return;
+  const handleLaunchFromModal = async () => {
+    setLaunchModalError(null);
+    setLaunchingSession(true);
+    let started = false;
+    try {
+      if (launchModalMode === 'quickstart') {
+        const name = newProjectName.trim() || defaultWorkspaceName();
+        const created = await handleCreateProject(name);
+        if (!created) return;
+        setProjects((prev) => {
+          if (prev.some((p) => p.id === created.id)) return prev;
+          return [...prev, { id: created.id, name: created.name, createdAt: Date.now() }];
+        });
+        started = await handleStartSession(created.id, created.name, { closeLaunchModal: true });
+        return;
+      }
+      if (launchModalMode === 'session') {
+        if (createNewWorkspaceInline) {
+          const name = newProjectName.trim() || defaultWorkspaceName();
+          const created = await handleCreateProject(name);
+          if (!created) return;
+          setProjects((prev) => {
+            if (prev.some((p) => p.id === created.id)) return prev;
+            return [...prev, { id: created.id, name: created.name, createdAt: Date.now() }];
+          });
+          started = await handleStartSession(created.id, created.name, { closeLaunchModal: true });
+          return;
+        }
+        if (!launchWorkspaceId) {
+          setLaunchModalError('Select a workspace first.');
+          return;
+        }
+        const ws = projects.find((p) => p.id === launchWorkspaceId);
+        started = await handleStartSession(launchWorkspaceId, ws?.name || launchWorkspaceId, { closeLaunchModal: true });
+        return;
+      }
+      const name = newProjectName.trim() || defaultWorkspaceName();
+      const created = await handleCreateProject(name);
+      if (!created) return;
+      setProjects((prev) => {
+        if (prev.some((p) => p.id === created.id)) return prev;
+        return [...prev, { id: created.id, name: created.name, createdAt: Date.now() }];
+      });
+      if (startSessionAfterCreate) {
+        started = await handleStartSession(created.id, created.name, { closeLaunchModal: true });
+        if (!started) fetchWorkspaces();
+      } else {
+        fetchWorkspaces();
+        setShowNewInstanceModal(false);
+      }
+    } finally {
+      if (!started) setLaunchingSession(false);
+    }
+  };
 
+  // eslint-disable-next-line no-unused-vars
+  const handleSaveConfig = async (e) => {
+    e.preventDefault();
+    setConfigError(null);
+    const required = selectedAgent?.env_required || [];
     const payload = {};
-    Object.entries(secretDrafts).forEach(([key, value]) => {
-      const trimmed = value.trim();
-      if (trimmed) payload[key] = trimmed;
+    required.forEach((k) => {
+      const value = configKeys[k]?.trim();
+      if (value) payload[k] = value;
     });
-    if (Object.keys(payload).length === 0) {
-      showToast('error', 'Enter the required secrets first.');
+    const missing = required.filter((k) => !payload[k] && !savedConfigKeys[k]);
+    if (missing.length > 0) {
+      setConfigError(`Missing: ${missing.map(getSecretLabel).join(', ')}`);
       return;
     }
-
-    const ok = await saveSecrets(payload, { successMessage: 'Secrets saved.' });
-    if (!ok) return;
-
-    const launch = pendingLaunch;
-    setPendingLaunch(null);
-    setSecretsDialogOpen(false);
-    setSecretDrafts({});
-    const started = await startSession(launch, { allowSecretsPrompt: false });
-    if (started) {
-      setLaunchOpen(false);
-      setLaunchError('');
+    if (Object.keys(payload).length === 0) {
+      setShowConfigModal(false);
+      setLaunchModalError(null);
+      return;
     }
-  }, [pendingLaunch, saveSecrets, secretDrafts, startSession, showToast]);
-
-  const handleStopOrDelete = useCallback(async (session) => {
-    setBusySessionId(session.id);
-    setBusySessionAction(session.alive ? 'stop' : 'delete');
+    setConfigSaving(true);
     try {
-      const res = await apiFetch(`/api/v1/sessions/${encodeURIComponent(session.id)}`, {
-        method: 'DELETE',
+      const res = await apiFetch('/api/v1/secrets', {
+        method: 'POST',
+        body: JSON.stringify(payload),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Failed to remove session');
-      showToast('success', session.alive ? 'Session stopped.' : 'Session deleted.');
-      if (selectedSessionId === session.id) setSelectedSessionId(null);
-      await refresh({ silent: true });
-    } catch (error) {
-      showToast('error', error.message);
-    } finally {
-      setBusySessionId(null);
-      setBusySessionAction(null);
-    }
-  }, [refresh, selectedSessionId, showToast]);
-
-  const handleSessionEnd = useCallback(() => {
-    refresh({ silent: true });
-  }, [refresh]);
-
-  const selectedSessionWorkspace = useMemo(() => {
-    if (!selectedSession) return null;
-    return workspaces.find((workspace) => workspace.id === (selectedSession.projectId || ORPHAN_ID)) || null;
-  }, [selectedSession, workspaces]);
-
-  useEffect(() => {
-    if (selectedSessionWorkspace?.id) {
-      setExpandedWorkspaceIds((prev) => {
-        if (prev.has(selectedSessionWorkspace.id)) return prev;
-        const next = new Set(prev);
-        next.add(selectedSessionWorkspace.id);
+      if (!res.ok) throw new Error(data.error || 'Failed to save keys');
+      setSavedConfigKeys((prev) => {
+        const next = { ...prev };
+        required.forEach((k) => { if (payload[k] || prev[k]) next[k] = true; });
         return next;
       });
+      showToast('success', 'API keys saved.');
+      setShowConfigModal(false);
+      setLaunchModalError(null);
+    } catch (err) {
+      setConfigError(err.message);
+    } finally {
+      setConfigSaving(false);
     }
-  }, [selectedSessionWorkspace?.id]);
+  };
 
-  const workspaceLaunchOptions = useMemo(
-    () => projects.map((project) => ({ value: project.id, label: project.name })),
-    [projects],
+  const handleSessionEnd = (sessionId) => {
+    setSessions((prev) =>
+      prev.map((s) =>
+        s.id === sessionId ? { ...s, alive: false, memoryStatus: 'exited', status: 'exited' } : s
+      )
+    );
+    fetchWorkspaces();
+  };
+
+  const handleRestartSession = async () => {
+    if (!activeSession) return;
+    const agentId = activeSession.agentId || sessions.find((s) => s.id === activeSession.sessionId)?.agentId;
+    if (!agentId || !activeSession.projectId) {
+      showToast('error', 'Cannot start: missing agent or workspace.');
+      return;
+    }
+    const agent = agents.find((a) => a.id === agentId);
+    const oldSessionId = activeSession.sessionId;
+
+    setRestartingSession(true);
+    try {
+      const ready = await ensureAgentSecrets(agent);
+      if (!ready) {
+        showToast('error', 'Configure required API keys before starting.');
+        return;
+      }
+      const deleteRes = await apiFetch(`/api/v1/sessions/${encodeURIComponent(oldSessionId)}`, { method: 'DELETE' });
+      if (!deleteRes.ok) throw new Error('Failed to release previous session');
+
+      const response = await apiFetch('/api/v1/session/start', {
+        method: 'POST',
+        body: JSON.stringify({ agent_id: agentId, project_id: activeSession.projectId, terminal_theme_id: themeId }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'Failed to start session');
+
+      replaceRecentSessionId(oldSessionId, data.session_id, {
+        agentId, projectId: activeSession.projectId, projectName: activeSession.projectName, createdAt: Date.now(),
+      });
+      rememberRecentAgent(agentId);
+      setActiveSession({
+        sessionId: data.session_id,
+        agentId,
+        agentName: agent?.name || activeSession.agentName,
+        projectId: activeSession.projectId,
+        projectName: activeSession.projectName,
+      });
+      goToSessions();
+      setSessions((prev) => {
+        if (prev.some((s) => s.id === data.session_id)) return prev;
+        const now = Date.now();
+        return [...prev, { id: data.session_id, projectId: activeSession.projectId, agentId, status: 'running', alive: true, projectName: activeSession.projectName, createdAt: now }];
+      });
+      fetchWorkspaces();
+      showToast('success', 'Session started.');
+    } catch (err) {
+      showToast('error', err.message);
+    } finally {
+      setRestartingSession(false);
+    }
+  };
+
+  const handleStopSession = async () => {
+    if (!activeSession?.sessionId) return;
+    setStoppingSession(true);
+    try {
+      const res = await apiFetch(`/api/v1/sessions/${encodeURIComponent(activeSession.sessionId)}`, { method: 'DELETE' });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to stop session');
+      rememberRecentSession({ id: activeSession.sessionId, agentId: activeSession.agentId, projectId: activeSession.projectId, projectName: activeSession.projectName, createdAt: Date.now() });
+      handleSessionEnd(activeSession.sessionId);
+      fetchWorkspaces();
+      showToast('success', 'Session stopped.');
+    } catch (err) {
+      showToast('error', err.message);
+    } finally {
+      setStoppingSession(false);
+    }
+  };
+
+  const handleDeleteSession = async (sessionId) => {
+    setDeletingSessionId(sessionId);
+    try {
+      const res = await apiFetch(`/api/v1/sessions/${encodeURIComponent(sessionId)}`, { method: 'DELETE' });
+      if (!res.ok) throw new Error('Failed to delete session');
+      archiveSession(sessionId);
+      setSessions((prev) => prev.filter((s) => s.id !== sessionId));
+      if (activeSession?.sessionId === sessionId) setActiveSession(null);
+      setDeleteConfirmSession(null);
+      fetchWorkspaces();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setDeletingSessionId(null);
+    }
+  };
+
+  const requestDeleteSession = (session, ws) => {
+    setDeleteConfirmSession({
+      sessionId: session.id,
+      isLive: session.alive === true,
+      agentLabel: getAgentLabel(session.agentId),
+      workspaceName: ws?.name || 'Unassigned',
+    });
+  };
+
+  // eslint-disable-next-line no-unused-vars
+  const handleDeleteWorkspace = async (workspaceId) => {
+    try {
+      if (workspaceId === '_orphan') {
+        const orphanSessions = sessions.filter((s) => !s.projectId);
+        for (const s of orphanSessions) {
+          await apiFetch(`/api/v1/sessions/${encodeURIComponent(s.id)}`, { method: 'DELETE' });
+        }
+        if (activeSession && !activeSession.projectId) setActiveSession(null);
+      } else {
+        await apiFetch(`/api/v1/projects/${encodeURIComponent(workspaceId)}`, { method: 'DELETE' });
+        if (activeSession?.projectId === workspaceId) setActiveSession(null);
+      }
+      purgeWorkspaceSidebarPrefs(workspaceId, sessions);
+      setSessions((prev) => prev.filter((s) => (workspaceId === '_orphan' ? Boolean(s.projectId) : s.projectId !== workspaceId)));
+      if (workspaceId !== '_orphan') {
+        setProjects((prev) => prev.filter((p) => p.id !== workspaceId));
+      }
+      setDeleteConfirmWorkspace(null);
+      fetchWorkspaces();
+      showToast('success', workspaceId === '_orphan' ? 'Unassigned sessions cleared.' : 'Workspace deleted.');
+    } catch (err) {
+      showToast('error', err.message);
+    }
+  };
+
+  const requestDeleteWorkspace = (ws) => {
+    const liveCount = ws.sessions.filter((s) => s.alive === true).length;
+    setDeleteConfirmWorkspace({
+      workspaceId: ws.id,
+      workspaceName: ws.name,
+      sessionCount: ws.sessions.length,
+      liveCount,
+      isOrphan: ws.id === '_orphan',
+    });
+  };
+
+  React.useImperativeHandle(ref, () => ({
+    openLaunchModal,
+    requestDeleteSession,
+    requestDeleteWorkspace,
+  }), [openLaunchModal, requestDeleteSession, requestDeleteWorkspace]);
+
+  const agentSelectOptions = useMemo(
+    () => sortAgentsByRecentUsage(agents, loadSidebarPrefs()).map((agent) => ({ value: agent.id, label: agent.name })),
+    [agents],
   );
 
-  const launchModal = launchOpen ? (
-    <ConsoleDialogShell
-      onClose={() => {
-        setLaunchOpen(false);
-        setLaunchError('');
-      }}
-      panelClassName={consoleDialogLgClass}
-      fitContent
-    >
-      <form onSubmit={handleLaunch} className="flex flex-col">
-        <ConsoleStructuredDialogHeader
-          title={launchMode === 'new' ? 'New workspace' : 'New session'}
-          subtitle={launchMode === 'new'
-            ? 'Create a workspace, then start an agent session in it.'
-            : 'Start another agent session in an existing workspace.'}
-        />
-        <ConsoleStructuredDialogBody>
-          {launchError ? (
-            <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
-              {launchError}
-            </div>
-          ) : null}
-
-          <div className="space-y-2">
-            <FormLabel>Agent</FormLabel>
-            <SelectMenu
-              value={selectedAgentId}
-              onChange={setSelectedAgentId}
-              options={agentOptions}
-              placeholder={agents.length > 0 ? 'Select an agent' : 'No agents available'}
-              searchable
-              searchPlaceholder="Search agents…"
-              disabled={agents.length === 0}
-            />
-          </div>
-
-          <div className="space-y-2">
-            <FormLabel>Workspace mode</FormLabel>
-            <SelectMenu
-              value={launchMode}
-              onChange={(next) => {
-                setLaunchMode(next);
-                setLaunchError('');
-                if (next === 'new') {
-                  setLaunchWorkspaceName(defaultWorkspaceName());
-                } else if (!launchProjectId) {
-                  setLaunchProjectId(projects[0]?.id || '');
-                }
-              }}
-              options={[
-                { value: 'new', label: 'Create new workspace' },
-                { value: 'existing', label: 'Use existing workspace' },
-              ]}
-              placeholder="Choose workspace mode"
-            />
-          </div>
-
-          {launchMode === 'new' ? (
-            <div className="space-y-2">
-              <FormLabel>Workspace name</FormLabel>
-              <Input
-                value={launchWorkspaceName}
-                onChange={(event) => setLaunchWorkspaceName(event.target.value)}
-                placeholder="my-workspace"
-              />
-            </div>
-          ) : (
-            <div className="space-y-2">
-              <FormLabel>Workspace</FormLabel>
-              <SelectMenu
-                value={launchProjectId}
-                onChange={setLaunchProjectId}
-                options={workspaceLaunchOptions}
-                placeholder={projects.length > 0 ? 'Select a workspace' : 'No workspaces yet'}
-                searchable
-                searchPlaceholder="Search workspaces…"
-                disabled={projects.length === 0}
-              />
-            </div>
-          )}
-        </ConsoleStructuredDialogBody>
-        <ConsoleStructuredDialogFooter>
-          <Button
-            type="button"
-            variant="secondary"
-            onClick={() => {
-              setLaunchOpen(false);
-              setLaunchError('');
-            }}
-          >
-            Cancel
-          </Button>
-          <Button type="submit" variant="primary" disabled={launching || agents.length === 0}>
-            {launching ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-            Start session
-          </Button>
-        </ConsoleStructuredDialogFooter>
-      </form>
-    </ConsoleDialogShell>
-  ) : null;
-
-  const secretsModal = secretsDialogOpen && pendingLaunch ? (
-    <ConsoleDialogShell
-      onClose={() => {
-        setSecretsDialogOpen(false);
-        setPendingLaunch(null);
-      }}
-      panelClassName={consoleDialogLgClass}
-      fitContent
-    >
-      <form onSubmit={handleSaveSecrets} className="flex flex-col">
-        <ConsoleStructuredDialogHeader
-          title="Configure required secrets"
-          subtitle={`Needed to launch ${agents.find((agent) => agent.id === pendingLaunch.agentId)?.name || 'this agent'}.`}
-        />
-        <ConsoleStructuredDialogBody>
-          <SecretFields
-            keys={agents.find((agent) => agent.id === pendingLaunch.agentId)?.env_required || []}
-            secrets={secretDrafts}
-            onChange={(key, value) => setSecretDrafts((prev) => ({ ...prev, [key]: value }))}
-            savedHints={secrets}
-            missingKeys={(agents.find((agent) => agent.id === pendingLaunch.agentId)?.env_required || []).filter(
-              (key) => !secrets[key] && !secretDrafts[key]?.trim(),
-            )}
-            mono
-          />
-        </ConsoleStructuredDialogBody>
-        <ConsoleStructuredDialogFooter>
-          <Button
-            type="button"
-            variant="secondary"
-            onClick={() => {
-              setSecretsDialogOpen(false);
-              setPendingLaunch(null);
-            }}
-          >
-            Cancel
-          </Button>
-          <Button type="submit" variant="primary" disabled={launching}>
-            {launching ? 'Saving…' : 'Save & launch'}
-          </Button>
-        </ConsoleStructuredDialogFooter>
-      </form>
-    </ConsoleDialogShell>
-  ) : null;
+  // eslint-disable-next-line no-unused-vars
+  const activeProject = useMemo(
+    () => projects.find((p) => p.id === activeSession?.projectId) || null,
+    [projects, activeSession?.projectId],
+  );
 
   return (
-    <div className={cn(consoleToolPageClass, consolePageStackClass)}>
-      {launchModal}
-      {secretsModal}
-
-      <PageHeader
-        title="Sessions"
-        description="Create a workspace, start an agent session, and interact with the live terminal."
-        actions={(
-          <div className="flex items-center gap-2">
-            <Button
-              type="button"
-              variant="secondary"
-              size="sm"
-              onClick={() => refresh()}
-              disabled={refreshing}
-            >
-              {refreshing ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
-              Refresh
-            </Button>
+    <div className={className || 'h-full w-full'}>
+      {/* Launch modal */}
+      {showNewInstanceModal && (
+        <ConsoleInlineDialog
+          onClose={() => { setShowNewInstanceModal(false); setLaunchModalError(null); setCreateNewWorkspaceInline(false); }}
+          panelClassName={`${consoleDialogPanelClass} w-full max-w-sm shadow-sm`}
+        >
+          <div className={`${consoleStructuredDialogHeaderClass} flex items-center gap-2.5`}>
+            {launchModalMode === 'workspace' ? (
+              <Plus className={`w-4 h-4 shrink-0 ${textPlaceholder}`} />
+            ) : (
+              <Bot className={`w-4 h-4 shrink-0 ${textPlaceholder}`} />
+            )}
+            <h3 className={`font-semibold text-sm ${textPrimary}`}>
+              {launchModalMode === 'workspace'
+                ? 'New Workspace'
+                : launchModalMode === 'quickstart'
+                  ? 'New Agent'
+                  : 'New Agent'}
+            </h3>
           </div>
-        )}
-        className="border-b-0 pb-0"
-      />
-
-      <div className="grid flex-1 min-h-0 gap-6 lg:grid-cols-[21rem_minmax(0,1fr)]">
-        <aside className="flex min-h-0 flex-col gap-4">
-          <section className={cn(consoleCardClass, 'flex items-center justify-between gap-3 px-4 py-3')}>
-            <div>
-              <h2 className={consolePageTitleClass}>Workspaces</h2>
-              <p className="text-sm text-zinc-500">{workspaces.length} total</p>
-            </div>
-            <div className="flex items-center gap-1">
-              <Button
-                type="button"
-                variant="secondary"
-                size="sm"
-                onClick={() => openLaunchModal('new')}
-              >
-                <Plus className="h-4 w-4" />
-                New workspace
-              </Button>
-              <Button
-                type="button"
-                variant="secondary"
-                size="sm"
-                onClick={() => openLaunchModal(projects.length > 0 ? 'existing' : 'new', selectedSession?.projectId || projects[0]?.id || '')}
-              >
-                <Plus className="h-4 w-4" />
-                New session
-              </Button>
-            </div>
-          </section>
-
-          <section className={cn(consoleCardClass, 'min-h-0 flex flex-1 flex-col overflow-hidden')}>
-            <div className="min-h-0 flex-1 overflow-y-auto p-3">
-              {loading ? (
-                <div className={cn(consoleEmptyStateClass, 'min-h-[10rem] gap-2 p-6 text-sm text-zinc-500')}>
-                  <Loader2 className="h-4 w-4 animate-spin text-zinc-400" />
-                  Loading sessions…
+          <div className="p-4 space-y-3">
+            {launchModalError && (
+              <p className="text-sm text-[#C06C5D] bg-[#FDECEA] border border-[#FADBD8] rounded-md px-3 py-2">{launchModalError}</p>
+            )}
+            {launchModalMode === 'workspace' && (
+              <div>
+                <label className={`block text-xs font-semibold uppercase tracking-wider ${textPlaceholder} mb-1`}>Workspace name</label>
+                <input type="text" value={newProjectName} onChange={e => setNewProjectName(e.target.value)} placeholder="my-workspace" className={consoleInputClass} />
+              </div>
+            )}
+            {(launchModalMode === 'quickstart' || launchModalMode === 'session') && (
+              <div>
+                <div className="flex items-center justify-between gap-2 mb-1">
+                  <label className={`text-xs font-semibold uppercase tracking-wider ${textPlaceholder}`}>Workspace</label>
+                  {launchModalMode === 'session' && !createNewWorkspaceInline && projects.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setCreateNewWorkspaceInline(true);
+                        setNewProjectName('');
+                        setLaunchWorkspaceId('');
+                      }}
+                      className={`text-xs font-medium ${textPlaceholder} hover:text-[#202124] ${transitionBase}`}
+                    >
+                      New workspace
+                    </button>
+                  )}
                 </div>
-              ) : workspaces.length === 0 ? (
-                <div className={cn(consoleEmptyStateClass, 'min-h-[10rem] gap-3 p-6 text-center text-sm text-zinc-500')}>
-                  <p className="text-base font-medium text-zinc-900">No workspaces yet.</p>
-                  <p>Create one to start a session.</p>
-                  <Button type="button" variant="primary" size="sm" onClick={() => openLaunchModal('new')}>
-                    <Plus className="h-4 w-4" />
-                    New workspace
-                  </Button>
+                {launchModalMode === 'quickstart' || createNewWorkspaceInline ? (
+                  <input
+                    type="text"
+                    value={newProjectName}
+                    onChange={e => setNewProjectName(e.target.value)}
+                    placeholder={launchModalMode === 'quickstart' ? 'Optional — auto-generated if empty' : 'my-workspace'}
+                    className={consoleInputClass}
+                  />
+                ) : (
+                  <SelectMenu
+                    value={launchWorkspaceId}
+                    onChange={setLaunchWorkspaceId}
+                    options={projects.map((p) => ({ value: p.id, label: p.name }))}
+                    placeholder="Select workspace"
+                  />
+                )}
+              </div>
+            )}
+            {launchModalMode !== 'workspace' && (
+              <div>
+                <div className="flex items-center justify-between gap-2 mb-1">
+                  <label className={`text-xs font-semibold uppercase tracking-wider ${textPlaceholder}`}>Agent</label>
+                  {selectedAgent?.llm_auth_mode === 'byok' && selectedAgent?.env_required?.length > 0 && (
+                    <button type="button" onClick={() => openConfigModal()} className={`text-xs font-medium ${textPlaceholder} hover:text-[#202124]`}>
+                      <Settings2 className="w-3.5 h-3.5 inline" /> Configure Keys
+                    </button>
+                  )}
                 </div>
+                <SelectMenu
+                  value={selectedAgentId}
+                  onChange={setSelectedAgentId}
+                  options={agentSelectOptions}
+                  placeholder="Select agent"
+                />
+              </div>
+            )}
+          </div>
+          <div className={consoleStructuredDialogFooterClass}>
+            <button type="button" onClick={() => { setShowNewInstanceModal(false); setCreateNewWorkspaceInline(false); }} className={`h-9 px-3 ${bgCanvas} border ${borderHairline} ${textPrimary} rounded-md text-sm font-medium ${hoverBgSecondary} ${transitionBase}`}>Cancel</button>
+            <button
+              type="button"
+              disabled={
+                isLoading
+                || projectCreating
+                || (launchModalMode !== 'workspace' && !selectedAgentId)
+                || (launchModalMode === 'session' && !createNewWorkspaceInline && !launchWorkspaceId)
+              }
+              onClick={handleLaunchFromModal}
+              className={`h-9 px-3 flex items-center justify-center gap-2 bg-[#202124] text-white rounded-md text-sm font-medium hover:bg-[#3C4043] disabled:opacity-50 ${transitionBase}`}
+            >
+              {isLoading || projectCreating
+                ? 'Starting...'
+                : launchModalMode === 'workspace'
+                  ? 'Create workspace'
+                  : 'Start agent'}
+            </button>
+          </div>
+        </ConsoleInlineDialog>
+      )}
+
+      {/* Simple delete confirm */}
+      {deleteConfirmSession && (
+        <ConsoleInlineDialog onClose={() => setDeleteConfirmSession(null)} panelClassName={`${consoleDialogPanelClass} w-full max-w-md`}>
+          <div className={`${consoleStructuredDialogHeaderClass}`}>Confirm</div>
+          <div className="p-5 text-sm">Remove this session?</div>
+          <div className={consoleStructuredDialogFooterClass}>
+            <button onClick={() => setDeleteConfirmSession(null)} className="h-9 px-4 border rounded-md">Cancel</button>
+            <button onClick={() => handleDeleteSession(deleteConfirmSession.sessionId)} className="h-9 px-4 bg-[#C06C5D] text-white rounded-md">Remove</button>
+          </div>
+        </ConsoleInlineDialog>
+      )}
+
+      {/* Main area */}
+      <div className="flex min-h-0 flex-1 w-full flex-row items-stretch bg-white">
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col bg-white">
+          <div className="h-12 border-b border-[#E8EAED] flex items-center justify-between px-5 shrink-0 bg-white">
+            <div className="flex items-center gap-3 min-w-0">
+              {activeSession ? (
+                <>
+                  <div className="flex items-center gap-2 min-w-0">
+                    <h1 className="truncate text-[15px] font-semibold text-[#202124]">
+                      {activeSession.projectName || activeSession.agentName || 'Session'}
+                    </h1>
+                    <span className="inline-flex shrink-0 items-center rounded-md bg-[#F4F5F6] px-2 py-0.5 text-[11px] font-medium text-[#5F6368]">
+                      {activeSession.agentName}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <span
+                      className={`w-1.5 h-1.5 rounded-full ${
+                        sessions.find((s) => s.id === activeSession.sessionId)?.alive
+                          ? 'bg-[#4A7C59]'
+                          : 'bg-[#9AA0A6]'
+                      }`}
+                    />
+                    <span className="text-[11px] text-[#9AA0A6]">
+                      {sessions.find((s) => s.id === activeSession.sessionId)?.alive ? 'Running' : 'Stopped'}
+                    </span>
+                  </div>
+                </>
               ) : (
-                <div className="space-y-3">
-                  {workspaces.map((workspace) => {
-                    const expanded = expandedWorkspaceIds.has(workspace.id) || workspace.sessions.some((session) => session.id === selectedSessionId);
-                    return (
-                      <WorkspaceRow
-                        key={workspace.id}
-                        workspace={workspace}
-                        expanded={expanded}
-                        onToggle={() => {
-                          setExpandedWorkspaceIds((prev) => {
-                            const next = new Set(prev);
-                            if (next.has(workspace.id)) next.delete(workspace.id);
-                            else next.add(workspace.id);
-                            return next;
-                          });
-                        }}
-                        onSelectSession={(sessionId) => setSelectedSessionId(sessionId)}
-                        onOpenNewSession={() => openLaunchModal('existing', workspace.id)}
-                        onStopOrDelete={handleStopOrDelete}
-                        busySessionId={busySessionId}
-                        busySessionAction={busySessionAction}
-                        selectedSessionId={selectedSessionId}
-                      />
-                    );
-                  })}
-                </div>
+                <h1 className="text-[15px] font-semibold text-[#202124]">Sessions</h1>
               )}
             </div>
-          </section>
-        </aside>
-
-        <section className="flex min-h-0 flex-col">
-          {selectedSession ? (
-            <AgentConsole
-              key={selectedSession.id}
-              sessionId={selectedSession.id}
-              agentName={agents.find((agent) => agent.id === selectedSession.agentId)?.name || selectedSession.agentId}
-              sessionLive={Boolean(selectedSession.alive)}
-              onSessionEnd={handleSessionEnd}
-            />
-          ) : (
-            <div className={cn(consoleCardClass, 'flex min-h-[32rem] flex-1 items-center justify-center p-8')}>
-              <div className={cn(consoleEmptyStateClass, 'w-full max-w-md gap-3 p-8 text-center text-sm text-zinc-500')}>
-                <p className="text-lg font-medium text-zinc-900">No session selected</p>
-                <p>Start a session to open a live terminal here.</p>
+            <div className="flex items-center gap-0.5 shrink-0">
+              {activeSession && (
+                <>
+                  <div className="mx-0.5 h-5 w-px bg-[#E8EAED]" />
+                  <button
+                    onClick={handleRestartSession}
+                    disabled={restartingSession || stoppingSession}
+                    className="p-2 text-[#5F6368] hover:bg-[#F4F5F6] rounded-lg transition-colors"
+                    title="Restart / Start"
+                  >
+                    {restartingSession ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4" strokeWidth={1.75} />}
+                  </button>
+                  <button
+                    onClick={handleStopSession}
+                    disabled={restartingSession || stoppingSession}
+                    className="p-2 text-[#5F6368] hover:bg-[#F4F5F6] rounded-lg transition-colors"
+                    title="Stop"
+                  >
+                    <X className="w-4 h-4" strokeWidth={1.75} />
+                  </button>
+                  <button
+                    onClick={() => setActiveSession(null)}
+                    className="p-2 text-[#5F6368] hover:bg-[#F4F5F6] rounded-lg transition-colors"
+                    title="Disconnect"
+                  >
+                    <RefreshCw className="w-4 h-4" strokeWidth={1.75} />
+                  </button>
+                </>
+              )}
+            </div>
+          </div>
+          {activeSession ? (
+            <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+              <div className="flex min-h-0 flex-1 flex-col p-4">
+                <div
+                  className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-[#E8EAED] shadow-sm"
+                  style={{ backgroundColor: preset.xterm.background }}
+                >
+                  <AgentConsole
+                    key={activeSession.sessionId}
+                    sessionId={activeSession.sessionId}
+                    agentName={activeSession.agentName}
+                    onSessionEnd={handleSessionEnd}
+                    sessionLive={sessions.find((s) => s.id === activeSession.sessionId)?.alive === true}
+                  />
+                </div>
               </div>
             </div>
+          ) : launchingSession ? (
+            <div className="flex-1 bg-white" />
+          ) : (
+            <div className="flex h-full flex-col items-center justify-center bg-white p-8 text-center">
+              <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-[#F4F5F6] mb-5">
+                <TerminalSquare className="w-7 h-7 text-[#9AA0A6]" strokeWidth={1.25} />
+              </div>
+              <h3 className="text-lg font-semibold text-[#202124] mb-1.5">No active session</h3>
+              <p className="text-sm text-[#9AA0A6] max-w-sm">
+                {projects.length === 0
+                  ? 'Create a workspace, then use New Agent in the sidebar to get started.'
+                  : 'Select a session from the sidebar, or use New Agent to start one in a workspace.'}
+              </p>
+            </div>
           )}
-        </section>
+        </div>
       </div>
     </div>
   );
-}
+});

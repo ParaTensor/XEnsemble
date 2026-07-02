@@ -1,13 +1,12 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { Cpu, HardDrive, Loader2 } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import '@xterm/xterm/css/xterm.css';
 
 import { getAccessToken, getWsUrl } from '../lib/api';
-import { cn } from '../lib/utils';
+import { useTerminalTheme } from '../hooks/useTerminalTheme.jsx';
 
-const TERMINAL_THEME = {
+const FALLBACK_XTERM_THEME = {
   background: '#09090b',
   foreground: '#e4e4e7',
   cursor: '#e4e4e7',
@@ -53,25 +52,24 @@ function getArrowSequence(key, applicationCursorKeys) {
   }
 }
 
-function formatMemory(bytes) {
-  if (!Number.isFinite(bytes)) return '0.0 MB';
-  return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
-}
-
 export default function AgentConsole({
   sessionId,
-  agentName,
+  /* agentName kept for API compat */
   onSessionEnd,
   sessionLive = true,
 }) {
+  const { preset } = useTerminalTheme();
+  const xtermTheme = preset?.xterm || FALLBACK_XTERM_THEME;
+
   const hostRef = useRef(null);
   const terminalRef = useRef(null);
   const fitAddonRef = useRef(null);
   const wsRef = useRef(null);
   const onSessionEndRef = useRef(onSessionEnd);
   const connectedRef = useRef(false);
-  const [metrics, setMetrics] = useState(null);
+  // eslint-disable-next-line no-unused-vars
   const [connected, setConnected] = useState(false);
+  // eslint-disable-next-line no-unused-vars
   const [ended, setEnded] = useState(!sessionLive);
 
   useEffect(() => {
@@ -97,7 +95,7 @@ export default function AgentConsole({
       cursorBlink: true,
       cursorStyle: 'bar',
       drawBoldTextInBrightColors: true,
-      theme: TERMINAL_THEME,
+      theme: xtermTheme,
     });
 
     const fitAddon = new FitAddon();
@@ -179,10 +177,6 @@ export default function AgentConsole({
               terminal.write(msg.data);
               return;
             }
-            if (msg.type === 'metrics') {
-              setMetrics(msg.data);
-              return;
-            }
             if (msg.type === 'error') {
               terminal.write(`\r\n\x1b[31m[System] ${msg.data}\x1b[0m\r\n`);
               serverEnded = true;
@@ -246,51 +240,9 @@ export default function AgentConsole({
     };
   }, [sessionId, sessionLive]);
 
-  const statusLabel = useMemo(() => {
-    if (!sessionLive) return 'Ended';
-    if (ended) return connected ? 'Disconnected' : 'Ended';
-    return connected ? 'Live' : 'Connecting';
-  }, [connected, ended, sessionLive]);
-
   return (
-    <div className="flex h-full min-h-0 flex-col overflow-hidden rounded-lg border border-zinc-200 bg-[#09090b] shadow-sm">
-      <div className="flex h-10 items-center justify-between border-b border-white/10 px-4">
-        <div className="flex min-w-0 items-center gap-2">
-          <span
-            className={cn(
-              'h-2.5 w-2.5 shrink-0 rounded-full',
-              sessionLive && connected && !ended
-                ? 'bg-emerald-500 animate-pulse'
-                : sessionLive && !connected && !ended
-                  ? 'bg-amber-400 animate-pulse'
-                  : 'bg-zinc-500',
-            )}
-            aria-hidden
-          />
-          <span className="truncate text-xs font-medium text-zinc-100">{agentName}</span>
-          <span className="text-[10px] uppercase tracking-wider text-zinc-500">{statusLabel}</span>
-        </div>
-        <div className="flex items-center gap-3 text-xs text-zinc-400">
-          {metrics ? (
-            <>
-              <span className="flex items-center gap-1.5" title="CPU usage">
-                <Cpu className="h-3.5 w-3.5" />
-                <span>{Number.isFinite(metrics.cpu) ? `${metrics.cpu.toFixed(1)}%` : '0.0%'}</span>
-              </span>
-              <span className="flex items-center gap-1.5" title="Memory RSS">
-                <HardDrive className="h-3.5 w-3.5" />
-                <span>{formatMemory(metrics.memory)}</span>
-              </span>
-            </>
-          ) : (
-            <span className="flex items-center gap-1.5 text-zinc-500">
-              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              Waiting
-            </span>
-          )}
-        </div>
-      </div>
-      <div className="flex min-h-0 flex-1 flex-col overflow-hidden p-4">
+    <div className="flex h-full min-h-0 flex-col overflow-hidden bg-transparent">
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden p-0">
         <div ref={hostRef} className="min-h-0 w-full flex-1" />
       </div>
     </div>

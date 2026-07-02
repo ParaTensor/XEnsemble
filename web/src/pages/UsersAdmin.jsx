@@ -11,7 +11,7 @@ import { useToast } from '../components/Toast';
 import {
   consoleCardClass,
   consoleDialogMdClass,
-  consolePageStackClass,
+  consoleAdminPageClass,
   consoleSectionLabelClass,
   consoleTableBodyCellClass,
   consoleTableHeadCellClass,
@@ -252,7 +252,7 @@ export default function UsersAdmin() {
   const agentOptions = agents.map((a) => ({ value: a.id, label: a.name }));
 
   return (
-    <div className={`w-full ${consolePageStackClass}`}>
+    <div className={consoleAdminPageClass}>
       <PageHeader
         title="User Management"
         description="Manage accounts, quotas, and agent access."
