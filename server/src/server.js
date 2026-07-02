@@ -20,6 +20,7 @@ const agentGatewayConfig = require('./admin/AgentGatewayConfig');
 const userAdmin = require('./admin/UserAdminService');
 const { startPreviewLifecycle } = require('./preview/lifecycle');
 const sessionManager = require('./session/SessionManager');
+const { WorkspaceShellManager, subscribeWorkspaceShell } = require('./session/workspaceShell');
 const { reconcileRunningSessions } = require('./session/reconcileRunningSessions');
 
 const { db } = require('./db/index');
@@ -942,6 +943,147 @@ fastify.register(async function terminalWsRoutes(app) {
             });
 
             ws.on('close', sub.cleanup);
+        } catch (err) {
+            req.log.error(err);
+            sendJson({ type: 'error', data: 'Internal server error' });
+            ws.close();
+        }
+    });
+});
+
+fastify.register(async function workspaceTerminalWsRoutes(app) {
+    app.get('/ws/v1/workspace-terminal', { websocket: true }, async (connection, req) => {
+        const ws = connection.socket;
+
+        const sendJson = (payload) => {
+            if (ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify(payload));
+            }
+        };
+
+        try {
+            let projectId = null;
+            let accessToken = null;
+            try {
+                const url = new URL(req.url, 'http://localhost');
+                projectId = url.searchParams.get('project_id');
+                accessToken = url.searchParams.get('access_token');
+            } catch (_) {
+                projectId = null;
+                accessToken = null;
+            }
+
+            if (!accessToken) {
+                sendJson({ type: 'error', data: 'access_token is required' });
+                ws.close();
+                return;
+            }
+
+            const payload = auth.verifyAccessToken(accessToken);
+            if (!payload?.id) {
+                sendJson({ type: 'error', data: 'Invalid access token' });
+                ws.close();
+                return;
+            }
+
+            const active = await assertActiveUser(accessToken);
+            if (active.error) {
+                sendJson({ type: 'error', data: active.error });
+                ws.close();
+                return;
+            }
+
+            if (!projectId) {
+                sendJson({ type: 'error', data: 'project_id is required' });
+                ws.close();
+                return;
+            }
+
+            const project = await getProjectForUser(payload.id, projectId);
+            if (!project) {
+                sendJson({ type: 'error', data: 'Project not found' });
+                ws.close();
+                return;
+            }
+
+            let ready;
+            try {
+                ready = await ensureProjectRuntime(project);
+            } catch (err) {
+                req.log.error(err);
+                sendJson({ type: 'error', data: err instanceof Error ? err.message : 'Failed to initialize workspace shell' });
+                ws.close();
+                return;
+            }
+
+            const ref = ready.runtime ? ready.runtime.runtimeRef : undefined;
+            const shellId = `${payload.id}:${projectId}`;
+            let shell = WorkspaceShellManager.get(shellId);
+            if (!shell || !WorkspaceShellManager.isAlive(shellId)) {
+                shell = null;
+                const shellCmds = [process.env.SHELL || 'bash', 'bash', 'sh'];
+                let lastErr = null;
+                for (const shellCmd of shellCmds) {
+                    try {
+                        const handle = await runtime.exec.spawn(
+                            shellCmd,
+                            [],
+                            { TERM: 'xterm-256color' },
+                            {
+                                name: 'workspace-shell',
+                                cwd: ready.workspacePath,
+                                runtimeRef: ref,
+                                uid: process.env.RUNTIME_UID,
+                                gid: process.env.RUNTIME_GID,
+                            },
+                        );
+                        shell = WorkspaceShellManager.create(shellId, handle);
+                        break;
+                    } catch (err) {
+                        lastErr = err;
+                        if (!(err instanceof AgentSpawnError)) {
+                            break;
+                        }
+                    }
+                }
+                if (!shell) {
+                    req.log.error(lastErr);
+                    sendJson({ type: 'error', data: lastErr instanceof Error ? lastErr.message : 'Failed to start workspace shell' });
+                    ws.close();
+                    return;
+                }
+            }
+
+            WorkspaceShellManager.addSubscriber(shellId);
+
+            const sub = subscribeWorkspaceShell(shellId, (payload) => {
+                sendJson(payload);
+                if (payload.type === 'exit' || payload.type === 'error') {
+                    try {
+                        ws.close();
+                    } catch (_) {}
+                }
+            });
+            if (!sub.ok) {
+                WorkspaceShellManager.removeSubscriber(shellId);
+                ws.close();
+                return;
+            }
+
+            ws.on('message', (message) => {
+                if (!WorkspaceShellManager.isAlive(shellId)) return;
+                try {
+                    const raw = typeof message === 'string' ? message : message.toString();
+                    applyTerminalMessage(sub.handle, JSON.parse(raw));
+                } catch (err) {
+                    req.log.error(err);
+                }
+            });
+
+            ws.on('close', () => {
+                sub.cleanup();
+                WorkspaceShellManager.removeSubscriber(shellId);
+            });
         } catch (err) {
             req.log.error(err);
             sendJson({ type: 'error', data: 'Internal server error' });

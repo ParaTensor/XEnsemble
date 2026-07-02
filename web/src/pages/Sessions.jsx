@@ -1,16 +1,30 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import AgentConsole from '../components/AgentConsole';
+import WorkspaceFileTree from '../components/WorkspaceFileTree';
+import WorkspaceShell from '../components/WorkspaceShell';
 import RepoImportDialog from '../components/git/RepoImportDialog';
 import GitStatusBar from '../components/git/GitStatusBar';
 import { apiFetch } from '../lib/api';
 import {
+  ConsoleDialogShell,
   ConsoleInlineDialog,
 } from '../components/ConsoleDialog';
 import SelectMenu from '../components/SelectMenu';
 import { useToast } from '../components/Toast';
 import { useTerminalTheme } from '../hooks/useTerminalTheme.jsx';
-import { TerminalSquare, Play, Settings2, X, RefreshCw, Plus, Bot } from 'lucide-react';
+import {
+  TerminalSquare,
+  Play,
+  Settings2,
+  X,
+  RefreshCw,
+  Plus,
+  Bot,
+  PanelRightOpen,
+  PanelRightClose,
+  FileText,
+} from 'lucide-react';
 import { getSecretLabel } from '../lib/secretLabels';
 import { formatQuotaExceeded } from '../lib/quotaLabels';
 import {
@@ -26,13 +40,18 @@ import {
   consoleDialogPanelClass,
   consoleStructuredDialogHeaderClass,
   consoleStructuredDialogFooterClass,
+  consoleStructuredDialogBodyClass,
+  consoleIconButtonClass,
   consoleInputClass,
   bgCanvas,
   textPrimary,
+  textTertiary,
   textPlaceholder,
   borderHairline,
   transitionBase,
   hoverBgSecondary,
+  hoverBgTertiary,
+  hoverTextPrimary,
 } from '../lib/consoleTheme.js';
 
 const DEFAULT_AGENT_ID = 'kimi-code';
@@ -82,6 +101,12 @@ export default React.forwardRef(function Sessions({
   const [launchingSession, setLaunchingSession] = useState(false);
   // eslint-disable-next-line no-unused-vars
   const [_error, setError] = useState(null);
+  const [panelOpen, setPanelOpen] = useState(false);
+  const [panelTab, setPanelTab] = useState('files');
+  const [workspaceFiles, setWorkspaceFiles] = useState([]);
+  const [isLoadingFiles, setIsLoadingFiles] = useState(false);
+  const [viewingFile, setViewingFile] = useState(null);
+  const [fileContent, setFileContent] = useState('');
 
   // eslint-disable-next-line no-unused-vars
   const [showConfigModal, setShowConfigModal] = useState(false);
@@ -115,6 +140,16 @@ export default React.forwardRef(function Sessions({
   useEffect(() => {
     if (activeSession) setLaunchingSession(false);
   }, [activeSession]);
+
+  useEffect(() => {
+    if (!activeSession?.projectId) {
+      setPanelOpen(false);
+      setPanelTab('files');
+    }
+    setViewingFile(null);
+    setFileContent('');
+    setWorkspaceFiles([]);
+  }, [activeSession?.projectId]);
 
   useEffect(() => {
     if (agents.length === 0) return;
@@ -433,6 +468,47 @@ export default React.forwardRef(function Sessions({
       setConfigSaving(false);
     }
   };
+
+  const fetchWorkspaceFiles = useCallback(async ({ notifyError = false } = {}) => {
+    if (!activeSession?.projectId) return;
+    setIsLoadingFiles(true);
+    try {
+      const res = await apiFetch(`/api/v1/workspace/files?project_id=${encodeURIComponent(activeSession.projectId)}`);
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || 'Failed to load workspace files');
+      }
+      setWorkspaceFiles(Array.isArray(data) ? data : []);
+    } catch (err) {
+      if (notifyError) showToast('error', err.message);
+    } finally {
+      setIsLoadingFiles(false);
+    }
+  }, [activeSession?.projectId, showToast]);
+
+  useEffect(() => {
+    if (!activeSession?.projectId || !panelOpen || panelTab !== 'files') return undefined;
+    fetchWorkspaceFiles();
+    const interval = setInterval(fetchWorkspaceFiles, 10000);
+    return () => clearInterval(interval);
+  }, [activeSession?.projectId, fetchWorkspaceFiles, panelOpen, panelTab]);
+
+  const handleOpenFile = useCallback(async (file) => {
+    if (!activeSession?.projectId || file?.type !== 'file') return;
+    try {
+      const res = await apiFetch(
+        `/api/v1/workspace/file?project_id=${encodeURIComponent(activeSession.projectId)}&path=${encodeURIComponent(file.path)}`
+      );
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || 'Failed to read file');
+      }
+      setViewingFile(file);
+      setFileContent(data.content || '');
+    } catch (err) {
+      showToast('error', err.message);
+    }
+  }, [activeSession?.projectId, showToast]);
 
   const handleSessionEnd = (sessionId) => {
     setSessions((prev) =>
@@ -753,6 +829,14 @@ export default React.forwardRef(function Sessions({
                 <>
                   <div className="mx-0.5 h-5 w-px bg-[#E8EAED]" />
                   <button
+                    onClick={() => setPanelOpen((prev) => !prev)}
+                    className={`${consoleIconButtonClass} ${panelOpen ? 'bg-[#F4F5F6] text-[#202124]' : ''}`}
+                    title={panelOpen ? 'Close workspace panel' : 'Open workspace panel'}
+                    aria-label={panelOpen ? 'Close workspace panel' : 'Open workspace panel'}
+                  >
+                    {panelOpen ? <PanelRightClose className="w-4 h-4" strokeWidth={1.75} /> : <PanelRightOpen className="w-4 h-4" strokeWidth={1.75} />}
+                  </button>
+                  <button
                     onClick={handleRestartSession}
                     disabled={restartingSession || stoppingSession}
                     className="p-2 text-[#5F6368] hover:bg-[#F4F5F6] rounded-lg transition-colors"
@@ -780,23 +864,84 @@ export default React.forwardRef(function Sessions({
             </div>
           </div>
           {activeSession ? (
-            <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
-              <div className="flex min-h-0 flex-1 flex-col p-4">
-                <div
-                  className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-[#E8EAED] shadow-sm"
-                  style={{ backgroundColor: preset.xterm.background }}
-                >
-                  <AgentConsole
-                    key={activeSession.sessionId}
-                    sessionId={activeSession.sessionId}
-                    agentName={activeSession.agentName}
-                    projectId={activeSession.projectId}
-                    onSessionEnd={handleSessionEnd}
-                    sessionLive={sessions.find((s) => s.id === activeSession.sessionId)?.alive === true}
-                  />
+            <div className="flex min-h-0 min-w-0 flex-1 flex-row overflow-hidden">
+              <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+                <div className="flex min-h-0 flex-1 flex-col p-4">
+                  <div
+                    className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-[#E8EAED] shadow-sm"
+                    style={{ backgroundColor: preset.xterm.background }}
+                  >
+                    <AgentConsole
+                      key={activeSession.sessionId}
+                      sessionId={activeSession.sessionId}
+                      agentName={activeSession.agentName}
+                      projectId={activeSession.projectId}
+                      onSessionEnd={handleSessionEnd}
+                      sessionLive={sessions.find((s) => s.id === activeSession.sessionId)?.alive === true}
+                    />
+                  </div>
                 </div>
+                <GitStatusBar projectId={activeSession.projectId} project={activeProject} />
               </div>
-              <GitStatusBar projectId={activeSession.projectId} project={activeProject} />
+              {panelOpen && (
+                <div className="flex min-h-0 w-80 shrink-0 flex-col border-l border-[#E8EAED] bg-white">
+                  <div className="flex h-12 items-center justify-between border-b border-[#E8EAED] px-3 shrink-0">
+                    <div className="flex items-center gap-1">
+                      <button
+                        type="button"
+                        onClick={() => setPanelTab('files')}
+                        className={`px-2.5 py-1.5 text-sm font-medium border-b-2 transition-colors ${
+                          panelTab === 'files'
+                            ? 'border-[#202124] text-[#202124]'
+                            : 'border-transparent text-[#5F6368] hover:text-[#202124]'
+                        }`}
+                      >
+                        Files
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setPanelTab('shell')}
+                        className={`px-2.5 py-1.5 text-sm font-medium border-b-2 transition-colors ${
+                          panelTab === 'shell'
+                            ? 'border-[#202124] text-[#202124]'
+                            : 'border-transparent text-[#5F6368] hover:text-[#202124]'
+                        }`}
+                      >
+                        Shell
+                      </button>
+                    </div>
+                    {panelTab === 'files' && (
+                      <button
+                        type="button"
+                        onClick={() => fetchWorkspaceFiles({ notifyError: true })}
+                        className="p-2 text-[#5F6368] hover:bg-[#F4F5F6] rounded-lg transition-colors"
+                        title="Refresh files"
+                        aria-label="Refresh files"
+                      >
+                        <RefreshCw className={`w-4 h-4 ${isLoadingFiles ? 'animate-spin' : ''}`} strokeWidth={1.75} />
+                      </button>
+                    )}
+                  </div>
+                  <div className={`min-h-0 flex-1 flex-col ${panelTab === 'files' ? 'flex' : 'hidden'}`}>
+                    <div className="min-h-0 flex-1 overflow-auto p-3">
+                      {workspaceFiles.length === 0 ? (
+                        <div className="flex h-full items-center justify-center text-sm text-[#9AA0A6]">
+                          No files yet.
+                        </div>
+                      ) : (
+                        <WorkspaceFileTree
+                          items={workspaceFiles}
+                          selectedPath={viewingFile?.path}
+                          onOpenFile={handleOpenFile}
+                        />
+                      )}
+                    </div>
+                  </div>
+                  <div className={`min-h-0 flex-1 flex-col ${panelTab === 'shell' ? 'flex' : 'hidden'}`}>
+                    <WorkspaceShell projectId={activeSession.projectId} />
+                  </div>
+                </div>
+              )}
             </div>
           ) : launchingSession ? (
             <div className="flex-1 bg-white" />
@@ -825,6 +970,38 @@ export default React.forwardRef(function Sessions({
           }}
           fetchWorkspaces={fetchWorkspaces}
         />
+      )}
+
+      {viewingFile && (
+        <ConsoleDialogShell
+          onClose={() => {
+            setViewingFile(null);
+            setFileContent('');
+          }}
+          panelClassName={`${consoleDialogPanelClass} w-[min(900px,calc(100vw-2rem))] h-[min(80vh,calc(100vh-2rem))]`}
+        >
+          <div className={`flex items-center justify-between ${borderHairline} border-b bg-[#FAFBFC] px-4 py-3 shrink-0`}>
+            <div className="flex min-w-0 items-center gap-2">
+              <FileText className={`w-4 h-4 shrink-0 ${textPlaceholder}`} />
+              <span className={`truncate text-sm font-semibold ${textPrimary}`}>{viewingFile.name}</span>
+              <span className={`truncate text-xs font-mono ${textPlaceholder}`}>{viewingFile.path}</span>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                setViewingFile(null);
+                setFileContent('');
+              }}
+              className={`shrink-0 rounded-md p-1.5 ${textPlaceholder} ${hoverBgTertiary} ${hoverTextPrimary} ${transitionBase}`}
+              aria-label="Close"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+          <div className={`${consoleStructuredDialogBodyClass} bg-[#FAFBFC] text-sm font-mono ${textTertiary} whitespace-pre`}>
+            {fileContent}
+          </div>
+        </ConsoleDialogShell>
       )}
     </div>
   );
