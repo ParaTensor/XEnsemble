@@ -61,16 +61,17 @@ function registerGitRoutes(fastify) {
         preValidation: [fastify.authenticate, fastify.requireActive],
     }, async () => {
         const names = listProviders();
-        return {
-            providers: names.map((name) => {
-                const p = getProvider(name);
-                return {
-                    name: p.name,
-                    display_name: p.displayName,
-                    pr_terminology: p.prTerminology,
-                };
-            }),
-        };
+        const providers = await Promise.all(names.map(async (name) => {
+            const p = getProvider(name);
+            const config = await getProviderConfig(name);
+            return {
+                name: p.name,
+                display_name: p.displayName,
+                pr_terminology: p.prTerminology,
+                oauth_configured: Boolean(config?.clientId),
+            };
+        }));
+        return { providers };
     });
 
     // ── Connections ──

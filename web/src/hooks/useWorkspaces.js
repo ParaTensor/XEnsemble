@@ -41,7 +41,7 @@ export function useWorkspaces(user) {
           currentBranch: p.current_branch ?? p.currentBranch ?? null,
           githubRepoId: p.github_repo_id ?? p.githubRepoId ?? null,
           githubFullName: p.github_full_name ?? p.githubFullName ?? null,
-          cloneStatus: p.clone_status ?? p.cloneStatus ?? 'pending',
+          cloneStatus: p.clone_status ?? p.cloneStatus ?? null,
           cloneError: p.clone_error ?? p.cloneError ?? null,
           workspaceMode: p.workspace_mode ?? p.workspaceMode ?? 'local',
         })));

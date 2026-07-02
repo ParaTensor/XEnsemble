@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import AgentConsole from '../components/AgentConsole';
+import RepoImportDialog from '../components/git/RepoImportDialog';
+import GitStatusBar from '../components/git/GitStatusBar';
 import { apiFetch } from '../lib/api';
 import {
   ConsoleInlineDialog,
@@ -102,6 +104,7 @@ export default React.forwardRef(function Sessions({
   const [_deleteConfirmWorkspace, setDeleteConfirmWorkspace] = useState(null);
 
   const [showNewInstanceModal, setShowNewInstanceModal] = useState(false);
+  const [showImportDialog, setShowImportDialog] = useState(false);
   const [createNewWorkspaceInline, setCreateNewWorkspaceInline] = useState(false);
 
   const getAgentLabel = useCallback(
@@ -576,6 +579,7 @@ export default React.forwardRef(function Sessions({
 
   React.useImperativeHandle(ref, () => ({
     openLaunchModal,
+    openImportDialog: () => setShowImportDialog(true),
     requestDeleteSession,
     requestDeleteWorkspace,
   }), [openLaunchModal, requestDeleteSession, requestDeleteWorkspace]);
@@ -585,7 +589,6 @@ export default React.forwardRef(function Sessions({
     [agents],
   );
 
-  // eslint-disable-next-line no-unused-vars
   const activeProject = useMemo(
     () => projects.find((p) => p.id === activeSession?.projectId) || null,
     [projects, activeSession?.projectId],
@@ -787,11 +790,13 @@ export default React.forwardRef(function Sessions({
                     key={activeSession.sessionId}
                     sessionId={activeSession.sessionId}
                     agentName={activeSession.agentName}
+                    projectId={activeSession.projectId}
                     onSessionEnd={handleSessionEnd}
                     sessionLive={sessions.find((s) => s.id === activeSession.sessionId)?.alive === true}
                   />
                 </div>
               </div>
+              <GitStatusBar projectId={activeSession.projectId} project={activeProject} />
             </div>
           ) : launchingSession ? (
             <div className="flex-1 bg-white" />
@@ -810,6 +815,17 @@ export default React.forwardRef(function Sessions({
           )}
         </div>
       </div>
+
+      {showImportDialog && (
+        <RepoImportDialog
+          open={showImportDialog}
+          onClose={() => setShowImportDialog(false)}
+          onImported={() => {
+            fetchWorkspaces();
+          }}
+          fetchWorkspaces={fetchWorkspaces}
+        />
+      )}
     </div>
   );
 });

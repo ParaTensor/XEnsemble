@@ -70,6 +70,7 @@ function AuthenticatedLayout({
           if (location.pathname !== '/sessions') navigate('/sessions');
         }}
         onCreateWorkspace={() => sessionsRef.current?.openLaunchModal?.('workspace')}
+        onImportFromGit={() => sessionsRef.current?.openImportDialog?.()}
         onNewAgent={() => sessionsRef.current?.openLaunchModal?.('session')}
         onRequestDeleteSession={(session, ws) => sessionsRef.current?.requestDeleteSession?.(session, ws)}
         onRequestDeleteWorkspace={(ws) => sessionsRef.current?.requestDeleteWorkspace?.(ws)}

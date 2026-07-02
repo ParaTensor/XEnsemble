@@ -17,7 +17,10 @@ import {
   Users,
   Bot,
   Globe,
+  GitBranch,
+  Loader2,
 } from 'lucide-react';
+import { getProviderLabel, getWorkspaceRepoLabel, isGitLinkedProject } from '../lib/gitLabels';
 import { formatRelativeTime } from '../lib/formatRelativeTime';
 import {
   loadSidebarPrefs,
@@ -72,7 +75,17 @@ function buildWorkspaces(projects, sessions, prefs) {
       p.createdAt || 0,
       ...sess.map((s) => s.createdAt || 0),
     );
-    return { id: p.id, name: p.name, sessions: sess, lastActivity };
+    return {
+      id: p.id,
+      name: p.name,
+      sessions: sess,
+      lastActivity,
+      repoProvider: p.repoProvider ?? p.repo_provider ?? 'none',
+      githubFullName: p.githubFullName ?? p.github_full_name ?? null,
+      repoUrl: p.repoUrl ?? p.repo_url ?? null,
+      currentBranch: p.currentBranch ?? p.current_branch ?? null,
+      cloneStatus: p.cloneStatus ?? p.clone_status ?? null,
+    };
   });
   if (byProject._orphan?.length) {
     const sess = sortSessions(byProject._orphan, prefs);
@@ -249,6 +262,7 @@ export default function AppSidebar({
   activeSession,
   onSelectSession,
   onCreateWorkspace,
+  onImportFromGit,
   onNewAgent,
   onRequestDeleteSession,
   onRequestDeleteWorkspace,
@@ -512,6 +526,15 @@ export default function AppSidebar({
             <div className="flex items-center gap-0.5">
               <button
                 type="button"
+                title="Import from Git"
+                disabled={!onImportFromGit}
+                onClick={onImportFromGit}
+                className={`p-1 rounded-md ${textPlaceholder} hover:text-[#202124] ${hoverBgTertiary} ${transitionBase} disabled:opacity-40`}
+              >
+                <GitBranch className="w-3.5 h-3.5" strokeWidth={1.75} />
+              </button>
+              <button
+                type="button"
                 title={activeOnlyFilter ? 'Show all workspaces' : 'Show active workspaces'}
                 onClick={() => setActiveOnlyFilter((v) => !v)}
                 className={`p-1 rounded-md ${transitionBase} ${
@@ -546,6 +569,15 @@ export default function AppSidebar({
               const isOrphan = ws.id === '_orphan';
               const wsPinned = isPinnedWorkspace(sidebarPrefs, ws.id);
               const visibleSessions = ws.sessions.filter((s) => sessionMatchesQuery(s, ws));
+              const gitLinked = isGitLinkedProject(ws);
+              const repoLabel = getWorkspaceRepoLabel(ws);
+              const providerLabel = getProviderLabel(ws.repoProvider);
+              const gitTitle = gitLinked
+                ? [providerLabel, repoLabel, ws.currentBranch ? `branch: ${ws.currentBranch}` : null]
+                  .filter(Boolean)
+                  .join(' · ')
+                : ws.name;
+              const isCloning = gitLinked && (ws.cloneStatus === 'cloning' || ws.cloneStatus === 'pending');
               return (
                 <div key={ws.id} className="rounded-lg">
                   <div className={`group flex items-center gap-0.5 rounded-lg hover:bg-[#FAFBFC] ${expanded ? 'bg-[#FAFBFC]' : ''}`}>
@@ -557,18 +589,32 @@ export default function AppSidebar({
                     >
                       {expanded ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
                     </button>
-                    <FolderOpen className={`w-3.5 h-3.5 ${textPlaceholder} shrink-0`} strokeWidth={1.75} />
+                    {gitLinked ? (
+                      <GitBranch className={`w-3.5 h-3.5 ${textPlaceholder} shrink-0`} strokeWidth={1.75} />
+                    ) : (
+                      <FolderOpen className={`w-3.5 h-3.5 ${textPlaceholder} shrink-0`} strokeWidth={1.75} />
+                    )}
                     <button
                       type="button"
                       onClick={() => toggleWorkspaceExpanded(ws.id)}
-                      className={`flex-1 min-w-0 text-left py-2 pr-1 truncate text-[13px] ${textPrimary}`}
-                      title={ws.name}
+                      className={`flex-1 min-w-0 text-left py-2 pr-1 text-[13px] ${textPrimary}`}
+                      title={gitTitle}
                     >
-                      {ws.name}
-                      {liveInWs > 0 && (
-                        <span className={`ml-1.5 text-[10px] font-medium ${accentGreen}`}>{liveInWs}</span>
+                      <span className="flex items-center gap-1.5 min-w-0">
+                        <span className="truncate">{ws.name}</span>
+                        {liveInWs > 0 && (
+                          <span className={`shrink-0 text-[10px] font-medium ${accentGreen}`}>{liveInWs}</span>
+                        )}
+                      </span>
+                      {gitLinked && repoLabel && (
+                        <span className={`block truncate text-[10px] ${textPlaceholder}`}>
+                          {providerLabel}: {repoLabel}
+                        </span>
                       )}
                     </button>
+                    {isCloning && (
+                      <Loader2 className={`w-3.5 h-3.5 shrink-0 animate-spin ${textPlaceholder}`} />
+                    )}
                     {!isOrphan && (
                       <button
                         type="button"

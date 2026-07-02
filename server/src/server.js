@@ -200,6 +200,10 @@ fastify.get('/api/v1/projects', { preValidation: [fastify.authenticate] }, async
             last_sync_sha: p.lastSyncSha || null,
             last_snapshot_id: p.lastSnapshotId || null,
             dev_profile_id: p.devProfileId || null,
+            current_branch: p.currentBranch || null,
+            github_full_name: p.githubFullName || p.remoteFullName || null,
+            clone_status: p.repoProvider && p.repoProvider !== 'none' ? (p.cloneStatus || 'pending') : null,
+            clone_error: p.cloneError || null,
             created_at: p.createdAt,
         }))
         .sort((a, b) => b.created_at - a.created_at);
@@ -226,6 +230,7 @@ fastify.post('/api/v1/projects', { preValidation: [fastify.authenticate] }, asyn
             userId: request.user.id,
             name,
             serverPath: '',
+            cloneStatus: null,
             createdAt,
         });
         const { runtime, workspacePath: ws } = await ensureProjectRuntime(

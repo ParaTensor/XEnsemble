@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useState, useContext } from 'react';
+import { AuthContext } from '../../App';
 import { cn } from '../../lib/utils';
 import {
   consoleSettingsPanelScrollClass,
@@ -6,15 +7,23 @@ import {
   consoleSettingsTabIdleClass,
 } from '../../lib/consoleTokens';
 import GeneralSettingsPanel from './GeneralSettingsPanel';
+import GitHubSettingsPanel from './GitHubSettingsPanel';
+import GitProvidersSettingsPanel from './GitProvidersSettingsPanel';
 import QuotaSettingsPanel from './QuotaSettingsPanel';
 
 const QUOTA_SECTION = { id: 'quota', label: 'Quota' };
 const GENERAL_SECTION = { id: 'general', label: 'General' };
+const GITHUB_SECTION = { id: 'github', label: 'Git' };
+const GIT_PROVIDERS_SECTION = { id: 'git-providers', label: 'Git' };
+
 export default function SettingsShell() {
+  const { user } = useContext(AuthContext);
   const [section, setSection] = useState('general');
+  const isAdmin = user?.role === 'admin';
 
   const sections = [
     GENERAL_SECTION,
+    ...(isAdmin ? [GIT_PROVIDERS_SECTION] : [GITHUB_SECTION]),
     QUOTA_SECTION,
   ];
 
@@ -38,6 +47,8 @@ export default function SettingsShell() {
 
       <div className={consoleSettingsPanelScrollClass}>
         {section === 'general' && <GeneralSettingsPanel />}
+        {section === 'git-providers' && <GitProvidersSettingsPanel />}
+        {section === 'github' && <GitHubSettingsPanel />}
         {section === 'quota' && <QuotaSettingsPanel />}
       </div>
     </div>
