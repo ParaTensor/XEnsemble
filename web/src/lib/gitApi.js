@@ -34,12 +34,12 @@ export const disconnectProvider = (provider) =>
   });
 
 export const listRepos = (provider, params = {}) => {
-  const qs = new URLSearchParams(params);
-  return request(`/api/v1/git/repos/${encodeURIComponent(provider)}?${qs.toString()}`);
+  const qs = new URLSearchParams({ provider, ...params });
+  return request(`/api/v1/git/repos?${qs.toString()}`);
 };
 
 export const importRepo = (payload) =>
-  request('/api/v1/git/import', {
+  request('/api/v1/projects/import-git', {
     method: 'POST',
     body: JSON.stringify(payload),
   });
