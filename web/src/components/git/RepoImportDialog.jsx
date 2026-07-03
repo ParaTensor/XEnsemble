@@ -26,6 +26,16 @@ import {
 const CLONE_POLL_INTERVAL_MS = 2000;
 const MAX_CLONE_POLL_ATTEMPTS = 300;
 
+function normalizeRepo(repo) {
+  const fullName = repo.full_name || repo.fullName || '';
+  return {
+    ...repo,
+    full_name: fullName,
+    name: repo.name || fullName.split('/').pop() || '',
+    default_branch: repo.default_branch || repo.defaultBranch || 'main',
+  };
+}
+
 const PROVIDER_OPTIONS = [
   { id: 'github', label: 'GitHub' },
   { id: 'gitlab', label: 'GitLab' },
@@ -83,7 +93,7 @@ export default function RepoImportDialog({ open, onClose, onImported, fetchWorks
     try {
       const data = await gitApi.listRepos(provider, { per_page: '100' });
       const rows = data.repos || data;
-      setRepos(Array.isArray(rows) ? rows : []);
+      setRepos(Array.isArray(rows) ? rows.map(normalizeRepo) : []);
     } catch (err) {
       showToast('error', err.message);
       setRepos([]);
