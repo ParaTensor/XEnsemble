@@ -23,8 +23,14 @@ function escapeHtml(str) {
 function callbackHtml(success, message) {
     const title = success ? 'GitHub Connected' : 'GitHub Connection Failed';
     const body = success
-        ? 'GitHub connected, you can close this tab.'
+        ? 'GitHub connected. This window will close automatically.'
         : escapeHtml(message || 'Failed to connect GitHub. Please try again.');
+    const payload = JSON.stringify({
+        type: 'git-oauth-result',
+        provider: 'github',
+        status: success ? 'success' : 'error',
+        message: success ? null : String(message || 'Failed to connect GitHub'),
+    }).replace(/</g, '\\u003c');
     return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -44,6 +50,12 @@ function callbackHtml(success, message) {
     <h1>${title}</h1>
     <p>${body}</p>
   </div>
+<script>
+(function(){
+  try{if(window.opener&&!window.opener.closed){window.opener.postMessage(${payload},'*');}}catch(e){}
+  if(${success ? 'true' : 'false'}){setTimeout(function(){window.close();},1200);}
+})();
+</script>
 </body>
 </html>`;
 }

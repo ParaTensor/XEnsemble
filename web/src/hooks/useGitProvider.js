@@ -6,9 +6,22 @@ import { isOAuthNotConfiguredError } from '../lib/gitLabels';
 
 const POLL_INTERVAL_MS = 2000;
 const MAX_POLL_ATTEMPTS = 150;
+const CLOSED_POPUP_GRACE_ATTEMPTS = 3;
 
 function isNotConnectedError(err) {
   return err?.message?.toLowerCase().includes('not connected');
+}
+
+function openOAuthPopup(url) {
+  const width = 980;
+  const height = 720;
+  const left = Math.max(0, Math.round((window.screen.width - width) / 2));
+  const top = Math.max(0, Math.round((window.screen.height - height) / 2));
+  return window.open(
+    url,
+    'git-oauth',
+    `popup=yes,width=${width},height=${height},left=${left},top=${top}`,
+  );
 }
 
 export function useGitProvider(providerName, { onChange } = {}) {
@@ -17,11 +30,16 @@ export function useGitProvider(providerName, { onChange } = {}) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const pollRef = useRef(null);
+  const messageHandlerRef = useRef(null);
 
   const clearPoll = useCallback(() => {
     if (pollRef.current) {
       clearInterval(pollRef.current);
       pollRef.current = null;
+    }
+    if (messageHandlerRef.current) {
+      window.removeEventListener('message', messageHandlerRef.current);
+      messageHandlerRef.current = null;
     }
   }, []);
 
@@ -55,19 +73,44 @@ export function useGitProvider(providerName, { onChange } = {}) {
     setError(null);
     try {
       const { auth_url: authUrl } = await gitApi.connectProvider(providerName);
-      openExternal(authUrl);
+      const popup = openOAuthPopup(authUrl);
+      if (!popup) openExternal(authUrl);
       showToast('loading', `Waiting for ${providerName} authorization…`);
       clearPoll();
 
+      const reportSuccess = (conn) => {
+        const username = conn.remote_username || conn.remoteUsername
+          || conn.github_username || conn.githubUsername || providerName;
+        showToast('success', `Connected to ${providerName} as ${username}`);
+      };
+
+      const onMessage = async (event) => {
+        const data = event.data;
+        if (!data || data.type !== 'git-oauth-result') return;
+        if (data.provider && data.provider !== providerName) return;
+        clearPoll();
+        if (data.status === 'success') {
+          const conn = await fetchConnection({ silent: true });
+          if (conn) reportSuccess(conn);
+        } else {
+          showToast('error', data.message || `${providerName} authorization failed. Please try again.`);
+        }
+      };
+      messageHandlerRef.current = onMessage;
+      window.addEventListener('message', onMessage);
+
       let attempts = 0;
+      let attemptsAfterClose = 0;
       pollRef.current = setInterval(async () => {
         attempts += 1;
+        if (popup?.closed) attemptsAfterClose += 1;
         const conn = await fetchConnection({ silent: true });
         if (conn) {
           clearPoll();
-          const username = conn.remote_username || conn.remoteUsername
-            || conn.github_username || conn.githubUsername || providerName;
-          showToast('success', `Connected to ${providerName} as ${username}`);
+          reportSuccess(conn);
+        } else if (attemptsAfterClose >= CLOSED_POPUP_GRACE_ATTEMPTS) {
+          clearPoll();
+          showToast('error', `${providerName} authorization window was closed before completing. Please try again.`);
         } else if (attempts >= MAX_POLL_ATTEMPTS) {
           clearPoll();
           showToast('error', `${providerName} authorization timed out. Please try again.`);
