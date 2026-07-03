@@ -3,6 +3,7 @@ const { eq } = require('drizzle-orm');
 const { db } = require('../db/index');
 const schema = require('../db/schema');
 const sessionManager = require('../session/SessionManager');
+const { WorkspaceShellManager } = require('../session/workspaceShell');
 const deploymentService = require('../deployments/DeploymentService');
 const workspace = require('../workspace');
 
@@ -14,6 +15,7 @@ async function deleteProjectForUser(userId, project) {
     for (const row of sessionRows) {
         sessionManager.deleteSession(row.id);
     }
+    WorkspaceShellManager.deleteByProjectId(projectId);
 
     const deploymentRows = await db.select().from(schema.deployments)
         .where(eq(schema.deployments.projectId, projectId));
