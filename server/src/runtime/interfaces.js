@@ -21,7 +21,10 @@ class AgentSpawnError extends RuntimeError {
 // ─── StreamHandle：spawn 返回的统一句柄，SessionManager 仅依赖此接口 ───
 
 class StreamHandle {
-    /** @returns {{ dispose(): void }} */
+    /**
+     * @param {function(string, number | undefined): void} callback
+     * @returns {{ dispose(): void }}
+     */
     onData(callback) { throw new Error('StreamHandle.onData not implemented'); }
     /** @param {function({exitCode, signal}): void} callback */
     onExit(callback) { throw new Error('StreamHandle.onExit not implemented'); }

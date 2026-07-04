@@ -39,9 +39,9 @@ class SessionManager {
         transcriptStore.bindSession(sessionId, session.transcriptRef);
         session.history = this._loadInitialHistory(session.transcriptRef, session.streamRef);
 
-        handle.onData((data) => {
+        handle.onData((data, rseq) => {
             const frame = session.transcriptRef
-                ? transcriptStore.append(session.transcriptRef, { kind: 'out', data })
+                ? transcriptStore.append(session.transcriptRef, { kind: 'out', data, rseq })
                 : null;
             session.history += data;
             if (session.history.length > 100000) {
@@ -49,11 +49,11 @@ class SessionManager {
             }
             if (frame) {
                 for (const listener of session.outputListeners) {
-                    try { listener({ data, seq: frame.seq, kind: 'out' }); } catch (_) { /* ignore */ }
+                    try { listener({ data, seq: frame.seq, rseq: frame.rseq, kind: 'out' }); } catch (_) { /* ignore */ }
                 }
             } else {
                 for (const listener of session.outputListeners) {
-                    try { listener({ data, seq: null, kind: 'out' }); } catch (_) { /* ignore */ }
+                    try { listener({ data, seq: null, rseq: rseq ?? null, kind: 'out' }); } catch (_) { /* ignore */ }
                 }
             }
             this._scheduleTitleGeneration(sessionId);

@@ -1,11 +1,13 @@
 const { ExecAdapter, AgentSpawnError, StreamHandle } = require('./interfaces');
 const BoxLiteClient = require('./BoxLiteClient');
+const { decodeExecutionFrame } = BoxLiteClient;
 
 class BoxLiteStreamHandle extends StreamHandle {
-    constructor(ws, streamRef) {
+    constructor(ws, streamRef, options = {}) {
         super();
         this._ws = ws;
         this._streamRef = streamRef;
+        this._preferSeqFrames = options.preferSeqFrames !== false;
         this._dataCbs = [];
         this._exitCbs = [];
         this._closed = false;
@@ -13,11 +15,9 @@ class BoxLiteStreamHandle extends StreamHandle {
         ws.on('message', (data, isBinary) => {
             if (isBinary) {
                 const buf = Buffer.from(data);
-                const ch = buf[0];
-                const text = buf.slice(1).toString('utf8');
-                const payload = text;
+                const decoded = decodeExecutionFrame(buf, this._preferSeqFrames);
                 for (const cb of this._dataCbs) {
-                    try { cb(payload); } catch (_) {}
+                    try { cb(decoded.payload, decoded.rseq, decoded.channel); } catch (_) {}
                 }
             } else {
                 try {
@@ -124,15 +124,29 @@ class BoxLiteExecAdapter extends ExecAdapter {
             throw new AgentSpawnError('BoxLite spawn failed: ' + e.message);
         }
         const execId = spawned.execution_id;
-        const attachUrl = spawned.attach_url;
-        const ws = this.client.createAttachWebSocket(attachUrl);
+        const ws = this.client.createExecutionAttachWebSocket(blinkName, execId, { seq: 1, after: 0 });
         const streamRef = `boxlite:${blinkName}:${execId}`;
         await new Promise((resolve, reject) => {
             const timer = setTimeout(() => reject(new Error('boxlite attach timeout')), 15000);
             ws.once('open', () => { clearTimeout(timer); resolve(); });
             ws.once('error', (e) => { clearTimeout(timer); reject(e); });
         });
-        return new BoxLiteStreamHandle(ws, streamRef);
+        return new BoxLiteStreamHandle(ws, streamRef, { preferSeqFrames: true });
+    }
+
+    async reattach(streamRef, options = {}) {
+        const parsed = this.client.parseExecutionStreamRef(streamRef);
+        if (!parsed) {
+            throw new AgentSpawnError(`BoxLite reattach requires boxlite:<name>:<execId> streamRef, got ${streamRef}`);
+        }
+        const after = Number.isInteger(options.after) && options.after >= 0 ? options.after : 0;
+        const ws = this.client.createExecutionAttachWebSocket(parsed.sessionName, parsed.execId, { seq: 1, after });
+        await new Promise((resolve, reject) => {
+            const timer = setTimeout(() => reject(new Error('boxlite attach timeout')), 15000);
+            ws.once('open', () => { clearTimeout(timer); resolve(); });
+            ws.once('error', (e) => { clearTimeout(timer); reject(e); });
+        });
+        return new BoxLiteStreamHandle(ws, streamRef, { preferSeqFrames: true });
     }
 
     async exec(cmd, args, env, options = {}) {
@@ -146,3 +160,4 @@ class BoxLiteExecAdapter extends ExecAdapter {
 }
 
 module.exports = BoxLiteExecAdapter;
+module.exports.BoxLiteStreamHandle = BoxLiteStreamHandle;

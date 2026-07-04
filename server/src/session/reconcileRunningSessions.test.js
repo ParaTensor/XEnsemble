@@ -91,6 +91,26 @@ describe('reconcileRunningSessions', () => {
         assert.equal(rows[0].status, 'exited');
     });
 
+    it('skips boxlite sessions so boot recovery can reattach them', async () => {
+        await db.insert(schema.sessions).values({
+            id: 'sess_boxlite',
+            userId: 'u1',
+            agentId: 'claude-code',
+            cwd: '/tmp',
+            status: 'running',
+            streamRef: 'boxlite:p_proj:exec_1',
+            createdAt: Date.now(),
+        });
+
+        const result = await reconcileRunningSessions(db, schema, {
+            processExists: () => false,
+        });
+
+        assert.equal(result.reconciled, 0);
+        const rows = await db.select().from(schema.sessions).where(eq(schema.sessions.id, 'sess_boxlite'));
+        assert.equal(rows[0].status, 'running');
+    });
+
     it('does not touch already-exited sessions', async () => {
         await db.insert(schema.sessions).values({
             id: 'sess_exited',

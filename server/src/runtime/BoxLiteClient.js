@@ -1,8 +1,66 @@
 const WebSocket = require('ws');
 
+function decodeExecutionFrame(buf, seqFramed = true) {
+    const channel = buf.length > 0 ? buf[0] : undefined;
+    if (!seqFramed) {
+        return {
+            channel,
+            payload: buf.length > 1 ? buf.slice(1).toString('utf8') : '',
+            rseq: undefined,
+        };
+    }
+
+    if (buf.length < 9) {
+        return {
+            channel,
+            payload: '',
+            rseq: undefined,
+        };
+    }
+
+    return {
+        channel,
+        payload: buf.slice(9).toString('utf8'),
+        rseq: Number(buf.readBigUInt64BE(1)),
+    };
+}
+
 class BoxLiteClient {
     constructor() {
         this.base = (process.env.BLINK_API_URL || 'http://127.0.0.1:8787').replace(/\/$/, '');
+    }
+
+    parseExecutionStreamRef(streamRef) {
+        const match = /^boxlite:([^:]+):([^:]+)$/.exec(String(streamRef || ''));
+        if (!match) return null;
+        return { sessionName: match[1], execId: match[2] };
+    }
+
+    buildExecutionAttachUrl(sessionName, execId, options = {}) {
+        const url = new URL(
+            `${this.base}/api/sessions/${encodeURIComponent(sessionName)}/executions/${encodeURIComponent(execId)}/attach`
+        );
+        if (options.seq != null) {
+            url.searchParams.set('seq', String(options.seq));
+        }
+        if (options.after != null) {
+            url.searchParams.set('after', String(options.after));
+        }
+        return `${url.pathname}${url.search}`;
+    }
+
+    createExecutionAttachWebSocket(sessionName, execId, options = {}) {
+        const attachUrl = this.buildExecutionAttachUrl(sessionName, execId, options);
+        const wsUrl = this.base.replace(/^http/, 'ws') + attachUrl;
+        return new WebSocket(wsUrl);
+    }
+
+    createExecutionAttachWebSocketFromStreamRef(streamRef, options = {}) {
+        const parsed = this.parseExecutionStreamRef(streamRef);
+        if (!parsed) {
+            throw new Error(`Invalid BoxLite streamRef: ${streamRef}`);
+        }
+        return this.createExecutionAttachWebSocket(parsed.sessionName, parsed.execId, options);
     }
 
     async health() {
@@ -65,8 +123,7 @@ class BoxLiteClient {
             working_dir: workingDir || undefined,
         };
         const spawned = await this.spawn(sessionName, spec);
-        const attachUrl = spawned.attach_url;
-        const ws = this.createAttachWebSocket(attachUrl);
+        const ws = this.createExecutionAttachWebSocket(sessionName, spawned.execution_id, { seq: 1, after: 0 });
         return new Promise((resolve, reject) => {
             let stdout = '';
             let stderr = '';
@@ -80,10 +137,10 @@ class BoxLiteClient {
             ws.on('message', (data, isBinary) => {
                 if (isBinary) {
                     const buf = Buffer.from(data);
-                    const ch = buf[0];
-                    const text = buf.slice(1).toString('utf8');
-                    if (ch === 0x01) stdout += text;
-                    else if (ch === 0x02) stderr += text;
+                    const decoded = decodeExecutionFrame(buf, true);
+                    const text = decoded.payload;
+                    if (decoded.channel === 0x01) stdout += text;
+                    else if (decoded.channel === 0x02) stderr += text;
                 } else {
                     try {
                         const msg = JSON.parse(data.toString());
@@ -170,3 +227,4 @@ class BoxLiteClient {
 }
 
 module.exports = BoxLiteClient;
+module.exports.decodeExecutionFrame = decodeExecutionFrame;

@@ -58,6 +58,24 @@ test('TranscriptStore resumes seqs from an existing transcript file', () => {
     }
 });
 
+test('TranscriptStore derives reattach cursor from the current execution only', () => {
+    const root = makeTempRoot();
+    try {
+        const store = new TranscriptStore({ workspaceRoot: root, db: null, schema: null });
+        store.append('boxlite:p_proj:exec_1', { kind: 'out', data: 'first-1', rseq: 1 });
+        store.append('boxlite:p_proj:exec_1', { kind: 'out', data: 'first-2', rseq: 2 });
+        store.append('boxlite:p_proj:exec_1', { kind: 'exit', data: { code: 0 } });
+        store.append('boxlite:p_proj:exec_1', { kind: 'out', data: 'second-1', rseq: 7 });
+        store.append('boxlite:p_proj:exec_1', { kind: 'in', data: 'ignored', rseq: 8 });
+        store.append('boxlite:p_proj:exec_1', { kind: 'resize', data: { cols: 100, rows: 40 } });
+        store.append('boxlite:p_proj:exec_1', { kind: 'out', data: 'second-2', rseq: 9 });
+
+        assert.equal(store.reattachCursor('boxlite:p_proj:exec_1'), 9);
+    } finally {
+        cleanup(root);
+    }
+});
+
 test('TranscriptStore updates session_streams metadata on bind and exit', async () => {
     const root = makeTempRoot();
     const sqlite = new Database(':memory:');

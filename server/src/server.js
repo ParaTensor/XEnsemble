@@ -22,6 +22,7 @@ const { startPreviewLifecycle } = require('./preview/lifecycle');
 const sessionManager = require('./session/SessionManager');
 const { WorkspaceShellManager, subscribeWorkspaceShell } = require('./session/workspaceShell');
 const { reconcileRunningSessions } = require('./session/reconcileRunningSessions');
+const { recoverRunningSessions } = require('./session/recoverRunningSessions');
 
 const { db } = require('./db/index');
 const schema = require('./db/schema');
@@ -1441,6 +1442,24 @@ async function startServer() {
 
     const { resolvePort } = require('./config/defaultPort');
     const port = resolvePort();
+
+    try {
+        const recovery = await recoverRunningSessions({
+            db,
+            schema,
+            runtime,
+            sessionManager,
+            transcriptStore,
+            fastifyLog: fastify.log,
+        });
+        if (recovery.recovered > 0) {
+            fastify.log.info(
+                `[sessions] reattached ${recovery.recovered} running boxlite session(s)`,
+            );
+        }
+    } catch (err) {
+        fastify.log.warn(err, '[sessions] failed to recover running boxlite sessions');
+    }
 
     try {
         const reconcile = await reconcileRunningSessions(db, schema);

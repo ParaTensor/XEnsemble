@@ -123,6 +123,9 @@ class TranscriptStore {
             data: frame.data,
             bytes: bytesFor(frame.kind, frame.data),
         };
+        if (frame.kind === 'out' && Number.isInteger(frame.rseq) && frame.rseq >= 0) {
+            stored.rseq = frame.rseq;
+        }
         state.frames.push(stored);
         state.headSeq = seq;
         state.bytes += stored.bytes;
@@ -161,6 +164,33 @@ class TranscriptStore {
         const state = this._state(streamRef);
         if (!state || !state.exited) return null;
         return { code: state.exitCode, seq: state.exitSeq };
+    }
+
+    reattachCursor(streamRef) {
+        const state = this._state(streamRef);
+        if (!state) return 0;
+
+        let lastExitIndex = -1;
+        for (let i = state.frames.length - 1; i >= 0; i -= 1) {
+            if (state.frames[i].kind === 'exit') {
+                lastExitIndex = i;
+                break;
+            }
+        }
+
+        let cursor = 0;
+        let sawOut = false;
+        for (let i = lastExitIndex + 1; i < state.frames.length; i += 1) {
+            const frame = state.frames[i];
+            if (frame.kind !== 'out') continue;
+            if (!Number.isInteger(frame.rseq) || frame.rseq < 0) {
+                return null;
+            }
+            sawOut = true;
+            cursor = Math.max(cursor, frame.rseq);
+        }
+
+        return sawOut ? cursor : 0;
     }
 
     remove(streamRef) {

@@ -1,5 +1,7 @@
 const { RuntimeProvider, RuntimeError } = require('./interfaces');
 const BoxLiteClient = require('./BoxLiteClient');
+const BoxLiteExecAdapter = require('./BoxLiteExecAdapter');
+const { BoxLiteStreamHandle } = BoxLiteExecAdapter;
 
 class BoxLiteRuntimeProvider extends RuntimeProvider {
     constructor() {
@@ -55,8 +57,15 @@ class BoxLiteRuntimeProvider extends RuntimeProvider {
         return { runtimeRef, recoverable: false };
     }
 
-    async attachSession(sessionId, streamRef) {
-        return { scrollback: '', recoverable: false };
+    async attachSession(sessionId, streamRef, options = {}) {
+        const after = Number.isInteger(options.after) && options.after >= 0 ? options.after : 0;
+        const ws = this.client.createExecutionAttachWebSocketFromStreamRef(streamRef, { seq: 1, after });
+        await new Promise((resolve, reject) => {
+            const timer = setTimeout(() => reject(new Error('boxlite attach timeout')), 15000);
+            ws.once('open', () => { clearTimeout(timer); resolve(); });
+            ws.once('error', (e) => { clearTimeout(timer); reject(e); });
+        });
+        return new BoxLiteStreamHandle(ws, streamRef, { preferSeqFrames: true });
     }
 
     async destroy(runtimeRef) {
