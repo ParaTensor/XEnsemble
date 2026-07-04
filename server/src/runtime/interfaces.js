@@ -52,6 +52,8 @@ class RuntimeProvider {
     async attachSession(sessionId, streamRef) { throw new Error('RuntimeProvider.attachSession not implemented'); }
     async destroy(runtimeRef) { throw new Error('RuntimeProvider.destroy not implemented'); }
     async metrics(runtimeRef) { throw new Error('RuntimeProvider.metrics not implemented'); }
+    supportsHibernate() { return false; }
+    async hibernate(runtimeRef) { throw new Error('RuntimeProvider.hibernate not implemented'); }
 }
 
 // ─── ExecAdapter：命令执行 ───

@@ -1,5 +1,8 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
 const { eq } = require('drizzle-orm');
 
 const { db } = require('../db/index');
@@ -7,6 +10,7 @@ const schema = require('../db/schema');
 const transcriptStore = require('../runtime/TranscriptStore');
 const sessionManager = require('./SessionManager');
 const { subscribeTerminal } = require('./terminalBridge');
+const { resumeSession } = require('./resumeSession');
 
 class FakeHandle {
     constructor(streamRef) {
@@ -73,7 +77,7 @@ test('subscribeTerminal replays from cursor and continues live without duplicate
         handle.emitData('line-1\n');
         handle.emitData('line-2\n');
 
-        const sub = subscribeTerminal(sessionId, (payload) => {
+        const sub = await subscribeTerminal(sessionId, (payload) => {
             payloads.push(payload);
         }, { after: 1 });
         assert.equal(sub.ok, true);
@@ -142,7 +146,7 @@ test('subscribeTerminal replay skips input and resize frames while advancing cur
         transcriptStore.append(streamRef, { kind: 'resize', data: { cols: 120, rows: 40 } });
         handle.emitData('out-2\n');
 
-        const sub = subscribeTerminal(sessionId, (payload) => {
+        const sub = await subscribeTerminal(sessionId, (payload) => {
             payloads.push(payload);
         }, { after: 0 });
         assert.equal(sub.ok, true);
@@ -161,5 +165,293 @@ test('subscribeTerminal replay skips input and resize frames while advancing cur
         sessionManager.deleteSession(sessionId);
         await db.delete(schema.sessions).where(eq(schema.sessions.id, sessionId));
         await db.delete(schema.users).where(eq(schema.users.id, userId));
+    }
+});
+
+test('subscribeTerminal wakes idle sessions before attach and replays transcript', async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'xe-terminal-wake-'));
+    const projectDir = path.join(root, 'project');
+    const sessionId = `sess_wake_${Date.now()}_${Math.random().toString(16).slice(2)}`;
+    const userId = `usr_wake_${Date.now()}_${Math.random().toString(16).slice(2)}`;
+    const projectId = `proj_wake_${Date.now()}_${Math.random().toString(16).slice(2)}`;
+    const runtimeId = `rt_wake_${Date.now()}_${Math.random().toString(16).slice(2)}`;
+    const stateDirRef = path.join('.xensemble', 'state', sessionId);
+    const stateDirPath = path.join(projectDir, stateDirRef);
+    fs.mkdirSync(stateDirPath, { recursive: true });
+
+    const initialHandle = new FakeHandle(`stream_old_${Date.now()}`);
+    const payloads = [];
+    try {
+        const now = Date.now();
+        await db.insert(schema.users).values({
+            id: userId,
+            username: `wake_${now}`,
+            passwordHash: 'hash',
+            role: 'user',
+            status: 'active',
+            createdAt: now,
+            updatedAt: now,
+        });
+        await db.insert(schema.projects).values({
+            id: projectId,
+            userId,
+            name: 'Wake Project',
+            serverPath: projectDir,
+            workspaceMode: 'local',
+            createdAt: now,
+        });
+        await db.insert(schema.runtimes).values({
+            id: runtimeId,
+            projectId,
+            provider: 'local',
+            runtimeRef: 'runtime_ref_1',
+            role: 'default',
+            status: 'ready',
+            createdAt: now,
+            updatedAt: now,
+        });
+        await db.insert(schema.sessions).values({
+            id: sessionId,
+            userId,
+            projectId,
+            agentId: 'claude-code',
+            cwd: projectDir,
+            streamRef: initialHandle.streamRef,
+            stateDirRef,
+            recoverable: true,
+            status: 'idle',
+            runtimeId,
+            createdAt: now,
+        });
+
+        sessionManager.createSession(sessionId, initialHandle, 'claude-code', {
+            projectId,
+            runtimeId: 'runtime_1',
+            runtimeRef: 'runtime_ref_1',
+            transcriptRef: initialHandle.streamRef,
+            userId,
+        });
+        initialHandle.emitData('seed line\n');
+        sessionManager.beginHibernate(sessionId);
+        sessionManager.completeHibernate(sessionId);
+
+        let spawnCalls = 0;
+        const runtimeWithCount = {
+            exec: {
+                async spawn(cmd, args, env, options) {
+                    spawnCalls += 1;
+                    return new FakeHandle(`stream_new_${spawnCalls}`);
+                },
+            },
+        };
+        const sessionRow = (await db.select().from(schema.sessions).where(eq(schema.sessions.id, sessionId)))[0];
+        const wakeSession = async () => resumeSession({
+            db,
+            schema,
+            sessionManager,
+            runtime: runtimeWithCount,
+            project: {
+                id: projectId,
+                userId,
+                serverPath: projectDir,
+                repoProvider: 'none',
+                repoDefaultBranch: 'main',
+                currentBranch: '',
+                githubFullName: '',
+                workspaceMode: 'local',
+            },
+            session: sessionRow,
+            agentMeta: {
+                id: 'claude-code',
+                name: 'Claude Code',
+                cmd: process.execPath,
+                args: [],
+                env_required: [],
+            },
+            terminalThemeId: null,
+            resolvedSpawnEnv: { env: { CLAUDE_CONFIG_DIR: stateDirPath }, spawn_env_preview: {} },
+            requestLog: { warn() {}, error() {} },
+            fastifyLog: { warn() {}, error() {} },
+            ensureProjectRuntime: async () => {
+                await new Promise((resolve) => setTimeout(resolve, 40));
+                return {
+                    runtime: { id: 'runtime_1', runtimeRef: 'runtime_ref_1' },
+                    workspacePath: projectDir,
+                };
+            },
+            issueSessionToken: () => null,
+            agentGatewayConfig: {
+                async getAgentAuthMode() { return 'byok'; },
+                async getForAgent() { return null; },
+            },
+            requestUser: { id: userId, role: 'user' },
+        });
+
+        const sub = await subscribeTerminal(sessionId, (payload) => {
+            payloads.push(payload);
+        }, { after: 0, sessionRecord: sessionRow, wakeSession });
+        assert.equal(sub.ok, true);
+        await new Promise((resolve) => setImmediate(resolve));
+
+        assert.equal(spawnCalls, 1);
+        assert.equal(sessionManager.isAlive(sessionId), true);
+        const outputs = payloads.filter((p) => p.type === 'output').map((p) => p.data);
+        assert.deepEqual(outputs, ['seed line\n']);
+
+        sub.cleanup();
+    } finally {
+        sessionManager.deleteSession(sessionId);
+        await db.delete(schema.sessions).where(eq(schema.sessions.id, sessionId));
+        await db.delete(schema.runtimes).where(eq(schema.runtimes.id, runtimeId));
+        await db.delete(schema.projects).where(eq(schema.projects.id, projectId));
+        await db.delete(schema.users).where(eq(schema.users.id, userId));
+        fs.rmSync(root, { recursive: true, force: true });
+    }
+});
+
+test('concurrent idle wake attaches only spawn one resumed session', async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'xe-terminal-concurrent-'));
+    const projectDir = path.join(root, 'project');
+    const sessionId = `sess_concurrent_${Date.now()}_${Math.random().toString(16).slice(2)}`;
+    const userId = `usr_concurrent_${Date.now()}_${Math.random().toString(16).slice(2)}`;
+    const projectId = `proj_concurrent_${Date.now()}_${Math.random().toString(16).slice(2)}`;
+    const runtimeId = `rt_concurrent_${Date.now()}_${Math.random().toString(16).slice(2)}`;
+    const stateDirRef = path.join('.xensemble', 'state', sessionId);
+    const stateDirPath = path.join(projectDir, stateDirRef);
+    fs.mkdirSync(stateDirPath, { recursive: true });
+
+    const initialHandle = new FakeHandle(`stream_old_${Date.now()}`);
+    const payloadsA = [];
+    const payloadsB = [];
+    try {
+        const now = Date.now();
+        await db.insert(schema.users).values({
+            id: userId,
+            username: `concurrent_${now}`,
+            passwordHash: 'hash',
+            role: 'user',
+            status: 'active',
+            createdAt: now,
+            updatedAt: now,
+        });
+        await db.insert(schema.projects).values({
+            id: projectId,
+            userId,
+            name: 'Concurrent Wake Project',
+            serverPath: projectDir,
+            workspaceMode: 'local',
+            createdAt: now,
+        });
+        await db.insert(schema.runtimes).values({
+            id: runtimeId,
+            projectId,
+            provider: 'local',
+            runtimeRef: 'runtime_ref_1',
+            role: 'default',
+            status: 'ready',
+            createdAt: now,
+            updatedAt: now,
+        });
+        await db.insert(schema.sessions).values({
+            id: sessionId,
+            userId,
+            projectId,
+            agentId: 'claude-code',
+            cwd: projectDir,
+            streamRef: initialHandle.streamRef,
+            stateDirRef,
+            recoverable: true,
+            status: 'idle',
+            runtimeId,
+            createdAt: now,
+        });
+
+        sessionManager.createSession(sessionId, initialHandle, 'claude-code', {
+            projectId,
+            runtimeId: 'runtime_1',
+            runtimeRef: 'runtime_ref_1',
+            transcriptRef: initialHandle.streamRef,
+            userId,
+        });
+        initialHandle.emitData('seed line\n');
+        sessionManager.beginHibernate(sessionId);
+        sessionManager.completeHibernate(sessionId);
+
+        let spawnCalls = 0;
+        const runtime = {
+            exec: {
+                async spawn(cmd, args, env, options) {
+                    spawnCalls += 1;
+                    await new Promise((resolve) => setTimeout(resolve, 50));
+                    return new FakeHandle(`stream_new_${spawnCalls}`);
+                },
+            },
+        };
+        const sessionRow = (await db.select().from(schema.sessions).where(eq(schema.sessions.id, sessionId)))[0];
+        const wakeSession = async () => resumeSession({
+            db,
+            schema,
+            sessionManager,
+            runtime,
+            project: {
+                id: projectId,
+                userId,
+                serverPath: projectDir,
+                repoProvider: 'none',
+                repoDefaultBranch: 'main',
+                currentBranch: '',
+                githubFullName: '',
+                workspaceMode: 'local',
+            },
+            session: sessionRow,
+            agentMeta: {
+                id: 'claude-code',
+                name: 'Claude Code',
+                cmd: process.execPath,
+                args: [],
+                env_required: [],
+            },
+            terminalThemeId: null,
+            resolvedSpawnEnv: { env: { CLAUDE_CONFIG_DIR: stateDirPath }, spawn_env_preview: {} },
+            requestLog: { warn() {}, error() {} },
+            fastifyLog: { warn() {}, error() {} },
+            ensureProjectRuntime: async () => ({
+                runtime: { id: 'runtime_1', runtimeRef: 'runtime_ref_1' },
+                workspacePath: projectDir,
+            }),
+            issueSessionToken: () => null,
+            agentGatewayConfig: {
+                async getAgentAuthMode() { return 'byok'; },
+                async getForAgent() { return null; },
+            },
+            requestUser: { id: userId, role: 'user' },
+        });
+
+        const [subA, subB] = await Promise.all([
+            subscribeTerminal(sessionId, (payload) => {
+                payloadsA.push(payload);
+            }, { after: 0, sessionRecord: sessionRow, wakeSession }),
+            subscribeTerminal(sessionId, (payload) => {
+                payloadsB.push(payload);
+            }, { after: 0, sessionRecord: sessionRow, wakeSession }),
+        ]);
+        assert.equal(subA.ok, true);
+        assert.equal(subB.ok, true);
+        await new Promise((resolve) => setImmediate(resolve));
+
+        assert.equal(spawnCalls, 1);
+        assert.equal(sessionManager.isAlive(sessionId), true);
+        assert.deepEqual(payloadsA.filter((p) => p.type === 'output').map((p) => p.data), ['seed line\n']);
+        assert.deepEqual(payloadsB.filter((p) => p.type === 'output').map((p) => p.data), ['seed line\n']);
+
+        subA.cleanup();
+        subB.cleanup();
+    } finally {
+        sessionManager.deleteSession(sessionId);
+        await db.delete(schema.sessions).where(eq(schema.sessions.id, sessionId));
+        await db.delete(schema.runtimes).where(eq(schema.runtimes.id, runtimeId));
+        await db.delete(schema.projects).where(eq(schema.projects.id, projectId));
+        await db.delete(schema.users).where(eq(schema.users.id, userId));
+        fs.rmSync(root, { recursive: true, force: true });
     }
 });

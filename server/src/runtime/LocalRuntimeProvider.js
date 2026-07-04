@@ -17,6 +17,10 @@ class LocalRuntimeProvider extends RuntimeProvider {
         return { runtimeRef, recoverable: false };
     }
 
+    supportsHibernate() {
+        return false;
+    }
+
     async attachSession(sessionId, streamRef) {
         const { readScrollback } = require('./LocalScrollbackBuffer');
         const scrollback = readScrollback(streamRef);
@@ -27,6 +31,10 @@ class LocalRuntimeProvider extends RuntimeProvider {
 
     async destroy(runtimeRef) {
         // Local 模式不删除 workspace 目录
+    }
+
+    async hibernate(runtimeRef) {
+        return { supported: false };
     }
 
     async metrics(runtimeRef) {

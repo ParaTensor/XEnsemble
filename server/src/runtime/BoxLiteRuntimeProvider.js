@@ -57,6 +57,10 @@ class BoxLiteRuntimeProvider extends RuntimeProvider {
         return { runtimeRef, recoverable: false };
     }
 
+    supportsHibernate() {
+        return true;
+    }
+
     async attachSession(sessionId, streamRef, options = {}) {
         const after = Number.isInteger(options.after) && options.after >= 0 ? options.after : 0;
         const ws = this.client.createExecutionAttachWebSocketFromStreamRef(streamRef, { seq: 1, after });
@@ -70,6 +74,10 @@ class BoxLiteRuntimeProvider extends RuntimeProvider {
 
     async destroy(runtimeRef) {
         await this.client.deleteSession(runtimeRef);
+    }
+
+    async hibernate(runtimeRef) {
+        await this.client.stopSession(runtimeRef);
     }
 
     async metrics(runtimeRef) {

@@ -160,7 +160,14 @@ async function resumeSession({
         }
 
         handle.transcriptRef = transcriptRef;
-        sessionManager.createSession(session.id, handle, agentMeta.id, { transcriptRef });
+        sessionManager.createSession(session.id, handle, agentMeta.id, {
+            transcriptRef,
+            projectId: session.projectId || null,
+            runtimeId: session.runtimeId || null,
+            runtimeRef: runtimeReady.runtime ? runtimeReady.runtime.runtimeRef : null,
+            stateDirRef: session.stateDirRef || null,
+            userId: requestUser.id,
+        });
         await registerSessionLifecycle({
             db,
             schema,

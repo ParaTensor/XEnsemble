@@ -283,7 +283,7 @@ flowchart LR
 | **P1** | `TranscriptStore` 替换 `LocalScrollbackBuffer`；WS/SSE 带 `seq` + `attach?after=` | **断线续传**、输入也入账、可完整回放 | ✅ 黑盒 |
 | **P2** | runtime 声明 state 目录；随 workspace 持久化；恢复走原生 resume | 会话语义可续跑 | ✅ 黑盒 |
 | **P3** | `StreamHandle.reattach`；`ReattachService` 替换"判死"逻辑；进程脱离控制面；**副作用幂等化（硬前置，见 §9-Q4）** | **控制面重启不丢会话**（XEnsemble 现按 transcript 中最后一轮 `rseq` 计算 blink reattach cursor，无单独 cursor 列） | ✅ 黑盒 |
-| **P4** | 空闲释放算力 + 消息唤醒（Local 弱、BoxLite/K8s 强） | 成本下降，对齐 OC 休眠模型 | ✅ 黑盒 |
+| **P4** ✅ | 空闲检测 → hard-stop 沙箱（保留磁盘/state/transcript）→ 消息唤醒（复用 P2 resume）；Local 不支持、跳过 | 成本下降，对齐 OC 休眠模型 | ✅ 黑盒 |
 | **P5**（可选） | 对支持结构化输出的 harness（Claude Code `stream-json` / hooks、Codex）提取 `tool.call/message/turn.completed` | level 分层、webhook、精细 steer | ⚠️ 仅增强，不支持则 fallback P1 |
 
 > P1–P4 全程把 Agent 当黑盒，**不牺牲"随便接流行 Agent"这个卖点**。P5 是渐进增强：能拿到多少语义就用多少，拿不到就退回字节流，不是前置门槛。
@@ -386,7 +386,7 @@ flowchart LR
 | **P1 Transcript** | ❌ 不依赖 | 录制在 XEnsemble 控制面：它本就从 `WS /executions/{id}/attach` 收字节，只是自己写带 `seq` 的帧。Local(node-pty) 与 BoxLite 都受益。 |
 | **P2 State 目录** | ⚠️ 依赖 blink **已有**能力 | blink session 是持久 BoxLite box（`open_session()` 用 `get_or_create(auto_remove:false, detach:true)`，`src/core/src/context.rs:50-93`），跨 blink-server 重启存活；state 目录随 session 持久。恢复只是再 spawn 一条 `agent --resume`，**无需 blink 加功能**。 |
 | **P3 进程脱离 + reattach** | ✅ **硬依赖，需 blink 加能力** | 见 §11.2，是唯一需要改 blink 的地方。 |
-| **P4 休眠/唤醒** | ✅ 依赖 blink，部分已有 | checkpoint/restore/export/import 已实现（`context.rs:117-176`、`snapshots().create(...)`），但 `warm` 参数当前是 **no-op**（`open_session()` 忽略它，`context.rs:81-93`），无 idle/hibernate/wake 生命周期，需补。 |
+| **P4 休眠/唤醒** | ❌ **零 blink 改动**（采用 hard-stop 模型） | 复核后确认：blink 已有 `POST /api/sessions/{name}/stop`（停 VM、保留磁盘/state，`context.rs:139-145`）+ `open`/`spawn`，配合 P2 的原生 `--resume` 即可实现"空闲停机 + 消息唤醒"，**无需真正的内存挂起**，也无需动 blink。`warm` 保持 no-op（本模型用不到）；真正的 RAM-preserving suspend 是更大改造，暂不做。 |
 | **Local 无 KVM 兜底** | ❌ 不依赖 | 走自研 `agent-host` 守护进程。 |
 
 ### 11.2 P3 需要 blink 补的三件事（核实结论）
@@ -403,6 +403,42 @@ blink 当前 execution 是**内存态、一次性 attach**，不支持重连：
    session/box 跨重启存活，但 live execution 是内存态（`ExecRegistry`），blink-server 重启即丢（`exec_registry.rs:9-33`）。**需补**：live execution 的持久登记 + 重启后重建可 attach 句柄。
 
 **已有、可直接用**：execution 在 WS 断开时**不会被杀**（断开只是跳出 WS 循环，pump task 继续持有进程，`api/exec.rs:114-201`）——即"headless 存活"这条已具备，缺的是"再连回去"。
+
+---
+
+## 12. P4 落地：空闲休眠 / 唤醒（hard-stop 模型）
+
+**目标**：会话空闲时释放算力（停沙箱），保留磁盘/state/transcript；下一条用户活动到达时秒级唤醒，上下文不丢。全部在 XEnsemble 侧实现，**零 blink 改动**（复用 blink 已有 `stop` + `open`/`spawn` 与 P2 的原生 `--resume`）。
+
+### 12.1 为什么是 hard-stop 而非内存挂起
+
+blink/BoxLite 当前**不暴露** RAM-preserving 的 suspend/resume；已有的是 `stop`（停 VM、保留磁盘）+ snapshot/restore + `spawn`。因此 P4 采用 **hard-stop**：停沙箱释放 CPU/RAM，磁盘上的 Agent state 目录（P2）与 transcript（P1）原样保留，唤醒＝重开沙箱 + `agent --resume` + 按 transcript 游标重连——**本质就是把 P2 的 resume 流程在"空闲→有活动"时自动触发一次**。真正的内存挂起是更大改造（需 blink/BoxLite/libkrun 新能力），列为后续。
+
+### 12.2 空闲检测（黑盒安全）
+
+- 每会话跟踪 `lastActivityAt = max(最后 stdout 输出, 最后用户输入, 最后 attach)`；**输出也算活动**，故正在产出的长任务不会被误停。
+- 后台 sweeper 周期扫描存活会话，满足全部条件才休眠：`now - lastActivityAt > 阈值` **且** 当前无 terminal 订阅者（无人在看）**且** 运行时支持休眠。
+- 仅 BoxLite（及同类）运行时支持；Local 通过 `supportsHibernate()===false` 跳过。
+- 配置：`SESSION_IDLE_HIBERNATE_MS`（默认 `1800000`=30min，`<=0` 关闭整个特性）、`SESSION_IDLE_SWEEP_MS`（默认 `60000`）。
+
+### 12.3 休眠动作
+
+1. `session.status: running → idle`（保留 `recoverable`/`stateDirRef`/`streamRef`/`transcriptRef`）；
+2. 调运行时 provider 的 `hibernate(runtimeRef)` → BoxLite 打到 blink `POST /api/sessions/{name}/stop`（**保留磁盘**，区别于 `destroy`/`DELETE` 会删盘）；
+3. 拆除内存 live 句柄，但**不**走 `exited` 路径——`SessionManager` 用 `hibernating` 标志吞掉停机导致的 `onExit`，避免会话被误标为已退出；
+4. 可选：best-effort git auto-checkpoint（与 onExit 生命周期一致）。
+
+### 12.4 消息唤醒
+
+- 唤醒触发点＝终端接入/输入：WS 终端、`/api/v1/terminal/stream`、`/api/v1/terminal/input`（经 `terminalBridge.resolveLiveSession`/`subscribeTerminal`）。
+- 当会话非存活但 `status==='idle' && recoverable` 时，接入前先唤醒：**复用与 `POST /resume` 相同的核心函数**（`resumeSessionContext` + `resumeSession`），重开沙箱 + `agent --resume` + 从 transcript 游标重放；随后正常接入，`status → running`。
+- 并发唤醒经既有 `withResumeLock` 单飞，两个同时接入只会拉起一个 Agent。
+
+### 12.5 范围与降级
+
+- **仅 BoxLite/K8s 类运行时**可休眠/唤醒；Local 会话行为不变（不休眠）。
+- 关闭特性只需 `SESSION_IDLE_HIBERNATE_MS<=0`。
+- transcript 全程保留，回放不受休眠影响。
 
 ### 11.3 落地建议
 
