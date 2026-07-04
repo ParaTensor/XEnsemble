@@ -708,6 +708,7 @@ fastify.get('/api/v1/sessions', { preValidation: [fastify.authenticate] }, async
         projectId: row.projectId,
         agentId: row.agentId,
         status: row.status,
+        recoverable: Boolean(row.recoverable),
         memoryStatus: sessionManager.getSession(row.id)?.status ?? row.status,
         alive: sessionManager.isAlive(row.id),
         projectName: row.projectId ? projectNames[row.projectId] : null,

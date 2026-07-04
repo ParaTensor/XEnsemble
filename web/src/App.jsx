@@ -59,6 +59,7 @@ function AuthenticatedLayout({
         projects={projects}
         sessions={sessions}
         activeSession={activeSession}
+        fetchWorkspaces={fetchWorkspaces}
         onSelectSession={(session) => {
           setActiveSession({
             sessionId: session.id,
