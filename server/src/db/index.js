@@ -57,6 +57,15 @@ sqlite.exec(`
     FOREIGN KEY(user_id) REFERENCES users(id)
   );
 
+  CREATE TABLE IF NOT EXISTS session_streams (
+    session_id TEXT PRIMARY KEY,
+    head_seq INTEGER NOT NULL DEFAULT 0,
+    bytes INTEGER NOT NULL DEFAULT 0,
+    storage_ref TEXT NOT NULL,
+    updated_at INTEGER NOT NULL,
+    FOREIGN KEY(session_id) REFERENCES sessions(id)
+  );
+
   CREATE TABLE IF NOT EXISTS agents (
     id TEXT PRIMARY KEY,
     name TEXT NOT NULL,

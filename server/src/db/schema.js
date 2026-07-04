@@ -73,6 +73,14 @@ const sessions = sqliteTable('sessions', {
   createdAt: integer('created_at').notNull()
 });
 
+const sessionStreams = sqliteTable('session_streams', {
+  sessionId: text('session_id').primaryKey().references(() => sessions.id),
+  headSeq: integer('head_seq').notNull().default(0),
+  bytes: integer('bytes').notNull().default(0),
+  storageRef: text('storage_ref').notNull(),
+  updatedAt: integer('updated_at').notNull(),
+});
+
 const agents = sqliteTable('agents', {
   id: text('id').primaryKey(),
   name: text('name').notNull(),
@@ -309,6 +317,7 @@ module.exports = {
   secrets,
   projects,
   sessions,
+  sessionStreams,
   agents,
   runtimes,
   deployments,

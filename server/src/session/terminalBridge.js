@@ -1,4 +1,11 @@
 const sessionManager = require('./SessionManager');
+const transcriptStore = require('../runtime/TranscriptStore');
+const { readScrollback } = require('../runtime/LocalScrollbackBuffer');
+
+function normalizeCursor(after) {
+    const value = Number(after);
+    return Number.isInteger(value) && value >= 0 ? value : 0;
+}
 
 function resolveLiveSession(sessionId) {
     const session = sessionManager.getSession(sessionId);
@@ -40,7 +47,7 @@ function applyTerminalMessage(handle, msg) {
  * @param {(payload: object) => void} send
  * @returns {{ ok: boolean, cleanup: () => void, handle?: object }}
  */
-function subscribeTerminal(sessionId, send) {
+function subscribeTerminal(sessionId, send, options = {}) {
     const resolved = resolveLiveSession(sessionId);
     if (!resolved.ok) {
         send({ type: 'error', data: resolved.error });
@@ -48,22 +55,113 @@ function subscribeTerminal(sessionId, send) {
     }
 
     const { session, handle } = resolved;
-
-    if (session.history) {
-        send({ type: 'output', data: session.history });
-    }
-
+    const after = normalizeCursor(options.after);
+    let lastSentSeq = after;
+    let replaying = true;
     let cleaned = false;
+    let pendingExit = null;
+    let replayComplete = false;
+    const pendingLiveFrames = [];
+
+    const maybeSend = (payload) => {
+        if (cleaned) return;
+        send(payload);
+    };
+
     const cleanup = () => {
         if (cleaned) return;
         cleaned = true;
         offExit();
-        dataListener.dispose();
+        offOutput();
         clearInterval(metricsInterval);
     };
 
-    const dataListener = handle.onData((data) => {
-        send({ type: 'output', data });
+    const flushFrames = (frames) => {
+        for (const frame of frames) {
+            if (cleaned) return;
+            if (frame.seq != null && frame.seq <= lastSentSeq) {
+                continue;
+            }
+            if (frame.kind === 'exit') {
+                pendingExit = frame;
+                if (frame.seq != null) {
+                    lastSentSeq = frame.seq;
+                }
+                continue;
+            }
+            if (frame.kind !== 'out') {
+                if (frame.seq != null) {
+                    lastSentSeq = frame.seq;
+                }
+                continue;
+            }
+            maybeSend({ type: 'output', data: frame.data, seq: frame.seq ?? undefined });
+            if (frame.seq != null) {
+                lastSentSeq = frame.seq;
+            }
+        }
+    };
+
+    const drainPendingLive = () => {
+        if (cleaned || pendingLiveFrames.length === 0) return;
+        const frames = pendingLiveFrames.splice(0, pendingLiveFrames.length);
+        flushFrames(frames);
+    };
+
+    const maybeFinalizeExit = () => {
+        if (cleaned || !pendingExit) return;
+        const exitSeq = pendingExit.seq ?? 0;
+        if (session.streamRef && pendingExit.seq != null && lastSentSeq < exitSeq) {
+            const tail = transcriptStore.readFrom(session.streamRef, lastSentSeq);
+            if (tail.length > 0) {
+                flushFrames(tail);
+            }
+        }
+        if (pendingExit.seq != null && lastSentSeq < exitSeq) {
+            return;
+        }
+        maybeSend({
+            type: 'exit',
+            data: pendingExit.data?.code ?? null,
+            seq: pendingExit.seq ?? undefined,
+            message: `\r\n\x1b[33m[Session ended with code ${pendingExit.data?.code ?? 'unknown'}]\x1b[0m\r\n`,
+        });
+        cleanup();
+    };
+
+    const replayTranscript = async () => {
+        const transcriptFrames = session.streamRef ? transcriptStore.readFrom(session.streamRef, after) : [];
+        if (transcriptFrames.length > 0) {
+            flushFrames(transcriptFrames);
+        } else if (session.streamRef && !transcriptStore.hasTranscript(session.streamRef)) {
+            const scrollback = readScrollback(session.streamRef);
+            if (scrollback) {
+                maybeSend({ type: 'output', data: scrollback });
+            }
+        } else if (session.history) {
+            // Legacy in-memory history fallback for live sessions before the transcript store was populated.
+            maybeSend({ type: 'output', data: session.history });
+        }
+        replaying = false;
+        replayComplete = true;
+        drainPendingLive();
+        maybeFinalizeExit();
+    };
+
+    const offOutput = sessionManager.subscribeOutput(sessionId, (frame) => {
+        if (cleaned) return;
+        if (replaying) {
+            pendingLiveFrames.push(frame);
+            return;
+        }
+        if (frame.seq != null && frame.seq <= lastSentSeq) {
+            return;
+        }
+        maybeSend({ type: 'output', data: frame.data, seq: frame.seq ?? undefined });
+        if (frame.seq != null) {
+            lastSentSeq = frame.seq;
+        }
+        maybeFinalizeExit();
     });
 
     const metricsInterval = setInterval(async () => {
@@ -74,12 +172,18 @@ function subscribeTerminal(sessionId, send) {
         } catch (_) { /* ignore metrics errors */ }
     }, 3000);
 
-    const offExit = sessionManager.onExit(sessionId, (exitCode) => {
-        send({
-            type: 'exit',
-            data: exitCode,
-            message: `\r\n\x1b[33m[Session ended with code ${exitCode ?? 'unknown'}]\x1b[0m\r\n`,
-        });
+    const offExit = sessionManager.onExit(sessionId, (exitCode, exitSeq) => {
+        pendingExit = {
+            data: { code: exitCode },
+            seq: exitSeq ?? null,
+        };
+        if (replayComplete) {
+            maybeFinalizeExit();
+        }
+    });
+
+    replayTranscript().catch((err) => {
+        maybeSend({ type: 'error', data: err?.message || 'Failed to replay terminal transcript' });
         cleanup();
     });
 

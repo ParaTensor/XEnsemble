@@ -1,0 +1,244 @@
+const fs = require('fs');
+const path = require('path');
+const { eq } = require('drizzle-orm');
+
+const { WORKSPACE_ROOT } = require('../workspace');
+const defaultDb = require('../db/index').db;
+const schema = require('../db/schema');
+
+const VALID_KINDS = new Set(['out', 'in', 'resize', 'exit']);
+const META_UPDATE_INTERVAL_MS = Number(process.env.TRANSCRIPT_META_UPDATE_INTERVAL_MS) || 2000;
+const META_UPDATE_INTERVAL_SEQ = Number(process.env.TRANSCRIPT_META_UPDATE_INTERVAL_SEQ) || 50;
+
+function safeRef(ref) {
+    return String(ref || '').replace(/[^a-zA-Z0-9_-]/g, '_');
+}
+
+function now() {
+    return Date.now();
+}
+
+function bytesFor(kind, data) {
+    if (typeof data === 'string') return Buffer.byteLength(data);
+    if (kind === 'resize' || kind === 'exit') {
+        return Buffer.byteLength(JSON.stringify(data ?? {}));
+    }
+    if (data == null) return 0;
+    return Buffer.byteLength(String(data));
+}
+
+class TranscriptStore {
+    constructor(options = {}) {
+        this.workspaceRoot = options.workspaceRoot || WORKSPACE_ROOT;
+        this.db = options.db === undefined ? defaultDb : options.db;
+        this.schema = options.schema || schema;
+        this.states = new Map();
+    }
+
+    transcriptDir() {
+        return path.join(this.workspaceRoot, '.transcript');
+    }
+
+    transcriptPath(streamRef) {
+        if (!streamRef) return null;
+        return path.join(this.transcriptDir(), `${safeRef(streamRef)}.ndjson`);
+    }
+
+    ensureTranscriptDir() {
+        const dir = this.transcriptDir();
+        if (!fs.existsSync(dir)) {
+            fs.mkdirSync(dir, { recursive: true });
+        }
+    }
+
+    _state(streamRef) {
+        if (!streamRef) return null;
+        let state = this.states.get(streamRef);
+        if (state) return state;
+
+        const file = this.transcriptPath(streamRef);
+        const frames = [];
+        let headSeq = 0;
+        let bytes = 0;
+
+        if (file && fs.existsSync(file)) {
+            try {
+                const contents = fs.readFileSync(file, 'utf8');
+                for (const line of contents.split('\n')) {
+                    if (!line.trim()) continue;
+                    try {
+                        const frame = JSON.parse(line);
+                        if (!frame || typeof frame.seq !== 'number' || !VALID_KINDS.has(frame.kind)) continue;
+                        frames.push(frame);
+                        headSeq = Math.max(headSeq, frame.seq);
+                        bytes += Number(frame.bytes) || bytesFor(frame.kind, frame.data);
+                    } catch (_) {
+                        // ignore malformed legacy lines
+                    }
+                }
+            } catch (_) {
+                // treat unreadable files as empty
+            }
+        }
+
+        state = {
+            streamRef,
+            file,
+            frames,
+            headSeq,
+            bytes,
+            nextSeq: headSeq + 1,
+            sessionId: null,
+            lastMetaWriteAt: 0,
+            lastMetaWriteSeq: headSeq,
+            dirtyMeta: false,
+            exited: false,
+            exitSeq: null,
+            exitCode: null,
+        };
+        this.states.set(streamRef, state);
+        return state;
+    }
+
+    bindSession(sessionId, streamRef) {
+        const state = this._state(streamRef);
+        if (!state) return;
+        state.sessionId = sessionId;
+        this._writeSessionMeta(state, true);
+    }
+
+    append(streamRef, frame) {
+        const state = this._state(streamRef);
+        if (!state) {
+            return null;
+        }
+        if (!VALID_KINDS.has(frame?.kind)) {
+            throw new Error(`Unsupported transcript kind: ${frame?.kind}`);
+        }
+        const seq = state.nextSeq++;
+        const stored = {
+            seq,
+            ts: now(),
+            kind: frame.kind,
+            data: frame.data,
+            bytes: bytesFor(frame.kind, frame.data),
+        };
+        state.frames.push(stored);
+        state.headSeq = seq;
+        state.bytes += stored.bytes;
+        if (frame.kind === 'exit') {
+            state.exited = true;
+            state.exitSeq = seq;
+            state.exitCode = frame?.data?.code ?? null;
+        }
+        this._writeFileLine(state, stored);
+        this._maybeWriteSessionMeta(state, frame.kind === 'exit');
+        return stored;
+    }
+
+    readFrom(streamRef, afterSeq = 0) {
+        const state = this._state(streamRef);
+        if (!state) return [];
+        const cursor = Number(afterSeq) || 0;
+        return state.frames.filter((frame) => frame.seq > cursor);
+    }
+
+    head(streamRef) {
+        const state = this._state(streamRef);
+        return state ? state.headSeq : 0;
+    }
+
+    bytes(streamRef) {
+        const state = this._state(streamRef);
+        return state ? state.bytes : 0;
+    }
+
+    hasTranscript(streamRef) {
+        return this.head(streamRef) > 0;
+    }
+
+    exitInfo(streamRef) {
+        const state = this._state(streamRef);
+        if (!state || !state.exited) return null;
+        return { code: state.exitCode, seq: state.exitSeq };
+    }
+
+    remove(streamRef) {
+        const state = this.states.get(streamRef);
+        const file = state?.file || this.transcriptPath(streamRef);
+        if (file && fs.existsSync(file)) {
+            try {
+                fs.unlinkSync(file);
+            } catch (_) {
+                // ignore
+            }
+        }
+        if (state?.sessionId && this.db?.delete && this.schema?.sessionStreams) {
+            try {
+                this.db.delete(this.schema.sessionStreams)
+                    .where(eq(this.schema.sessionStreams.sessionId, state.sessionId))
+                    .run();
+            } catch (_) {
+                // ignore best-effort metadata cleanup
+            }
+        }
+        this.states.delete(streamRef);
+    }
+
+    _writeFileLine(state, frame) {
+        if (!state.file) return;
+        this.ensureTranscriptDir();
+        try {
+            fs.appendFileSync(state.file, `${JSON.stringify(frame)}\n`);
+        } catch (_) {
+            // best-effort persistence; in-memory state remains authoritative until restart
+        }
+    }
+
+    _maybeWriteSessionMeta(state, force) {
+        if (!state.sessionId || !this.db) return;
+        const shouldWrite = force
+            || state.lastMetaWriteAt === 0
+            || (now() - state.lastMetaWriteAt) >= META_UPDATE_INTERVAL_MS
+            || (state.headSeq - state.lastMetaWriteSeq) >= META_UPDATE_INTERVAL_SEQ;
+        if (!shouldWrite) return;
+        this._writeSessionMeta(state, force);
+    }
+
+    _writeSessionMeta(state, force = false) {
+        if (!state.sessionId || !this.db) return;
+        state.lastMetaWriteAt = now();
+        state.lastMetaWriteSeq = state.headSeq;
+        const { sessionStreams } = this.schema;
+        if (!sessionStreams) return;
+        const payload = {
+            sessionId: state.sessionId,
+            headSeq: state.headSeq,
+            bytes: state.bytes,
+            storageRef: state.streamRef,
+            updatedAt: state.lastMetaWriteAt,
+        };
+        const query = this.db
+            .insert(sessionStreams)
+            .values(payload)
+            .onConflictDoUpdate({
+                target: sessionStreams.sessionId,
+                set: {
+                    headSeq: payload.headSeq,
+                    bytes: payload.bytes,
+                    storageRef: payload.storageRef,
+                    updatedAt: payload.updatedAt,
+                },
+            });
+        try {
+            query.run();
+        } catch (err) {
+            console.error(`Transcript meta write failed: ${err.message}`);
+        }
+    }
+}
+
+const transcriptStore = new TranscriptStore();
+
+module.exports = transcriptStore;
+module.exports.TranscriptStore = TranscriptStore;
