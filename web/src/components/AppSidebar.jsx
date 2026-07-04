@@ -7,6 +7,7 @@ import {
   Pin,
   Trash2,
   Archive,
+  Play,
   ChevronRight,
   ChevronDown,
   LogOut,
@@ -20,6 +21,7 @@ import {
   GitBranch,
   Loader2,
 } from 'lucide-react';
+import { apiFetch } from '../lib/api';
 import { getProviderLabel, getWorkspaceRepoLabel, isGitLinkedProject } from '../lib/gitLabels';
 import { formatRelativeTime } from '../lib/formatRelativeTime';
 import {
@@ -31,6 +33,7 @@ import {
   isArchivedSession,
   selectActiveSession,
 } from '../lib/sidebarPrefs';
+import { useToast } from '../components/Toast';
 import {
   textPrimary,
   textSecondary,
@@ -261,6 +264,7 @@ export default function AppSidebar({
   sessions,
   activeSession,
   onSelectSession,
+  fetchWorkspaces,
   onCreateWorkspace,
   onImportFromGit,
   onNewAgent,
@@ -280,6 +284,8 @@ export default function AppSidebar({
   const [expandedSessionLists, setExpandedSessionLists] = useState(() => new Set());
   const [searchQuery, setSearchQuery] = useState('');
   const [activeOnlyFilter, setActiveOnlyFilter] = useState(false);
+  const [resumingSessionId, setResumingSessionId] = useState(null);
+  const { showToast } = useToast();
 
   const refreshSidebarPrefs = useCallback(() => setSidebarPrefs(loadSidebarPrefs()), []);
 
@@ -364,6 +370,40 @@ export default function AppSidebar({
     onArchiveSession?.(sessionId);
   };
 
+  const handleResumeSession = useCallback(async (session, ws) => {
+    if (!session?.id || resumingSessionId) return;
+    setResumingSessionId(session.id);
+    try {
+      const res = await apiFetch(`/api/v1/sessions/${encodeURIComponent(session.id)}/resume`, {
+        method: 'POST',
+      });
+      let data = {};
+      try {
+        data = await res.json();
+      } catch {
+        data = {};
+      }
+      if (!res.ok) {
+        const errorMessage = data.error || 'Failed to resume session';
+        if (res.status === 409) {
+          showToast('error', errorMessage);
+          return;
+        }
+        throw new Error(errorMessage);
+      }
+
+      await fetchWorkspaces?.();
+      onSelectSession?.({
+        ...session,
+        projectName: session.projectName || ws?.name || null,
+      });
+    } catch (err) {
+      showToast('error', err.message || 'Failed to resume session');
+    } finally {
+      setResumingSessionId(null);
+    }
+  }, [fetchWorkspaces, onSelectSession, resumingSessionId, showToast]);
+
   const handlePinWorkspace = (e, workspaceId) => {
     e.stopPropagation();
     togglePinnedWorkspace(workspaceId);
@@ -394,6 +434,8 @@ export default function AppSidebar({
   const renderNestedSessionRow = (s, ws) => {
     const isActive = activeSession?.sessionId === s.id;
     const isLive = s.alive === true;
+    const canResume = !isLive && s.recoverable === true;
+    const isResuming = resumingSessionId === s.id;
     const label = s.title?.trim() || getAgentLabel(s.agentId);
     const timestamp = s.createdAt ? formatRelativeTime(s.createdAt) : '';
 
@@ -418,6 +460,21 @@ export default function AppSidebar({
           )}
         </button>
         <div className="flex items-center shrink-0 opacity-0 group-hover/session:opacity-100 focus-within:opacity-100">
+          {canResume && (
+            <button
+              type="button"
+              title={isResuming ? 'Resuming…' : 'Resume'}
+              aria-label={isResuming ? 'Resuming session' : 'Resume session'}
+              onClick={(e) => {
+                e.stopPropagation();
+                handleResumeSession(s, ws);
+              }}
+              disabled={Boolean(resumingSessionId)}
+              className={`p-1 rounded-md ${textPlaceholder} ${hoverTextPrimary} hover:bg-[#E8EAED] disabled:opacity-50 disabled:cursor-not-allowed`}
+            >
+              {isResuming ? <Loader2 className="w-3 h-3 animate-spin" /> : <Play className="w-3 h-3" />}
+            </button>
+          )}
           <button
             type="button"
             title="Archive"
