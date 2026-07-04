@@ -186,6 +186,7 @@ Agent 对象字段：`id`、`name`、`cmd`、`args`、`env_required`、`llm_auth
 |------|------|------|
 | GET | `/api/v1/sessions` | 列出 Session；含 `alive`、`memoryStatus` |
 | POST | `/api/v1/session/start` | 启动 Agent Session |
+| POST | `/api/v1/sessions/:sessionId/resume` | 恢复已退出且可恢复的 Session |
 | DELETE | `/api/v1/sessions/:sessionId` | 终止 Session |
 
 **启动 Session**：
@@ -218,6 +219,8 @@ Authorization: Bearer <token>
 ```
 
 spawn 时 Server 按 effective theme 注入 `COLORFGBG` 等变量（Cursor Agent 等 CLI 用于 dark/light TUI 探测）。Admin 可在 Agent gateway config 的 `env_overrides.COLORFGBG` 覆盖 per-agent。
+
+P2 已交付：对支持 native state 的 Agent，退出后可通过 `POST /api/v1/sessions/:sessionId/resume` 继续同一 transcript，前提是该 Session 在 catalog 中标记为可恢复且已有 `state_dir_ref`。当前 L2 可恢复 Agent：**Factory Droid**（`FACTORY_HOME_OVERRIDE` + `--resume`，已 CLI 核实）、**Claude Code**（`CLAUDE_CONFIG_DIR` + `--continue`，文档级）。
 
 ### 4.4.1 Terminal Themes & 用户偏好
 
@@ -356,7 +359,7 @@ Content-Type: application/json
 
 | type | 字段 | 说明 |
 |------|------|------|
-| `output` | `data` | PTY 输出（含 ANSI） |
+| `output` | `data`, `seq?` | PTY 输出（含 ANSI）；带 transcript 时附游标 |
 | `metrics` | `data` | `{ "cpu": 0.12, "memory": 45678912 }`，约 3s 一次 |
 | `error` | `data` | 错误说明；连接随后关闭 |
 | `exit` | `data`, `seq?`, `message?` | 进程退出码；可选格式化消息；支持 transcript 游标 |

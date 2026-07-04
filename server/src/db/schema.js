@@ -67,6 +67,7 @@ const sessions = sqliteTable('sessions', {
   agentId: text('agent_id').notNull(),
   cwd: text('cwd').notNull(),
   streamRef: text('stream_ref'),
+  stateDirRef: text('state_dir_ref'),
   recoverable: integer('recoverable', { mode: 'boolean' }).default(false),
   status: text('status').default('running'),
   title: text('title'),

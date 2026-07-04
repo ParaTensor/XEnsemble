@@ -21,6 +21,7 @@ describe('reconcileRunningSessions', () => {
                 agent_id TEXT NOT NULL,
                 cwd TEXT NOT NULL,
                 stream_ref TEXT,
+                state_dir_ref TEXT,
                 recoverable INTEGER DEFAULT 0,
                 status TEXT DEFAULT 'running',
                 title TEXT,

@@ -52,6 +52,7 @@ sqlite.exec(`
     user_id TEXT NOT NULL,
     agent_id TEXT NOT NULL,
     cwd TEXT NOT NULL,
+    state_dir_ref TEXT,
     status TEXT DEFAULT 'running',
     created_at INTEGER NOT NULL,
     FOREIGN KEY(user_id) REFERENCES users(id)
@@ -387,6 +388,13 @@ if (!sessionColsAfter.some((c) => c.name === 'runtime_id')) {
 }
 if (!sessionColsAfter.some((c) => c.name === 'stream_ref')) {
     sqlite.exec(`ALTER TABLE sessions ADD COLUMN stream_ref TEXT`);
+}
+if (!sessionColsAfter.some((c) => c.name === 'state_dir_ref')) {
+    try {
+        sqlite.exec(`ALTER TABLE sessions ADD COLUMN state_dir_ref TEXT`);
+    } catch (err) {
+        if (!err.message?.includes('duplicate column name')) throw err;
+    }
 }
 if (!sessionColsAfter.some((c) => c.name === 'recoverable')) {
     sqlite.exec(`ALTER TABLE sessions ADD COLUMN recoverable INTEGER DEFAULT 0`);

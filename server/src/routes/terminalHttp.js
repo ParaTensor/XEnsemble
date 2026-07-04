@@ -135,8 +135,9 @@ function registerTerminalHttpRoutes(fastify) {
         }
 
         const transcriptKind = type === 'input' ? 'in' : type === 'resize' ? 'resize' : null;
-        if (transcriptKind && live?.streamRef) {
-            transcriptStore.append(live.streamRef, {
+        const transcriptRef = live?.transcriptRef || live?.streamRef;
+        if (transcriptKind && transcriptRef) {
+            transcriptStore.append(transcriptRef, {
                 kind: transcriptKind,
                 data: transcriptKind === 'in'
                     ? request.body?.data
