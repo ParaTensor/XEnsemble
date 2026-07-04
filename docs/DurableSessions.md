@@ -370,3 +370,40 @@ flowchart LR
 | Q3 | State 目录通用性 | runtime 声明 `stateDir`+`resume` 契约；L2 续跑 / L1 只读回放 / L0 现状 三级降级 |
 | Q4 | 幂等 | 契约化"副作用可能重放"；PR/Preview get-or-create；transcript 单写者 append-only；P3 前置 |
 | Q5 | 前端协议 | 纯增量：下行加 `seq` + `after=`/`Last-Event-ID`；不带则整段 replay，老客户端零改动 |
+
+---
+
+## 11. blink 依赖与需补能力
+
+本节基于对 `EeroEternal/blink`（clone 于 `~/repos/blink`）当前代码的核实，标注每根支柱对 blink 的依赖：**大部分零 blink 改动，唯一硬依赖在 P3（进程脱离/重连）。**
+
+### 11.1 按支柱/阶段的依赖
+
+| 阶段 | 是否依赖 blink | 说明 |
+|------|----------------|------|
+| **P1 Transcript** | ❌ 不依赖 | 录制在 XEnsemble 控制面：它本就从 `WS /executions/{id}/attach` 收字节，只是自己写带 `seq` 的帧。Local(node-pty) 与 BoxLite 都受益。 |
+| **P2 State 目录** | ⚠️ 依赖 blink **已有**能力 | blink session 是持久 BoxLite box（`open_session()` 用 `get_or_create(auto_remove:false, detach:true)`，`src/core/src/context.rs:50-93`），跨 blink-server 重启存活；state 目录随 session 持久。恢复只是再 spawn 一条 `agent --resume`，**无需 blink 加功能**。 |
+| **P3 进程脱离 + reattach** | ✅ **硬依赖，需 blink 加能力** | 见 §11.2，是唯一需要改 blink 的地方。 |
+| **P4 休眠/唤醒** | ✅ 依赖 blink，部分已有 | checkpoint/restore/export/import 已实现（`context.rs:117-176`、`snapshots().create(...)`），但 `warm` 参数当前是 **no-op**（`open_session()` 忽略它，`context.rs:81-93`），无 idle/hibernate/wake 生命周期，需补。 |
+| **Local 无 KVM 兜底** | ❌ 不依赖 | 走自研 `agent-host` 守护进程。 |
+
+### 11.2 P3 需要 blink 补的三件事（核实结论）
+
+blink 当前 execution 是**内存态、一次性 attach**，不支持重连：
+
+1. **execution 变为可重复 attach（当前一次性消费）**
+   `attach_exec()` 在升级 WS 前调用 `state.execs.take(&exec_id)`，首次 attach 即把注册表项摘除（`src/server/src/api/exec.rs:89-112`、`exec_registry.rs:20-33`）→ 同一 `execution_id` 无法二次 attach。**需改为**：保留稳定 execution 记录，断开后可再 attach（`take` → 借用/引用计数）。
+
+2. **服务端输出缓冲 + 游标（当前纯直通、无缓冲）**
+   attach 是 `start_exec_pump()` → 单个 `mpsc` 接收器的 live passthrough，无回放缓冲、无 seq/offset（`src/core/src/exec.rs:66-154`）→ 无人 attach 时字节直接丢。**需补**：服务端按 execution 缓冲 stdout 并带游标，reattach 时能 `resume from N` 补齐控制面宕机窗口内的字节。（此项决定"人回放"有没有洞；Agent 自身续跑靠 state 目录不受影响。）
+
+3. **execution 记录跨 blink-server 重启可恢复**
+   session/box 跨重启存活，但 live execution 是内存态（`ExecRegistry`），blink-server 重启即丢（`exec_registry.rs:9-33`）。**需补**：live execution 的持久登记 + 重启后重建可 attach 句柄。
+
+**已有、可直接用**：execution 在 WS 断开时**不会被杀**（断开只是跳出 WS 循环，pump task 继续持有进程，`api/exec.rs:114-201`）——即"headless 存活"这条已具备，缺的是"再连回去"。
+
+### 11.3 落地建议
+
+- P1/P2 先行，**零 blink 改动即可拿到"断线续传 + 语义续跑"的大头**；P3 的 blink 改动（上述 3 条 reattach 语义）与 XEnsemble 侧 `reattach(stream_ref)` 配套推进。
+- blink 帧协议现状：stdout `0x01` / stderr `0x02`，控制帧 JSON（`resize` / `signal` / `stdin_eof`）（`src/core/src/exec.rs:66-185`、`docs/PTY.md`）；加游标可在 attach 握手或 stdout 帧上附带 seq，保持向后兼容。
+- blink 为自有仓库（`EeroEternal/blink`，有 PR 权限），上述能力可自行排期实现。
