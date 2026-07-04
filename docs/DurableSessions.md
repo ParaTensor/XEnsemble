@@ -407,3 +407,4 @@ blink 当前 execution 是**内存态、一次性 attach**，不支持重连：
 - P1/P2 先行，**零 blink 改动即可拿到"断线续传 + 语义续跑"的大头**；P3 的 blink 改动（上述 3 条 reattach 语义）与 XEnsemble 侧 `reattach(stream_ref)` 配套推进。
 - blink 帧协议现状：stdout `0x01` / stderr `0x02`，控制帧 JSON（`resize` / `signal` / `stdin_eof`）（`src/core/src/exec.rs:66-185`、`docs/PTY.md`）；加游标可在 attach 握手或 stdout 帧上附带 seq，保持向后兼容。
 - blink 为自有仓库（`EeroEternal/blink`，有 PR 权限），上述能力可自行排期实现。
+- **P3 blink 侧实现进行中**：可重复 attach + 服务端输出缓冲 + seq 游标（`?after=`/`?seq=1`）已在 blink PR [EeroEternal/blink#9](https://github.com/EeroEternal/blink/pull/9) 落地（设计见该仓库 `docs/REATTACH.md`）；"跨 blink-server 重启可恢复"仍为 follow-up（需 boxlite 支持重开运行中 execution 的 stdio）。
