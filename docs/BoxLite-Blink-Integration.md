@@ -50,7 +50,7 @@ Blink **不是另起炉灶**，而是 Architecture.md §5.4.2 所定义的 **Box
 | 网络           | 宿主机网络栈               | VM 内独立网络                    | Preview 端口转发成为硬缺口 |
 | 持久化         | 宿主机目录                 | 持久磁盘 + snapshot/export       | 部署 revision、迁移能力  |
 | Agent CLI 位置 | 宿主机安装                 | 必须在 guest 镜像内              | 镜像化生命周期重构       |
-| 可恢复性       | 跨重启不可恢复             | attach 消费性 + warm session 优势 | 与 Local 当前行为接近    |
+| 可恢复性       | 跨重启不可恢复             | attach 消费性 + warm session 优势 | 目标改为**可恢复**：见 `docs/DurableSessions.md`（transcript 续传 + state 目录 resume + reattach） |
 | 平台要求       | 任意                         | Linux + KVM                      | 端到端测试受限           |
 
 ---
@@ -84,7 +84,7 @@ Blink **不是另起炉灶**，而是 Architecture.md §5.4.2 所定义的 **Box
 | Workspace 模型     | `workspacePath` 目前是宿主机可直接访问目录；git/fs/preview 全依赖它      | 高       | virtiofs 映射 或 全 guest 内 exec     |
 | FsAdapter          | Blink 当前无原生文件列/读端点（文档标注“规划中 / 经 exec 间接”）         | 中       | 先用 exec 兜底，后续等 Blink FS API   |
 | Preview 端口转发   | LocalPreviewAdapter + localPreviewRegistry + gateway 直代 127.0.0.1:port | **最高** | 需 Blink 侧补 guest→host 转发能力     |
-| 恢复模型           | `execution_id` attach 后即消费；跨重启 live PTY 不可恢复                 | 中       | 接受 recoverable=false（与 Local 一致）|
+| 恢复模型           | `execution_id` attach 后即消费；跨重启 live PTY 不可恢复                 | 中       | **改为可恢复**：控制面 `reattach(stream_ref)` 重连 sandbox 的 `WS /executions/{id}/attach`，配合 transcript 续传与 state 目录 `--resume`（见 `docs/DurableSessions.md` §5、§9-Q2/Q3）|
 | 平台依赖           | 必须 Linux + KVM；当前开发环境无 /dev/kvm                              | 中       | 端到端测试在 KVM 主机上做             |
 | 控制面泄漏 Local   | SessionManager require LocalScrollbackBuffer、reconcile 硬解析 pid、preview gateway 绑定 local registry | 中       | 抽象化、按 provider 分支              |
 
@@ -200,7 +200,7 @@ FsAdapter 实现策略：
 2. **Workspace 模型选型**：virtiofs 映射 vs 全 guest 内？（强烈建议阶段 3 前拍板）
 3. **Preview 策略**：阶段 1/2 先不做预览，专注终端验证？还是同步推动 Blink 侧补能力？
 4. **Agent 分发方式**：镜像 bake（推荐，稳定）还是每次 copy-in + 运行时安装？
-5. **恢复模型接受度**：`recoverable=false` + attach 消费性（与当前 Local 行为一致）
+5. ~~**恢复模型接受度**：`recoverable=false` + attach 消费性~~ → **已在 `docs/DurableSessions.md` 拍板改为可恢复**：BoxLite/blink 作为“进程脱离控制面”的主路径，控制面重连 sandbox attach 流 + transcript 续传 + state 目录 resume，`recoverable` 提升为 `true`（能力分级见该文档 §9-Q3）
 6. **平台与测试**：端到端验证必须在有 `/dev/kvm` 的 Linux 主机上进行，darwin 仅能做单元/集成 mock。
 7. **FsAdapter 兜底策略**：先用 exec 实现，还是等 Blink 原生 API？
 
