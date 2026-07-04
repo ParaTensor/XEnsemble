@@ -301,6 +301,7 @@ wss://xensemble.dev/ws/v1/terminal?sessionId=<session_id>     # 生产
 
 - 无需在 WS 握手时传 JWT；通过 `sessionId` 关联已启动的 Session
 - Session 不存在或已结束会收到 error 后关闭
+- 可选 `after=<seq>` 用于从终端 transcript 游标恢复；`output` / `exit` 下行会附带 `seq`
 
 ### 5.2 HTTP（SSE + POST）
 
@@ -312,13 +313,16 @@ Accept: text/event-stream
 ```
 
 浏览器 `EventSource` 无法自定义 Header，须用 query `access_token`；原生客户端也可传 `Authorization: Bearer <jwt>`。
+SSE 支持原生续传：服务端会为带 `seq` 的事件写入 `id: <seq>`，浏览器断线后会自动携带 `Last-Event-ID`；也可显式传 `?after=<seq>` 指定起点。
 
 每条 SSE 的 `data` 字段为 JSON，与 WS 下行消息相同：
 
 ```
-data: {"type":"output","data":"..."}
+id: 42
+data: {"type":"output","data":"...","seq":42}
 
-data: {"type":"metrics","data":{"cpu":0.1,"memory":12345}}
+id: 43
+data: {"type":"exit","data":0,"seq":43}
 ```
 
 收到 `error` 或 `exit` 后流结束。
@@ -355,9 +359,9 @@ Content-Type: application/json
 | `output` | `data` | PTY 输出（含 ANSI） |
 | `metrics` | `data` | `{ "cpu": 0.12, "memory": 45678912 }`，约 3s 一次 |
 | `error` | `data` | 错误说明；连接随后关闭 |
-| `exit` | `data`, `message?` | 进程退出码；可选格式化消息 |
+| `exit` | `data`, `seq?`, `message?` | 进程退出码；可选格式化消息；支持 transcript 游标 |
 
-连接成功后，服务端可能先 replay 缓冲区历史 output。
+连接成功后，服务端可能先 replay 缓冲区历史 output；带 transcript 的会话会按 `seq` 顺序回放并支持 `after` 断点续传。旧会话若仅存在 legacy `.scrollback`，仍会回放一次纯 `output`，保持兼容。
 
 ---
 

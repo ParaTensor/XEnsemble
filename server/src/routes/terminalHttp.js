@@ -4,6 +4,7 @@ const schema = require('../db/schema');
 const { eq } = require('drizzle-orm');
 const sessionManager = require('../session/SessionManager');
 const { applyTerminalMessage, subscribeTerminal } = require('../session/terminalBridge');
+const transcriptStore = require('../runtime/TranscriptStore');
 
 function extractAccessToken(request) {
     const authHeader = request.headers.authorization;
@@ -47,6 +48,9 @@ async function authenticateTerminalRequest(request, reply) {
 }
 
 function writeSse(reply, payload) {
+    if (payload?.seq != null) {
+        reply.raw.write(`id: ${payload.seq}\n`);
+    }
     reply.raw.write(`data: ${JSON.stringify(payload)}\n\n`);
 }
 
@@ -59,6 +63,13 @@ function registerTerminalHttpRoutes(fastify) {
         if (!sessionId || typeof sessionId !== 'string') {
             return reply.code(400).send({ error: 'sessionId is required' });
         }
+        const afterHeader = request.headers['last-event-id'];
+        const afterQuery = request.query?.after;
+        const after = Number(
+            typeof afterHeader === 'string' && afterHeader.trim() !== ''
+                ? afterHeader
+                : afterQuery
+        );
 
         const access = await assertSessionOwner(user.id, sessionId);
         if (!access.ok) {
@@ -90,7 +101,7 @@ function registerTerminalHttpRoutes(fastify) {
             writeSse(reply, payload);
         };
 
-        const sub = subscribeTerminal(sessionId, send);
+        const sub = subscribeTerminal(sessionId, send, { after: Number.isFinite(after) ? after : 0 });
         if (!sub.ok) {
             endStream();
             return;
@@ -121,6 +132,16 @@ function registerTerminalHttpRoutes(fastify) {
         const live = sessionManager.getSession(sessionId);
         if (!live?.handle) {
             return reply.code(404).send({ error: 'Session handle not found' });
+        }
+
+        const transcriptKind = type === 'input' ? 'in' : type === 'resize' ? 'resize' : null;
+        if (transcriptKind && live?.streamRef) {
+            transcriptStore.append(live.streamRef, {
+                kind: transcriptKind,
+                data: transcriptKind === 'in'
+                    ? request.body?.data
+                    : { cols: request.body?.cols, rows: request.body?.rows },
+            });
         }
 
         applyTerminalMessage(live.handle, {

@@ -39,6 +39,7 @@ const { registerGitRoutes } = require('./routes/git');
 const { registerGitHubAppRoutes } = require('./routes/githubApp');
 const { LocalGitService } = require('./git/LocalGitService');
 const { applyTerminalMessage, subscribeTerminal } = require('./session/terminalBridge');
+const transcriptStore = require('./runtime/TranscriptStore');
 const unigateway = require('./gateway/unigatewayManager');
 const { registerGatewayAdminRoutes } = require('./gateway/adminProxy');
 const { deleteProjectForUser } = require('./projects/deleteProject');
@@ -878,13 +879,17 @@ fastify.register(async function terminalWsRoutes(app) {
         try {
             let sessionId = null;
             let accessToken = null;
+            let after = 0;
             try {
                 const url = new URL(req.url, 'http://localhost');
                 sessionId = url.searchParams.get('sessionId');
                 accessToken = url.searchParams.get('access_token');
+                const parsedAfter = Number(url.searchParams.get('after'));
+                after = Number.isFinite(parsedAfter) ? parsedAfter : 0;
             } catch (_) {
                 sessionId = null;
                 accessToken = null;
+                after = 0;
             }
 
             if (!accessToken) {
@@ -926,7 +931,7 @@ fastify.register(async function terminalWsRoutes(app) {
                 if (payload.type === 'exit' || payload.type === 'error') {
                     try { ws.close(); } catch (_) {}
                 }
-            });
+            }, { after });
             if (!sub.ok) {
                 ws.close();
                 return;
@@ -936,7 +941,19 @@ fastify.register(async function terminalWsRoutes(app) {
                 if (!sessionManager.isAlive(sessionId)) return;
                 try {
                     const raw = typeof message === 'string' ? message : message.toString();
-                    applyTerminalMessage(sub.handle, JSON.parse(raw));
+                    const parsed = JSON.parse(raw);
+                    if (parsed?.type === 'input' || parsed?.type === 'resize') {
+                        const live = sessionManager.getSession(sessionId);
+                        if (live?.streamRef) {
+                            transcriptStore.append(live.streamRef, {
+                                kind: parsed.type === 'input' ? 'in' : 'resize',
+                                data: parsed.type === 'input'
+                                    ? parsed.data
+                                    : { cols: parsed.cols, rows: parsed.rows },
+                            });
+                        }
+                    }
+                    applyTerminalMessage(sub.handle, parsed);
                 } catch (err) {
                     req.log.error(err);
                 }

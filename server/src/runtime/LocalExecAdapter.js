@@ -127,8 +127,6 @@ class LocalStreamHandle extends StreamHandle {
         this._streamRef = streamRef;
         this._exited = false;
         this._killFallback = null;
-        const { appendScrollback } = require('./LocalScrollbackBuffer');
-        ptyProcess.onData((data) => appendScrollback(streamRef, data));
         this._pty.onExit(() => {
             this._exited = true;
             if (this._killFallback) {

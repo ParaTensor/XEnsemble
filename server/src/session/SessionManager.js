@@ -1,4 +1,5 @@
-const { removeScrollback } = require('../runtime/LocalScrollbackBuffer');
+const { readScrollback, removeScrollback } = require('../runtime/LocalScrollbackBuffer');
+const transcriptStore = require('../runtime/TranscriptStore');
 const titleService = require('./titleService');
 
 const TITLE_HISTORY_THRESHOLD = Number(process.env.SESSION_TITLE_HISTORY_THRESHOLD) || 200;
@@ -21,25 +22,37 @@ class SessionManager {
         const session = {
             handle,
             agentId,
+            streamRef: handle?.streamRef || null,
             createdAt: Date.now(),
             history: '',
             status: 'running',
             exitCode: null,
+            exitSeq: null,
             exitListeners: new Set(),
+            outputListeners: new Set(),
             titleGenerated: false,
             titleTimeout: null,
         };
 
-        let scrollback = '';
-        if (handle && handle.streamRef && typeof handle.streamRef === 'string' && handle.streamRef.startsWith('local:')) {
-            scrollback = require('../runtime/LocalScrollbackBuffer').readScrollback(handle.streamRef);
-        }
-        session.history = scrollback;
+        transcriptStore.bindSession(sessionId, session.streamRef);
+        session.history = this._loadInitialHistory(session.streamRef);
 
         handle.onData((data) => {
+            const frame = session.streamRef
+                ? transcriptStore.append(session.streamRef, { kind: 'out', data })
+                : null;
             session.history += data;
             if (session.history.length > 100000) {
                 session.history = session.history.slice(-100000);
+            }
+            if (frame) {
+                for (const listener of session.outputListeners) {
+                    try { listener({ data, seq: frame.seq, kind: 'out' }); } catch (_) { /* ignore */ }
+                }
+            } else {
+                for (const listener of session.outputListeners) {
+                    try { listener({ data, seq: null, kind: 'out' }); } catch (_) { /* ignore */ }
+                }
             }
             this._scheduleTitleGeneration(sessionId);
         });
@@ -47,11 +60,16 @@ class SessionManager {
         handle.onExit(({ exitCode, signal }) => {
             session.status = 'exited';
             session.exitCode = exitCode ?? signal ?? null;
+            const exitFrame = session.streamRef
+                ? transcriptStore.append(session.streamRef, { kind: 'exit', data: { code: session.exitCode } })
+                : null;
+            session.exitSeq = exitFrame ? exitFrame.seq : null;
             this._maybeGenerateTitleOnExit(sessionId);
             for (const listener of session.exitListeners) {
-                try { listener(session.exitCode); } catch (_) { /* ignore */ }
+                try { listener(session.exitCode, session.exitSeq); } catch (_) { /* ignore */ }
             }
             session.exitListeners.clear();
+            session.outputListeners.clear();
         });
 
         this.sessions.set(sessionId, session);
@@ -71,11 +89,19 @@ class SessionManager {
         const session = this.sessions.get(sessionId);
         if (!session) return () => {};
         if (session.status === 'exited') {
-            listener(session.exitCode);
+            listener(session.exitCode, session.exitSeq);
             return () => {};
         }
         session.exitListeners.add(listener);
         return () => session.exitListeners.delete(listener);
+    }
+
+    subscribeOutput(sessionId, listener) {
+        const session = this.sessions.get(sessionId);
+        if (!session) return () => {};
+        if (session.status !== 'running') return () => {};
+        session.outputListeners.add(listener);
+        return () => session.outputListeners.delete(listener);
     }
 
     deleteSession(sessionId) {
@@ -93,15 +119,33 @@ class SessionManager {
                 }
                 try {
                     const sr = session.handle.streamRef;
-                    if (sr && typeof sr === 'string' && sr.startsWith('local:')) {
-                        removeScrollback(sr);
+                    if (sr && typeof sr === 'string') {
+                        transcriptStore.remove(sr);
+                        if (sr.startsWith('local:')) {
+                            removeScrollback(sr);
+                        }
                     }
                 } catch (e) {
-                    console.error(`Remove scrollback error: ${e.message}`);
+                    console.error(`Remove transcript error: ${e.message}`);
                 }
             }
         }
         this.sessions.delete(sessionId);
+    }
+
+    _loadInitialHistory(streamRef) {
+        if (!streamRef) return '';
+        const transcriptFrames = transcriptStore.readFrom(streamRef, 0);
+        if (transcriptFrames.length > 0) {
+            return transcriptFrames
+                .filter((frame) => frame.kind === 'out' || frame.kind === 'in')
+                .map((frame) => (typeof frame.data === 'string' ? frame.data : ''))
+                .join('');
+        }
+        if (typeof streamRef === 'string' && streamRef.startsWith('local:')) {
+            return readScrollback(streamRef);
+        }
+        return '';
     }
 
     _scheduleTitleGeneration(sessionId) {
