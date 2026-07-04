@@ -17,7 +17,7 @@
 2. **State 目录持久化**：把 Agent 自带的会话状态目录随 workspace 一起持久化，恢复时用 Agent 原生 `--resume` 续跑。
 3. **执行进程脱离控制面**：Agent 进程运行在独立于 control-plane 的被监督宿主里，控制面重启后**重新 attach**，而不是把会话判死。
 
-> **明确不做**：不解析 Agent 内部语义（tool call / turn / message）、不接管 Agent loop、不要求 Agent 配合结构化输出。语义级事件日志（OC 式）是**可选的后续增强**，不是本设计的前置门槛（见 §8）。
+> **明确不做**：不解析 Agent 内部语义（tool call / turn / message）、不接管 Agent loop、不要求 Agent 配合结构化输出。语义级事件日志（OC 式）是**可选的后续增强**，不是本设计的前置门槛（见 §7 的 P5）。
 
 ---
 
@@ -198,9 +198,14 @@ flowchart LR
 
 | Provider | 脱离方式 | 备注 |
 |----------|----------|------|
-| **Local** | Agent 跑在被监督的**独立进程宿主**（如 detached 进程 + 一个常驻 agent-host，或复用 blink/BoxLite 本机形态），控制面通过 socket/PTY handle 重连 | 保留"本机开发简单"的初衷，仅把父子关系解开 |
-| **BoxLite** | Agent 天然跑在 sandbox 内，sandbox 生命周期独立于控制面；控制面重连 sandbox 的 exec/PTY 通道 | 与 `docs/BoxLite-Blink-Integration.md` 对齐，最契合本设计 |
+| **Local（推荐）** | 复用 **blink / BoxLite 本机形态（libkrun）**：Agent 跑在 sandbox 内，生命周期独立于控制面；控制面通过 blink 的 `WS /executions/{id}/attach` 重连 | 已有 `docs/BoxLite-Blink-Integration.md` 与蓝图构建的 blink-server，不必自造轮子 |
+| **Local（无 KVM 兜底）** | 一个**常驻 `agent-host` 守护进程**（独立生命周期）持有 PTY，暴露 unix socket；控制面用 detached spawn 拉起后经 socket 重连 | 纯本机开发/无 `/dev/kvm` 环境的降级路径；仅把"父子关系"解开 |
+| **BoxLite** | 同 Local 推荐路径，sandbox 由 BoxLite 托管；控制面重连 sandbox 的 exec/PTY 通道 | 与 `docs/BoxLite-Blink-Integration.md` 对齐，最契合本设计 |
 | **K8s** | Agent 跑在 Pod 内，控制面重连 Pod 的 attach 流 | 生产层，天然脱离 |
+
+**决策**：不新造"detached 进程 + 专用 agent-host"作为主路径；**主路径统一走 blink/BoxLite（libkrun）**，`agent-host` 守护进程仅作为无 KVM 环境的兜底。这样"进程脱离"与执行面三层 Provider 的既有演进方向合流，不增加第四种执行形态。
+
+> **与现有文档的差异需知会**：`docs/BoxLite-Blink-Integration.md` §恢复模型 目前写的是"跨重启 live PTY 不可恢复，接受 `recoverable=false`（与 Local 一致）"。本设计**主动推翻**这一让步——通过 transcript 续传 + state 目录 `--resume` 把 `recoverable` 提升为 `true`（详见 §4、§9-Q3 的能力分级）。落地 P3 时需同步更新该文档。
 
 `StreamHandle` 接口补充一个 `reattach(streamRef)` 语义：从 `streamRef` 恢复一个可读写的句柄，而非只在 `createSession` 时新建。
 
@@ -277,7 +282,7 @@ flowchart LR
 |------|--------|------|---------------|
 | **P1** | `TranscriptStore` 替换 `LocalScrollbackBuffer`；WS/SSE 带 `seq` + `attach?after=` | **断线续传**、输入也入账、可完整回放 | ✅ 黑盒 |
 | **P2** | runtime 声明 state 目录；随 workspace 持久化；恢复走原生 resume | 会话语义可续跑 | ✅ 黑盒 |
-| **P3** | `StreamHandle.reattach`；`ReattachService` 替换"判死"逻辑；进程脱离控制面 | **控制面重启不丢会话** | ✅ 黑盒 |
+| **P3** | `StreamHandle.reattach`；`ReattachService` 替换"判死"逻辑；进程脱离控制面；**副作用幂等化（硬前置，见 §9-Q4）** | **控制面重启不丢会话** | ✅ 黑盒 |
 | **P4** | 空闲释放算力 + 消息唤醒（Local 弱、BoxLite/K8s 强） | 成本下降，对齐 OC 休眠模型 | ✅ 黑盒 |
 | **P5**（可选） | 对支持结构化输出的 harness（Claude Code `stream-json` / hooks、Codex）提取 `tool.call/message/turn.completed` | level 分层、webhook、精细 steer | ⚠️ 仅增强，不支持则 fallback P1 |
 
@@ -299,10 +304,69 @@ flowchart LR
 
 ---
 
-## 9. 待确认问题（Open Questions）
+## 9. 决策（Resolved Decisions）
 
-1. **Transcript 存储上限与 GC**：单会话 transcript 上限、冷数据是否离线到对象存储、归档会话保留期。
-2. **Local 层进程脱离的具体形态**：detached 进程 + 常驻 agent-host，还是本机直接走 blink/BoxLite？影响 P3 工作量。
-3. **State 目录的通用性**：各 harness 的 state 目录与 `--resume` 语义是否稳定、能否统一到 runtime 适配契约。
-4. **幂等约束**：进程脱离 + 可重连后，"最后一轮可能重复"是否影响 PR 提交、preview 等副作用；需要在 §5 契约里明确"副作用幂等"要求。
-5. **前端协议兼容**：`seq` + `attach?after=` 对现有 `docs/ApiClient.md` WS/SSE 协议的增量与向后兼容。
+原"待确认问题"已逐条拍板如下。每条给出**决策 + 理由 + 落地要点**。
+
+### Q1 — Transcript 存储上限与 GC → **两级存储 + 生命周期随会话**
+
+**决策**：transcript 分"热窗口 + 冷归档"两级，GC 挂在会话生命周期上，`seq` 永不复用。
+
+- **热窗口（盘上）**：`WORKSPACE_ROOT/.transcript/<sessionId>.ndjson` 只保留最近 `TRANSCRIPT_HOT_BYTES`（默认 **8MB**，够 UI 回放当前上下文）。超出部分滚动切段。
+- **冷归档（对象存储）**：滚出的旧段压缩后写对象存储，帧里/`session_streams.storage_ref` 记引用（复用现有 `storageRef` 习惯）。`readFrom(seq)` 命中冷段时透明回源。
+- **单帧过大**（如一次巨量 `exec` 输出）：内联超过 `FRAME_INLINE_MAX`（默认 **256KB**）的 `data` 离线为 `content_ref`，对齐 OC 的 `content_ref` 做法。
+- **GC / 保留期**：会话 `archived` 且超过 `TRANSCRIPT_RETENTION_DAYS`（默认 **30 天**）后清冷归档；热文件在会话 `exited/archived` 时即可裁到最小。state 目录跟随 workspace 生命周期回收，不单独 GC。
+- **计量**：`session_streams.bytes` 累计，用于配额与 GC 判定，无需扫文件。
+
+> 关键区分：**transcript 是给"人回放"的，不是恢复 Agent 语义的**。所以它可以激进 GC；Agent 能否续跑取决于 state 目录（Q3），二者解耦。
+
+### Q2 — Local 层进程脱离的具体形态 → **主路径走 blink/BoxLite，agent-host 仅兜底**
+
+**决策**：见 §5.2。主路径统一复用 **blink / BoxLite（libkrun）** 的本机 sandbox 形态，控制面经 blink 的 `WS /executions/{id}/attach` 重连；**不新增第四种执行形态**。纯本机无 `/dev/kvm` 时降级到常驻 `agent-host` 守护进程（独立生命周期 + unix socket 重连）。
+
+理由：仓库已有 `docs/BoxLite-Blink-Integration.md` 与蓝图构建的 blink-server，BoxLite sandbox 生命周期天然独立于控制面，正是"进程脱离"所需；让本特性与三层 Provider 演进合流，而非旁生一条。
+
+### Q3 — State 目录的通用性 → **runtime 声明契约 + 能力分级降级**
+
+**决策**：不假设所有 harness 都能 resume；把"状态在哪、怎么续"做成 **runtime 适配契约**，并按能力分级降级。
+
+- runtime 描述符新增两项：`stateDir`（Agent 自带状态目录，如 Claude `~/.claude/…`、Codex thread 目录）与 `resume(sessionRef)`（返回续跑 argv/参数，如 `claude --resume <id>`）。控制面不写死任何 harness 细节。
+- DB 存 `sessions.state_dir_ref` + 续跑令牌（session/thread id）。
+- **能力分级**（决定 `recoverable` 的真实含义）：
+  | 级别 | harness 能力 | 崩溃/重启后 |
+  |------|--------------|-------------|
+  | **L2 可续跑** | 有稳定 `stateDir` + resume（Claude Code / Codex） | 重连或 `--resume` 续跑，`recoverable=true` |
+  | **L1 仅回放** | 无 resume，但输出可记录 | transcript 完整回放给 UI，Agent 不续跑 → 会话降级**只读**，提示用户重开 |
+  | **L0 黑盒无状态** | 连稳定输出都无保证 | 等同现状，`recoverable=false` |
+- 引入某 harness 时在其 runtime 适配层声明级别；平台按级别决定恢复行为，**不因个别 harness 不支持而阻塞整体设计**。
+
+### Q4 — 幂等约束 → **"transcript 即记录，副作用可能重放"写入契约，关键副作用 get-or-create**
+
+**决策**：把"进程脱离 + reattach + 可能 `--resume` ⇒ 最后一轮可能重复执行"作为**显式契约**写进 §5，所有对外副作用必须幂等；P3 前置完成。
+
+- **提 PR**：`PullRequestService` 以 `(sessionId, sourceBranch)` 做 **get-or-create**，重复请求返回同一 PR，绝不开重复 PR（对齐 OC 的 `key` 语义）。
+- **Preview**：以 `(sessionId, port)` 幂等创建，命中则复用现有 `publicUrl`。
+- **Git push**：同 commit 重推天然幂等，无需额外处理。
+- **Transcript 自身**：`seq` 单调 + append-only + **单写者**（同一时刻只有一个 attach 在写），保证重放不会把日志写叉。
+- **原则**：把事件日志（transcript）当唯一记录，副作用设计成可重入；无法幂等的副作用不得放在"可能被重放"的turn 边界内。
+
+### Q5 — 前端协议兼容 → **纯增量、向后兼容，复用 EventSource 原生续传**
+
+**决策**：对 `docs/ApiClient.md` 的 WS/SSE 协议**只加不改**，老客户端零改动仍可用。
+
+- **下行帧加 `seq`**：`{type:"output"|"exit", seq, data}` 增加 `seq` 字段；老客户端忽略未知字段，行为不变。
+- **续传参数**：WS `GET /ws/v1/terminal?sessionId=…&after=<seq>`；SSE 每条事件带 `id: <seq>`，浏览器 `EventSource` 断线自动用 `Last-Event-ID` 续传，**无需前端手写游标逻辑**。
+- **兼容回退**：不带 `after` / 无 `Last-Event-ID` 时，服务端按现状整段 replay（§终端 `subscribeTerminal` 的现有行为），老 Web Console / Desktop 客户端无感。
+- **落地面**：改动集中在 `server/src/session/terminalBridge.js`、`server/src/server.js`（WS 路由）、`server/src/routes/terminalHttp.js`（SSE）；`docs/ApiClient.md` §5 同步补 `seq`/`after` 说明。
+
+---
+
+## 10. 决策一览（速查）
+
+| # | 主题 | 决策 |
+|---|------|------|
+| Q1 | Transcript 存储/GC | 热窗口 8MB 盘上 + 冷段离线对象存储；单帧 >256KB 走 `content_ref`；archived+30d GC；`seq` 不复用 |
+| Q2 | Local 进程脱离 | 主路径 blink/BoxLite(libkrun)，agent-host 仅无 KVM 兜底；不加第四种形态 |
+| Q3 | State 目录通用性 | runtime 声明 `stateDir`+`resume` 契约；L2 续跑 / L1 只读回放 / L0 现状 三级降级 |
+| Q4 | 幂等 | 契约化"副作用可能重放"；PR/Preview get-or-create；transcript 单写者 append-only；P3 前置 |
+| Q5 | 前端协议 | 纯增量：下行加 `seq` + `after=`/`Last-Event-ID`；不带则整段 replay，老客户端零改动 |
