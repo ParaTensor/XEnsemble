@@ -39,10 +39,13 @@ const { registerGitRoutes } = require('./routes/git');
 const { registerGitHubAppRoutes } = require('./routes/githubApp');
 const { LocalGitService } = require('./git/LocalGitService');
 const { applyTerminalMessage, subscribeTerminal } = require('./session/terminalBridge');
+const { resumeSession } = require('./session/resumeSession');
 const transcriptStore = require('./runtime/TranscriptStore');
 const unigateway = require('./gateway/unigatewayManager');
 const { registerGatewayAdminRoutes } = require('./gateway/adminProxy');
 const { deleteProjectForUser } = require('./projects/deleteProject');
+const { getAgentResume, getAgentResumeLevel } = require('./agents/agentResume');
+const { ensureSessionStateDir } = require('./session/stateDir');
 
 const runtime = getRuntime();
 
@@ -61,6 +64,15 @@ async function getProjectForUser(userId, projectId) {
         .where(eq(schema.projects.id, projectId));
     if (rows.length === 0 || rows[0].userId !== userId) return null;
     return rows[0];
+}
+
+function applyStateDirEnv(env, resumeSpec, stateDirPath) {
+    if (!resumeSpec?.stateEnv || !stateDirPath) return env;
+    if (env[resumeSpec.stateEnv]?.trim()) return env;
+    return {
+        ...env,
+        [resumeSpec.stateEnv]: stateDirPath,
+    };
 }
 
 const allowedOrigins = process.env.ALLOWED_ORIGINS
@@ -717,6 +729,123 @@ fastify.delete('/api/v1/sessions/:sessionId', { preValidation: [fastify.authenti
     return { ok: true };
 });
 
+fastify.post('/api/v1/sessions/:sessionId/resume', { preValidation: [fastify.authenticate] }, async (request, reply) => {
+    const { sessionId } = request.params;
+    const { terminal_theme_id } = request.body || {};
+
+    const rows = await db.select().from(schema.sessions)
+        .where(and(eq(schema.sessions.id, sessionId), eq(schema.sessions.userId, request.user.id)));
+    if (rows.length === 0) return reply.code(404).send({ error: 'Session not found' });
+
+    const session = rows[0];
+    if (sessionManager.isAlive(sessionId)) {
+        const live = sessionManager.getSession(sessionId);
+        return {
+            session_id: sessionId,
+            status: 'running',
+            runtime_id: session.runtimeId || null,
+            stream_ref: live?.streamRef || session.streamRef || null,
+            recoverable: Boolean(session.recoverable),
+            terminal_theme_id: terminal_theme_id || null,
+            spawn_env_preview: null,
+            state_dir_ref: session.stateDirRef || null,
+        };
+    }
+    if (session.status !== 'exited' && session.status !== 'idle') {
+        return reply.code(409).send({ error: 'session not resumable — please start a new session' });
+    }
+
+    const project = session.projectId ? await getProjectForUser(request.user.id, session.projectId) : null;
+    if (!project) return reply.code(404).send({ error: 'Project not found' });
+
+    const dbAgents = await db.select().from(schema.agents).where(eq(schema.agents.id, session.agentId));
+    if (dbAgents.length === 0) return reply.code(404).send({ error: 'Agent not found' });
+    const agentMeta = {
+        ...dbAgents[0],
+        args: JSON.parse(dbAgents[0].args),
+        env_required: JSON.parse(dbAgents[0].envRequired),
+    };
+    const resumeSpec = getAgentResume(agentMeta.id);
+    if (getAgentResumeLevel(agentMeta.id) !== 'L2' || !resumeSpec?.stateEnv || !session.stateDirRef || !session.recoverable) {
+        return reply.code(409).send({ error: 'session not resumable — please start a new session' });
+    }
+
+    let runtimeId;
+    let workspacePath;
+    try {
+        const ready = await ensureProjectRuntime(project, {
+            runtimeId: session.runtimeId || undefined,
+        });
+        runtimeId = ready.runtime.id;
+        workspacePath = ready.workspacePath;
+    } catch (err) {
+        if (err instanceof RuntimeError) {
+            return reply.code(err.statusCode).send({ error: err.message });
+        }
+        request.log.error(err);
+        return reply.code(500).send({ error: 'Project workspace directory is missing and could not be recreated' });
+    }
+
+    const authMode = await agentGatewayConfig.getAgentAuthMode(agentMeta.id);
+    let sessionToken = null;
+    if (authMode === 'gateway') {
+        const gwCfg = await agentGatewayConfig.getForAgent(agentMeta.id);
+        sessionToken = issueSessionToken({
+            sessionId,
+            userId: request.user.id,
+            projectId: project.id,
+            agentId: agentMeta.id,
+            model: gwCfg?.model,
+            role: request.user.role,
+        });
+    }
+
+    const { resolveSpawnEnv } = require('./agents/agentEnv');
+    const resolved = await resolveSpawnEnv({
+        userId: request.user.id,
+        agentId: agentMeta.id,
+        envRequired: agentMeta.env_required,
+        sessionToken,
+        projectId: project.id,
+        terminalThemeId: terminal_theme_id,
+        warn: (msg) => request.log.warn(msg),
+    });
+    if (!resolved.env) {
+        return reply.code(400).send({ error: resolved.error });
+    }
+
+    if (workspacePath && project.repoProvider === 'github') {
+        resolved.env.XENSEMBLE_GIT_BRANCH = project.currentBranch || '';
+        resolved.env.XENSEMBLE_GIT_BASE_BRANCH = project.repoDefaultBranch || '';
+        resolved.env.XENSEMBLE_REPO_URL = project.githubFullName || '';
+    }
+
+    const statePath = path.join(workspacePath, session.stateDirRef);
+    if (!fs.existsSync(statePath)) {
+        return reply.code(409).send({ error: 'session not resumable — please start a new session' });
+    }
+    resolved.env = applyStateDirEnv(resolved.env, resumeSpec, statePath);
+
+    const result = await resumeSession({
+        db,
+        schema,
+        sessionManager,
+        runtime,
+        project,
+        session,
+        agentMeta,
+        terminalThemeId: terminal_theme_id,
+        resolvedSpawnEnv: resolved,
+        requestLog: request.log,
+        fastifyLog: fastify.log,
+        ensureProjectRuntime,
+        issueSessionToken,
+        agentGatewayConfig,
+        requestUser: request.user,
+    });
+    return result;
+});
+
 // 启动 Agent Session（通过 RuntimeProvider + ExecAdapter）
 fastify.post('/api/v1/session/start', { preValidation: [fastify.authenticate] }, async (request, reply) => {
     const { agent_id, project_id, terminal_theme_id } = request.body;
@@ -735,13 +864,11 @@ fastify.post('/api/v1/session/start', { preValidation: [fastify.authenticate] },
 
     let workspacePath;
     let runtimeId;
-    let recoverable;
     let ready;
     try {
         ready = await ensureProjectRuntime(project);
         workspacePath = ready.workspacePath;
         runtimeId = ready.runtime.id;
-        recoverable = ready.recoverable;
     } catch (err) {
         if (err instanceof RuntimeError) {
             return reply.code(err.statusCode).send({ error: err.message });
@@ -757,6 +884,8 @@ fastify.post('/api/v1/session/start', { preValidation: [fastify.authenticate] },
         args: JSON.parse(dbAgents[0].args),
         env_required: JSON.parse(dbAgents[0].envRequired)
     };
+    const resumeSpec = getAgentResume(agentMeta.id);
+    const recoverable = getAgentResumeLevel(agentMeta.id) === 'L2';
 
     const sessionId = `sess_${crypto.randomBytes(8).toString('hex')}`;
 
@@ -788,6 +917,14 @@ fastify.post('/api/v1/session/start', { preValidation: [fastify.authenticate] },
         return reply.code(400).send({ error: resolved.error });
     }
 
+    const sessionStateDir = resumeSpec?.stateEnv ? ensureSessionStateDir(request.user.id, project_id, sessionId) : null;
+    if (resumeSpec?.stateEnv && !sessionStateDir) {
+        return reply.code(500).send({ error: 'Failed to prepare agent state directory' });
+    }
+    if (sessionStateDir) {
+        resolved.env = applyStateDirEnv(resolved.env, resumeSpec, sessionStateDir.stateDirPath);
+    }
+
     if (project && project.repoProvider === 'github') {
         resolved.env.XENSEMBLE_GIT_BRANCH = project.currentBranch || '';
         resolved.env.XENSEMBLE_GIT_BASE_BRANCH = project.repoDefaultBranch || '';
@@ -802,6 +939,7 @@ fastify.post('/api/v1/session/start', { preValidation: [fastify.authenticate] },
         agentId: agent_id,
         cwd: workspacePath,
         streamRef: null,
+        stateDirRef: sessionStateDir?.stateDirRef || null,
         recoverable,
         status: 'running',
         createdAt: Date.now(),
@@ -831,7 +969,7 @@ fastify.post('/api/v1/session/start', { preValidation: [fastify.authenticate] },
         return reply.code(500).send({ error: 'Failed to start agent session' });
     }
 
-    sessionManager.createSession(sessionId, handle, agent_id);
+    sessionManager.createSession(sessionId, handle, agent_id, { transcriptRef: handle.streamRef });
 
     sessionManager.onExit(sessionId, () => {
         db.update(schema.sessions)
@@ -862,6 +1000,7 @@ fastify.post('/api/v1/session/start', { preValidation: [fastify.authenticate] },
         recoverable,
         terminal_theme_id: resolved.terminal_theme_id,
         spawn_env_preview: resolved.spawn_env_preview,
+        state_dir_ref: sessionStateDir?.stateDirRef || null,
     };
 });
 
@@ -944,8 +1083,9 @@ fastify.register(async function terminalWsRoutes(app) {
                     const parsed = JSON.parse(raw);
                     if (parsed?.type === 'input' || parsed?.type === 'resize') {
                         const live = sessionManager.getSession(sessionId);
-                        if (live?.streamRef) {
-                            transcriptStore.append(live.streamRef, {
+                        const transcriptRef = live?.transcriptRef || live?.streamRef;
+                        if (transcriptRef) {
+                            transcriptStore.append(transcriptRef, {
                                 kind: parsed.type === 'input' ? 'in' : 'resize',
                                 data: parsed.type === 'input'
                                     ? parsed.data

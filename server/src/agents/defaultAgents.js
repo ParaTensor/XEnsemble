@@ -15,6 +15,11 @@ const DEFAULT_AGENTS = [
         cmd: 'claude',
         args: [],
         env_required: ['ANTHROPIC_API_KEY'],
+        resume: {
+            level: 'L2',
+            stateEnv: 'CLAUDE_CONFIG_DIR',
+            resumeArgs: ['--continue'],
+        },
     },
     {
         id: 'cursor',

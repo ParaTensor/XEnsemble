@@ -55,6 +55,7 @@ function subscribeTerminal(sessionId, send, options = {}) {
     }
 
     const { session, handle } = resolved;
+    const transcriptRef = session.transcriptRef || session.streamRef;
     const after = normalizeCursor(options.after);
     let lastSentSeq = after;
     let replaying = true;
@@ -111,8 +112,8 @@ function subscribeTerminal(sessionId, send, options = {}) {
     const maybeFinalizeExit = () => {
         if (cleaned || !pendingExit) return;
         const exitSeq = pendingExit.seq ?? 0;
-        if (session.streamRef && pendingExit.seq != null && lastSentSeq < exitSeq) {
-            const tail = transcriptStore.readFrom(session.streamRef, lastSentSeq);
+        if (transcriptRef && pendingExit.seq != null && lastSentSeq < exitSeq) {
+            const tail = transcriptStore.readFrom(transcriptRef, lastSentSeq);
             if (tail.length > 0) {
                 flushFrames(tail);
             }
@@ -130,11 +131,11 @@ function subscribeTerminal(sessionId, send, options = {}) {
     };
 
     const replayTranscript = async () => {
-        const transcriptFrames = session.streamRef ? transcriptStore.readFrom(session.streamRef, after) : [];
+        const transcriptFrames = transcriptRef ? transcriptStore.readFrom(transcriptRef, after) : [];
         if (transcriptFrames.length > 0) {
             flushFrames(transcriptFrames);
-        } else if (session.streamRef && !transcriptStore.hasTranscript(session.streamRef)) {
-            const scrollback = readScrollback(session.streamRef);
+        } else if (transcriptRef && !transcriptStore.hasTranscript(transcriptRef)) {
+            const scrollback = readScrollback(transcriptRef);
             if (scrollback) {
                 maybeSend({ type: 'output', data: scrollback });
             }

@@ -18,11 +18,13 @@ class SessionManager {
         this.sessions = new Map();
     }
 
-    createSession(sessionId, handle, agentId) {
+    createSession(sessionId, handle, agentId, options = {}) {
+        const transcriptRef = options.transcriptRef || handle?.transcriptRef || handle?.streamRef || null;
         const session = {
             handle,
             agentId,
             streamRef: handle?.streamRef || null,
+            transcriptRef,
             createdAt: Date.now(),
             history: '',
             status: 'running',
@@ -34,12 +36,12 @@ class SessionManager {
             titleTimeout: null,
         };
 
-        transcriptStore.bindSession(sessionId, session.streamRef);
-        session.history = this._loadInitialHistory(session.streamRef);
+        transcriptStore.bindSession(sessionId, session.transcriptRef);
+        session.history = this._loadInitialHistory(session.transcriptRef, session.streamRef);
 
         handle.onData((data) => {
-            const frame = session.streamRef
-                ? transcriptStore.append(session.streamRef, { kind: 'out', data })
+            const frame = session.transcriptRef
+                ? transcriptStore.append(session.transcriptRef, { kind: 'out', data })
                 : null;
             session.history += data;
             if (session.history.length > 100000) {
@@ -60,8 +62,8 @@ class SessionManager {
         handle.onExit(({ exitCode, signal }) => {
             session.status = 'exited';
             session.exitCode = exitCode ?? signal ?? null;
-            const exitFrame = session.streamRef
-                ? transcriptStore.append(session.streamRef, { kind: 'exit', data: { code: session.exitCode } })
+            const exitFrame = session.transcriptRef
+                ? transcriptStore.append(session.transcriptRef, { kind: 'exit', data: { code: session.exitCode } })
                 : null;
             session.exitSeq = exitFrame ? exitFrame.seq : null;
             this._maybeGenerateTitleOnExit(sessionId);
@@ -118,11 +120,17 @@ class SessionManager {
                     console.error(`Kill process error: ${e.message}`);
                 }
                 try {
-                    const sr = session.handle.streamRef;
-                    if (sr && typeof sr === 'string') {
-                        transcriptStore.remove(sr);
-                        if (sr.startsWith('local:')) {
-                            removeScrollback(sr);
+                    const transcriptRef = session.transcriptRef;
+                    if (transcriptRef && typeof transcriptRef === 'string') {
+                        transcriptStore.remove(transcriptRef);
+                    }
+                    const scrollbackRefs = new Set([
+                        session.handle.streamRef,
+                        transcriptRef,
+                    ]);
+                    for (const ref of scrollbackRefs) {
+                        if (ref && typeof ref === 'string' && ref.startsWith('local:')) {
+                            removeScrollback(ref);
                         }
                     }
                 } catch (e) {
@@ -133,17 +141,17 @@ class SessionManager {
         this.sessions.delete(sessionId);
     }
 
-    _loadInitialHistory(streamRef) {
-        if (!streamRef) return '';
-        const transcriptFrames = transcriptStore.readFrom(streamRef, 0);
+    _loadInitialHistory(transcriptRef, legacyStreamRef) {
+        if (!transcriptRef && !legacyStreamRef) return '';
+        const transcriptFrames = transcriptRef ? transcriptStore.readFrom(transcriptRef, 0) : [];
         if (transcriptFrames.length > 0) {
             return transcriptFrames
                 .filter((frame) => frame.kind === 'out' || frame.kind === 'in')
                 .map((frame) => (typeof frame.data === 'string' ? frame.data : ''))
                 .join('');
         }
-        if (typeof streamRef === 'string' && streamRef.startsWith('local:')) {
-            return readScrollback(streamRef);
+        if (typeof legacyStreamRef === 'string' && legacyStreamRef.startsWith('local:')) {
+            return readScrollback(legacyStreamRef);
         }
         return '';
     }
