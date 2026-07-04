@@ -282,7 +282,7 @@ flowchart LR
 |------|--------|------|---------------|
 | **P1** | `TranscriptStore` 替换 `LocalScrollbackBuffer`；WS/SSE 带 `seq` + `attach?after=` | **断线续传**、输入也入账、可完整回放 | ✅ 黑盒 |
 | **P2** | runtime 声明 state 目录；随 workspace 持久化；恢复走原生 resume | 会话语义可续跑 | ✅ 黑盒 |
-| **P3** | `StreamHandle.reattach`；`ReattachService` 替换"判死"逻辑；进程脱离控制面；**副作用幂等化（硬前置，见 §9-Q4）** | **控制面重启不丢会话** | ✅ 黑盒 |
+| **P3** | `StreamHandle.reattach`；`ReattachService` 替换"判死"逻辑；进程脱离控制面；**副作用幂等化（硬前置，见 §9-Q4）** | **控制面重启不丢会话**（XEnsemble 现按 transcript 中最后一轮 `rseq` 计算 blink reattach cursor，无单独 cursor 列） | ✅ 黑盒 |
 | **P4** | 空闲释放算力 + 消息唤醒（Local 弱、BoxLite/K8s 强） | 成本下降，对齐 OC 休眠模型 | ✅ 黑盒 |
 | **P5**（可选） | 对支持结构化输出的 harness（Claude Code `stream-json` / hooks、Codex）提取 `tool.call/message/turn.completed` | level 分层、webhook、精细 steer | ⚠️ 仅增强，不支持则 fallback P1 |
 
@@ -339,6 +339,8 @@ flowchart LR
   | **L1 仅回放** | 无 resume，但输出可记录 | transcript 完整回放给 UI，Agent 不续跑 → 会话降级**只读**，提示用户重开 |
   | **L0 黑盒无状态** | 连稳定输出都无保证 | 等同现状，`recoverable=false` |
 - 引入某 harness 时在其 runtime 适配层声明级别；平台按级别决定恢复行为，**不因个别 harness 不支持而阻塞整体设计**。
+
+> **实现备注（P3）**：对 blink/BoxLite 的 reattach cursor，不再使用独立的 throttle/cursor 列；XEnsemble 直接从 durable transcript 的当前执行段扫描 `out` 帧，取最后一个 `exit` 之后的最大 `rseq` 作为 `after=`。如果 transcript 里没有可用 `rseq`，则按非可恢复处理，保持当前行为。
 
 ### Q4 — 幂等约束 → **"transcript 即记录，副作用可能重放"写入契约，关键副作用 get-or-create**
 

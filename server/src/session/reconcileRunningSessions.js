@@ -24,9 +24,9 @@ function defaultProcessExists(pid) {
  * Reconcile sessions whose DB status is still 'running' but whose underlying
  * process is no longer alive (or cannot be verified). Local Runtime stores the
  * PTY pid inside stream_ref as `local:pty:<ts>_<rand>_<pid>`; if the pid is
- * dead, the row is stale. Rows without a verifiable stream_ref are also treated
- * as stale because the current LocalRuntimeProvider does not support
- * reattachment across server restarts.
+ * dead, the row is stale. BoxLite-backed `boxlite:` sessions are skipped here
+ * because boot recovery is responsible for reattaching them. Rows without a
+ * verifiable local stream_ref are treated as stale.
  *
  * @param {import('drizzle-orm/better-sqlite3').BetterSQLite3Database} db
  * @param {object} schema
@@ -43,6 +43,9 @@ async function reconcileRunningSessions(db, schema, opts = {}) {
 
     const staleIds = [];
     for (const row of running) {
+        if (typeof row.streamRef === 'string' && row.streamRef.startsWith('boxlite:')) {
+            continue;
+        }
         const pid = parseLocalPid(row.streamRef);
         const alive = pid != null && processExists(pid);
         if (!alive) {
