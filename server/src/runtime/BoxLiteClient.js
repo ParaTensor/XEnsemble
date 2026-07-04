@@ -96,6 +96,18 @@ class BoxLiteClient {
         await fetch(`${this.base}/api/sessions/${encodeURIComponent(name)}`, { method: 'DELETE' }).catch(() => {});
     }
 
+    async stopSession(name) {
+        if (!name) return;
+        const res = await fetch(`${this.base}/api/sessions/${encodeURIComponent(name)}/stop`, {
+            method: 'POST',
+        });
+        if (!res.ok) {
+            const t = await res.text().catch(() => '');
+            throw new Error(`stop session failed: ${res.status} ${t}`);
+        }
+        return res.json().catch(() => ({}));
+    }
+
     async spawn(sessionName, spec) {
         const res = await fetch(`${this.base}/api/sessions/${encodeURIComponent(sessionName)}/spawn`, {
             method: 'POST',

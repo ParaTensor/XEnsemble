@@ -7,21 +7,45 @@ function normalizeCursor(after) {
     return Number.isInteger(value) && value >= 0 ? value : 0;
 }
 
-function resolveLiveSession(sessionId) {
+async function resolveLiveSession(sessionId, options = {}) {
     const session = sessionManager.getSession(sessionId);
-    if (!session) {
+    if (session && sessionManager.isAlive(sessionId)) {
+        return { ok: true, session, handle: session.handle };
+    }
+
+    const sessionRecord = options.sessionRecord || session || null;
+    const canWake = typeof options.wakeSession === 'function';
+    const isIdle = sessionRecord?.status === 'idle' || session?.status === 'idle';
+    const recoverable = sessionRecord?.recoverable === true;
+
+    if (canWake && isIdle && recoverable) {
+        try {
+            await options.wakeSession(sessionRecord);
+        } catch (err) {
+            const errorMsg = err instanceof Error ? err.message : String(err);
+            return { ok: false, error: errorMsg || 'Failed to wake session' };
+        }
+        const revived = sessionManager.getSession(sessionId);
+        if (revived && sessionManager.isAlive(sessionId)) {
+            return { ok: true, session: revived, handle: revived.handle };
+        }
+        return {
+            ok: false,
+            error: 'Session wake failed. Please try again or restart the agent.',
+        };
+    }
+
+    if (!sessionRecord && !session) {
         return {
             ok: false,
             error: 'Session not found. The backend may have restarted — use Restart to reconnect.',
         };
     }
-    if (!sessionManager.isAlive(sessionId)) {
-        return {
-            ok: false,
-            error: 'This session has ended. Launch a new agent instead of reconnecting to an old one.',
-        };
-    }
-    return { ok: true, session, handle: session.handle };
+
+    return {
+        ok: false,
+        error: 'This session has ended. Launch a new agent instead of reconnecting to an old one.',
+    };
 }
 
 function applyTerminalMessage(handle, msg) {
@@ -47,8 +71,8 @@ function applyTerminalMessage(handle, msg) {
  * @param {(payload: object) => void} send
  * @returns {{ ok: boolean, cleanup: () => void, handle?: object }}
  */
-function subscribeTerminal(sessionId, send, options = {}) {
-    const resolved = resolveLiveSession(sessionId);
+async function subscribeTerminal(sessionId, send, options = {}) {
+    const resolved = await resolveLiveSession(sessionId, options);
     if (!resolved.ok) {
         send({ type: 'error', data: resolved.error });
         return { ok: false, cleanup: () => {} };
@@ -63,6 +87,7 @@ function subscribeTerminal(sessionId, send, options = {}) {
     let pendingExit = null;
     let replayComplete = false;
     const pendingLiveFrames = [];
+    let subscribed = false;
 
     const maybeSend = (payload) => {
         if (cleaned) return;
@@ -72,6 +97,10 @@ function subscribeTerminal(sessionId, send, options = {}) {
     const cleanup = () => {
         if (cleaned) return;
         cleaned = true;
+        if (subscribed) {
+            sessionManager.removeTerminalSubscriber(sessionId);
+            subscribed = false;
+        }
         offExit();
         offOutput();
         clearInterval(metricsInterval);
@@ -148,6 +177,9 @@ function subscribeTerminal(sessionId, send, options = {}) {
         drainPendingLive();
         maybeFinalizeExit();
     };
+
+    sessionManager.addTerminalSubscriber(sessionId);
+    subscribed = true;
 
     const offOutput = sessionManager.subscribeOutput(sessionId, (frame) => {
         if (cleaned) return;

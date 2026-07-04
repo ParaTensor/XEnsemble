@@ -41,6 +41,8 @@ const { registerGitHubAppRoutes } = require('./routes/githubApp');
 const { LocalGitService } = require('./git/LocalGitService');
 const { applyTerminalMessage, subscribeTerminal } = require('./session/terminalBridge');
 const { resumeSession } = require('./session/resumeSession');
+const { createIdleHibernateMonitor } = require('./session/idleHibernate');
+const { buildResumeSessionContext } = require('./session/resumeSessionContext');
 const transcriptStore = require('./runtime/TranscriptStore');
 const unigateway = require('./gateway/unigatewayManager');
 const { registerGatewayAdminRoutes } = require('./gateway/adminProxy');
@@ -756,96 +758,41 @@ fastify.post('/api/v1/sessions/:sessionId/resume', { preValidation: [fastify.aut
     if (session.status !== 'exited' && session.status !== 'idle') {
         return reply.code(409).send({ error: 'session not resumable — please start a new session' });
     }
-
-    const project = session.projectId ? await getProjectForUser(request.user.id, session.projectId) : null;
-    if (!project) return reply.code(404).send({ error: 'Project not found' });
-
-    const dbAgents = await db.select().from(schema.agents).where(eq(schema.agents.id, session.agentId));
-    if (dbAgents.length === 0) return reply.code(404).send({ error: 'Agent not found' });
-    const agentMeta = {
-        ...dbAgents[0],
-        args: JSON.parse(dbAgents[0].args),
-        env_required: JSON.parse(dbAgents[0].envRequired),
-    };
-    const resumeSpec = getAgentResume(agentMeta.id);
-    if (getAgentResumeLevel(agentMeta.id) !== 'L2' || !resumeSpec?.stateEnv || !session.stateDirRef || !session.recoverable) {
-        return reply.code(409).send({ error: 'session not resumable — please start a new session' });
-    }
-
-    let runtimeId;
-    let workspacePath;
     try {
-        const ready = await ensureProjectRuntime(project, {
-            runtimeId: session.runtimeId || undefined,
+        const resumeContext = await buildResumeSessionContext({
+            requestUser: request.user,
+            requestLog: request.log,
+            session,
+            terminalThemeId: terminal_theme_id,
+            db,
+            schema,
+            getProjectForUser,
+            agentGatewayConfig,
+            issueSessionToken,
         });
-        runtimeId = ready.runtime.id;
-        workspacePath = ready.workspacePath;
+        return await resumeSession({
+            db,
+            schema,
+            sessionManager,
+            runtime,
+            project: resumeContext.project,
+            session,
+            agentMeta: resumeContext.agentMeta,
+            terminalThemeId: resumeContext.terminalThemeId,
+            resolvedSpawnEnv: resumeContext.resolvedSpawnEnv,
+            requestLog: request.log,
+            fastifyLog: fastify.log,
+            ensureProjectRuntime,
+            issueSessionToken,
+            agentGatewayConfig,
+            requestUser: request.user,
+        });
     } catch (err) {
         if (err instanceof RuntimeError) {
             return reply.code(err.statusCode).send({ error: err.message });
         }
-        request.log.error(err);
-        return reply.code(500).send({ error: 'Project workspace directory is missing and could not be recreated' });
+        return reply.code(err.statusCode || 500).send({ error: err.message || 'Failed to resume session' });
     }
-
-    const authMode = await agentGatewayConfig.getAgentAuthMode(agentMeta.id);
-    let sessionToken = null;
-    if (authMode === 'gateway') {
-        const gwCfg = await agentGatewayConfig.getForAgent(agentMeta.id);
-        sessionToken = issueSessionToken({
-            sessionId,
-            userId: request.user.id,
-            projectId: project.id,
-            agentId: agentMeta.id,
-            model: gwCfg?.model,
-            role: request.user.role,
-        });
-    }
-
-    const { resolveSpawnEnv } = require('./agents/agentEnv');
-    const resolved = await resolveSpawnEnv({
-        userId: request.user.id,
-        agentId: agentMeta.id,
-        envRequired: agentMeta.env_required,
-        sessionToken,
-        projectId: project.id,
-        terminalThemeId: terminal_theme_id,
-        warn: (msg) => request.log.warn(msg),
-    });
-    if (!resolved.env) {
-        return reply.code(400).send({ error: resolved.error });
-    }
-
-    if (workspacePath && project.repoProvider === 'github') {
-        resolved.env.XENSEMBLE_GIT_BRANCH = project.currentBranch || '';
-        resolved.env.XENSEMBLE_GIT_BASE_BRANCH = project.repoDefaultBranch || '';
-        resolved.env.XENSEMBLE_REPO_URL = project.githubFullName || '';
-    }
-
-    const statePath = path.join(workspacePath, session.stateDirRef);
-    if (!fs.existsSync(statePath)) {
-        return reply.code(409).send({ error: 'session not resumable — please start a new session' });
-    }
-    resolved.env = applyStateDirEnv(resolved.env, resumeSpec, statePath);
-
-    const result = await resumeSession({
-        db,
-        schema,
-        sessionManager,
-        runtime,
-        project,
-        session,
-        agentMeta,
-        terminalThemeId: terminal_theme_id,
-        resolvedSpawnEnv: resolved,
-        requestLog: request.log,
-        fastifyLog: fastify.log,
-        ensureProjectRuntime,
-        issueSessionToken,
-        agentGatewayConfig,
-        requestUser: request.user,
-    });
-    return result;
 });
 
 // 启动 Agent Session（通过 RuntimeProvider + ExecAdapter）
@@ -971,7 +918,14 @@ fastify.post('/api/v1/session/start', { preValidation: [fastify.authenticate] },
         return reply.code(500).send({ error: 'Failed to start agent session' });
     }
 
-    sessionManager.createSession(sessionId, handle, agent_id, { transcriptRef: handle.streamRef });
+    sessionManager.createSession(sessionId, handle, agent_id, {
+        transcriptRef: handle.streamRef,
+        projectId: project_id,
+        runtimeId,
+        runtimeRef: ready.runtime ? ready.runtime.runtimeRef : undefined,
+        stateDirRef: sessionStateDir?.stateDirRef || null,
+        userId: request.user.id,
+    });
 
     sessionManager.onExit(sessionId, () => {
         db.update(schema.sessions)
@@ -1052,6 +1006,9 @@ fastify.register(async function terminalWsRoutes(app) {
                 ws.close();
                 return;
             }
+            const userRows = await db.select().from(schema.users)
+                .where(eq(schema.users.id, payload.id));
+            const wsUser = userRows[0] || { id: payload.id, role: 'user', status: 'active' };
 
             if (!sessionId) {
                 sendJson({ type: 'error', data: 'sessionId is required' });
@@ -1061,18 +1018,48 @@ fastify.register(async function terminalWsRoutes(app) {
 
             const sessionRows = await db.select().from(schema.sessions)
                 .where(and(eq(schema.sessions.id, sessionId), eq(schema.sessions.userId, payload.id)));
-            if (sessionRows.length === 0 || sessionRows[0].status !== 'running') {
+            if (sessionRows.length === 0) {
                 sendJson({ type: 'error', data: 'Session not found or not active' });
                 ws.close();
                 return;
             }
+            const sessionRecord = sessionRows[0];
+            const wakeSession = async (record = sessionRecord) => {
+                const resumeContext = await buildResumeSessionContext({
+                    requestUser: wsUser,
+                    requestLog: req.log,
+                    session: record,
+                    db,
+                    schema,
+                    getProjectForUser,
+                    agentGatewayConfig,
+                    issueSessionToken,
+                });
+                return resumeSession({
+                    db,
+                    schema,
+                    sessionManager,
+                    runtime,
+                    project: resumeContext.project,
+                    session: record,
+                    agentMeta: resumeContext.agentMeta,
+                    terminalThemeId: resumeContext.terminalThemeId,
+                    resolvedSpawnEnv: resumeContext.resolvedSpawnEnv,
+                    requestLog: req.log,
+                    fastifyLog: fastify.log,
+                    ensureProjectRuntime,
+                    issueSessionToken,
+                    agentGatewayConfig,
+                    requestUser: wsUser,
+                });
+            };
 
-            const sub = subscribeTerminal(sessionId, (payload) => {
+            const sub = await subscribeTerminal(sessionId, (payload) => {
                 sendJson(payload);
                 if (payload.type === 'exit' || payload.type === 'error') {
                     try { ws.close(); } catch (_) {}
                 }
-            }, { after });
+            }, { after, sessionRecord, wakeSession });
             if (!sub.ok) {
                 ws.close();
                 return;
@@ -1085,6 +1072,9 @@ fastify.register(async function terminalWsRoutes(app) {
                     const parsed = JSON.parse(raw);
                     if (parsed?.type === 'input' || parsed?.type === 'resize') {
                         const live = sessionManager.getSession(sessionId);
+                        if (parsed?.type === 'input') {
+                            sessionManager.touchActivity(sessionId, 'input');
+                        }
                         const transcriptRef = live?.transcriptRef || live?.streamRef;
                         if (transcriptRef) {
                             transcriptStore.append(transcriptRef, {
@@ -1472,6 +1462,20 @@ async function startServer() {
     } catch (err) {
         fastify.log.warn(err, '[sessions] failed to reconcile stale sessions');
     }
+
+    const idleHibernateMonitor = createIdleHibernateMonitor({
+        db,
+        schema,
+        runtime,
+        sessionManager,
+        fastifyLog: fastify.log,
+        idleThresholdMs: Number(process.env.SESSION_IDLE_HIBERNATE_MS || 1800000),
+        sweepIntervalMs: Number(process.env.SESSION_IDLE_SWEEP_MS || 60000),
+    });
+    idleHibernateMonitor.start();
+    fastify.addHook('onClose', async () => {
+        idleHibernateMonitor.stop();
+    });
 
     try {
         const sync = await userAdmin.syncInstalledAgentGrantsForAllUsers();

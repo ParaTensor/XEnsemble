@@ -2,9 +2,16 @@ const auth = require('../auth/index');
 const { db } = require('../db/index');
 const schema = require('../db/schema');
 const { eq } = require('drizzle-orm');
+const { getRuntime } = require('../runtime/registry');
+const { ensureProjectRuntime } = require('../runtime/RuntimeService');
+const agentGatewayConfig = require('../admin/AgentGatewayConfig');
+const { issueSessionToken } = require('../llm/sessionToken');
 const sessionManager = require('../session/SessionManager');
-const { applyTerminalMessage, subscribeTerminal } = require('../session/terminalBridge');
+const { applyTerminalMessage, subscribeTerminal, resolveLiveSession } = require('../session/terminalBridge');
+const { resumeSession } = require('../session/resumeSession');
+const { buildResumeSessionContext } = require('../session/resumeSessionContext');
 const transcriptStore = require('../runtime/TranscriptStore');
+const runtime = getRuntime();
 
 function extractAccessToken(request) {
     const authHeader = request.headers.authorization;
@@ -19,6 +26,42 @@ async function assertSessionOwner(userId, sessionId) {
     if (rows.length === 0) return { ok: false, status: 404, error: 'Session not found' };
     if (rows[0].userId !== userId) return { ok: false, status: 403, error: 'Forbidden' };
     return { ok: true };
+}
+
+async function getProjectForUser(userId, projectId) {
+    const rows = await db.select().from(schema.projects).where(eq(schema.projects.id, projectId));
+    if (rows.length === 0 || rows[0].userId !== userId) return null;
+    return rows[0];
+}
+
+async function wakeIdleSession({ requestUser, requestLog, sessionRecord }) {
+    const resumeContext = await buildResumeSessionContext({
+        requestUser,
+        requestLog,
+        session: sessionRecord,
+        db,
+        schema,
+        getProjectForUser,
+        agentGatewayConfig,
+        issueSessionToken,
+    });
+    return resumeSession({
+        db,
+        schema,
+        sessionManager,
+        runtime,
+        project: resumeContext.project,
+        session: sessionRecord,
+        agentMeta: resumeContext.agentMeta,
+        terminalThemeId: resumeContext.terminalThemeId,
+        resolvedSpawnEnv: resumeContext.resolvedSpawnEnv,
+        requestLog,
+        fastifyLog: requestLog,
+        ensureProjectRuntime,
+        issueSessionToken,
+        agentGatewayConfig,
+        requestUser,
+    });
 }
 
 async function authenticateTerminalRequest(request, reply) {
@@ -76,6 +119,9 @@ function registerTerminalHttpRoutes(fastify) {
             return reply.code(access.status).send({ error: access.error });
         }
 
+        const sessionRows = await db.select().from(schema.sessions).where(eq(schema.sessions.id, sessionId));
+        const sessionRecord = sessionRows[0] || null;
+
         reply.hijack();
         reply.raw.writeHead(200, {
             'Content-Type': 'text/event-stream',
@@ -101,7 +147,15 @@ function registerTerminalHttpRoutes(fastify) {
             writeSse(reply, payload);
         };
 
-        const sub = subscribeTerminal(sessionId, send, { after: Number.isFinite(after) ? after : 0 });
+        const sub = await subscribeTerminal(sessionId, send, {
+            after: Number.isFinite(after) ? after : 0,
+            sessionRecord,
+            wakeSession: sessionRecord ? () => wakeIdleSession({
+                requestUser: user,
+                requestLog: request.log,
+                sessionRecord,
+            }) : null,
+        });
         if (!sub.ok) {
             endStream();
             return;
@@ -125,13 +179,18 @@ function registerTerminalHttpRoutes(fastify) {
         const access = await assertSessionOwner(request.user.id, sessionId);
         if (!access.ok) return reply.code(access.status).send({ error: access.error });
 
-        if (!sessionManager.isAlive(sessionId)) {
-            return reply.code(409).send({ error: 'Session is not active' });
-        }
-
-        const live = sessionManager.getSession(sessionId);
-        if (!live?.handle) {
-            return reply.code(404).send({ error: 'Session handle not found' });
+        const sessionRows = await db.select().from(schema.sessions).where(eq(schema.sessions.id, sessionId));
+        const sessionRecord = sessionRows[0] || null;
+        const live = await resolveLiveSession(sessionId, {
+            sessionRecord,
+            wakeSession: sessionRecord ? () => wakeIdleSession({
+                requestUser: request.user,
+                requestLog: request.log,
+                sessionRecord,
+            }) : null,
+        });
+        if (!live.ok) {
+            return reply.code(live.error.includes('not found') ? 404 : 409).send({ error: live.error });
         }
 
         const transcriptKind = type === 'input' ? 'in' : type === 'resize' ? 'resize' : null;
@@ -143,6 +202,10 @@ function registerTerminalHttpRoutes(fastify) {
                     ? request.body?.data
                     : { cols: request.body?.cols, rows: request.body?.rows },
             });
+        }
+
+        if (type === 'input') {
+            sessionManager.touchActivity(sessionId, 'input');
         }
 
         applyTerminalMessage(live.handle, {

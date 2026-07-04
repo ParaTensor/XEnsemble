@@ -70,7 +70,17 @@ async function recoverRunningSessions({
             if (!handle || typeof handle.onData !== 'function' || typeof handle.onExit !== 'function') {
                 throw new Error('runtime attachSession did not return a stream handle');
             }
-            sessionManager.createSession(session.id, handle, session.agentId, { transcriptRef });
+            const runtimeRows = session.runtimeId
+                ? await db.select().from(schema.runtimes).where(eq(schema.runtimes.id, session.runtimeId))
+                : [];
+            sessionManager.createSession(session.id, handle, session.agentId, {
+                transcriptRef,
+                projectId: session.projectId || null,
+                runtimeId: session.runtimeId || null,
+                runtimeRef: runtimeRows[0]?.runtimeRef || session.runtimeId || null,
+                stateDirRef: session.stateDirRef || null,
+                userId: session.userId || null,
+            });
             await registerSessionLifecycle({
                 db,
                 schema,

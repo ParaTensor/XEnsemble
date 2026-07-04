@@ -21,8 +21,14 @@ class SessionManager {
     createSession(sessionId, handle, agentId, options = {}) {
         const transcriptRef = options.transcriptRef || handle?.transcriptRef || handle?.streamRef || null;
         const session = {
+            id: sessionId,
             handle,
             agentId,
+            projectId: options.projectId || null,
+            runtimeId: options.runtimeId || null,
+            runtimeRef: options.runtimeRef || null,
+            stateDirRef: options.stateDirRef || null,
+            userId: options.userId || null,
             streamRef: handle?.streamRef || null,
             transcriptRef,
             createdAt: Date.now(),
@@ -32,6 +38,12 @@ class SessionManager {
             exitSeq: null,
             exitListeners: new Set(),
             outputListeners: new Set(),
+            activeTerminalSubscribers: 0,
+            lastActivityAt: Date.now(),
+            lastOutputAt: null,
+            lastInputAt: null,
+            lastAttachAt: null,
+            hibernating: false,
             titleGenerated: false,
             titleTimeout: null,
         };
@@ -40,6 +52,9 @@ class SessionManager {
         session.history = this._loadInitialHistory(session.transcriptRef, session.streamRef);
 
         handle.onData((data, rseq) => {
+            const now = Date.now();
+            session.lastOutputAt = now;
+            session.lastActivityAt = now;
             const frame = session.transcriptRef
                 ? transcriptStore.append(session.transcriptRef, { kind: 'out', data, rseq })
                 : null;
@@ -60,6 +75,10 @@ class SessionManager {
         });
 
         handle.onExit(({ exitCode, signal }) => {
+            if (session.hibernating) {
+                session.handle = null;
+                return;
+            }
             session.status = 'exited';
             session.exitCode = exitCode ?? signal ?? null;
             const exitFrame = session.transcriptRef
@@ -80,6 +99,10 @@ class SessionManager {
 
     getSession(sessionId) {
         return this.sessions.get(sessionId);
+    }
+
+    listSessions() {
+        return [...this.sessions.values()];
     }
 
     isAlive(sessionId) {
@@ -106,6 +129,72 @@ class SessionManager {
         return () => session.outputListeners.delete(listener);
     }
 
+    touchActivity(sessionId, kind = 'activity', at = Date.now()) {
+        const session = this.sessions.get(sessionId);
+        if (!session) return null;
+        if (kind === 'input') {
+            session.lastInputAt = at;
+        } else if (kind === 'attach') {
+            session.lastAttachAt = at;
+        } else if (kind === 'output') {
+            session.lastOutputAt = at;
+        }
+        session.lastActivityAt = Math.max(
+            session.lastActivityAt || 0,
+            session.lastOutputAt || 0,
+            session.lastInputAt || 0,
+            session.lastAttachAt || 0,
+            at,
+        );
+        return session;
+    }
+
+    addTerminalSubscriber(sessionId) {
+        const session = this.sessions.get(sessionId);
+        if (!session) return null;
+        session.activeTerminalSubscribers = (session.activeTerminalSubscribers || 0) + 1;
+        this.touchActivity(sessionId, 'attach');
+        return session.activeTerminalSubscribers;
+    }
+
+    removeTerminalSubscriber(sessionId) {
+        const session = this.sessions.get(sessionId);
+        if (!session) return 0;
+        session.activeTerminalSubscribers = Math.max(0, (session.activeTerminalSubscribers || 0) - 1);
+        return session.activeTerminalSubscribers;
+    }
+
+    hasTerminalSubscribers(sessionId) {
+        const session = this.sessions.get(sessionId);
+        return Boolean(session && (session.activeTerminalSubscribers || 0) > 0);
+    }
+
+    beginHibernate(sessionId) {
+        const session = this.sessions.get(sessionId);
+        if (!session) return null;
+        session.hibernating = true;
+        return session;
+    }
+
+    completeHibernate(sessionId) {
+        const session = this.sessions.get(sessionId);
+        if (!session) return null;
+        session.status = 'idle';
+        session.handle = null;
+        session.exitListeners.clear();
+        session.outputListeners.clear();
+        session.activeTerminalSubscribers = 0;
+        return session;
+    }
+
+    cancelHibernate(sessionId) {
+        const session = this.sessions.get(sessionId);
+        if (!session) return null;
+        session.hibernating = false;
+        session.status = 'running';
+        return session;
+    }
+
     deleteSession(sessionId) {
         const session = this.sessions.get(sessionId);
         if (session) {
@@ -119,23 +208,24 @@ class SessionManager {
                 } catch (e) {
                     console.error(`Kill process error: ${e.message}`);
                 }
-                try {
-                    const transcriptRef = session.transcriptRef;
-                    if (transcriptRef && typeof transcriptRef === 'string') {
-                        transcriptStore.remove(transcriptRef);
-                    }
-                    const scrollbackRefs = new Set([
-                        session.handle.streamRef,
-                        transcriptRef,
-                    ]);
-                    for (const ref of scrollbackRefs) {
-                        if (ref && typeof ref === 'string' && ref.startsWith('local:')) {
-                            removeScrollback(ref);
-                        }
-                    }
-                } catch (e) {
-                    console.error(`Remove transcript error: ${e.message}`);
+            }
+            try {
+                const transcriptRef = session.transcriptRef;
+                if (transcriptRef && typeof transcriptRef === 'string') {
+                    transcriptStore.remove(transcriptRef);
                 }
+                const scrollbackRefs = new Set([
+                    session.handle?.streamRef,
+                    session.streamRef,
+                    transcriptRef,
+                ]);
+                for (const ref of scrollbackRefs) {
+                    if (ref && typeof ref === 'string' && ref.startsWith('local:')) {
+                        removeScrollback(ref);
+                    }
+                }
+            } catch (e) {
+                console.error(`Remove transcript error: ${e.message}`);
             }
         }
         this.sessions.delete(sessionId);
