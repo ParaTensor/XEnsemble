@@ -62,6 +62,11 @@ const DEFAULT_AGENTS = [
         cmd: 'droid',
         args: [],
         env_required: [],
+        resume: {
+            level: 'L2',
+            stateEnv: 'FACTORY_HOME_OVERRIDE',
+            resumeArgs: ['--resume'],
+        },
     },
     {
         id: 'glm-agent',
