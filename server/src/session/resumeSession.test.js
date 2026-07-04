@@ -6,11 +6,17 @@ const path = require('path');
 const { spawn } = require('child_process');
 const { eq } = require('drizzle-orm');
 
+// Route state dirs to a temp WORKSPACE_ROOT before workspace.js captures it, so
+// resolveSessionStateDir (used by both session/start and resume) resolves here.
+const WS_ROOT = fs.mkdtempSync(path.join(os.tmpdir(), 'xe-ws-root-'));
+process.env.WORKSPACE_ROOT = WS_ROOT;
+
 const { db } = require('../db/index');
 const schema = require('../db/schema');
 const sessionManager = require('./SessionManager');
 const transcriptStore = require('../runtime/TranscriptStore');
 const { resumeSession, registerSessionLifecycle } = require('./resumeSession');
+const { resolveSessionStateDir } = require('./stateDir');
 
 function makeTempDir() {
     return fs.mkdtempSync(path.join(os.tmpdir(), 'xe-resume-'));
@@ -82,11 +88,14 @@ test('resumeSession reuses state dir and continues transcript seqs', async () =>
     const userId = `usr_${Date.now()}_${Math.random().toString(16).slice(2)}`;
     const projectId = `proj_${Date.now()}_${Math.random().toString(16).slice(2)}`;
     const stateDirRef = path.join('.xensemble', 'state', sessionId);
-    const stateDirPath = path.join(projectDir, stateDirRef);
+    // Seed the state dir where resume now resolves it (WORKSPACE_ROOT-based,
+    // identical to session/start) rather than under the temp serverPath.
+    const { stateDirPath } = resolveSessionStateDir(userId, projectId, sessionId);
     const scriptPath = path.join(root, 'fake-agent.js');
     const markerPath = path.join(stateDirPath, 'resume-marker.txt');
 
     fs.mkdirSync(stateDirPath, { recursive: true });
+    fs.mkdirSync(projectDir, { recursive: true });
     fs.writeFileSync(scriptPath, `
         const fs = require('fs');
         const path = require('path');

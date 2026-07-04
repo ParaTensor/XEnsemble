@@ -1,6 +1,6 @@
 const fs = require('fs');
 const { eq } = require('drizzle-orm');
-const { resolveSafePath } = require('../workspace');
+const { resolveSessionStateDir } = require('./stateDir');
 const { getAgentResume, getAgentResumeLevel } = require('../agents/agentResume');
 
 const inFlightResumes = new Map();
@@ -92,7 +92,13 @@ async function resumeSession({
             runtimeId: session.runtimeId || undefined,
         });
 
-        const stateDirPath = resolveSafePath(project.serverPath || project.workspacePath || runtimeReady.workspacePath, session.stateDirRef);
+        // Resolve the state dir the same way session/start does
+        // (resolveSessionStateDir → projectDir), so the path is identical across
+        // start and resume. Deriving it from project.serverPath instead breaks
+        // under boxlite, where serverPath is the in-box '/workspace' path and the
+        // host existsSync check would always fail (session stuck idle, 409).
+        const stateDirResolved = resolveSessionStateDir(requestUser.id, project.id, session.id);
+        const stateDirPath = stateDirResolved?.stateDirPath || null;
         if (!stateDirPath || !fs.existsSync(stateDirPath)) {
             const error = new Error('session not resumable — please start a new session');
             error.statusCode = 409;
