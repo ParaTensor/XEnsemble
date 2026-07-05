@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 /**
  * 本地运维：列出用户、提升/降级管理员、重置密码、创建管理员。
+ * 通过 DATABASE_URL 连接 PostgreSQL（与后端相同）。
  *
  * 用法：
  *   node scripts/manage-user.js list

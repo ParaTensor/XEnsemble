@@ -2,13 +2,16 @@ const { describe, it, before, after } = require('node:test');
 const assert = require('node:assert/strict');
 const http = require('node:http');
 const fastify = require('fastify');
-const { registerLlmProxy } = require('./proxy');
 const { issueSessionToken } = require('./sessionToken');
 const unigateway = require('../gateway/unigatewayManager');
-const { db } = require('../db/index');
-const schema = require('../db/schema');
 const { eq } = require('drizzle-orm');
 const { resetLlmQuotaForTests } = require('./quota');
+const { bootstrapTestDb } = require('../test/db');
+
+let ctx;
+let db;
+let schema;
+let registerLlmProxy;
 
 const TEST_SESSION_ID = 'sess_proxy_models_test';
 const TEST_AGENT_ID = 'proxy-models-test';
@@ -29,6 +32,9 @@ describe('LLM proxy /v1/models', () => {
     const received = [];
 
     before(async () => {
+        ctx = await bootstrapTestDb(['../db/index', '../llm/proxy'], __dirname);
+        ({ db, schema } = ctx);
+        registerLlmProxy = ctx.reloaded['../llm/proxy'].registerLlmProxy;
         resetLlmQuotaForTests();
 
         // Stand up a stub UniGateway. The control plane no longer synthesizes
@@ -58,8 +64,19 @@ describe('LLM proxy /v1/models', () => {
         unigateway.ensureGatewaySecrets = () => ({ gatewayKey: 'test-gateway-key' });
 
         const users = await db.select().from(schema.users).limit(1);
-        assert.ok(users.length > 0, 'need at least one user in database');
-        testUserId = users[0].id;
+        if (users.length > 0) {
+            testUserId = users[0].id;
+        } else {
+            testUserId = 'usr_proxy_models_test';
+            await db.insert(schema.users).values({
+                id: testUserId,
+                username: 'proxy_models_test',
+                passwordHash: 'hash',
+                role: 'admin',
+                status: 'active',
+                createdAt: Date.now(),
+            });
+        }
 
         const cfgRows = await db
             .select()
@@ -105,9 +122,10 @@ describe('LLM proxy /v1/models', () => {
         }
         if (app) await app.close();
         if (stub) await new Promise((resolve) => stub.close(resolve));
+        if (ctx) await ctx.teardown();
     });
 
-    it('forwards /v1/models to the gateway and passes the catalog through', { timeout: 5000 }, async () => {
+    it('forwards /v1/models to the gateway and passes the catalog through', { timeout: 15000 }, async () => {
         const token = issueSessionToken({
             sessionId: TEST_SESSION_ID,
             userId: testUserId,

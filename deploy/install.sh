@@ -58,6 +58,15 @@ fi
 
 # Inject secrets from CI/GitHub Actions without committing them to the repo.
 set_env_value DEEPSEEK_API_KEY "${DEEPSEEK_API_KEY:-}" deploy/xensemble.env
+set_env_value DATABASE_URL "${DATABASE_URL:-}" deploy/xensemble.env
+set_env_value DATABASE_SSL "${DATABASE_SSL:-}" deploy/xensemble.env
+
+echo "==> Database migrations"
+set -a
+# shellcheck disable=SC1091
+source deploy/xensemble.env
+set +a
+(cd server && npm run db:migrate)
 
 if ! command -v systemctl >/dev/null 2>&1; then
   echo "==> No systemd on this host; skipping systemd/nginx. Start manually:"

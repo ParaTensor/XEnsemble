@@ -1,34 +1,31 @@
-const { describe, it, beforeEach } = require('node:test');
+const { describe, it, before, after, beforeEach } = require('node:test');
 const assert = require('node:assert/strict');
-const Database = require('better-sqlite3');
-const { drizzle } = require('drizzle-orm/better-sqlite3');
 const { eq } = require('drizzle-orm');
-const schema = require('../db/schema');
+const { bootstrapTestDb } = require('../test/db');
 const { reconcileRunningSessions } = require('./reconcileRunningSessions');
 
 describe('reconcileRunningSessions', () => {
-    let sqlite;
+    let ctx;
     let db;
+    let schema;
 
-    beforeEach(() => {
-        sqlite = new Database(':memory:');
-        sqlite.exec(`
-            CREATE TABLE sessions (
-                id TEXT PRIMARY KEY,
-                user_id TEXT NOT NULL,
-                project_id TEXT,
-                runtime_id TEXT,
-                agent_id TEXT NOT NULL,
-                cwd TEXT NOT NULL,
-                stream_ref TEXT,
-                state_dir_ref TEXT,
-                recoverable INTEGER DEFAULT 0,
-                status TEXT DEFAULT 'running',
-                title TEXT,
-                created_at INTEGER NOT NULL
-            );
-        `);
-        db = drizzle(sqlite);
+    before(async () => {
+        ctx = await bootstrapTestDb(['../db/schema'], __dirname, { seed: false });
+        ({ db, schema } = ctx);
+    });
+
+    after(async () => {
+        if (ctx) await ctx.teardown();
+    });
+
+    beforeEach(async () => {
+        await db.delete(schema.sessions);
+        await db.insert(schema.users).values({
+            id: 'u1',
+            username: 'reconcile_test_user',
+            passwordHash: 'hash',
+            createdAt: Date.now(),
+        }).onConflictDoNothing();
     });
 
     it('marks running sessions with dead local pids as exited', async () => {

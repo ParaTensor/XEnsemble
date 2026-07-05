@@ -1,17 +1,28 @@
 const { test, before, after } = require('node:test');
 const assert = require('node:assert');
-const auth = require('./index');
-const userAdmin = require('../admin/UserAdminService');
-const { db } = require('../db/index');
-const schema = require('../db/schema');
 const { eq } = require('drizzle-orm');
+const { bootstrapTestDb } = require('../test/db');
 
 const TEST_USERNAME = 'test_refresh_user';
 const TEST_PASSWORD = 'test-password-123';
 
+let ctx;
+let auth;
+let userAdmin;
+let db;
+let schema;
 let userId;
 
 before(async () => {
+    ctx = await bootstrapTestDb([
+        '../db/index',
+        '../admin/UserAdminService',
+        '../auth/index',
+    ], __dirname);
+    ({ db, schema } = ctx);
+    auth = ctx.reloaded['../auth/index'];
+    userAdmin = ctx.reloaded['../admin/UserAdminService'];
+
     const users = await db.select().from(schema.users).where(eq(schema.users.username, TEST_USERNAME));
     if (users.length > 0) {
         userId = users[0].id;
@@ -25,11 +36,13 @@ before(async () => {
 });
 
 after(async () => {
+    if (!db || !userId) return;
     await db.delete(schema.refreshTokens).where(eq(schema.refreshTokens.userId, userId));
     await db.delete(schema.userAgentGrants).where(eq(schema.userAgentGrants.userId, userId));
     await db.delete(schema.userQuotas).where(eq(schema.userQuotas.userId, userId));
     await db.delete(schema.events).where(eq(schema.events.userId, userId));
     await db.delete(schema.users).where(eq(schema.users.id, userId));
+    if (ctx) await ctx.teardown();
 });
 
 test('access token expires quickly', () => {
@@ -61,13 +74,11 @@ test('refresh token rotation invalidates old token', async () => {
 test('revoked or expired refresh token returns null', async () => {
     await userAdmin.revokeAllUserRefreshTokens(userId);
 
-    // Revoked token
     const revokedRaw = await userAdmin.createRefreshToken(userId, 'test-device');
     await userAdmin.revokeAllUserRefreshTokens(userId);
     const rotatedFromRevoked = await userAdmin.rotateRefreshToken(revokedRaw, userId, 'test-device');
     assert.strictEqual(rotatedFromRevoked, null, 'revoked token cannot be rotated');
 
-    // Expired token
     const expiredRaw = auth.generateRefreshTokenValue();
     const expiredHash = auth.hashToken(expiredRaw);
     await db.insert(schema.refreshTokens).values({

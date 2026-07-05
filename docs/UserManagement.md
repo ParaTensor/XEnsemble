@@ -394,13 +394,13 @@ Admin → PUT /admin/users/:id/quota
 | 运维 CLI | 已有用户库、忘记密码、需紧急提权（推荐） |
 | 管理台创建 | 已有 admin 登录后，在 **Users → Add User** 创建并设 `role=admin` |
 
-数据库文件：`server/data/emdash.db`（SQLite）。
+数据库：PostgreSQL（`DATABASE_URL`）。本地可用 `docker compose -f docker-compose.postgres.yml up -d` 启动，再执行 `npm run db:migrate`。
 
 密码要求：注册、改密、CLI 重置均至少 **8 位**。
 
 ## 15. 运维 CLI（`manage-user.js`）
 
-本地运维脚本，**直接读写 SQLite**，无需启动后端。在 `server/` 目录执行：
+本地运维脚本，通过 `DATABASE_URL` 连接 PostgreSQL，无需启动后端。在 `server/` 目录执行：
 
 ```bash
 cd server

@@ -107,14 +107,9 @@ L2. Adding an agent to L2 requires verifying, with its real CLI + key, both its
 state-dir redirect env var and its native resume flag. Backlog: Codex and
 others, each gated on credentials.
 
-## 8. Test suite: parallel runs share one sqlite DB **[open]**
+## 8. Test suite: parallel runs share one sqlite DB **[resolved]**
 
-`npm test` runs many `*.test.js` files in parallel (`node --test`) against a
-single on-disk `emdash.db`. Session/git suites then flake against each other
-(rows created/deleted concurrently), producing failures that vanish when a file
-is run alone — this actively obscured signal while verifying #29. Options: give
-each test file its own DB (temp file or `:memory:`), or run DB-touching suites
-serially. Low risk, high signal-to-noise payoff.
+Resolved by PostgreSQL migration: each DB-touching test file gets an isolated database via `server/src/test/db.js` (`setupTestDb` / `bootstrapTestDb`). See `docs/PostgreSQL-Migration.md` §5.2.
 
 ## 9. Hibernation for non-resumable (L0/L1) agents **[open]**
 

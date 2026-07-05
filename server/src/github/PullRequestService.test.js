@@ -1,11 +1,13 @@
 const { describe, it, before, after } = require('node:test');
 const assert = require('node:assert/strict');
 const { eq } = require('drizzle-orm');
+const { bootstrapTestDb } = require('../test/db');
 
-const { db } = require('../db/index');
-const schema = require('../db/schema');
-const userAdmin = require('../admin/UserAdminService');
-const { PullRequestService } = require('./PullRequestService');
+let ctx;
+let db;
+let schema;
+let userAdmin;
+let PullRequestService;
 
 function createMocks() {
     return {
@@ -63,6 +65,15 @@ describe('PullRequestService', { concurrency: false }, () => {
     let mocks;
 
     before(async () => {
+        ctx = await bootstrapTestDb([
+            '../db/index',
+            '../admin/UserAdminService',
+            '../github/PullRequestService',
+        ], __dirname);
+        ({ db, schema } = ctx);
+        userAdmin = ctx.reloaded['../admin/UserAdminService'];
+        ({ PullRequestService } = ctx.reloaded['../github/PullRequestService']);
+
         const suffix = Date.now();
         const user = await userAdmin.createUser(
             { username: `pr_user_${suffix}`, password: 'Password1!' },
@@ -98,6 +109,7 @@ describe('PullRequestService', { concurrency: false }, () => {
         await db.delete(schema.userQuotas).where(eq(schema.userQuotas.userId, userId));
         await db.delete(schema.userAgentGrants).where(eq(schema.userAgentGrants.userId, userId));
         await db.delete(schema.users).where(eq(schema.users.id, userId));
+        if (ctx) await ctx.teardown();
     });
 
     it('parseFullName validates owner/repo format', () => {

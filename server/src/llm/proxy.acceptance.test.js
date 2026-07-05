@@ -1,13 +1,16 @@
 const { describe, it, before, after } = require('node:test');
 const assert = require('node:assert/strict');
 const fastify = require('fastify');
-const { registerLlmProxy } = require('./proxy');
 const { issueSessionToken } = require('./sessionToken');
 const unigateway = require('../gateway/unigatewayManager');
-const { db } = require('../db/index');
-const schema = require('../db/schema');
 const { eq } = require('drizzle-orm');
 const { resetLlmQuotaForTests } = require('./quota');
+const { bootstrapTestDb } = require('../test/db');
+
+let ctx;
+let db;
+let schema;
+let registerLlmProxy;
 
 const RUN = process.env.RUN_LLM_ACCEPTANCE === '1';
 const TEST_SESSION_ID = 'sess_llm_acceptance_test';
@@ -18,13 +21,27 @@ describe('LLM proxy acceptance', { skip: !RUN }, () => {
     let testProjectId;
 
     before(async () => {
+        ctx = await bootstrapTestDb(['../db/index', '../llm/proxy'], __dirname);
+        ({ db, schema } = ctx);
+        registerLlmProxy = ctx.reloaded['../llm/proxy'].registerLlmProxy;
         resetLlmQuotaForTests();
         const status = await unigateway.start(console, { force: false });
         assert.ok(status.running, `UniGateway must be running: ${status.lastError || 'unknown'}`);
 
         const users = await db.select().from(schema.users).limit(1);
-        assert.ok(users.length > 0, 'need at least one user in database');
-        testUserId = users[0].id;
+        if (users.length > 0) {
+            testUserId = users[0].id;
+        } else {
+            testUserId = 'usr_llm_acceptance_test';
+            await db.insert(schema.users).values({
+                id: testUserId,
+                username: 'llm_acceptance_test',
+                passwordHash: 'hash',
+                role: 'admin',
+                status: 'active',
+                createdAt: Date.now(),
+            });
+        }
 
         const projects = await db.select().from(schema.projects)
             .where(eq(schema.projects.userId, testUserId))
@@ -32,10 +49,14 @@ describe('LLM proxy acceptance', { skip: !RUN }, () => {
         if (projects.length > 0) {
             testProjectId = projects[0].id;
         } else {
-            const anyProject = await db.select().from(schema.projects).limit(1);
-            assert.ok(anyProject.length > 0, 'need at least one project in database');
-            testProjectId = anyProject[0].id;
-            testUserId = anyProject[0].userId;
+            testProjectId = 'proj_llm_acceptance_test';
+            await db.insert(schema.projects).values({
+                id: testProjectId,
+                userId: testUserId,
+                name: 'Acceptance Project',
+                serverPath: '/tmp',
+                createdAt: Date.now(),
+            });
         }
 
         await db.delete(schema.sessions).where(eq(schema.sessions.id, TEST_SESSION_ID));
@@ -57,6 +78,7 @@ describe('LLM proxy acceptance', { skip: !RUN }, () => {
     after(async () => {
         await db.delete(schema.sessions).where(eq(schema.sessions.id, TEST_SESSION_ID));
         if (app) await app.close();
+        if (ctx) await ctx.teardown();
     });
 
     it('rejects unauthenticated LLM proxy requests', async () => {

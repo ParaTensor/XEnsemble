@@ -1,12 +1,10 @@
-const { test } = require('node:test');
+const { test, before, after } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const Database = require('better-sqlite3');
-const { drizzle } = require('drizzle-orm/better-sqlite3');
-const { sqliteTable, text, integer } = require('drizzle-orm/sqlite-core');
 const { eq } = require('drizzle-orm');
+const { bootstrapTestDb } = require('../test/db');
 
 const { TranscriptStore } = require('./TranscriptStore');
 
@@ -78,46 +76,38 @@ test('TranscriptStore derives reattach cursor from the current execution only', 
 
 test('TranscriptStore updates session_streams metadata on bind and exit', async () => {
     const root = makeTempRoot();
-    const sqlite = new Database(':memory:');
+    let ctx;
     try {
-        sqlite.exec(`
-            CREATE TABLE sessions (
-                id TEXT PRIMARY KEY
-            );
-            CREATE TABLE session_streams (
-                session_id TEXT PRIMARY KEY,
-                head_seq INTEGER NOT NULL DEFAULT 0,
-                bytes INTEGER NOT NULL DEFAULT 0,
-                storage_ref TEXT NOT NULL,
-                updated_at INTEGER NOT NULL
-            );
-        `);
-        const db = drizzle(sqlite);
-        const sessionStreams = sqliteTable('session_streams', {
-            sessionId: text('session_id').primaryKey(),
-            headSeq: integer('head_seq').notNull().default(0),
-            bytes: integer('bytes').notNull().default(0),
-            storageRef: text('storage_ref').notNull(),
-            updatedAt: integer('updated_at').notNull(),
-        });
+        ctx = await bootstrapTestDb(['../db/schema'], __dirname, { seed: false });
+        const { db, schema } = ctx;
+
+        await db.insert(schema.users).values({
+            id: 'u1',
+            username: 'transcript_test_user',
+            passwordHash: 'hash',
+            createdAt: Date.now(),
+        }).onConflictDoNothing();
+        await db.insert(schema.sessions).values({ id: 'sess_1', userId: 'u1', agentId: 'a1', cwd: '/tmp', createdAt: Date.now() });
 
         const store = new TranscriptStore({
             workspaceRoot: root,
             db,
-            schema: { sessionStreams },
+            schema: { sessionStreams: schema.sessionStreams },
         });
 
         store.bindSession('sess_1', 'local:pty:meta');
         store.append('local:pty:meta', { kind: 'out', data: 'hello' });
         store.append('local:pty:meta', { kind: 'exit', data: { code: 0 } });
 
-        const rows = await db.select().from(sessionStreams).where(eq(sessionStreams.sessionId, 'sess_1'));
+        await new Promise((resolve) => setTimeout(resolve, 50));
+
+        const rows = await db.select().from(schema.sessionStreams).where(eq(schema.sessionStreams.sessionId, 'sess_1'));
         assert.equal(rows.length, 1);
         assert.equal(rows[0].headSeq, 2);
         assert.equal(rows[0].storageRef, 'local:pty:meta');
         assert.equal(rows[0].bytes, 5 + Buffer.byteLength(JSON.stringify({ code: 0 })));
     } finally {
-        sqlite.close();
+        if (ctx) await ctx.teardown();
         cleanup(root);
     }
 });

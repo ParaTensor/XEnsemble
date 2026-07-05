@@ -90,14 +90,21 @@ async function getLlmAuthMode() {
     return mode === 'gateway' ? 'gateway' : 'byok';
 }
 
-async function seedDefaults(sqlite) {
-    const insert = sqlite.prepare('INSERT OR IGNORE INTO platform_settings (key, value) VALUES (?, ?)');
-    insert.run('llm_auth_mode', JSON.stringify(DEFAULTS.llm_auth_mode));
-    insert.run('registration_mode', JSON.stringify(DEFAULTS.registration_mode));
-    insert.run('default_user_quota', JSON.stringify(DEFAULTS.default_user_quota));
-    insert.run('session_ttl_hours', JSON.stringify(DEFAULTS.session_ttl_hours));
-    insert.run('default_terminal_theme_id', JSON.stringify(DEFAULTS.default_terminal_theme_id));
-    insert.run('disabled_terminal_theme_ids', JSON.stringify(DEFAULTS.disabled_terminal_theme_ids));
+async function seedDefaults(dbConn = db) {
+    const entries = [
+        ['llm_auth_mode', DEFAULTS.llm_auth_mode],
+        ['registration_mode', DEFAULTS.registration_mode],
+        ['default_user_quota', DEFAULTS.default_user_quota],
+        ['session_ttl_hours', DEFAULTS.session_ttl_hours],
+        ['default_terminal_theme_id', DEFAULTS.default_terminal_theme_id],
+        ['disabled_terminal_theme_ids', DEFAULTS.disabled_terminal_theme_ids],
+    ];
+    for (const [key, value] of entries) {
+        await dbConn.insert(schema.platformSettings).values({
+            key,
+            value: JSON.stringify(value),
+        }).onConflictDoNothing();
+    }
 }
 
 module.exports = {

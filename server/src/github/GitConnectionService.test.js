@@ -2,12 +2,14 @@ const crypto = require('crypto');
 const { describe, it, before, after } = require('node:test');
 const assert = require('node:assert/strict');
 const { eq, and, inArray } = require('drizzle-orm');
+const { bootstrapTestDb } = require('../test/db');
 
-const { db } = require('../db/index');
-const schema = require('../db/schema');
-const userAdmin = require('../admin/UserAdminService');
-const platformSettings = require('../admin/PlatformSettings');
-const { GitConnectionService } = require('./GitConnectionService');
+let ctx;
+let db;
+let schema;
+let userAdmin;
+let platformSettings;
+let GitConnectionService;
 
 describe('GitConnectionService', { concurrency: false }, () => {
     let userId;
@@ -15,6 +17,17 @@ describe('GitConnectionService', { concurrency: false }, () => {
     let service;
 
     before(async () => {
+        ctx = await bootstrapTestDb([
+            '../db/index',
+            '../admin/UserAdminService',
+            '../admin/PlatformSettings',
+            '../github/GitConnectionService',
+        ], __dirname);
+        ({ db, schema } = ctx);
+        userAdmin = ctx.reloaded['../admin/UserAdminService'];
+        platformSettings = ctx.reloaded['../admin/PlatformSettings'];
+        ({ GitConnectionService } = ctx.reloaded['../github/GitConnectionService']);
+
         await platformSettings.set('GITHUB_CLIENT_ID', 'test-client-id');
         await platformSettings.set('GITHUB_CALLBACK_URL', 'http://localhost/callback');
 
@@ -50,6 +63,7 @@ describe('GitConnectionService', { concurrency: false }, () => {
         await db.delete(schema.platformSettings).where(
             inArray(schema.platformSettings.key, ['GITHUB_CLIENT_ID', 'GITHUB_CALLBACK_URL']),
         );
+        if (ctx) await ctx.teardown();
     });
 
     function createService() {

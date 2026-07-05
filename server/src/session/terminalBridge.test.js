@@ -1,4 +1,4 @@
-const { test } = require('node:test');
+const { test, before, after } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('fs');
 const os = require('os');
@@ -7,14 +7,35 @@ const { eq } = require('drizzle-orm');
 
 const LocalFsAdapter = require('../runtime/LocalFsAdapter');
 const localFs = new LocalFsAdapter();
+const { bootstrapTestDb } = require('../test/db');
 
-const { db } = require('../db/index');
-const schema = require('../db/schema');
-const transcriptStore = require('../runtime/TranscriptStore');
-const sessionManager = require('./SessionManager');
-const { subscribeTerminal } = require('./terminalBridge');
-const { resumeSession } = require('./resumeSession');
+let ctx;
+let db;
+let schema;
+let transcriptStore;
+let sessionManager;
+let subscribeTerminal;
+let resumeSession;
 const { buildSessionStateDirRef } = require('./stateDirRef');
+
+before(async () => {
+    ctx = await bootstrapTestDb([
+        '../db/index',
+        '../runtime/TranscriptStore',
+        './resumeSession',
+        './terminalBridge',
+        './SessionManager',
+    ], __dirname);
+    ({ db, schema } = ctx);
+    transcriptStore = ctx.reloaded['../runtime/TranscriptStore'];
+    sessionManager = ctx.reloaded['./SessionManager'];
+    subscribeTerminal = ctx.reloaded['./terminalBridge'].subscribeTerminal;
+    resumeSession = ctx.reloaded['./resumeSession'].resumeSession;
+});
+
+after(async () => {
+    if (ctx) await ctx.teardown();
+});
 
 class FakeHandle {
     constructor(streamRef) {
@@ -105,6 +126,8 @@ test('subscribeTerminal replays from cursor and continues live without duplicate
         assert.ok(exit);
         assert.equal(exit.data, 0);
         assert.equal(exit.seq, 4);
+
+        await new Promise((resolve) => setTimeout(resolve, 50));
 
         const streamRows = await db.select().from(schema.sessionStreams).where(eq(schema.sessionStreams.sessionId, sessionId));
         assert.equal(streamRows.length, 1);

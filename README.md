@@ -10,11 +10,18 @@ agent run platform
 
 ## Local Runtime
 
-后端建议固定使用 Node 20 LTS。`node-pty` / `better-sqlite3` 都包含 native 模块，Node 24 下安装或构建可能卡住。
+后端建议固定使用 Node 20 LTS。`node-pty` 含 native 模块，Node 24 下安装或构建可能卡住。
+
+本地开发需 PostgreSQL。可用 Docker 一键启动：
+
+```bash
+docker compose -f docker-compose.postgres.yml up -d
+```
 
 ```bash
 nvm use
 cd server
 npm install
+npm run db:migrate
 npm run dev
 ```

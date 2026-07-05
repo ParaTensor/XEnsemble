@@ -1392,6 +1392,11 @@ fastify.get('/api/v1/workspace/file', { preValidation: [fastify.authenticate] },
 });
 
 async function startServer() {
+    const { runMigrations } = require('./db/migrate');
+    const { seedIfNeeded } = require('./db/seed');
+    await runMigrations(db);
+    await seedIfNeeded(db);
+
     unigateway.installShutdownHooks(fastify.log);
     const gatewaySettings = require('./admin/GatewaySettings');
     const gatewayConfig = await gatewaySettings.getConfig();

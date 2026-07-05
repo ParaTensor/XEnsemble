@@ -28,7 +28,7 @@ function defaultProcessExists(pid) {
  * because boot recovery is responsible for reattaching them. Rows without a
  * verifiable local stream_ref are treated as stale.
  *
- * @param {import('drizzle-orm/better-sqlite3').BetterSQLite3Database} db
+ * @param {import('drizzle-orm/postgres-js').PostgresJsDatabase} db
  * @param {object} schema
  * @param {{ processExists?: (pid: number) => boolean }} [opts]
  * @returns {Promise<{ reconciled: number, ids: string[] }>}

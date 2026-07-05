@@ -1,6 +1,16 @@
-const { sqliteTable, text, integer, unique, uniqueIndex, index } = require('drizzle-orm/sqlite-core');
+const {
+  pgTable,
+  text,
+  integer,
+  bigint,
+  boolean,
+  unique,
+  uniqueIndex,
+  index,
+  primaryKey,
+} = require('drizzle-orm/pg-core');
 
-const users = sqliteTable('users', {
+const users = pgTable('users', {
   id: text('id').primaryKey(),
   username: text('username').notNull().unique(),
   passwordHash: text('password_hash').notNull(),
@@ -8,12 +18,12 @@ const users = sqliteTable('users', {
   status: text('status').default('active'),
   email: text('email'),
   displayName: text('display_name'),
-  lastLoginAt: integer('last_login_at'),
-  createdAt: integer('created_at').notNull(),
-  updatedAt: integer('updated_at'),
+  lastLoginAt: bigint('last_login_at', { mode: 'number' }),
+  createdAt: bigint('created_at', { mode: 'number' }).notNull(),
+  updatedAt: bigint('updated_at', { mode: 'number' }),
 });
 
-const userQuotas = sqliteTable('user_quotas', {
+const userQuotas = pgTable('user_quotas', {
   userId: text('user_id').primaryKey().references(() => users.id),
   maxProjects: integer('max_projects').notNull().default(5),
   maxSessions: integer('max_sessions').notNull().default(2),
@@ -21,20 +31,20 @@ const userQuotas = sqliteTable('user_quotas', {
   maxRuntimes: integer('max_runtimes').notNull().default(1),
   resourceTier: text('resource_tier').notNull().default('basic'),
   updatedBy: text('updated_by').references(() => users.id),
-  updatedAt: integer('updated_at'),
+  updatedAt: bigint('updated_at', { mode: 'number' }),
 });
 
-const platformSettings = sqliteTable('platform_settings', {
+const platformSettings = pgTable('platform_settings', {
   key: text('key').primaryKey(),
   value: text('value').notNull(),
 });
 
-const secrets = sqliteTable('secrets', {
+const secrets = pgTable('secrets', {
   userId: text('user_id').primaryKey().references(() => users.id),
-  encryptedData: text('encrypted_data').notNull()
+  encryptedData: text('encrypted_data').notNull(),
 });
 
-const projects = sqliteTable('projects', {
+const projects = pgTable('projects', {
   id: text('id').primaryKey(),
   userId: text('user_id').notNull().references(() => users.id),
   name: text('name').notNull(),
@@ -56,56 +66,10 @@ const projects = sqliteTable('projects', {
   cloneError: text('clone_error'),
   remoteRepoId: text('remote_repo_id'),
   remoteFullName: text('remote_full_name'),
-  createdAt: integer('created_at').notNull()
+  createdAt: bigint('created_at', { mode: 'number' }).notNull(),
 });
 
-const sessions = sqliteTable('sessions', {
-  id: text('id').primaryKey(),
-  userId: text('user_id').notNull().references(() => users.id),
-  projectId: text('project_id').references(() => projects.id),
-  runtimeId: text('runtime_id').references(() => runtimes.id),
-  agentId: text('agent_id').notNull(),
-  cwd: text('cwd').notNull(),
-  streamRef: text('stream_ref'),
-  stateDirRef: text('state_dir_ref'),
-  recoverable: integer('recoverable', { mode: 'boolean' }).default(false),
-  status: text('status').default('running'),
-  title: text('title'),
-  createdAt: integer('created_at').notNull()
-});
-
-const sessionStreams = sqliteTable('session_streams', {
-  sessionId: text('session_id').primaryKey().references(() => sessions.id),
-  headSeq: integer('head_seq').notNull().default(0),
-  bytes: integer('bytes').notNull().default(0),
-  storageRef: text('storage_ref').notNull(),
-  updatedAt: integer('updated_at').notNull(),
-});
-
-const agents = sqliteTable('agents', {
-  id: text('id').primaryKey(),
-  name: text('name').notNull(),
-  cmd: text('cmd').notNull(),
-  args: text('args').notNull(),
-  envRequired: text('env_required').notNull()
-});
-
-const userPreferences = sqliteTable('user_preferences', {
-  userId: text('user_id').notNull().references(() => users.id),
-  key: text('key').notNull(),
-  value: text('value').notNull(),
-});
-
-const userAgentGrants = sqliteTable('user_agent_grants', {
-  userId: text('user_id').notNull().references(() => users.id),
-  agentId: text('agent_id').notNull().references(() => agents.id),
-  grantedBy: text('granted_by').references(() => users.id),
-  grantedAt: integer('granted_at').notNull(),
-});
-
-// ─── 新增表（对齐 Architecture.md 第 4 节） ───
-
-const runtimes = sqliteTable('runtimes', {
+const runtimes = pgTable('runtimes', {
   id: text('id').primaryKey(),
   projectId: text('project_id').notNull().references(() => projects.id),
   provider: text('provider').notNull().default('local'),
@@ -114,11 +78,59 @@ const runtimes = sqliteTable('runtimes', {
   status: text('status').default('ready'),
   endpoint: text('endpoint'),
   specs: text('specs'),
-  createdAt: integer('created_at').notNull(),
-  updatedAt: integer('updated_at').notNull()
+  createdAt: bigint('created_at', { mode: 'number' }).notNull(),
+  updatedAt: bigint('updated_at', { mode: 'number' }).notNull(),
 });
 
-const deployments = sqliteTable('deployments', {
+const sessions = pgTable('sessions', {
+  id: text('id').primaryKey(),
+  userId: text('user_id').notNull().references(() => users.id),
+  projectId: text('project_id').references(() => projects.id),
+  runtimeId: text('runtime_id').references(() => runtimes.id),
+  agentId: text('agent_id').notNull(),
+  cwd: text('cwd').notNull(),
+  streamRef: text('stream_ref'),
+  stateDirRef: text('state_dir_ref'),
+  recoverable: boolean('recoverable').default(false),
+  status: text('status').default('running'),
+  title: text('title'),
+  createdAt: bigint('created_at', { mode: 'number' }).notNull(),
+});
+
+const sessionStreams = pgTable('session_streams', {
+  sessionId: text('session_id').primaryKey().references(() => sessions.id, { onDelete: 'cascade' }),
+  headSeq: integer('head_seq').notNull().default(0),
+  bytes: integer('bytes').notNull().default(0),
+  storageRef: text('storage_ref').notNull(),
+  updatedAt: bigint('updated_at', { mode: 'number' }).notNull(),
+});
+
+const agents = pgTable('agents', {
+  id: text('id').primaryKey(),
+  name: text('name').notNull(),
+  cmd: text('cmd').notNull(),
+  args: text('args').notNull(),
+  envRequired: text('env_required').notNull(),
+});
+
+const userPreferences = pgTable('user_preferences', {
+  userId: text('user_id').notNull().references(() => users.id),
+  key: text('key').notNull(),
+  value: text('value').notNull(),
+}, (table) => ({
+  pk: primaryKey({ columns: [table.userId, table.key] }),
+}));
+
+const userAgentGrants = pgTable('user_agent_grants', {
+  userId: text('user_id').notNull().references(() => users.id),
+  agentId: text('agent_id').notNull().references(() => agents.id),
+  grantedBy: text('granted_by').references(() => users.id),
+  grantedAt: bigint('granted_at', { mode: 'number' }).notNull(),
+}, (table) => ({
+  pk: primaryKey({ columns: [table.userId, table.agentId] }),
+}));
+
+const deployments = pgTable('deployments', {
   id: text('id').primaryKey(),
   userId: text('user_id').notNull().references(() => users.id),
   projectId: text('project_id').notNull().references(() => projects.id),
@@ -129,9 +141,9 @@ const deployments = sqliteTable('deployments', {
   internalRef: text('internal_ref'),
   previewTokenHash: text('preview_token_hash'),
   revision: text('revision'),
-  expiresAt: integer('expires_at'),
-  createdAt: integer('created_at').notNull(),
-  updatedAt: integer('updated_at').notNull(),
+  expiresAt: bigint('expires_at', { mode: 'number' }),
+  createdAt: bigint('created_at', { mode: 'number' }).notNull(),
+  updatedAt: bigint('updated_at', { mode: 'number' }).notNull(),
   createdBy: text('created_by'),
   stoppedBy: text('stopped_by'),
   lastErrorCode: text('last_error_code'),
@@ -139,10 +151,10 @@ const deployments = sqliteTable('deployments', {
   resourceTier: text('resource_tier'),
   region: text('region'),
   buildLog: text('build_log'),
-  runtimeLog: text('runtime_log')
+  runtimeLog: text('runtime_log'),
 });
 
-const events = sqliteTable('events', {
+const events = pgTable('events', {
   id: text('id').primaryKey(),
   userId: text('user_id').references(() => users.id),
   projectId: text('project_id').references(() => projects.id),
@@ -150,19 +162,19 @@ const events = sqliteTable('events', {
   subjectId: text('subject_id').notNull(),
   type: text('type').notNull(),
   data: text('data'),
-  createdAt: integer('created_at').notNull()
+  createdAt: bigint('created_at', { mode: 'number' }).notNull(),
 });
 
-const devEnvironmentProfiles = sqliteTable('dev_environment_profiles', {
+const devEnvironmentProfiles = pgTable('dev_environment_profiles', {
   id: text('id').primaryKey(),
   projectId: text('project_id').notNull().references(() => projects.id),
   source: text('source').notNull().default('manual'),
   profileJson: text('profile_json').notNull(),
-  createdAt: integer('created_at').notNull(),
-  updatedAt: integer('updated_at').notNull()
+  createdAt: bigint('created_at', { mode: 'number' }).notNull(),
+  updatedAt: bigint('updated_at', { mode: 'number' }).notNull(),
 });
 
-const repoSnapshots = sqliteTable('repo_snapshots', {
+const repoSnapshots = pgTable('repo_snapshots', {
   id: text('id').primaryKey(),
   projectId: text('project_id').notNull().references(() => projects.id),
   gitSha: text('git_sha'),
@@ -171,12 +183,12 @@ const repoSnapshots = sqliteTable('repo_snapshots', {
   storageRef: text('storage_ref'),
   buildLog: text('build_log'),
   lastError: text('last_error'),
-  createdAt: integer('created_at').notNull(),
-  updatedAt: integer('updated_at').notNull(),
-  expiresAt: integer('expires_at')
+  createdAt: bigint('created_at', { mode: 'number' }).notNull(),
+  updatedAt: bigint('updated_at', { mode: 'number' }).notNull(),
+  expiresAt: bigint('expires_at', { mode: 'number' }),
 });
 
-const workspaceCheckpoints = sqliteTable('workspace_checkpoints', {
+const workspaceCheckpoints = pgTable('workspace_checkpoints', {
   id: text('id').primaryKey(),
   projectId: text('project_id').notNull().references(() => projects.id),
   sessionId: text('session_id').references(() => sessions.id),
@@ -186,21 +198,24 @@ const workspaceCheckpoints = sqliteTable('workspace_checkpoints', {
   diffRef: text('diff_ref'),
   gitSha: text('git_sha'),
   createdBy: text('created_by'),
-  createdAt: integer('created_at').notNull(),
-  expiresAt: integer('expires_at')
+  createdAt: bigint('created_at', { mode: 'number' }).notNull(),
+  expiresAt: bigint('expires_at', { mode: 'number' }),
 });
 
-const refreshTokens = sqliteTable('refresh_tokens', {
+const refreshTokens = pgTable('refresh_tokens', {
   id: text('id').primaryKey(),
   userId: text('user_id').notNull().references(() => users.id),
   tokenHash: text('token_hash').notNull().unique(),
   deviceName: text('device_name'),
-  createdAt: integer('created_at').notNull(),
-  expiresAt: integer('expires_at').notNull(),
-  revokedAt: integer('revoked_at'),
-});
+  createdAt: bigint('created_at', { mode: 'number' }).notNull(),
+  expiresAt: bigint('expires_at', { mode: 'number' }).notNull(),
+  revokedAt: bigint('revoked_at', { mode: 'number' }),
+}, (table) => ({
+  userIdx: index('idx_refresh_tokens_user').on(table.userId),
+  hashIdx: index('idx_refresh_tokens_hash').on(table.tokenHash),
+}));
 
-const githubConnections = sqliteTable('github_connections', {
+const githubConnections = pgTable('github_connections', {
   id: text('id').primaryKey(),
   userId: text('user_id').notNull().references(() => users.id),
   githubUserId: integer('github_user_id').notNull(),
@@ -208,37 +223,37 @@ const githubConnections = sqliteTable('github_connections', {
   githubAvatar: text('github_avatar'),
   accessTokenEnc: text('access_token_enc').notNull(),
   tokenScope: text('token_scope'),
-  connectedAt: integer('connected_at').notNull(),
-  lastUsedAt: integer('last_used_at'),
-  revokedAt: integer('revoked_at'),
+  connectedAt: bigint('connected_at', { mode: 'number' }).notNull(),
+  lastUsedAt: bigint('last_used_at', { mode: 'number' }),
+  revokedAt: bigint('revoked_at', { mode: 'number' }),
 }, (table) => ({
   idxGithubConnectionsUserId: uniqueIndex('idx_github_connections_user_id').on(table.userId),
 }));
 
-const githubOAuthStates = sqliteTable('github_oauth_states', {
+const githubOAuthStates = pgTable('github_oauth_states', {
   state: text('state').primaryKey(),
   userId: text('user_id').notNull(),
-  expiresAt: integer('expires_at').notNull(),
+  expiresAt: bigint('expires_at', { mode: 'number' }).notNull(),
 }, (table) => ({
   expiresIdx: index('idx_github_oauth_states_expires').on(table.expiresAt),
 }));
 
-const projectBranches = sqliteTable('project_branches', {
+const projectBranches = pgTable('project_branches', {
   id: text('id').primaryKey(),
   projectId: text('project_id').notNull().references(() => projects.id),
   branchName: text('branch_name').notNull(),
   baseBranch: text('base_branch'),
-  isActive: integer('is_active', { mode: 'boolean' }).default(false),
+  isActive: boolean('is_active').default(false),
   lastCommitSha: text('last_commit_sha'),
   aheadCount: integer('ahead_count').default(0),
   behindCount: integer('behind_count').default(0),
-  createdAt: integer('created_at').notNull(),
-  updatedAt: integer('updated_at').notNull(),
+  createdAt: bigint('created_at', { mode: 'number' }).notNull(),
+  updatedAt: bigint('updated_at', { mode: 'number' }).notNull(),
 }, (table) => ({
   unqProjectBranch: unique().on(table.projectId, table.branchName),
 }));
 
-const pullRequests = sqliteTable('pull_requests', {
+const pullRequests = pgTable('pull_requests', {
   id: text('id').primaryKey(),
   projectId: text('project_id').notNull().references(() => projects.id),
   githubPrNumber: integer('github_pr_number').notNull(),
@@ -251,16 +266,14 @@ const pullRequests = sqliteTable('pull_requests', {
   githubState: text('github_state'),
   mergeSha: text('merge_sha'),
   createdBy: text('created_by').references(() => users.id),
-  createdAt: integer('created_at').notNull(),
-  updatedAt: integer('updated_at').notNull(),
-  lastSyncedAt: integer('last_synced_at'),
+  createdAt: bigint('created_at', { mode: 'number' }).notNull(),
+  updatedAt: bigint('updated_at', { mode: 'number' }).notNull(),
+  lastSyncedAt: bigint('last_synced_at', { mode: 'number' }),
 }, (table) => ({
   unqProjectPr: unique().on(table.projectId, table.githubPrNumber),
 }));
 
-// ── Multi-provider Git tables (Phase 1.5) ──
-
-const gitConnections = sqliteTable('git_connections', {
+const gitConnections = pgTable('git_connections', {
   id: text('id').primaryKey(),
   userId: text('user_id').notNull().references(() => users.id),
   provider: text('provider').notNull(),
@@ -271,24 +284,24 @@ const gitConnections = sqliteTable('git_connections', {
   accessTokenEnc: text('access_token_enc').notNull(),
   refreshTokenEnc: text('refresh_token_enc'),
   tokenScope: text('token_scope'),
-  tokenExpiresAt: integer('token_expires_at'),
-  connectedAt: integer('connected_at').notNull(),
-  lastUsedAt: integer('last_used_at'),
-  revokedAt: integer('revoked_at'),
+  tokenExpiresAt: bigint('token_expires_at', { mode: 'number' }),
+  connectedAt: bigint('connected_at', { mode: 'number' }).notNull(),
+  lastUsedAt: bigint('last_used_at', { mode: 'number' }),
+  revokedAt: bigint('revoked_at', { mode: 'number' }),
 }, (table) => ({
   unqUserProvider: unique().on(table.userId, table.provider, table.providerConfig),
 }));
 
-const gitOAuthStates = sqliteTable('git_oauth_states', {
+const gitOAuthStates = pgTable('git_oauth_states', {
   state: text('state').primaryKey(),
   userId: text('user_id').notNull(),
   provider: text('provider').notNull(),
-  expiresAt: integer('expires_at').notNull(),
+  expiresAt: bigint('expires_at', { mode: 'number' }).notNull(),
 }, (table) => ({
   expiresIdx: index('idx_git_oauth_states_expires').on(table.expiresAt),
 }));
 
-const mergeRequests = sqliteTable('merge_requests', {
+const mergeRequests = pgTable('merge_requests', {
   id: text('id').primaryKey(),
   projectId: text('project_id').notNull().references(() => projects.id),
   provider: text('provider').notNull(),
@@ -302,27 +315,28 @@ const mergeRequests = sqliteTable('merge_requests', {
   remoteState: text('remote_state'),
   mergeSha: text('merge_sha'),
   createdBy: text('created_by').references(() => users.id),
-  createdAt: integer('created_at').notNull(),
-  updatedAt: integer('updated_at').notNull(),
-  lastSyncedAt: integer('last_synced_at'),
+  createdAt: bigint('created_at', { mode: 'number' }).notNull(),
+  updatedAt: bigint('updated_at', { mode: 'number' }).notNull(),
+  lastSyncedAt: bigint('last_synced_at', { mode: 'number' }),
 }, (table) => ({
   unqProjectProviderMr: unique().on(table.projectId, table.provider, table.remoteMrNumber),
 }));
 
-const agentBoxImages = sqliteTable('agent_box_images', {
+const agentBoxImages = pgTable('agent_box_images', {
   id: text('id').primaryKey(),
   agentId: text('agent_id').notNull().references(() => agents.id),
   imageRef: text('image_ref').notNull(),
   tag: text('tag').notNull(),
   digest: text('digest'),
   status: text('status').notNull().default('ready'),
-  isActive: integer('is_active', { mode: 'boolean' }).default(false),
-  builtAt: integer('built_at'),
+  isActive: boolean('is_active').default(false),
+  builtAt: bigint('built_at', { mode: 'number' }),
   notes: text('notes'),
   createdBy: text('created_by').references(() => users.id),
-  createdAt: integer('created_at').notNull(),
+  createdAt: bigint('created_at', { mode: 'number' }).notNull(),
 }, (table) => ({
   unqAgentTag: unique().on(table.agentId, table.tag),
+  agentActiveIdx: index('idx_agent_box_images_agent_active').on(table.agentId, table.isActive),
 }));
 
 module.exports = {

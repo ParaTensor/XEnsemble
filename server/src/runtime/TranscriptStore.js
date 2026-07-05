@@ -3,7 +3,6 @@ const path = require('path');
 const { eq } = require('drizzle-orm');
 
 const { WORKSPACE_ROOT } = require('../workspace');
-const defaultDb = require('../db/index').db;
 const schema = require('../db/schema');
 
 const VALID_KINDS = new Set(['out', 'in', 'resize', 'exit']);
@@ -30,7 +29,7 @@ function bytesFor(kind, data) {
 class TranscriptStore {
     constructor(options = {}) {
         this.workspaceRoot = options.workspaceRoot || WORKSPACE_ROOT;
-        this.db = options.db === undefined ? defaultDb : options.db;
+        this.db = options.db === undefined ? require('../db/index').db : options.db;
         this.schema = options.schema || schema;
         this.states = new Map();
     }
@@ -204,13 +203,9 @@ class TranscriptStore {
             }
         }
         if (state?.sessionId && this.db?.delete && this.schema?.sessionStreams) {
-            try {
-                this.db.delete(this.schema.sessionStreams)
-                    .where(eq(this.schema.sessionStreams.sessionId, state.sessionId))
-                    .run();
-            } catch (_) {
-                // ignore best-effort metadata cleanup
-            }
+            void this.db.delete(this.schema.sessionStreams)
+                .where(eq(this.schema.sessionStreams.sessionId, state.sessionId))
+                .catch(() => {});
         }
         this.states.delete(streamRef);
     }
@@ -260,11 +255,9 @@ class TranscriptStore {
                     updatedAt: payload.updatedAt,
                 },
             });
-        try {
-            query.run();
-        } catch (err) {
+        void query.catch((err) => {
             console.error(`Transcript meta write failed: ${err.message}`);
-        }
+        });
     }
 }
 

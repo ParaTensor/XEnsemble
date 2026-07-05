@@ -17,12 +17,14 @@ jobs:
         uses: appleboy/ssh-action@v1.2.0
         env:
           DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          DATABASE_SSL: ${{ secrets.DATABASE_SSL }}
         with:
           host: ${{ secrets.DEPLOY_HOST }}
           username: ${{ secrets.DEPLOY_USER }}
           key: ${{ secrets.DEPLOY_SSH_KEY }}
           port: ${{ secrets.DEPLOY_PORT }}
-          envs: DEEPSEEK_API_KEY
+          envs: DEEPSEEK_API_KEY,DATABASE_URL,DATABASE_SSL
           script_stop: true
           script: |
             set -euo pipefail

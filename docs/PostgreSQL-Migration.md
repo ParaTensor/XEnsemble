@@ -1,6 +1,6 @@
 # PostgreSQL 迁移设计
 
-> **状态**：设计稿（待实施 PR）  
+> **状态**：已实施（main）  
 > **对齐**：`docs/Architecture.md` Phase 2 §「支持 PostgreSQL」、`docs/DurableSessions-Followups.md` §8  
 > **目标**：移除 `better-sqlite3` 与 `server/data/emdash.db`，服务端持久化统一为 PostgreSQL。
 

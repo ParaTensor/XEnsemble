@@ -1,12 +1,32 @@
-const { test } = require('node:test');
+const { test, before, after } = require('node:test');
 const assert = require('node:assert/strict');
 const { eq } = require('drizzle-orm');
 
-const schema = require('../db/schema');
-const { db } = require('../db/index');
-const sessionManager = require('./SessionManager');
-const transcriptStore = require('../runtime/TranscriptStore');
-const { recoverRunningSessions } = require('./recoverRunningSessions');
+const { bootstrapTestDb } = require('../test/db');
+
+let ctx;
+let db;
+let schema;
+let sessionManager;
+let transcriptStore;
+let recoverRunningSessions;
+
+before(async () => {
+    ctx = await bootstrapTestDb([
+        '../db/index',
+        '../runtime/TranscriptStore',
+        './SessionManager',
+        './recoverRunningSessions',
+    ], __dirname);
+    ({ db, schema } = ctx);
+    sessionManager = ctx.reloaded['./SessionManager'];
+    transcriptStore = ctx.reloaded['../runtime/TranscriptStore'];
+    recoverRunningSessions = ctx.reloaded['./recoverRunningSessions'].recoverRunningSessions;
+});
+
+after(async () => {
+    if (ctx) await ctx.teardown();
+});
 
 function uniqueId(prefix) {
     return `${prefix}_${Date.now()}_${Math.random().toString(16).slice(2)}`;

@@ -1,12 +1,31 @@
-const { test } = require('node:test');
+const { test, before, after } = require('node:test');
 const assert = require('node:assert/strict');
 
 const { eq } = require('drizzle-orm');
+const { bootstrapTestDb } = require('../test/db');
 
-const { db } = require('../db/index');
-const schema = require('../db/schema');
-const sessionManager = require('./SessionManager');
-const { shouldHibernateSession, hibernateSession } = require('./idleHibernate');
+let ctx;
+let db;
+let schema;
+let sessionManager;
+let hibernateSession;
+let shouldHibernateSession;
+
+before(async () => {
+    ctx = await bootstrapTestDb([
+        '../db/index',
+        '../runtime/TranscriptStore',
+        './SessionManager',
+        './idleHibernate',
+    ], __dirname);
+    ({ db, schema } = ctx);
+    sessionManager = ctx.reloaded['./SessionManager'];
+    ({ hibernateSession, shouldHibernateSession } = ctx.reloaded['./idleHibernate']);
+});
+
+after(async () => {
+    if (ctx) await ctx.teardown();
+});
 
 class FakeHandle {
     constructor(streamRef) {

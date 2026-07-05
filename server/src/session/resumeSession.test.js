@@ -1,4 +1,4 @@
-const { test } = require('node:test');
+const { test, before, after } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('fs');
 const os = require('os');
@@ -8,13 +8,33 @@ const { eq } = require('drizzle-orm');
 
 const LocalFsAdapter = require('../runtime/LocalFsAdapter');
 const localFs = new LocalFsAdapter();
+const { bootstrapTestDb } = require('../test/db');
 
-const { db } = require('../db/index');
-const schema = require('../db/schema');
-const sessionManager = require('./SessionManager');
-const transcriptStore = require('../runtime/TranscriptStore');
-const { resumeSession, registerSessionLifecycle } = require('./resumeSession');
+let ctx;
+let db;
+let schema;
+let sessionManager;
+let transcriptStore;
+let resumeSession;
+let registerSessionLifecycle;
 const { buildSessionStateDirRef } = require('./stateDirRef');
+
+before(async () => {
+    ctx = await bootstrapTestDb([
+        '../db/index',
+        '../runtime/TranscriptStore',
+        './resumeSession',
+        './SessionManager',
+    ], __dirname);
+    ({ db, schema } = ctx);
+    sessionManager = ctx.reloaded['./SessionManager'];
+    transcriptStore = ctx.reloaded['../runtime/TranscriptStore'];
+    ({ resumeSession, registerSessionLifecycle } = ctx.reloaded['./resumeSession']);
+});
+
+after(async () => {
+    if (ctx) await ctx.teardown();
+});
 
 function makeTempDir() {
     return fs.mkdtempSync(path.join(os.tmpdir(), 'xe-resume-'));
