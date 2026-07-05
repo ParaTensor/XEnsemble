@@ -30,6 +30,7 @@ describe('agentBootstrap', () => {
         fs.mkdirSync(ws, { recursive: true });
         seedAgentWorkspaceFiles(ws);
         assert.ok(fs.existsSync(path.join(ws, '.agents', 'setup')));
+        assert.ok(fs.existsSync(path.join(ws, '.agents', 'resume')));
         assert.ok(fs.existsSync(path.join(ws, '.agents', 'AGENTS.md')));
         assert.ok(fs.existsSync(path.join(ws, '.agents', 'preview.json')));
         assert.ok(fs.existsSync(path.join(ws, 'index.html')));

@@ -7,6 +7,7 @@ const policy = require('../auth/PolicyService');
 const unigateway = require('../gateway/unigatewayManager');
 const { resolveSpawnEnv, findMissing } = require('../agents/agentEnv');
 const { readSetupStatus } = require('./agentBootstrap');
+const { readResumeStatus } = require('./agentResumeHook');
 const { getPreviewPort } = require('./previewPorts');
 const { projectDir } = require('../workspace');
 
@@ -27,6 +28,9 @@ function collectHints(checks) {
     if (checks.gateway?.ok === false) hints.push(checks.gateway.message || 'Start or configure UniGateway.');
     if (checks.llm_router?.ok === false) hints.push(checks.llm_router.message || 'Configure LLM router URL/key.');
     if (checks.workspace_setup?.ok === false) hints.push(checks.workspace_setup.message || 'Run .agents/setup or POST /agents/setup.');
+    if (checks.workspace_resume?.ok === false && checks.workspace_resume.message) {
+        hints.push(checks.workspace_resume.message);
+    }
     if (checks.preview?.ok === false && checks.preview.message) hints.push(checks.preview.message);
     if (checks.quota?.ok === false && checks.quota.message) hints.push(checks.quota.message);
     return hints;
@@ -129,6 +133,29 @@ function checkWorkspaceSetup(project, workspacePath) {
     });
 }
 
+function checkWorkspaceResume(workspacePath) {
+    const status = readResumeStatus(workspacePath);
+    if (!status) {
+        return checkOk({
+            skipped: true,
+            reason: 'no_wake_yet',
+            run: 'POST /api/v1/projects/:id/agents/resume',
+        });
+    }
+    if (status.status === 'failed') {
+        return checkFail('Workspace resume failed', {
+            exit_code: status.exit_code,
+            log_tail: status.log_tail,
+        });
+    }
+    return checkOk({
+        status: status.status,
+        session_id: status.session_id || null,
+        preview: status.preview || null,
+        finished_at: status.finished_at || null,
+    });
+}
+
 async function checkQuota(user) {
     if (user.role === 'admin') {
         return checkOk({ admin: true });
@@ -187,6 +214,7 @@ async function buildPreflightReport({ user, project, agentId = null, workspacePa
         preview: await checkPreview(project.id, user.id, wsPath),
         quota: await checkQuota(user),
         workspace_setup: checkWorkspaceSetup(project, wsPath),
+        workspace_resume: checkWorkspaceResume(wsPath),
     };
 
     if (fs.existsSync(wsPath)) {
@@ -207,6 +235,7 @@ async function buildPreflightReport({ user, project, agentId = null, workspacePa
         hints,
         endpoints: {
             setup: `/api/v1/projects/${project.id}/agents/setup`,
+            resume: `/api/v1/projects/${project.id}/agents/resume`,
             ensure_preview: `/api/v1/projects/${project.id}/agents/ensure-preview`,
             preflight: `/api/v1/projects/${project.id}/preflight`,
             agent_log: `/api/v1/projects/${project.id}/agents/log`,

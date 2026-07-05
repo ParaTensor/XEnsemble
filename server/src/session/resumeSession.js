@@ -94,6 +94,21 @@ async function resumeSession({
 
         const workspacePath = runtimeReady.workspacePath;
         const runtimeRef = runtimeReady.runtime ? runtimeReady.runtime.runtimeRef : undefined;
+
+        try {
+            const { ensureAgentResume } = require('../workspace/agentResumeHook');
+            await ensureAgentResume(project, workspacePath, {
+                sessionId: session.id,
+                onWake: true,
+            });
+        } catch (err) {
+            if (fastifyLog?.warn) {
+                fastifyLog.warn(err, '[sessions] workspace resume hook failed');
+            } else if (requestLog?.warn) {
+                requestLog.warn(err, '[sessions] workspace resume hook failed');
+            }
+        }
+
         const stateDirResolved = runtime.fs.resolveStateDir(workspacePath, session.id);
         const stateDirPath = stateDirResolved?.stateDirPath || null;
         const stateExists = stateDirPath && session.stateDirRef && await sessionStateDirExists(runtime.fs, {

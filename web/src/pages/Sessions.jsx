@@ -699,7 +699,7 @@ export default React.forwardRef(function Sessions({
             {launchModalMode === 'workspace' && (
               <div>
                 <label className={`block text-xs font-semibold uppercase tracking-wider ${textPlaceholder} mb-1`}>Workspace name</label>
-                <input type="text" value={newProjectName} onChange={e => setNewProjectName(e.target.value)} placeholder="my-workspace" className={consoleInputClass} />
+                <input type="text" value={newProjectName} onChange={e => setNewProjectName(e.target.value)} placeholder="my-workspace" className={consoleInputClass} autoFocus />
               </div>
             )}
             {(launchModalMode === 'quickstart' || launchModalMode === 'session') && (
@@ -727,6 +727,7 @@ export default React.forwardRef(function Sessions({
                     onChange={e => setNewProjectName(e.target.value)}
                     placeholder={launchModalMode === 'quickstart' ? 'Optional — auto-generated if empty' : 'my-workspace'}
                     className={consoleInputClass}
+                    autoFocus
                   />
                 ) : (
                   <SelectMenu

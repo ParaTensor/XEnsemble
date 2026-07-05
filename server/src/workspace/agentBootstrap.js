@@ -12,6 +12,7 @@ const AGENTS_DIR = '.agents';
 const SETUP_SCRIPT = 'setup';
 const SETUP_STATUS_FILE = 'setup-status.json';
 const AGENTS_MD_FILE = 'AGENTS.md';
+const AGENTS_MD_VERSION = 2;
 const SETUP_TIMEOUT_MS = Number(process.env.AGENT_SETUP_TIMEOUT_MS || 600000);
 const LOG_TAIL_MAX = 8000;
 
@@ -21,31 +22,49 @@ set -euo pipefail
 echo "[xensemble] workspace setup complete"
 `;
 
-const DEFAULT_AGENTS_MD = `# XEnsemble workspace
+function renderAgentsMd() {
+    return `<!-- xensemble-agents-md v${AGENTS_MD_VERSION} -->
+# XEnsemble workspace
 
-This directory is managed by XEnsemble. Agents should not guess ports, login, or setup state.
+This directory is managed by XEnsemble. Agents should not guess ports, login, setup state, or wake recovery.
 
-## Bootstrap
+## Sandbox
 
-- Run \`.agents/setup\` (idempotent) or call \`POST /api/v1/projects/:id/agents/setup\`.
-- Read \`.agents/setup-status.json\` for the last run result and snapshot id.
+- Workspace root is your project files; \`.agents/\` holds platform hooks and metadata.
+- Install extra tools with \`apt-get\` (BoxLite) or your stack's package manager when the runtime allows it.
+- Session terminal I/O is persisted server-side as NDJSON under \`.transcript/\` (read-only from agent POV).
+
+## Bootstrap (first run)
+
+- Script: \`.agents/setup\` (idempotent)
+- API: \`POST /api/v1/projects/:id/agents/setup\` — body \`{ "force": true }\` to re-run
+- Status: \`.agents/setup-status.json\`
+
+## Wake / resume (after idle-hibernate)
+
+- Script: \`.agents/resume\` (idempotent) — runs automatically when a recoverable session wakes
+- API: \`POST /api/v1/projects/:id/agents/resume\` — body \`{ "force": true }\` to re-run
+- Status: \`.agents/resume-status.json\`
+- Platform also calls ensure-preview server-side to restore dev preview
 
 ## Preflight
 
-- \`GET /api/v1/projects/:id/preflight?agent_id=...\` — readiness JSON (secrets, gateway, preview, quotas).
+- \`GET /api/v1/projects/:id/preflight?agent_id=...\` — readiness JSON (secrets, gateway, LLM, preview, quotas, setup/resume)
 
 ## Preview
 
 - Idempotent ensure: \`POST /api/v1/projects/:id/agents/ensure-preview\`
 - Ports and URLs: \`.agents/ports.json\`
-- Configure \`.agents/preview.json\` or use package.json dev script.
+- Configure \`.agents/preview.json\` or use package.json \`dev\` / \`start\` / \`preview\` script
 
 ## Logs
 
-- Aggregated dev logs: \`.agents/in/server.log\` (\`[preview]\`, \`[browser]\`)
-- Browser console via preview \`POST __dev/console\` (with preview token) or \`POST .../agents/log\`
-- Terminal transcript: server-side NDJSON.
+- Aggregated dev logs: \`.agents/in/server.log\` — tags \`[preview]\`, \`[browser]\`
+- Browser console: preview \`POST __dev/console\` (with preview token) or \`POST .../agents/log\`
 `;
+}
+
+const DEFAULT_AGENTS_MD = renderAgentsMd();
 
 function agentsDir(workspacePath) {
     return path.join(workspacePath, AGENTS_DIR);
@@ -86,8 +105,22 @@ function tailLog(text) {
     return s.length <= LOG_TAIL_MAX ? s : s.slice(-LOG_TAIL_MAX);
 }
 
+function refreshAgentsMd(workspacePath) {
+    const agentsMdPath = path.join(agentsDir(workspacePath), AGENTS_MD_FILE);
+    if (!fs.existsSync(agentsMdPath)) {
+        fs.writeFileSync(agentsMdPath, DEFAULT_AGENTS_MD, 'utf8');
+        return;
+    }
+    const content = fs.readFileSync(agentsMdPath, 'utf8');
+    const match = content.match(/<!-- xensemble-agents-md v(\d+) -->/);
+    const currentVersion = match ? Number(match[1]) : 0;
+    if (currentVersion < AGENTS_MD_VERSION) {
+        fs.writeFileSync(agentsMdPath, DEFAULT_AGENTS_MD, 'utf8');
+    }
+}
+
 /**
- * Idempotent: seed `.agents/setup`, `AGENTS.md`, and preview contract files.
+ * Idempotent: seed `.agents/setup`, `AGENTS.md`, resume script, and preview contract files.
  */
 function seedAgentWorkspaceFiles(workspacePath) {
     const dir = agentsDir(workspacePath);
@@ -98,10 +131,10 @@ function seedAgentWorkspaceFiles(workspacePath) {
         fs.writeFileSync(setupPath, DEFAULT_SETUP_SCRIPT, { mode: 0o755 });
     }
 
-    const agentsMdPath = path.join(dir, AGENTS_MD_FILE);
-    if (!fs.existsSync(agentsMdPath)) {
-        fs.writeFileSync(agentsMdPath, DEFAULT_AGENTS_MD, 'utf8');
-    }
+    refreshAgentsMd(workspacePath);
+
+    const { seedResumeScript } = require('./agentResumeHook');
+    seedResumeScript(workspacePath);
 
     ensurePreviewContractFile(workspacePath);
 }

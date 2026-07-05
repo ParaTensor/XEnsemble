@@ -1,5 +1,6 @@
 const { ensureProjectRuntime } = require('../runtime/RuntimeService');
 const { ensureAgentBootstrap } = require('../workspace/agentBootstrap');
+const { ensureAgentResume } = require('../workspace/agentResumeHook');
 const { buildPreflightReport } = require('../workspace/preflight');
 const { appendInboxLog } = require('../workspace/logInbox');
 const deploymentService = require('../deployments/DeploymentService');
@@ -43,6 +44,28 @@ function registerWorkspaceRoutes(fastify, { getProjectForUser }) {
         } catch (err) {
             request.log.error(err);
             return sendPublicError(reply, err, 'Workspace setup failed', 500);
+        }
+    });
+
+    fastify.post('/api/v1/projects/:projectId/agents/resume', { preValidation: [fastify.authenticate] }, async (request, reply) => {
+        const project = await getProjectForUser(request.user.id, request.params.projectId);
+        if (!project) return reply.code(404).send({ error: 'Project not found' });
+
+        const force = Boolean(request.body?.force);
+        const ensurePreview = request.body?.ensure_preview !== false;
+        try {
+            const { workspacePath } = await ensureProjectRuntime(project);
+            const status = await ensureAgentResume(project, workspacePath, { force, ensurePreview });
+            if (status?.status === 'failed') {
+                return reply.code(500).send({
+                    error: 'Workspace resume failed',
+                    resume: status,
+                });
+            }
+            return reply.code(200).send({ ok: true, resume: status });
+        } catch (err) {
+            request.log.error(err);
+            return sendPublicError(reply, err, 'Workspace resume failed', 500);
         }
     });
 

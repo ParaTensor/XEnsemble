@@ -915,6 +915,7 @@ export default React.forwardRef(function SessionsPage({
                     onChange={e => setNewProjectName(e.target.value)}
                     placeholder="my-workspace"
                     className={consoleInputClass}
+                    autoFocus
                   />
                   <button
                     type="button"

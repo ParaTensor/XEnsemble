@@ -46,13 +46,13 @@ XEnsemble 已经有很强的底座（checkpoint/snapshot、idle-hibernate+wake�
 
 4. **聚合日志收件箱 + 浏览器 console 转发** — preview stdout/stderr 写入 `.agents/in/server.log`（`[preview]`）；preview gateway `POST /preview/:id/__dev/console` 与 `POST .../agents/log` 写入 `[browser]`。
 
-### P2 —「引导」与「唤醒对称性」
+### P2 —「引导」与「唤醒对称性」 ✅ 已落地（2026-07-05）
 
-5. **`.agents/resume` 唤醒 hook**：与 idle-hibernate 对称，唤醒时重建易失状态（重起 dev server、重连网络）。
+5. **`.agents/resume` 唤醒 hook** — `server/src/workspace/agentResumeHook.js`；recoverable session 唤醒时（`resumeSession`）自动跑 `.agents/resume` + 服务端 `ensure-preview`；`POST /api/v1/projects/:id/agents/resume` 可手动触发。
 
-6. **Per-workspace agent 引导注入**：seed 一份 workspace `AGENTS.md`（沙箱能力 / 装工具方式 / 铺路端点与脚本清单 / 日志路径 / 端口文件位置）。
+6. **Per-workspace agent 引导注入** — `agentBootstrap.js` 维护带版本号的 workspace `AGENTS.md`（v2：沙箱 / setup / resume / preflight / preview / 日志路径）；旧版自动升级。
 
-7. **自研仓库补 `AGENTS.md`**：优先 `server/src/runtime/`、`server/src/session/`、`gateway/`——这些是我们逻辑最密、最易让 agent 猜错的地方。
+7. **自研仓库补 `AGENTS.md`** — `server/src/runtime/AGENTS.md`、`server/src/session/AGENTS.md`、`gateway/AGENTS.md`。
 
 ---
 

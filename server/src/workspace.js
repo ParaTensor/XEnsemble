@@ -18,7 +18,7 @@ function createProjectDirectory(userId, projectId) {
     ensureWorkspaceRoot();
     const dir = projectDir(userId, projectId);
     fs.mkdirSync(dir, { recursive: true });
-    const { seedAgentWorkspaceFiles } = require('./agentBootstrap');
+    const { seedAgentWorkspaceFiles } = require('./workspace/agentBootstrap');
     seedAgentWorkspaceFiles(dir);
     return dir;
 }
