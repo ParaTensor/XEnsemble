@@ -1,4 +1,5 @@
 const crypto = require('crypto');
+const { isUniqueViolation } = require('../http/publicError');
 const { db } = require('../db/index');
 const schema = require('../db/schema');
 const { eq, and, sql, inArray, ne, isNull, gt } = require('drizzle-orm');
@@ -160,7 +161,7 @@ async function createUser({ username, password, role = 'user', status = 'active'
             updatedAt: now,
         });
     } catch (err) {
-        if (/UNIQUE|unique/i.test(String(err.message))) {
+        if (isUniqueViolation(err)) {
             throw Object.assign(new Error('Username already exists'), { statusCode: 400 });
         }
         throw err;

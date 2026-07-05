@@ -23,6 +23,7 @@ const {
     resolveBoxBaseImage,
 } = require('../runtime/AgentBoxImageService');
 const { listBuildableAgentImages } = require('../runtime/agentBoxImages');
+const { sendPublicError, sanitizePublicError } = require('../http/publicError');
 
 function lifecycleSuccessMessage(action, agent, result) {
     if (action === 'install') {
@@ -104,7 +105,7 @@ function registerAdminRoutes(fastify) {
             }, request.user.id);
             return reply.code(201).send(user);
         } catch (err) {
-            return reply.code(err.statusCode || 400).send({ error: err.message });
+            return sendPublicError(reply, err, 'Request failed', 400);
         }
     });
 
@@ -120,7 +121,7 @@ function registerAdminRoutes(fastify) {
             if (!user) return reply.code(404).send({ error: 'User not found' });
             return user;
         } catch (err) {
-            return reply.code(err.statusCode || 400).send({ error: err.message });
+            return sendPublicError(reply, err, 'Request failed', 400);
         }
     });
 
@@ -130,7 +131,7 @@ function registerAdminRoutes(fastify) {
             if (!user) return reply.code(404).send({ error: 'User not found' });
             return user;
         } catch (err) {
-            return reply.code(err.statusCode || 400).send({ error: err.message });
+            return sendPublicError(reply, err, 'Request failed', 400);
         }
     });
 
@@ -147,7 +148,7 @@ function registerAdminRoutes(fastify) {
         try {
             return await userAdmin.setUserQuota(request.params.id, request.body || {}, request.user.id);
         } catch (err) {
-            return reply.code(err.statusCode || 400).send({ error: err.message });
+            return sendPublicError(reply, err, 'Request failed', 400);
         }
     });
 
@@ -159,7 +160,7 @@ function registerAdminRoutes(fastify) {
             await userAdmin.setUserAgents(request.params.id, agentIds, request.user.id);
             return { agent_ids: agentIds };
         } catch (err) {
-            return reply.code(err.statusCode || 400).send({ error: err.message });
+            return sendPublicError(reply, err, 'Request failed', 400);
         }
     });
 
@@ -170,7 +171,7 @@ function registerAdminRoutes(fastify) {
             await userAdmin.grantAgent(request.params.id, request.params.agentId, request.user.id);
             return { ok: true };
         } catch (err) {
-            return reply.code(err.statusCode || 400).send({ error: err.message });
+            return sendPublicError(reply, err, 'Request failed', 400);
         }
     });
 
@@ -189,7 +190,7 @@ function registerAdminRoutes(fastify) {
             await userAdmin.resetPassword(request.params.id, newPassword, request.user.id);
             return { ok: true };
         } catch (err) {
-            return reply.code(err.statusCode || 400).send({ error: err.message });
+            return sendPublicError(reply, err, 'Request failed', 400);
         }
     });
 
@@ -280,7 +281,7 @@ function registerAdminRoutes(fastify) {
             settings.GITHUB_APP_WEBHOOK_SECRET = settings.GITHUB_APP_WEBHOOK_SECRET ? MASK : '';
             return settings;
         } catch (err) {
-            return reply.code(err.statusCode || 400).send({ error: err.message });
+            return sendPublicError(reply, err, 'Request failed', 400);
         }
     });
 
@@ -338,7 +339,7 @@ function registerAdminRoutes(fastify) {
             await platformSecrets.merge(request.body || {});
             return { ok: true, secrets: await platformSecrets.getHints() };
         } catch (err) {
-            return reply.code(500).send({ error: err.message || 'Failed to save agent secrets' });
+            return sendPublicError(reply, err, 'Failed to save agent secrets', 500);
         }
     });
 
@@ -354,7 +355,7 @@ function registerAdminRoutes(fastify) {
                 : undefined;
             return { ok: true, config, warning };
         } catch (err) {
-            return reply.code(500).send({ error: err.message || 'Failed to save agent gateway config' });
+            return sendPublicError(reply, err, 'Failed to save agent gateway config', 500);
         }
     });
 
@@ -385,7 +386,7 @@ function registerAdminRoutes(fastify) {
                 draftEnvOverrides,
             });
         } catch (err) {
-            return reply.code(500).send({ error: err.message || 'Failed to preview gateway spawn env' });
+            return sendPublicError(reply, err, 'Failed to preview gateway spawn env', 500);
         }
     });
 
@@ -417,8 +418,9 @@ function registerAdminRoutes(fastify) {
                 last_lifecycle: agentLifecycleState.get(agent.id),
             };
         } catch (err) {
-            return reply.code(err.statusCode || 500).send({
-                error: err.message,
+            const { message, statusCode } = sanitizePublicError(err, 'Agent install failed');
+            return reply.code(err.statusCode || statusCode || 500).send({
+                error: message,
                 last_lifecycle: agentLifecycleState.get(agent.id),
             });
         }
@@ -437,8 +439,9 @@ function registerAdminRoutes(fastify) {
                 last_lifecycle: agentLifecycleState.get(agent.id),
             };
         } catch (err) {
-            return reply.code(err.statusCode || 500).send({
-                error: err.message,
+            const { message, statusCode } = sanitizePublicError(err, 'Agent install failed');
+            return reply.code(err.statusCode || statusCode || 500).send({
+                error: message,
                 last_lifecycle: agentLifecycleState.get(agent.id),
             });
         }
@@ -458,8 +461,9 @@ function registerAdminRoutes(fastify) {
                 last_lifecycle: agentLifecycleState.get(agent.id),
             };
         } catch (err) {
-            return reply.code(err.statusCode || 500).send({
-                error: err.message,
+            const { message, statusCode } = sanitizePublicError(err, 'Agent install failed');
+            return reply.code(err.statusCode || statusCode || 500).send({
+                error: message,
                 last_lifecycle: agentLifecycleState.get(agent.id),
             });
         }
@@ -472,7 +476,7 @@ function registerAdminRoutes(fastify) {
         try {
             return await checkUpdate(agent);
         } catch (err) {
-            return reply.code(err.statusCode || 500).send({ error: err.message });
+            return sendPublicError(reply, err, 'Failed to check for agent updates', 500);
         }
     });
 
@@ -502,7 +506,7 @@ function registerAdminRoutes(fastify) {
             return { ok: true, version };
         } catch (err) {
             const statusCode = err instanceof RuntimeError ? err.statusCode : 500;
-            return reply.code(statusCode).send({ error: err.message || 'Failed to register image version' });
+            return sendPublicError(reply, err, 'Failed to register image version', statusCode);
         }
     });
 
@@ -512,7 +516,7 @@ function registerAdminRoutes(fastify) {
             return { ok: true, version };
         } catch (err) {
             const statusCode = err instanceof RuntimeError ? err.statusCode : 500;
-            return reply.code(statusCode).send({ error: err.message || 'Failed to activate image version' });
+            return sendPublicError(reply, err, 'Failed to activate image version', statusCode);
         }
     });
 
@@ -522,7 +526,7 @@ function registerAdminRoutes(fastify) {
             return { ok: true, version };
         } catch (err) {
             const statusCode = err instanceof RuntimeError ? err.statusCode : 500;
-            return reply.code(statusCode).send({ error: err.message || 'Failed to deprecate image version' });
+            return sendPublicError(reply, err, 'Failed to deprecate image version', statusCode);
         }
     });
 }

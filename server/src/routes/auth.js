@@ -3,6 +3,7 @@ const userAdmin = require('../admin/UserAdminService');
 const { db } = require('../db/index');
 const schema = require('../db/schema');
 const { eq } = require('drizzle-orm');
+const { sendPublicError } = require('../http/publicError');
 
 function sanitizeDeviceName(deviceName) {
     if (typeof deviceName !== 'string') return null;
@@ -31,10 +32,7 @@ function registerAuthRoutes(fastify) {
                 quotas: login.quotas,
             };
         } catch (err) {
-            const code = err.statusCode || 500;
-            const body = { error: err.message };
-            if (err.code) body.code = err.code;
-            return reply.code(code).send(body);
+            return sendPublicError(reply, err, 'Registration failed', 500);
         }
     });
 
@@ -50,10 +48,7 @@ function registerAuthRoutes(fastify) {
                 quotas: result.quotas,
             };
         } catch (err) {
-            const code = err.statusCode || 500;
-            const body = { error: err.message };
-            if (err.code) body.code = err.code;
-            return reply.code(code).send(body);
+            return sendPublicError(reply, err, 'Login failed', 500);
         }
     });
 
@@ -85,7 +80,7 @@ function registerAuthRoutes(fastify) {
             return { access_token: accessToken, refresh_token: newRefreshToken };
         } catch (err) {
             if (reply.sent) return;
-            return reply.code(500).send({ error: 'Internal server error' });
+            return sendPublicError(reply, err, 'Token refresh failed', 500);
         }
     });
 
@@ -102,9 +97,13 @@ function registerAuthRoutes(fastify) {
         if (!user || !auth.verifyPassword(current_password, user.passwordHash)) {
             return reply.code(401).send({ error: 'Current password is incorrect' });
         }
-        await userAdmin.resetPassword(request.user.id, new_password, request.user.id);
-        await userAdmin.revokeAllUserRefreshTokens(request.user.id);
-        return { ok: true };
+        try {
+            await userAdmin.resetPassword(request.user.id, new_password, request.user.id);
+            await userAdmin.revokeAllUserRefreshTokens(request.user.id);
+            return { ok: true };
+        } catch (err) {
+            return sendPublicError(reply, err, 'Failed to update password', 500);
+        }
     });
 }
 

@@ -5,6 +5,7 @@ const { previewSpawnEnv } = require('../agents/agentEnv');
 const { db } = require('../db/index');
 const schema = require('../db/schema');
 const { eq } = require('drizzle-orm');
+const { sendPublicError } = require('../http/publicError');
 
 function registerUserRoutes(fastify) {
     fastify.get('/api/v1/terminal-themes', { preValidation: [fastify.authenticate] }, async () => {
@@ -23,7 +24,7 @@ function registerUserRoutes(fastify) {
         try {
             return await userPreferences.updatePreferences(request.user.id, request.body || {});
         } catch (err) {
-            return reply.code(err.statusCode || 400).send({ error: err.message });
+            return sendPublicError(reply, err, 'Failed to update preferences', 400);
         }
     });
 
@@ -43,7 +44,7 @@ function registerUserRoutes(fastify) {
                 terminalThemeId: request.query?.terminal_theme_id,
             });
         } catch (err) {
-            return reply.code(500).send({ error: err.message || 'Failed to preview spawn env' });
+            return sendPublicError(reply, err, 'Failed to preview spawn env', 500);
         }
     });
 }

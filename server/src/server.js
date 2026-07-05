@@ -7,7 +7,7 @@ const path = require('path');
 const fs = require('fs');
 const WebSocket = require('ws');
 
-const { getRuntime } = require('./runtime/registry');
+const { sendPublicError, sanitizePublicError } = require('./http/publicError');
 const { AgentSpawnError, RuntimeError } = require('./runtime/interfaces');
 const { ensureProjectRuntime, formatRuntime } = require('./runtime/RuntimeService');
 const deploymentService = require('./deployments/DeploymentService');
@@ -448,8 +448,7 @@ fastify.post('/api/v1/projects/:projectId/checkpoints/:checkpointId/restore', {
         return result;
     } catch (err) {
         request.log.error(err);
-        const code = err.statusCode || 500;
-        return reply.code(code).send({ error: err.message });
+        return sendPublicError(reply, err, 'Git operation failed', 500);
     }
 });
 
@@ -495,8 +494,7 @@ fastify.get('/api/v1/projects/:projectId/checkpoints/:checkpointId/diff', {
         return result;
     } catch (err) {
         request.log.error(err);
-        const code = err.statusCode || 500;
-        return reply.code(code).send({ error: err.message });
+        return sendPublicError(reply, err, 'Git operation failed', 500);
     }
 });
 
@@ -522,8 +520,7 @@ fastify.get('/api/v1/projects/:projectId/repository/blame', {
         return { path: filePath, ref: ref || 'HEAD', entries };
     } catch (err) {
         request.log.error(err);
-        const code = err.statusCode || 500;
-        return reply.code(code).send({ error: err.message });
+        return sendPublicError(reply, err, 'Git operation failed', 500);
     }
 });
 
@@ -600,8 +597,7 @@ fastify.post('/api/v1/projects/:projectId/repository/conflicts/resolve', {
         return result;
     } catch (err) {
         request.log.error(err);
-        const code = err.statusCode || 500;
-        return reply.code(code).send({ error: err.message });
+        return sendPublicError(reply, err, 'Git operation failed', 500);
     }
 });
 
@@ -621,8 +617,7 @@ fastify.get('/api/v1/projects/:projectId/repository/file', {
         return result;
     } catch (err) {
         request.log.error(err);
-        const code = err.statusCode || 500;
-        return reply.code(code).send({ error: err.message });
+        return sendPublicError(reply, err, 'Git operation failed', 500);
     }
 });
 
@@ -789,9 +784,9 @@ fastify.post('/api/v1/sessions/:sessionId/resume', { preValidation: [fastify.aut
         });
     } catch (err) {
         if (err instanceof RuntimeError) {
-            return reply.code(err.statusCode).send({ error: err.message });
+            return sendPublicError(reply, err, 'Failed to resume session', err.statusCode);
         }
-        return reply.code(err.statusCode || 500).send({ error: err.message || 'Failed to resume session' });
+        return sendPublicError(reply, err, 'Failed to resume session', 500);
     }
 });
 
@@ -820,7 +815,7 @@ fastify.post('/api/v1/session/start', { preValidation: [fastify.authenticate] },
         runtimeId = ready.runtime.id;
     } catch (err) {
         if (err instanceof RuntimeError) {
-            return reply.code(err.statusCode).send({ error: err.message });
+            return sendPublicError(reply, err, 'Failed to prepare project runtime', err.statusCode);
         }
         request.log.error(err);
         return reply.code(500).send({ error: 'Project workspace directory is missing and could not be recreated' });
@@ -1166,7 +1161,8 @@ fastify.register(async function workspaceTerminalWsRoutes(app) {
                 ready = await ensureProjectRuntime(project);
             } catch (err) {
                 req.log.error(err);
-                sendJson({ type: 'error', data: err instanceof Error ? err.message : 'Failed to initialize workspace shell' });
+                const { message } = sanitizePublicError(err, 'Failed to initialize workspace shell');
+                sendJson({ type: 'error', data: message });
                 ws.close();
                 return;
             }
@@ -1289,9 +1285,8 @@ fastify.post('/api/v1/projects/:projectId/preview', { preValidation: [fastify.au
         return reply.code(201).send(dep);
     } catch (err) {
         const code = err instanceof RuntimeError ? err.statusCode : 503;
-        return reply.code(code).send({
-            error: err instanceof Error ? err.message : 'Preview deploy failed',
-        });
+        const { message } = sanitizePublicError(err, 'Preview deploy failed');
+        return reply.code(code).send({ error: message });
     }
 });
 
@@ -1321,8 +1316,9 @@ fastify.post('/api/v1/deployments/:deploymentId/start', { preValidation: [fastif
     } catch (err) {
         const rowAfter = await deploymentService.getForUser(request.user.id, row.id);
         const code = err instanceof RuntimeError ? err.statusCode : 503;
+        const { message } = sanitizePublicError(err, 'Preview start failed');
         return reply.code(code).send({
-            error: err instanceof Error ? err.message : 'Preview start failed',
+            error: message,
             deployment: deploymentService.formatDeployment(rowAfter),
         });
     }
@@ -1392,6 +1388,15 @@ fastify.get('/api/v1/workspace/file', { preValidation: [fastify.authenticate] },
 });
 
 async function startServer() {
+    fastify.setErrorHandler((err, request, reply) => {
+        request.log.error(err);
+        if (reply.sent) return;
+        const { statusCode, message, code } = sanitizePublicError(err, 'Internal server error');
+        const body = { error: message };
+        if (code) body.code = code;
+        reply.code(statusCode).send(body);
+    });
+
     const { seedIfNeeded } = require('./db/seed');
     // 生产环境由 deploy/install.sh 以管理员连接执行 migrate；应用 role 无 DDL 权限。
     if (process.env.NODE_ENV !== 'production' || process.env.RUN_DB_MIGRATE === '1') {
