@@ -35,15 +35,10 @@ XEnsemble 已经有很强的底座（checkpoint/snapshot、idle-hibernate+wake�
 
 ## 落地建议（按优先级）
 
-### P0 —「铺路」原语，最高杠杆
+### P0 —「铺路」原语，最高杠杆 ✅ 已落地（2026-07-05）
 
-1. **Workspace `.agents/setup` 幂等 bootstrap hook**
-   - 新 workspace 创建时执行一次，把环境推到已知良好态（装依赖 / seed / 起服务），跑完接到现有 `createSnapshot` 打快照复用。
-   - 我们已有 snapshot/checkpoint 基建，这是「补一个 hook + 约定」，不是重造。
-
-2. **统一 preflight 就绪端点**（per workspace/session）
-   - 一个 JSON 回答：secret 齐了吗？gateway/dev server 健康吗？用户有 project/credits/API key 吗？agent 能连 LLM 吗？
-   - 让 agent「撞墙后猜」变成「先问再动」。扩展现有 `spawn-preview`/`gateway status`。
+1. **Workspace `.agents/setup` 幂等 bootstrap hook** — `server/src/workspace/agentBootstrap.js`；新 workspace 自动 seed + 本地 runtime 首次 `ensureReady` 时执行；`POST /api/v1/projects/:id/agents/setup` 可强制重跑；成功后写入 `repo_snapshots`。
+2. **统一 preflight 就绪端点** — `GET /api/v1/projects/:id/preflight?agent_id=` → `server/src/workspace/preflight.js`（secrets / gateway / LLM / preview / quota / setup 状态 + hints）。
 
 ### P1 —「可观测」与「可复用」
 

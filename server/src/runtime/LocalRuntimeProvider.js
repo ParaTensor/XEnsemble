@@ -10,6 +10,10 @@ class LocalRuntimeProvider extends RuntimeProvider {
      */
     async ensureReady(project, opts = {}) {
         const workspacePath = workspace.createProjectDirectory(project.userId, project.id);
+        if ((process.env.RUNTIME_PROVIDER || 'local') === 'local') {
+            const { ensureAgentBootstrap } = require('../workspace/agentBootstrap');
+            await ensureAgentBootstrap(project, workspacePath);
+        }
         return { runtimeRef: 'local', workspacePath };
     }
 
