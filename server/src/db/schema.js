@@ -309,6 +309,22 @@ const mergeRequests = sqliteTable('merge_requests', {
   unqProjectProviderMr: unique().on(table.projectId, table.provider, table.remoteMrNumber),
 }));
 
+const agentBoxImages = sqliteTable('agent_box_images', {
+  id: text('id').primaryKey(),
+  agentId: text('agent_id').notNull().references(() => agents.id),
+  imageRef: text('image_ref').notNull(),
+  tag: text('tag').notNull(),
+  digest: text('digest'),
+  status: text('status').notNull().default('ready'),
+  isActive: integer('is_active', { mode: 'boolean' }).default(false),
+  builtAt: integer('built_at'),
+  notes: text('notes'),
+  createdBy: text('created_by').references(() => users.id),
+  createdAt: integer('created_at').notNull(),
+}, (table) => ({
+  unqAgentTag: unique().on(table.agentId, table.tag),
+}));
+
 module.exports = {
   users,
   userQuotas,
@@ -334,4 +350,5 @@ module.exports = {
   gitConnections,
   gitOAuthStates,
   mergeRequests,
+  agentBoxImages,
 };

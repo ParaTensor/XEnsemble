@@ -1,33 +1,27 @@
-const fs = require('fs');
-const path = require('path');
+const { buildSessionStateDirRef } = require('./stateDirRef');
 
-const { projectDir, resolveSafePath } = require('../workspace');
-
-function buildSessionStateDirRef(sessionId) {
-    return path.join('.xensemble', 'state', sessionId);
-}
-
-function resolveSessionStateDir(userId, projectId, sessionId) {
-    const rootDir = projectDir(userId, projectId);
-    const stateDirRef = buildSessionStateDirRef(sessionId);
-    const stateDirPath = resolveSafePath(rootDir, stateDirRef);
-    if (!stateDirPath) {
+async function ensureSessionStateDir(fsAdapter, { workspaceRoot, sessionId, runtimeRef }) {
+    if (!fsAdapter || typeof fsAdapter.resolveStateDir !== 'function') {
         return null;
     }
-    return { stateDirRef, stateDirPath };
-}
-
-function ensureSessionStateDir(userId, projectId, sessionId) {
-    const resolved = resolveSessionStateDir(userId, projectId, sessionId);
+    const resolved = fsAdapter.resolveStateDir(workspaceRoot, sessionId);
     if (!resolved) {
         return null;
     }
-    fs.mkdirSync(resolved.stateDirPath, { recursive: true });
+    await fsAdapter.mkdirp(workspaceRoot, resolved.stateDirRef, { runtimeRef });
     return resolved;
+}
+
+async function sessionStateDirExists(fsAdapter, { workspaceRoot, sessionId, runtimeRef, stateDirRef }) {
+    if (!fsAdapter || typeof fsAdapter.exists !== 'function') {
+        return false;
+    }
+    const ref = stateDirRef || buildSessionStateDirRef(sessionId);
+    return fsAdapter.exists(workspaceRoot, ref, { runtimeRef });
 }
 
 module.exports = {
     buildSessionStateDirRef,
-    resolveSessionStateDir,
     ensureSessionStateDir,
+    sessionStateDirExists,
 };

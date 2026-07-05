@@ -413,6 +413,24 @@ if (!deploymentCols.some((c) => c.name === 'preview_token_hash')) {
     }
 }
 
+sqlite.exec(`
+  CREATE TABLE IF NOT EXISTS agent_box_images (
+    id TEXT PRIMARY KEY,
+    agent_id TEXT NOT NULL REFERENCES agents(id),
+    image_ref TEXT NOT NULL,
+    tag TEXT NOT NULL,
+    digest TEXT,
+    status TEXT NOT NULL DEFAULT 'ready',
+    is_active INTEGER DEFAULT 0,
+    built_at INTEGER,
+    notes TEXT,
+    created_by TEXT REFERENCES users(id),
+    created_at INTEGER NOT NULL,
+    UNIQUE(agent_id, tag)
+  );
+  CREATE INDEX IF NOT EXISTS idx_agent_box_images_agent_active ON agent_box_images(agent_id, is_active);
+`);
+
 // ─── 用户管理表与 users 扩展字段 ───
 
 sqlite.exec(`

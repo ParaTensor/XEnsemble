@@ -5,10 +5,8 @@ const os = require('os');
 const path = require('path');
 const { eq } = require('drizzle-orm');
 
-// Route state dirs to a temp WORKSPACE_ROOT before workspace.js captures it, so
-// resolveSessionStateDir (used by both session/start and resume) resolves here.
-const WS_ROOT = fs.mkdtempSync(path.join(os.tmpdir(), 'xe-ws-root-'));
-process.env.WORKSPACE_ROOT = WS_ROOT;
+const LocalFsAdapter = require('../runtime/LocalFsAdapter');
+const localFs = new LocalFsAdapter();
 
 const { db } = require('../db/index');
 const schema = require('../db/schema');
@@ -16,7 +14,7 @@ const transcriptStore = require('../runtime/TranscriptStore');
 const sessionManager = require('./SessionManager');
 const { subscribeTerminal } = require('./terminalBridge');
 const { resumeSession } = require('./resumeSession');
-const { resolveSessionStateDir } = require('./stateDir');
+const { buildSessionStateDirRef } = require('./stateDirRef');
 
 class FakeHandle {
     constructor(streamRef) {
@@ -181,10 +179,8 @@ test('subscribeTerminal wakes idle sessions before attach and replays transcript
     const userId = `usr_wake_${Date.now()}_${Math.random().toString(16).slice(2)}`;
     const projectId = `proj_wake_${Date.now()}_${Math.random().toString(16).slice(2)}`;
     const runtimeId = `rt_wake_${Date.now()}_${Math.random().toString(16).slice(2)}`;
-    const stateDirRef = path.join('.xensemble', 'state', sessionId);
-    // Seed the state dir where resume now resolves it (WORKSPACE_ROOT-based,
-    // identical to session/start) rather than under the temp serverPath.
-    const { stateDirPath } = resolveSessionStateDir(userId, projectId, sessionId);
+    const stateDirRef = buildSessionStateDirRef(sessionId);
+    const { stateDirPath } = localFs.resolveStateDir(projectDir, sessionId);
     fs.mkdirSync(stateDirPath, { recursive: true });
 
     const initialHandle = new FakeHandle(`stream_old_${Date.now()}`);
@@ -245,6 +241,7 @@ test('subscribeTerminal wakes idle sessions before attach and replays transcript
 
         let spawnCalls = 0;
         const runtimeWithCount = {
+            fs: localFs,
             exec: {
                 async spawn(cmd, args, env, options) {
                     spawnCalls += 1;
@@ -324,10 +321,8 @@ test('concurrent idle wake attaches only spawn one resumed session', async () =>
     const userId = `usr_concurrent_${Date.now()}_${Math.random().toString(16).slice(2)}`;
     const projectId = `proj_concurrent_${Date.now()}_${Math.random().toString(16).slice(2)}`;
     const runtimeId = `rt_concurrent_${Date.now()}_${Math.random().toString(16).slice(2)}`;
-    const stateDirRef = path.join('.xensemble', 'state', sessionId);
-    // Seed the state dir where resume now resolves it (WORKSPACE_ROOT-based,
-    // identical to session/start) rather than under the temp serverPath.
-    const { stateDirPath } = resolveSessionStateDir(userId, projectId, sessionId);
+    const stateDirRef = buildSessionStateDirRef(sessionId);
+    const { stateDirPath } = localFs.resolveStateDir(projectDir, sessionId);
     fs.mkdirSync(stateDirPath, { recursive: true });
 
     const initialHandle = new FakeHandle(`stream_old_${Date.now()}`);
@@ -389,6 +384,7 @@ test('concurrent idle wake attaches only spawn one resumed session', async () =>
 
         let spawnCalls = 0;
         const runtime = {
+            fs: localFs,
             exec: {
                 async spawn(cmd, args, env, options) {
                     spawnCalls += 1;

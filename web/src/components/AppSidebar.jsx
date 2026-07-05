@@ -18,6 +18,7 @@ import {
   Users,
   Bot,
   Globe,
+  Container,
   GitBranch,
   Loader2,
 } from 'lucide-react';
@@ -192,6 +193,10 @@ function SidebarAccountMenu({ user, onOpenSettings, onLogout, adminLinkClass }) 
           <NavLink to="/admin/gateway" className={adminLinkClass} onClick={close}>
             <Globe className="w-3.5 h-3.5 shrink-0" strokeWidth={1.75} />
             Gateway
+          </NavLink>
+          <NavLink to="/admin/boxlite-images" className={adminLinkClass} onClick={close}>
+            <Container className="w-3.5 h-3.5 shrink-0" strokeWidth={1.75} />
+            BoxLite Images
           </NavLink>
           <div className="my-1 border-t border-[#E8EAED]" />
         </>

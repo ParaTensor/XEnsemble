@@ -1,8 +1,8 @@
-// 仅 Local 有效：本地文件系统读操作。
-const path = require('path');
 const fs = require('fs');
+const path = require('path');
 const { FsAdapter, RuntimeError } = require('./interfaces');
 const { resolveSafePath } = require('../workspace');
+const { buildSessionStateDirRef } = require('../session/stateDirRef');
 
 class LocalFsAdapter extends FsAdapter {
     /**
@@ -51,6 +51,31 @@ class LocalFsAdapter extends FsAdapter {
         if (!fs.existsSync(absolutePath)) throw new RuntimeError('File not found', 404);
         if (fs.statSync(absolutePath).isDirectory()) throw new RuntimeError('Path is a directory', 400);
         return fs.readFileSync(absolutePath, 'utf8');
+    }
+
+    resolveStateDir(workspaceRoot, sessionId) {
+        const stateDirRef = buildSessionStateDirRef(sessionId);
+        const stateDirPath = resolveSafePath(workspaceRoot, stateDirRef);
+        if (!stateDirPath) {
+            return null;
+        }
+        return { stateDirRef, stateDirPath };
+    }
+
+    async exists(rootDir, relativePath, opts = {}) {
+        const target = resolveSafePath(rootDir, relativePath);
+        if (!target) {
+            return false;
+        }
+        return fs.existsSync(target);
+    }
+
+    async mkdirp(rootDir, relativePath, opts = {}) {
+        const target = resolveSafePath(rootDir, relativePath);
+        if (!target) {
+            throw new RuntimeError('Access denied', 403);
+        }
+        fs.mkdirSync(target, { recursive: true });
     }
 }
 

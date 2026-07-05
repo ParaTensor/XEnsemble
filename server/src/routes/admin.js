@@ -14,6 +14,15 @@ const {
     getLocalVersion,
 } = require('../agents/agentLifecycle');
 const agentLifecycleState = require('../agents/agentLifecycleState');
+const { RuntimeError } = require('../runtime/interfaces');
+const {
+    listAgentBoxImageCatalog,
+    registerVersion,
+    activateVersion,
+    deprecateVersion,
+    resolveBoxBaseImage,
+} = require('../runtime/AgentBoxImageService');
+const { listBuildableAgentImages } = require('../runtime/agentBoxImages');
 
 function lifecycleSuccessMessage(action, agent, result) {
     if (action === 'install') {
@@ -464,6 +473,56 @@ function registerAdminRoutes(fastify) {
             return await checkUpdate(agent);
         } catch (err) {
             return reply.code(err.statusCode || 500).send({ error: err.message });
+        }
+    });
+
+    fastify.get('/api/v1/admin/boxlite/agent-images', { preValidation: adminPre }, async () => {
+        const catalog = await listAgentBoxImageCatalog();
+        return {
+            base_image: resolveBoxBaseImage(),
+            buildable_agents: listBuildableAgentImages(),
+            build_command: 'npm run build:boxlite-images',
+            agents: catalog,
+        };
+    });
+
+    fastify.post('/api/v1/admin/boxlite/agent-images/:agentId/versions', { preValidation: adminPre }, async (request, reply) => {
+        const body = request.body || {};
+        try {
+            const version = await registerVersion({
+                agentId: request.params.agentId,
+                tag: body.tag,
+                imageRef: body.image_ref,
+                digest: body.digest,
+                notes: body.notes,
+                builtAt: body.built_at,
+                createdBy: request.user.id,
+                setActive: Boolean(body.set_active),
+            });
+            return { ok: true, version };
+        } catch (err) {
+            const statusCode = err instanceof RuntimeError ? err.statusCode : 500;
+            return reply.code(statusCode).send({ error: err.message || 'Failed to register image version' });
+        }
+    });
+
+    fastify.post('/api/v1/admin/boxlite/agent-images/versions/:versionId/activate', { preValidation: adminPre }, async (request, reply) => {
+        try {
+            const version = await activateVersion(request.params.versionId, request.user.id);
+            return { ok: true, version };
+        } catch (err) {
+            const statusCode = err instanceof RuntimeError ? err.statusCode : 500;
+            return reply.code(statusCode).send({ error: err.message || 'Failed to activate image version' });
+        }
+    });
+
+    fastify.post('/api/v1/admin/boxlite/agent-images/versions/:versionId/deprecate', { preValidation: adminPre }, async (request, reply) => {
+        try {
+            const version = await deprecateVersion(request.params.versionId);
+            return { ok: true, version };
+        } catch (err) {
+            const statusCode = err instanceof RuntimeError ? err.statusCode : 500;
+            return reply.code(statusCode).send({ error: err.message || 'Failed to deprecate image version' });
         }
     });
 }

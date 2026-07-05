@@ -6,17 +6,15 @@ const path = require('path');
 const { spawn } = require('child_process');
 const { eq } = require('drizzle-orm');
 
-// Route state dirs to a temp WORKSPACE_ROOT before workspace.js captures it, so
-// resolveSessionStateDir (used by both session/start and resume) resolves here.
-const WS_ROOT = fs.mkdtempSync(path.join(os.tmpdir(), 'xe-ws-root-'));
-process.env.WORKSPACE_ROOT = WS_ROOT;
+const LocalFsAdapter = require('../runtime/LocalFsAdapter');
+const localFs = new LocalFsAdapter();
 
 const { db } = require('../db/index');
 const schema = require('../db/schema');
 const sessionManager = require('./SessionManager');
 const transcriptStore = require('../runtime/TranscriptStore');
 const { resumeSession, registerSessionLifecycle } = require('./resumeSession');
-const { resolveSessionStateDir } = require('./stateDir');
+const { buildSessionStateDirRef } = require('./stateDirRef');
 
 function makeTempDir() {
     return fs.mkdtempSync(path.join(os.tmpdir(), 'xe-resume-'));
@@ -87,10 +85,8 @@ test('resumeSession reuses state dir and continues transcript seqs', async () =>
     const sessionId = `sess_${Date.now()}_${Math.random().toString(16).slice(2)}`;
     const userId = `usr_${Date.now()}_${Math.random().toString(16).slice(2)}`;
     const projectId = `proj_${Date.now()}_${Math.random().toString(16).slice(2)}`;
-    const stateDirRef = path.join('.xensemble', 'state', sessionId);
-    // Seed the state dir where resume now resolves it (WORKSPACE_ROOT-based,
-    // identical to session/start) rather than under the temp serverPath.
-    const { stateDirPath } = resolveSessionStateDir(userId, projectId, sessionId);
+    const stateDirRef = buildSessionStateDirRef(sessionId);
+    const { stateDirPath } = localFs.resolveStateDir(projectDir, sessionId);
     const scriptPath = path.join(root, 'fake-agent.js');
     const markerPath = path.join(stateDirPath, 'resume-marker.txt');
 
@@ -197,6 +193,7 @@ test('resumeSession reuses state dir and continues transcript seqs', async () =>
             env_required: [],
         };
         const runtime = {
+            fs: localFs,
             exec: {
                 async spawn(cmd, args, env, options) {
                     return makeFakeHandle(cmd, args, env, options.cwd);

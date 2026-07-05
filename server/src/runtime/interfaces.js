@@ -69,6 +69,10 @@ class ExecAdapter {
 class FsAdapter {
     async fsList(rootDir, relativePath, opts = {}) { throw new Error('FsAdapter.fsList not implemented'); }
     async fsRead(rootDir, relativePath, opts = {}) { throw new Error('FsAdapter.fsRead not implemented'); }
+    /** @returns {{ stateDirRef: string, stateDirPath: string } | null} */
+    resolveStateDir(workspaceRoot, sessionId) { throw new Error('FsAdapter.resolveStateDir not implemented'); }
+    async exists(rootDir, relativePath, opts = {}) { throw new Error('FsAdapter.exists not implemented'); }
+    async mkdirp(rootDir, relativePath, opts = {}) { throw new Error('FsAdapter.mkdirp not implemented'); }
 }
 
 // ─── PreviewAdapter：预览进程 ───

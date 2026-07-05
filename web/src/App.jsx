@@ -3,6 +3,7 @@ import { Routes, Route, useNavigate, useLocation, Navigate } from 'react-router-
 import Login from './pages/Login';
 import Sessions from './pages/Sessions';
 import AgentsAdmin from './pages/AgentsAdmin';
+import BoxLiteImagesAdmin from './pages/BoxLiteImagesAdmin';
 import UsersAdmin from './pages/UsersAdmin';
 import GatewayAdmin from './pages/GatewayAdmin';
 import AppSidebar from './components/AppSidebar';
@@ -49,6 +50,7 @@ function AuthenticatedLayout({
   const isAgentsAdmin = location.pathname === '/admin/agents';
   const isUsersAdmin = location.pathname === '/admin/users';
   const isGatewayAdmin = location.pathname === '/admin/gateway';
+  const isBoxLiteImagesAdmin = location.pathname === '/admin/boxlite-images';
 
   const offRouteClass = 'pointer-events-none invisible absolute inset-0 z-0 [&_*]:pointer-events-none';
 
@@ -134,6 +136,16 @@ function AuthenticatedLayout({
               aria-hidden={!isGatewayAdmin}
             >
               <GatewayAdmin />
+            </div>
+            <div
+              className={cn(
+                'flex min-h-0 flex-1 flex-col overflow-auto console-scroll-hidden',
+                APP_SHELL_ADMIN_CLASS,
+                isBoxLiteImagesAdmin ? 'relative z-10' : offRouteClass,
+              )}
+              aria-hidden={!isBoxLiteImagesAdmin}
+            >
+              <BoxLiteImagesAdmin />
             </div>
           </>
         )}
@@ -240,6 +252,10 @@ function App() {
               />
               <Route
                 path="/admin/gateway"
+                element={user?.role === 'admin' ? null : <Navigate to="/sessions" replace />}
+              />
+              <Route
+                path="/admin/boxlite-images"
                 element={user?.role === 'admin' ? null : <Navigate to="/sessions" replace />}
               />
             </Route>

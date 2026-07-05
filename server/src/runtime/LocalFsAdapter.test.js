@@ -113,3 +113,24 @@ test('fsRead rejects intermediate symlink to non-existent outside target', async
         fs.rmSync(tmp, { recursive: true, force: true });
     }
 });
+
+test('resolveStateDir returns a path under workspace root', () => {
+    const adapter = new LocalFsAdapter();
+    const resolved = adapter.resolveStateDir('/tmp/workspace', 'sess_abc');
+    assert.match(resolved.stateDirRef, /\.xensemble[/\\]state[/\\]sess_abc$/);
+    assert.match(resolved.stateDirPath, /sess_abc$/);
+});
+
+test('mkdirp and exists manage session state dirs through runtime FS', async () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'xe-fs-state-'));
+    const adapter = new LocalFsAdapter();
+    const sessionId = 'sess_state_dir';
+    try {
+        const resolved = adapter.resolveStateDir(tmp, sessionId);
+        assert.equal(await adapter.exists(tmp, resolved.stateDirRef), false);
+        await adapter.mkdirp(tmp, resolved.stateDirRef);
+        assert.equal(await adapter.exists(tmp, resolved.stateDirRef), true);
+    } finally {
+        fs.rmSync(tmp, { recursive: true, force: true });
+    }
+});

@@ -815,7 +815,7 @@ fastify.post('/api/v1/session/start', { preValidation: [fastify.authenticate] },
     let runtimeId;
     let ready;
     try {
-        ready = await ensureProjectRuntime(project);
+        ready = await ensureProjectRuntime(project, { agentId: agent_id });
         workspacePath = ready.workspacePath;
         runtimeId = ready.runtime.id;
     } catch (err) {
@@ -866,7 +866,13 @@ fastify.post('/api/v1/session/start', { preValidation: [fastify.authenticate] },
         return reply.code(400).send({ error: resolved.error });
     }
 
-    const sessionStateDir = resumeSpec?.stateEnv ? ensureSessionStateDir(request.user.id, project_id, sessionId) : null;
+    const sessionStateDir = resumeSpec?.stateEnv
+        ? await ensureSessionStateDir(runtime.fs, {
+            workspaceRoot: workspacePath,
+            sessionId,
+            runtimeRef: ready.runtime ? ready.runtime.runtimeRef : undefined,
+        })
+        : null;
     if (resumeSpec?.stateEnv && !sessionStateDir) {
         return reply.code(500).send({ error: 'Failed to prepare agent state directory' });
     }

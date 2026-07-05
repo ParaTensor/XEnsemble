@@ -6,7 +6,18 @@ const { getRuntime } = require('./registry');
 const { RuntimeError } = require('./interfaces');
 const { singleflight } = require('./singleflight');
 const { recordEvent } = require('../events/recordEvent');
+const { resolveBoxImage } = require('./agentBoxImages');
 const PROVIDER = process.env.RUNTIME_PROVIDER || 'local';
+
+function parseRuntimeSpecs(raw) {
+    if (!raw) return {};
+    try {
+        const parsed = JSON.parse(raw);
+        return parsed && typeof parsed === 'object' ? parsed : {};
+    } catch {
+        return {};
+    }
+}
 
 function runtimeKey(projectId, runtimeId) {
     return `${projectId}:${runtimeId || 'default'}`;
@@ -38,22 +49,47 @@ async function ensureProjectRuntime(project, opts = {}) {
             runtimeRow = created.runtime;
         }
 
+        const storedSpecs = parseRuntimeSpecs(runtimeRow.specs);
+        const image = await resolveBoxImage({
+            agentId: opts.agentId,
+            image: opts.image,
+        });
+
         const provision = await rt.provider.ensureReady(project, {
             runtimeId: runtimeRow.id,
+            agentId: opts.agentId,
+            image,
+            storedImage: storedSpecs.image || null,
             baseSnapshotId: opts.baseSnapshotId,
             checkpointId: opts.checkpointId,
         });
         const workspacePath = provision.workspacePath;
         const now = Date.now();
+        const nextSpecs = {
+            ...storedSpecs,
+            ...(provision.image ? { image: provision.image } : image ? { image } : {}),
+        };
+        const specsJson = Object.keys(nextSpecs).length > 0 ? JSON.stringify(nextSpecs) : runtimeRow.specs;
 
-        if (runtimeRow.endpoint !== workspacePath || runtimeRow.runtimeRef !== provision.runtimeRef) {
+        if (
+            runtimeRow.endpoint !== workspacePath
+            || runtimeRow.runtimeRef !== provision.runtimeRef
+            || runtimeRow.specs !== specsJson
+        ) {
             await db.update(schema.runtimes).set({
                 runtimeRef: provision.runtimeRef,
                 endpoint: workspacePath,
+                specs: specsJson,
                 status: 'ready',
                 updatedAt: now,
             }).where(eq(schema.runtimes.id, runtimeRow.id));
-            runtimeRow = { ...runtimeRow, runtimeRef: provision.runtimeRef, endpoint: workspacePath, status: 'ready' };
+            runtimeRow = {
+                ...runtimeRow,
+                runtimeRef: provision.runtimeRef,
+                endpoint: workspacePath,
+                specs: specsJson,
+                status: 'ready',
+            };
         }
 
         if (project.serverPath !== workspacePath) {

@@ -1,5 +1,6 @@
 const { RuntimeProvider, RuntimeError } = require('./interfaces');
 const BoxLiteClient = require('./BoxLiteClient');
+const { resolveBoxImage } = require('./agentBoxImages');
 const BoxLiteExecAdapter = require('./BoxLiteExecAdapter');
 const { BoxLiteStreamHandle } = BoxLiteExecAdapter;
 
@@ -31,9 +32,16 @@ class BoxLiteRuntimeProvider extends RuntimeProvider {
     async ensureReady(project, opts = {}) {
         const runtimeId = opts && opts.runtimeId ? opts.runtimeId : null;
         const name = runtimeId || `p_${project.id}`;
-        const image = opts.image || process.env.BLINK_IMAGE || undefined;
+        const image = await resolveBoxImage({
+            agentId: opts.agentId,
+            image: opts.image,
+        });
         const warm = !!opts.warm;
         const workspacePath = this.workspacePath();
+        const storedImage = opts.storedImage || null;
+        if (storedImage && storedImage !== image) {
+            await this.client.deleteSession(name);
+        }
         try {
             await this.client.openSession(name, image, warm);
         } catch (e) {
@@ -50,7 +58,7 @@ class BoxLiteRuntimeProvider extends RuntimeProvider {
             }
         }
         await this.ensureWorkspacePath(name, workspacePath);
-        return { runtimeRef: name, workspacePath };
+        return { runtimeRef: name, workspacePath, image };
     }
 
     async attach(runtimeRef) {

@@ -1,5 +1,6 @@
 const { FsAdapter, RuntimeError } = require('./interfaces');
 const BoxLiteClient = require('./BoxLiteClient');
+const { buildSessionStateDirRef } = require('../session/stateDirRef');
 
 function safeRel(p) {
     const s = String(p || '.').replace(/\\/g, '/').replace(/^\//, '');
@@ -56,6 +57,51 @@ class BoxLiteFsAdapter extends FsAdapter {
             return r.stdout || '';
         } catch (e) {
             throw new RuntimeError(e.message || 'fs read error', 500);
+        }
+    }
+
+    resolveStateDir(workspaceRoot, sessionId) {
+        const stateDirRef = buildSessionStateDirRef(sessionId);
+        const root = String(workspaceRoot || '/workspace').replace(/\/$/, '');
+        const rel = stateDirRef.replace(/\\/g, '/');
+        const stateDirPath = `${root}/${rel}`;
+        return { stateDirRef, stateDirPath };
+    }
+
+    boxTarget(rootDir, relativePath) {
+        const rel = safeRel(relativePath);
+        const cwd = rootDir || '/workspace';
+        if (rel.startsWith('/')) {
+            return rel;
+        }
+        return `${cwd.replace(/\/$/, '')}/${rel}`;
+    }
+
+    async exists(rootDir, relativePath, opts = {}) {
+        const name = opts.runtimeRef;
+        if (!name) {
+            return false;
+        }
+        const target = this.boxTarget(rootDir, relativePath);
+        const cwd = rootDir || '/workspace';
+        try {
+            const r = await this.client.execForResult(name, 'test', ['-e', target], {}, cwd);
+            return r.exitCode === 0;
+        } catch (_) {
+            return false;
+        }
+    }
+
+    async mkdirp(rootDir, relativePath, opts = {}) {
+        const name = opts.runtimeRef;
+        if (!name) {
+            throw new RuntimeError('runtimeRef required', 400);
+        }
+        const target = this.boxTarget(rootDir, relativePath);
+        const cwd = rootDir || '/workspace';
+        const r = await this.client.execForResult(name, 'mkdir', ['-p', target], {}, cwd);
+        if (r.exitCode !== 0) {
+            throw new RuntimeError('mkdir failed', 500);
         }
     }
 }
