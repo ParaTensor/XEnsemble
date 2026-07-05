@@ -2,6 +2,7 @@ const httpProxy = require('http-proxy');
 const { eq } = require('drizzle-orm');
 const deploymentService = require('../deployments/DeploymentService');
 const previewRegistry = require('../runtime/localPreviewRegistry');
+const { appendInboxLog } = require('../workspace/logInbox');
 const { db } = require('../db/index');
 const schema = require('../db/schema');
 
@@ -139,7 +140,27 @@ async function proxyPreviewRequest(request, reply) {
     });
 }
 
+async function handleDevConsole(request, reply) {
+    const deploymentId = request.params.deploymentId;
+    const resolved = await resolveDeployment(request.raw, deploymentId);
+    if (resolved.error) {
+        const payload = { error: resolved.error };
+        if (resolved.code) payload.code = resolved.code;
+        return reply.code(resolved.status).send(payload);
+    }
+
+    const level = request.body?.level || 'log';
+    const message = request.body?.message ?? '';
+    const workspacePath = resolved.entry.workspacePath;
+    if (workspacePath) {
+        appendInboxLog(workspacePath, 'browser', `${level}: ${message}`);
+    }
+    return reply.code(204).send();
+}
+
 async function registerPreviewGateway(fastify) {
+    fastify.post('/preview/:deploymentId/__dev/console', handleDevConsole);
+
     const proxyOpts = {
         method: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS'],
         handler: proxyPreviewRequest,

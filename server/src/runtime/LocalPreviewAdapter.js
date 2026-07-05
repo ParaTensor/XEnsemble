@@ -7,6 +7,7 @@ const { resolvePlatformSecrets, applyGatewaySynthesis } = require('../agents/age
 const { resolveControlPlanePublicUrlSync } = require('../llm/publicUrl');
 const { loadRuntimeLimits, wrapForLimits } = require('./LocalRuntimeLimits');
 const previewRegistry = require('./localPreviewRegistry');
+const { appendInboxLog } = require('../workspace/logInbox');
 
 const runtimeLimits = loadRuntimeLimits();
 
@@ -120,11 +121,15 @@ class LocalPreviewAdapter extends PreviewAdapter {
         const child = spawn(command, finalArgs, finalOptions);
 
         let logTail = '';
-        const appendLog = (chunk) => {
-            logTail = (logTail + chunk.toString()).slice(-8000);
+        const appendLog = (chunk, stream) => {
+            const text = chunk.toString();
+            logTail = (logTail + text).slice(-8000);
+            for (const line of text.split('\n')) {
+                if (line.trim()) appendInboxLog(workspacePath, 'preview', `${stream}: ${line}`);
+            }
         };
-        child.stdout?.on('data', appendLog);
-        child.stderr?.on('data', appendLog);
+        child.stdout?.on('data', (chunk) => appendLog(chunk, 'stdout'));
+        child.stderr?.on('data', (chunk) => appendLog(chunk, 'stderr'));
 
         child.on('exit', (code) => {
             const cur = previewRegistry.get(deploymentId);
@@ -146,9 +151,10 @@ class LocalPreviewAdapter extends PreviewAdapter {
             throw new RuntimeError(summary, 504);
         }
 
-        previewRegistry.set(deploymentId, { port, child, workspacePath, startedAt: Date.now() });
-
         const publicUrl = `${resolveControlPlanePublicUrlSync()}/preview/${deploymentId}/`;
+        previewRegistry.set(deploymentId, { port, child, workspacePath, startedAt: Date.now() }, { publicUrl });
+        appendInboxLog(workspacePath, 'preview', `started deployment=${deploymentId} port=${port}`);
+
         return {
             publicUrl,
             internalRef: `127.0.0.1:${port}`,
@@ -159,7 +165,12 @@ class LocalPreviewAdapter extends PreviewAdapter {
     async stopPreview(deployment) {
         const id = deployment.id || deployment;
         const entry = previewRegistry.remove(id);
-        if (entry) killPreviewProcess(entry);
+        if (entry) {
+            if (entry.workspacePath) {
+                appendInboxLog(entry.workspacePath, 'preview', `stopped deployment=${id}`);
+            }
+            killPreviewProcess(entry);
+        }
     }
 }
 

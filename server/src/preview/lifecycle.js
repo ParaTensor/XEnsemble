@@ -4,10 +4,22 @@ const schema = require('../db/schema');
 const { getRuntime } = require('../runtime/registry');
 const { recordEvent } = require('../events/recordEvent');
 const previewRegistry = require('../runtime/localPreviewRegistry');
+const { probePort } = require('../runtime/previewHealth');
+const { getPreviewPort } = require('../workspace/previewPorts');
+const { projectDir } = require('../workspace');
 
 const SCAN_MS = 60_000;
 
-/** server 重启后内存进程已失，将 DB 中 running preview 标为 stopped */
+async function resolveWorkspacePath(row) {
+    const projects = await db.select({ serverPath: schema.projects.serverPath })
+        .from(schema.projects)
+        .where(eq(schema.projects.id, row.projectId));
+    const serverPath = projects[0]?.serverPath;
+    if (serverPath) return serverPath;
+    return projectDir(row.userId, row.projectId);
+}
+
+/** server 重启后尝试从 `.agents/ports.json` 恢复；否则将 DB 中 running preview 标为 stopped */
 async function reconcileStaleRunningPreviews() {
     const rows = await db.select().from(schema.deployments)
         .where(and(
@@ -17,6 +29,20 @@ async function reconcileStaleRunningPreviews() {
 
     for (const row of rows) {
         if (previewRegistry.get(row.id)) continue;
+
+        const workspacePath = await resolveWorkspacePath(row);
+        const persisted = getPreviewPort(workspacePath, row.id);
+        if (persisted?.port && await probePort('127.0.0.1', persisted.port)) {
+            previewRegistry.set(row.id, {
+                port: persisted.port,
+                child: null,
+                workspacePath,
+                startedAt: persisted.started_at || Date.now(),
+                recovered: true,
+            }, { publicUrl: row.publicUrl || persisted.public_url });
+            continue;
+        }
+
         await db.update(schema.deployments).set({
             status: 'stopped',
             lastErrorMessage: 'Preview process lost after control plane restart',

@@ -36,13 +36,15 @@ This directory is managed by XEnsemble. Agents should not guess ports, login, or
 
 ## Preview
 
+- Idempotent ensure: \`POST /api/v1/projects/:id/agents/ensure-preview\`
+- Ports and URLs: \`.agents/ports.json\`
 - Configure \`.agents/preview.json\` or use package.json dev script.
-- Ports will be recorded under \`.agents/ports.json\` (P1).
 
 ## Logs
 
+- Aggregated dev logs: \`.agents/in/server.log\` (\`[preview]\`, \`[browser]\`)
+- Browser console via preview \`POST __dev/console\` (with preview token) or \`POST .../agents/log\`
 - Terminal transcript: server-side NDJSON.
-- Aggregated dev logs: \`.agents/in/server.log\` (P1).
 `;
 
 function agentsDir(workspacePath) {

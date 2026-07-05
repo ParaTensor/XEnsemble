@@ -7,6 +7,7 @@ const policy = require('../auth/PolicyService');
 const unigateway = require('../gateway/unigatewayManager');
 const { resolveSpawnEnv, findMissing } = require('../agents/agentEnv');
 const { readSetupStatus } = require('./agentBootstrap');
+const { getPreviewPort } = require('./previewPorts');
 const { projectDir } = require('../workspace');
 
 function checkOk(extra = {}) {
@@ -39,7 +40,7 @@ async function checkGateway() {
     return checkOk({ running: true, base_url: status.baseUrl || null });
 }
 
-async function checkPreview(projectId, userId) {
+async function checkPreview(projectId, userId, workspacePath) {
     const rows = await db.select().from(schema.deployments)
         .where(and(
             eq(schema.deployments.projectId, projectId),
@@ -48,7 +49,10 @@ async function checkPreview(projectId, userId) {
             inArray(schema.deployments.status, ['pending', 'building', 'running']),
         ));
     if (rows.length === 0) {
-        return checkFail('No active preview deployment', { deployment_count: 0 });
+        return checkFail('No active preview deployment', {
+            deployment_count: 0,
+            ensure: 'POST /api/v1/projects/:id/agents/ensure-preview',
+        });
     }
     const running = rows.find((r) => r.status === 'running');
     if (!running) {
@@ -57,10 +61,12 @@ async function checkPreview(projectId, userId) {
             status: rows[0].status,
         });
     }
+    const portMeta = workspacePath ? getPreviewPort(workspacePath, running.id) : null;
     return checkOk({
         deployment_id: running.id,
-        public_url: running.publicUrl,
-        internal_ref: running.internalRef,
+        public_url: running.publicUrl || portMeta?.public_url || null,
+        internal_ref: running.internalRef || portMeta?.internal_ref || null,
+        ports_file: portMeta ? `.agents/ports.json#${running.id}` : null,
     });
 }
 
@@ -178,7 +184,7 @@ async function buildPreflightReport({ user, project, agentId = null, workspacePa
         secrets: await checkSecrets(user, agentId),
         gateway: await checkGateway(),
         llm_router: await checkLlmRouter(),
-        preview: await checkPreview(project.id, user.id),
+        preview: await checkPreview(project.id, user.id, wsPath),
         quota: await checkQuota(user),
         workspace_setup: checkWorkspaceSetup(project, wsPath),
     };
@@ -201,7 +207,9 @@ async function buildPreflightReport({ user, project, agentId = null, workspacePa
         hints,
         endpoints: {
             setup: `/api/v1/projects/${project.id}/agents/setup`,
+            ensure_preview: `/api/v1/projects/${project.id}/agents/ensure-preview`,
             preflight: `/api/v1/projects/${project.id}/preflight`,
+            agent_log: `/api/v1/projects/${project.id}/agents/log`,
             spawn_preview: '/api/v1/session/spawn-preview',
         },
     };

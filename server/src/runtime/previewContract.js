@@ -19,6 +19,27 @@ const DEFAULT_INDEX_HTML = `<!DOCTYPE html>
 <body>
   <h1>Workspace ready</h1>
   <p>Edit files here, or update <code>.agents/preview.json</code> to change how preview starts.</p>
+  <script>
+  (function () {
+    var params = new URLSearchParams(window.location.search);
+    var token = params.get('preview_token');
+    if (!token) return;
+    function post(level, args) {
+      fetch('__dev/console', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Preview-Token': token },
+        body: JSON.stringify({ level: level, message: args.map(String).join(' ') })
+      }).catch(function () {});
+    }
+    ['log', 'warn', 'error', 'info'].forEach(function (m) {
+      var orig = console[m].bind(console);
+      console[m] = function () {
+        post(m, Array.prototype.slice.call(arguments));
+        orig.apply(console, arguments);
+      };
+    });
+  })();
+  </script>
 </body>
 </html>
 `;

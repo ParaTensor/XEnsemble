@@ -40,14 +40,11 @@ XEnsemble 已经有很强的底座（checkpoint/snapshot、idle-hibernate+wake�
 1. **Workspace `.agents/setup` 幂等 bootstrap hook** — `server/src/workspace/agentBootstrap.js`；新 workspace 自动 seed + 本地 runtime 首次 `ensureReady` 时执行；`POST /api/v1/projects/:id/agents/setup` 可强制重跑；成功后写入 `repo_snapshots`。
 2. **统一 preflight 就绪端点** — `GET /api/v1/projects/:id/preflight?agent_id=` → `server/src/workspace/preflight.js`（secrets / gateway / LLM / preview / quota / setup 状态 + hints）。
 
-### P1 —「可观测」与「可复用」
+### P1 —「可观测」与「可复用」 ✅ 已落地（2026-07-05）
 
-3. **持久化 + 幂等化 preview（ensure-dev-server 版）**
-   - 把 `localPreviewRegistry` 的内存态落盘（端口/URL/健康），重启可 reconcile；对外暴露幂等的「ensure-preview」：健康复用、卡死重启、没起新起。
-   - 端口写进 workspace 内 `.agents/ports.json`，agent 读文件不硬编码。
+3. **持久化 + 幂等化 preview（ensure-dev-server 版）** — `localPreviewRegistry` 写入 `.agents/ports.json`；`reconcileStaleRunningPreviews` 重启后按端口探测恢复；`POST /api/v1/projects/:id/agents/ensure-preview` 健康复用 / 失活重启 / 无则创建（`DeploymentService.ensurePreview`）。
 
-4. **聚合日志收件箱 + 浏览器 console 转发**
-   - 复用 `TranscriptStore` 基建，把 preview stdout/stderr 和浏览器 console（打 `[browser]` 标签）汇入一个持久、可 grep 的 per-workspace 日志文件。
+4. **聚合日志收件箱 + 浏览器 console 转发** — preview stdout/stderr 写入 `.agents/in/server.log`（`[preview]`）；preview gateway `POST /preview/:id/__dev/console` 与 `POST .../agents/log` 写入 `[browser]`。
 
 ### P2 —「引导」与「唤醒对称性」
 

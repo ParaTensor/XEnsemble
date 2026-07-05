@@ -8,6 +8,8 @@ const { ensureProjectRuntime } = require('../runtime/RuntimeService');
 const { recordEvent } = require('../events/recordEvent');
 const { singleflight } = require('../runtime/singleflight');
 const { createCheckpoint } = require('../repositories/RepositoryEnvironmentService');
+const previewRegistry = require('../runtime/localPreviewRegistry');
+const { checkPreviewEntryHealth, tryRecoverPreview } = require('../workspace/ensurePreview');
 
 const PREVIEW_TTL_MS = 24 * 60 * 60 * 1000;
 
@@ -256,6 +258,72 @@ async function deployAndStartPreview(userId, project) {
     return startPreview(userId, project, row);
 }
 
+/**
+ * 幂等 ensure-preview：健康则复用，失活则重启，无 deployment 则创建并启动。
+ */
+async function ensurePreview(userId, project) {
+    return singleflight(`preview:ensure:${project.id}`, async () => {
+        let ensureOpts = {};
+        const rows = await db.select().from(schema.deployments)
+            .where(and(
+                eq(schema.deployments.userId, userId),
+                eq(schema.deployments.projectId, project.id),
+                eq(schema.deployments.kind, 'preview'),
+            ))
+            .orderBy(desc(schema.deployments.createdAt));
+
+        let deployment = rows.find((r) => r.status === 'running')
+            || rows.find((r) => r.status === 'building')
+            || rows.find((r) => r.status === 'pending')
+            || rows.find((r) => r.status === 'failed')
+            || rows.find((r) => r.status === 'stopped');
+
+        if (!deployment) {
+            const result = await deployAndStartPreview(userId, project);
+            return { ...result, ensured: 'created' };
+        }
+
+        if (deployment.revision && deployment.revision.startsWith('checkpoint:')) {
+            ensureOpts = { checkpointId: deployment.revision.split(':')[1] };
+        }
+        const { workspacePath } = await ensureProjectRuntime(project, ensureOpts);
+
+        if (deployment.status === 'pending' || deployment.status === 'failed') {
+            const result = await startPreview(userId, project, deployment);
+            return { ...result, ensured: 'started' };
+        }
+
+        if (deployment.status === 'building') {
+            const row = await getForUser(userId, deployment.id);
+            const previewToken = await issuePreviewToken(deployment.id);
+            return { ...formatDeployment(row), preview_token: previewToken, ensured: 'building' };
+        }
+
+        if (deployment.status === 'stopped') {
+            const result = await startPreview(userId, project, deployment);
+            return { ...result, ensured: 'restarted' };
+        }
+
+        let entry = previewRegistry.get(deployment.id);
+        if (!entry) {
+            entry = await tryRecoverPreview(deployment, workspacePath);
+        }
+
+        const healthy = entry && await checkPreviewEntryHealth(entry);
+        if (healthy) {
+            previewRegistry.set(deployment.id, entry, { publicUrl: deployment.publicUrl });
+            const row = await getForUser(userId, deployment.id);
+            const previewToken = await issuePreviewToken(deployment.id);
+            return { ...formatDeployment(row), preview_token: previewToken, ensured: 'reused' };
+        }
+
+        await stopPreview(userId, deployment);
+        const row = await getForUser(userId, deployment.id);
+        const result = await startPreview(userId, project, row);
+        return { ...result, ensured: 'restarted' };
+    });
+}
+
 module.exports = {
     formatDeployment,
     listForProject,
@@ -266,5 +334,6 @@ module.exports = {
     startPreview,
     stopPreview,
     deployAndStartPreview,
+    ensurePreview,
     remove,
 };
