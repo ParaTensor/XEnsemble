@@ -1392,9 +1392,12 @@ fastify.get('/api/v1/workspace/file', { preValidation: [fastify.authenticate] },
 });
 
 async function startServer() {
-    const { runMigrations } = require('./db/migrate');
     const { seedIfNeeded } = require('./db/seed');
-    await runMigrations(db);
+    // 生产环境由 deploy/install.sh 以管理员连接执行 migrate；应用 role 无 DDL 权限。
+    if (process.env.NODE_ENV !== 'production' || process.env.RUN_DB_MIGRATE === '1') {
+        const { runMigrations } = require('./db/migrate');
+        await runMigrations(db);
+    }
     await seedIfNeeded(db);
 
     unigateway.installShutdownHooks(fastify.log);

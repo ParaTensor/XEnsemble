@@ -66,7 +66,11 @@ set -a
 # shellcheck disable=SC1091
 source deploy/xensemble.env
 set +a
-(cd server && npm run db:migrate)
+if [ -n "${MIGRATE_DATABASE_URL:-}" ]; then
+  (cd server && MIGRATE_DATABASE_URL="$MIGRATE_DATABASE_URL" npm run db:migrate)
+else
+  (cd server && npm run db:migrate)
+fi
 
 if ! command -v systemctl >/dev/null 2>&1; then
   echo "==> No systemd on this host; skipping systemd/nginx. Start manually:"

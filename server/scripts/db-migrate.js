@@ -1,14 +1,20 @@
 #!/usr/bin/env node
-require('../src/db/index');
-const { db } = require('../src/db/index');
+const { resetConnection, closeConnection } = require('../src/db/index');
 const { runMigrations } = require('../src/db/migrate');
 
-runMigrations(db)
-    .then(() => {
+const migrateUrl = process.env.MIGRATE_DATABASE_URL || process.env.DATABASE_URL;
+
+async function main() {
+    const { db } = await resetConnection(migrateUrl);
+    try {
+        await runMigrations(db);
         console.log('Migrations applied.');
-        process.exit(0);
-    })
-    .catch((err) => {
-        console.error(err);
-        process.exit(1);
-    });
+    } finally {
+        await closeConnection();
+    }
+}
+
+main().catch((err) => {
+    console.error(err);
+    process.exit(1);
+});
