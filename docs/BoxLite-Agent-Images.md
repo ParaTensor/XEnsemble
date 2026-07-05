@@ -62,6 +62,10 @@ flowchart LR
 
 When the resolved image differs from `runtimes.specs.image`, `BoxLiteRuntimeProvider` **deletes and re-opens** the blink session so the new rootfs is used.
 
+**Local provider:** `ensureProjectRuntime` does **not** call `resolveBoxImage` or persist `specs.image` when `RUNTIME_PROVIDER=local` — image metadata is boxlite-only.
+
+**Non-buildable agents** (`cursor`, `amp`, `hermes`): starting a boxlite session for these agents returns **400** unless `BLINK_IMAGE_<AGENT>` is set to a custom image. The runtime does not silently fall back to the base image (which lacks the agent CLI).
+
 ---
 
 ## 3. Build pipeline
@@ -192,5 +196,5 @@ node --test src/runtime/agentBoxImages.test.js \
 - **Build in Admin UI:** not implemented; builds run via CLI/CI (Docker socket not assumed on control plane)  
 - **Digest verification:** stored for audit; runtime does not yet pin by digest at blink open  
 - **One image per project runtime:** switching agents on the same project recreates the blink session when the image changes  
-- **Non-buildable agents:** still require Local runtime or custom env override  
+- **Non-buildable agents:** return 400 on boxlite session start unless `BLINK_IMAGE_<AGENT>` override is set; use Local runtime or register a custom image env  
 - See [`DurableSessions-Followups.md`](./DurableSessions-Followups.md) for blink-server restart recovery, OSC terminal echo, and test DB isolation  

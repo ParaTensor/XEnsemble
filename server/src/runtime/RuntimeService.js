@@ -50,25 +50,31 @@ async function ensureProjectRuntime(project, opts = {}) {
         }
 
         const storedSpecs = parseRuntimeSpecs(runtimeRow.specs);
-        const image = await resolveBoxImage({
-            agentId: opts.agentId,
-            image: opts.image,
-        });
+        const isBoxLite = PROVIDER === 'boxlite';
+        let image = null;
+        if (isBoxLite) {
+            image = await resolveBoxImage({
+                agentId: opts.agentId,
+                image: opts.image,
+            });
+        }
 
         const provision = await rt.provider.ensureReady(project, {
             runtimeId: runtimeRow.id,
-            agentId: opts.agentId,
-            image,
-            storedImage: storedSpecs.image || null,
+            ...(isBoxLite ? {
+                agentId: opts.agentId,
+                image,
+                storedImage: storedSpecs.image || null,
+            } : {}),
             baseSnapshotId: opts.baseSnapshotId,
             checkpointId: opts.checkpointId,
         });
         const workspacePath = provision.workspacePath;
         const now = Date.now();
-        const nextSpecs = {
-            ...storedSpecs,
-            ...(provision.image ? { image: provision.image } : image ? { image } : {}),
-        };
+        const nextSpecs = { ...storedSpecs };
+        if (isBoxLite && (provision.image || image)) {
+            nextSpecs.image = provision.image || image;
+        }
         const specsJson = Object.keys(nextSpecs).length > 0 ? JSON.stringify(nextSpecs) : runtimeRow.specs;
 
         if (

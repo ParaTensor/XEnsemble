@@ -56,6 +56,20 @@ function normalizeTag(tag) {
     return value;
 }
 
+function normalizeImageRef(imageRef) {
+    const value = String(imageRef || '').trim();
+    if (!value) {
+        throw new RuntimeError('image_ref is required', 400);
+    }
+    if (value.includes('\0') || /\s/.test(value)) {
+        throw new RuntimeError('image_ref contains invalid characters', 400);
+    }
+    if (value.length > 512) {
+        throw new RuntimeError('image_ref is too long', 400);
+    }
+    return value;
+}
+
 async function listAgentBoxImageCatalog() {
     const agents = await db.select().from(schema.agents);
     const versions = await db.select().from(schema.agentBoxImages).orderBy(desc(schema.agentBoxImages.createdAt));
@@ -114,10 +128,7 @@ async function registerVersion({
     }
 
     const normalizedTag = normalizeTag(tag);
-    const resolvedImageRef = String(imageRef || buildDefaultImageRef(agentId, normalizedTag)).trim();
-    if (!resolvedImageRef) {
-        throw new RuntimeError('image_ref is required', 400);
-    }
+    const resolvedImageRef = normalizeImageRef(imageRef || buildDefaultImageRef(agentId, normalizedTag));
 
     const now = Date.now();
     const id = `img_${crypto.randomBytes(6).toString('hex')}`;

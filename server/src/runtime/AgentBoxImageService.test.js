@@ -3,8 +3,6 @@ const assert = require('node:assert/strict');
 const Database = require('better-sqlite3');
 const { drizzle } = require('drizzle-orm/better-sqlite3');
 
-const schema = require('../db/schema');
-
 function createTestDb() {
     const sqlite = new Database(':memory:');
     sqlite.exec(`
@@ -40,21 +38,40 @@ function createTestDb() {
     `);
     sqlite.prepare(`INSERT INTO users (id, username, password_hash, created_at) VALUES ('admin', 'admin', 'hash', 1)`).run();
     sqlite.prepare(`INSERT INTO agents (id, name, cmd, args, env_required) VALUES ('claude-code', 'Claude Code', 'claude', '[]', '[]')`).run();
-    return drizzle(sqlite);
+    return { db: drizzle(sqlite), sqlite };
+}
+
+function withMockedDb(testDb, sqlite, fn) {
+    const dbIndexPath = require.resolve('../db/index');
+    const previousCache = require.cache[dbIndexPath];
+    require.cache[dbIndexPath] = {
+        id: dbIndexPath,
+        filename: dbIndexPath,
+        loaded: true,
+        exports: { db: testDb, sqlite },
+    };
+    delete require.cache[require.resolve('./AgentBoxImageService')];
+    delete require.cache[require.resolve('./agentBoxImages')];
+
+    return Promise.resolve()
+        .then(fn)
+        .finally(() => {
+            delete require.cache[require.resolve('./AgentBoxImageService')];
+            delete require.cache[require.resolve('./agentBoxImages')];
+            if (previousCache) {
+                require.cache[dbIndexPath] = previousCache;
+            } else {
+                delete require.cache[dbIndexPath];
+            }
+        });
 }
 
 test('register, activate, and resolve active boxlite image from DB', async () => {
-    const testDb = createTestDb();
-    const dbModule = require('../db/index');
-    const previousDb = dbModule.db;
-    dbModule.db = testDb;
+    const { db: testDb, sqlite } = createTestDb();
+    await withMockedDb(testDb, sqlite, async () => {
+        const service = require('./AgentBoxImageService');
+        const { resolveBoxImage } = require('./agentBoxImages');
 
-    delete require.cache[require.resolve('./AgentBoxImageService')];
-    delete require.cache[require.resolve('./agentBoxImages')];
-    const service = require('./AgentBoxImageService');
-    const { resolveBoxImage } = require('./agentBoxImages');
-
-    try {
         const first = await service.registerVersion({
             agentId: 'claude-code',
             tag: 'v1',
@@ -83,9 +100,21 @@ test('register, activate, and resolve active boxlite image from DB', async () =>
         const entry = catalog.find((row) => row.agent_id === 'claude-code');
         assert.equal(entry.active_version.tag, 'v2');
         assert.equal(entry.versions.length, 2);
-    } finally {
-        dbModule.db = previousDb;
-        delete require.cache[require.resolve('./AgentBoxImageService')];
-        delete require.cache[require.resolve('./agentBoxImages')];
-    }
+    });
+});
+
+test('registerVersion rejects invalid image_ref without touching shared emdash.db', async () => {
+    const { db: testDb, sqlite } = createTestDb();
+    await withMockedDb(testDb, sqlite, async () => {
+        const service = require('./AgentBoxImageService');
+        await assert.rejects(
+            () => service.registerVersion({
+                agentId: 'claude-code',
+                tag: 'bad-ref',
+                imageRef: 'registry.example/agent claude-code:v1',
+                createdBy: 'admin',
+            }),
+            /image_ref contains invalid characters/i,
+        );
+    });
 });

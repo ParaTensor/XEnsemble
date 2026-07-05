@@ -1,4 +1,5 @@
 const { getManifest } = require('../agents/agentLifecycle');
+const { RuntimeError } = require('./interfaces');
 
 const DEFAULT_REGISTRY = 'xensemble';
 const DEFAULT_BASE_IMAGE = 'xensemble/box-base:bookworm';
@@ -68,8 +69,16 @@ function resolveAgentBoxImageDefault(agentId) {
 async function resolveBoxImage({ agentId, image } = {}) {
     if (image?.trim()) return image.trim();
     if (agentId) {
+        const catalog = AGENT_BOX_IMAGE_CATALOG[agentId];
         const envOverride = process.env[agentImageEnvKey(agentId)]?.trim();
         if (envOverride) return envOverride;
+
+        if (catalog?.buildable === false) {
+            throw new RuntimeError(
+                `Agent "${agentId}" is not supported on boxlite (${catalog.reason || 'no image build'})`,
+                400,
+            );
+        }
 
         const { getActiveImageRef } = require('./AgentBoxImageService');
         const stored = await getActiveImageRef(agentId);

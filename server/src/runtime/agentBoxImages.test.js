@@ -55,3 +55,20 @@ test('listBuildableAgentImages includes npm-backed agents and skips unsupported 
     assert.match(byId.get('claude-code').install, /npm install -g/);
     assert.match(resolveAgentBoxImageDefault('claude-code'), /agent-claude-code/);
 });
+
+test('resolveBoxImage rejects non-buildable agents on boxlite unless env override is set', async () => {
+    await assert.rejects(
+        () => resolveBoxImage({ agentId: 'cursor' }),
+        /not supported on boxlite/i,
+    );
+
+    const key = agentImageEnvKey('cursor');
+    const prev = process.env[key];
+    process.env[key] = 'registry.example/cursor:custom';
+    try {
+        assert.equal(await resolveBoxImage({ agentId: 'cursor' }), 'registry.example/cursor:custom');
+    } finally {
+        if (prev === undefined) delete process.env[key];
+        else process.env[key] = prev;
+    }
+});
