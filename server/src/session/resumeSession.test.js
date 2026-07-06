@@ -23,8 +23,8 @@ before(async () => {
     ctx = await bootstrapTestDb([
         '../db/index',
         '../runtime/TranscriptStore',
-        './resumeSession',
         './SessionManager',
+        './resumeSession',
     ], __dirname);
     ({ db, schema } = ctx);
     sessionManager = ctx.reloaded['./SessionManager'];

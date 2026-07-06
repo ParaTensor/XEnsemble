@@ -119,13 +119,24 @@ function clearSrcModuleCache() {
 async function bootstrapTestDb(modulePaths = [], callerDir = path.join(__dirname, '..'), options = {}) {
     const ctx = await setupTestDb(options);
     clearSrcModuleCache();
-    const restoreDbIndex = patchDbIndexExports(ctx.db);
+    const srcRoot = path.join(__dirname, '..');
+    const dbIndexPath = path.join(srcRoot, 'db', 'index.js');
+    let restoreDbIndex = patchDbIndexExports(ctx.db);
 
     const reloaded = {};
     for (const modulePath of modulePaths) {
         const resolved = require.resolve(modulePath, { paths: [callerDir] });
+        // Never reload db/index: executing the module reconnects to DATABASE_URL and
+        // breaks isolation for every service that captured db at load time.
+        if (resolved === dbIndexPath) {
+            reloaded[modulePath] = { db: ctx.db, schema };
+            continue;
+        }
         delete require.cache[resolved];
         reloaded[modulePath] = require(resolved);
+        if (!require.cache[dbIndexPath] || require.cache[dbIndexPath].exports.db !== ctx.db) {
+            restoreDbIndex = patchDbIndexExports(ctx.db);
+        }
     }
     return {
         ...ctx,

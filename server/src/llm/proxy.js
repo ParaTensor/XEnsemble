@@ -3,7 +3,7 @@ const httpProxy = require('http-proxy');
 const unigateway = require('../gateway/unigatewayManager');
 const { verifySessionToken } = require('./sessionToken');
 const { resolveGatewayUpstreamUrl } = require('./gatewayUpstream');
-const { getAgentGatewayKey } = require('./serviceRouter');
+const serviceRouter = require('./serviceRouter');
 const { checkLlmRequestQuota } = require('./quota');
 const { recordEvent } = require('../events/recordEvent');
 const { db } = require('../db/index');
@@ -146,7 +146,7 @@ async function proxyLlmRequest(request, reply) {
     );
 
     try {
-        const agentGatewayKey = await getAgentGatewayKey(claims.aid, request.log);
+        const agentGatewayKey = await serviceRouter.getAgentGatewayKey(claims.aid, request.log);
         await forwardToGateway(request, reply, {
             targetBaseUrl: gateway.baseUrl,
             gatewayKey: agentGatewayKey,

@@ -66,7 +66,10 @@ describe('LLM proxy /v1/models', () => {
 
         ctx = await bootstrapTestDb(['../llm/serviceRouter', '../llm/proxy'], __dirname);
         ({ db, schema } = ctx);
-        registerLlmProxy = ctx.reloaded['../llm/proxy'].registerLlmProxy;
+        const serviceRouter = ctx.reloaded['../llm/serviceRouter'];
+        serviceRouter.getAgentGatewayKey = async () => 'ugk_test_agent_gateway_key';
+        delete require.cache[require.resolve('../llm/proxy', { paths: [__dirname] })];
+        registerLlmProxy = require('../llm/proxy').registerLlmProxy;
 
         const users = await db.select().from(schema.users).limit(1);
         if (users.length > 0) {
