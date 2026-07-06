@@ -28,6 +28,21 @@ function makeMockExec(handler = () => '') {
     return fn;
 }
 
+function makeLocalExec() {
+    return async (cmd, args, env, options = {}) => {
+        const result = spawnSync(cmd, args, {
+            cwd: options.cwd,
+            env: { ...process.env, ...(env || {}) },
+            encoding: 'utf8',
+        });
+        return {
+            exitCode: result.status ?? 1,
+            stdout: result.stdout || '',
+            stderr: result.stderr || '',
+        };
+    };
+}
+
 function findCall(calls, ...prefix) {
     return calls.find((c) => prefix.every((arg, i) => c.args[i] === arg));
 }
@@ -333,7 +348,7 @@ describe('GitOperationService (real git)', { skip: !hasGit() }, () => {
 
         const seed = path.join(tmpRoot, 'seed');
         fs.mkdirSync(seed, { recursive: true });
-        git(['init'], seed);
+        git(['init', '-b', 'main'], seed);
         git(['config', 'user.email', 'seed@example.com'], seed);
         git(['config', 'user.name', 'Seed'], seed);
         fs.writeFileSync(path.join(seed, 'README.md'), 'hello');
@@ -345,6 +360,7 @@ describe('GitOperationService (real git)', { skip: !hasGit() }, () => {
         service = new GitOperationService({
             ensureProjectRuntime: async () => ({ workspacePath }),
             getToken: async () => undefined,
+            exec: makeLocalExec(),
         });
 
         await service.cloneRepo({ id: 'p1' }, { repoUrl: origin, branch: 'main' });

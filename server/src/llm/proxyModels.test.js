@@ -6,6 +6,7 @@ const { issueSessionToken } = require('./sessionToken');
 const unigateway = require('../gateway/unigatewayManager');
 const { eq } = require('drizzle-orm');
 const { resetLlmQuotaForTests } = require('./quota');
+const { resetAgentApiKeyCacheForTests } = require('./serviceRouter');
 const { bootstrapTestDb } = require('../test/db');
 
 let ctx;
@@ -31,8 +32,12 @@ describe('LLM proxy /v1/models', () => {
     let originalEnsureSecrets;
     const received = [];
 
+    let originalUpstreamUrl;
+
     before(async () => {
-        ctx = await bootstrapTestDb(['../db/index', '../llm/proxy'], __dirname);
+        originalUpstreamUrl = process.env.LLM_GATEWAY_UPSTREAM_URL;
+        resetAgentApiKeyCacheForTests();
+        ctx = await bootstrapTestDb(['../db/index', '../llm/proxy', '../llm/serviceRouter'], __dirname);
         ({ db, schema } = ctx);
         registerLlmProxy = ctx.reloaded['../llm/proxy'].registerLlmProxy;
         resetLlmQuotaForTests();
@@ -109,6 +114,12 @@ describe('LLM proxy /v1/models', () => {
     after(async () => {
         unigateway.ensureRunning = originalEnsureRunning;
         unigateway.ensureGatewaySecrets = originalEnsureSecrets;
+        resetAgentApiKeyCacheForTests();
+        if (originalUpstreamUrl == null) {
+            delete process.env.LLM_GATEWAY_UPSTREAM_URL;
+        } else {
+            process.env.LLM_GATEWAY_UPSTREAM_URL = originalUpstreamUrl;
+        }
         await db.delete(schema.sessions).where(eq(schema.sessions.id, TEST_SESSION_ID));
         const cfgRows = await db
             .select()

@@ -29,6 +29,10 @@ async function ensureAgentApiKey(agentId, log) {
     return key;
 }
 
+function resetAgentApiKeyCacheForTests() {
+    agentApiKeyCache.clear();
+}
+
 /**
  * Return a per-agent UniGateway API key.
  * The key is deterministically derived from the global gateway key and bound to the
@@ -38,4 +42,4 @@ async function getAgentGatewayKey(agentId, log) {
     return ensureAgentApiKey(agentId, log);
 }
 
-module.exports = { getAgentGatewayKey };
+module.exports = { getAgentGatewayKey, resetAgentApiKeyCacheForTests };

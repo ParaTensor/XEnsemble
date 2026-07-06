@@ -3,21 +3,29 @@ const assert = require('node:assert/strict');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const {
-    seedAgentWorkspaceFiles,
-    shouldRunSetup,
-    ensureAgentBootstrap,
-    readSetupStatus,
-} = require('./agentBootstrap');
 const { bootstrapTestDb } = require('../test/db');
 
 describe('agentBootstrap', () => {
     let tmpDir;
     let ctx;
+    let ensureAgentBootstrap;
+    let shouldRunSetup;
+    let readSetupStatus;
+    let seedAgentWorkspaceFiles;
 
     before(async () => {
         tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'xensemble-bootstrap-'));
-        ctx = await bootstrapTestDb([], __dirname);
+        ctx = await bootstrapTestDb([
+            './agentBootstrap',
+            '../repositories/RepositoryEnvironmentService',
+            '../events/recordEvent',
+        ], __dirname);
+        ({
+            ensureAgentBootstrap,
+            shouldRunSetup,
+            readSetupStatus,
+            seedAgentWorkspaceFiles,
+        } = ctx.reloaded['./agentBootstrap']);
     });
 
     after(async () => {
@@ -39,7 +47,7 @@ describe('agentBootstrap', () => {
     it('runs setup once and skips when hash unchanged', async () => {
         const projectId = `proj_${Date.now()}`;
         const userId = `usr_${Date.now()}`;
-        const schema = require('../db/schema');
+        const { schema } = ctx;
         await ctx.db.insert(schema.users).values({
             id: userId,
             username: `bootstrap_${Date.now()}`,
