@@ -24,6 +24,7 @@ const GATEWAY_MODELS = {
 
 describe('LLM proxy /v1/models', () => {
     let app;
+    let appBaseUrl;
     let stub;
     let stubUrl;
     let testUserId;
@@ -108,7 +109,9 @@ describe('LLM proxy /v1/models', () => {
 
         app = fastify({ logger: false });
         await registerLlmProxy(app);
-        await app.ready();
+        await app.listen({ port: 0, host: '127.0.0.1' });
+        const { port } = app.server.address();
+        appBaseUrl = `http://127.0.0.1:${port}`;
     });
 
     after(async () => {
@@ -145,14 +148,13 @@ describe('LLM proxy /v1/models', () => {
             role: 'admin',
         });
 
-        const res = await app.inject({
-            method: 'GET',
-            url: '/api/v1/llm/v1/models',
+        const res = await fetch(`${appBaseUrl}/api/v1/llm/v1/models`, {
             headers: { authorization: `Bearer ${token}` },
         });
 
-        assert.equal(res.statusCode, 200, res.body);
-        const body = JSON.parse(res.body);
+        const rawBody = await res.text();
+        assert.equal(res.status, 200, rawBody);
+        const body = JSON.parse(rawBody);
         assert.equal(body.object, 'list');
         assert.ok(body.data.some((m) => m.id === 'deepseek/deepseek-v4-flash'));
 

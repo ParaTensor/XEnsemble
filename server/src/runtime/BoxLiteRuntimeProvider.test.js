@@ -28,10 +28,13 @@ let BoxLiteRuntimeProvider;
 
 before(async () => {
     ctx = await bootstrapTestDb([
-        './BoxLiteRuntimeProvider',
         '../workspace/agentBootstrap',
+        '../repositories/RepositoryEnvironmentService',
+        '../events/recordEvent',
     ], __dirname);
-    BoxLiteRuntimeProvider = ctx.reloaded['./BoxLiteRuntimeProvider'];
+
+    delete require.cache[require.resolve('./BoxLiteRuntimeProvider')];
+    BoxLiteRuntimeProvider = require('./BoxLiteRuntimeProvider');
 
     const now = Date.now();
     const { schema } = ctx;
