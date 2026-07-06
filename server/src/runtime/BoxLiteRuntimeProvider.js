@@ -2,7 +2,12 @@ const { RuntimeProvider, RuntimeError } = require('./interfaces');
 const BoxLiteClient = require('./BoxLiteClient');
 const { resolveBoxImage } = require('./agentBoxImages');
 const BoxLiteExecAdapter = require('./BoxLiteExecAdapter');
+const workspace = require('../workspace');
 const { BoxLiteStreamHandle } = BoxLiteExecAdapter;
+
+function buildWorkspaceMountKey(hostPath, guestPath) {
+    return `${hostPath}=>${guestPath}`;
+}
 
 class BoxLiteRuntimeProvider extends RuntimeProvider {
     constructor() {
@@ -14,6 +19,21 @@ class BoxLiteRuntimeProvider extends RuntimeProvider {
         return process.env.XENSEMBLE_WORKSPACE_PATH
             || process.env.WORKSPACE_PATH
             || '/workspace';
+    }
+
+    hostWorkspacePath(project) {
+        return workspace.projectDir(project.userId, project.id);
+    }
+
+    buildWorkspaceVolume(project) {
+        const guestPath = this.workspacePath();
+        const hostPath = this.hostWorkspacePath(project);
+        return {
+            host_path: hostPath,
+            guest_path: guestPath,
+            read_only: false,
+            mountKey: buildWorkspaceMountKey(hostPath, guestPath),
+        };
     }
 
     async ensureWorkspacePath(runtimeRef, workspacePath) {
@@ -37,13 +57,22 @@ class BoxLiteRuntimeProvider extends RuntimeProvider {
             image: opts.image,
         });
         const warm = !!opts.warm;
-        const workspacePath = this.workspacePath();
+        const workspaceVolume = this.buildWorkspaceVolume(project);
+        const { host_path: hostWorkspacePath, guest_path: guestWorkspacePath, mountKey } = workspaceVolume;
+        workspace.createProjectDirectory(project.userId, project.id);
         const storedImage = opts.storedImage || null;
-        if (storedImage && storedImage !== image) {
+        const storedMount = opts.storedMount || null;
+        if ((storedImage && storedImage !== image) || storedMount !== mountKey) {
             await this.client.deleteSession(name);
         }
         try {
-            await this.client.openSession(name, image, warm);
+            await this.client.openSession(name, image, warm, {
+                volumes: [{
+                    host_path: workspaceVolume.host_path,
+                    guest_path: workspaceVolume.guest_path,
+                    read_only: workspaceVolume.read_only,
+                }],
+            });
         } catch (e) {
             if (!/already|exists/i.test(String(e))) {
                 throw new RuntimeError(`BoxLite ensureReady failed: ${e.message}`, 502);
@@ -57,8 +86,12 @@ class BoxLiteRuntimeProvider extends RuntimeProvider {
                 // snapshot may not exist yet or first provision; continue
             }
         }
-        await this.ensureWorkspacePath(name, workspacePath);
-        return { runtimeRef: name, workspacePath, image };
+        await this.ensureWorkspacePath(name, guestWorkspacePath);
+        if (opts.agentId) {
+            const { ensureAgentBootstrap } = require('../workspace/agentBootstrap');
+            await ensureAgentBootstrap(project, hostWorkspacePath);
+        }
+        return { runtimeRef: name, workspacePath: guestWorkspacePath, image, mountKey };
     }
 
     async attach(runtimeRef) {
@@ -113,3 +146,4 @@ class BoxLiteRuntimeProvider extends RuntimeProvider {
 }
 
 module.exports = BoxLiteRuntimeProvider;
+module.exports.buildWorkspaceMountKey = buildWorkspaceMountKey;

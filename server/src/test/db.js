@@ -124,6 +124,7 @@ async function bootstrapTestDb(modulePaths = [], callerDir = path.join(__dirname
     const reloaded = {};
     for (const modulePath of modulePaths) {
         const resolved = require.resolve(modulePath, { paths: [callerDir] });
+        delete require.cache[resolved];
         reloaded[modulePath] = require(resolved);
     }
     return {

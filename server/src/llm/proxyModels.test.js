@@ -38,13 +38,8 @@ describe('LLM proxy /v1/models', () => {
     before(async () => {
         originalUpstreamUrl = process.env.LLM_GATEWAY_UPSTREAM_URL;
         resetAgentApiKeyCacheForTests();
-        ctx = await bootstrapTestDb(['../llm/serviceRouter', '../llm/proxy'], __dirname);
-        ({ db, schema } = ctx);
-        registerLlmProxy = ctx.reloaded['../llm/proxy'].registerLlmProxy;
         resetLlmQuotaForTests();
 
-        // Stand up a stub UniGateway. The control plane no longer synthesizes
-        // /v1/models itself; it forwards to the gateway, which owns the catalog.
         stub = http.createServer((req, res) => {
             received.push({ method: req.method, url: req.url, authorization: req.headers.authorization });
             if (req.method === 'POST' && req.url === '/api/admin/api-keys') {
@@ -68,6 +63,10 @@ describe('LLM proxy /v1/models', () => {
         originalEnsureSecrets = unigateway.ensureGatewaySecrets;
         unigateway.ensureRunning = async () => ({ running: true, baseUrl: stubUrl, adminToken: '' });
         unigateway.ensureGatewaySecrets = () => ({ gatewayKey: 'test-gateway-key' });
+
+        ctx = await bootstrapTestDb(['../llm/serviceRouter', '../llm/proxy'], __dirname);
+        ({ db, schema } = ctx);
+        registerLlmProxy = ctx.reloaded['../llm/proxy'].registerLlmProxy;
 
         const users = await db.select().from(schema.users).limit(1);
         if (users.length > 0) {

@@ -75,10 +75,17 @@ class BoxLiteClient {
         return res.json();
     }
 
-    async openSession(name, image, warm = false) {
+    async openSession(name, image, warm = false, options = {}) {
         const body = { name };
         if (image) body.image = image;
         if (warm) body.warm = true;
+        if (Array.isArray(options.volumes) && options.volumes.length > 0) {
+            body.volumes = options.volumes.map((volume) => ({
+                host_path: volume.host_path,
+                guest_path: volume.guest_path,
+                read_only: !!volume.read_only,
+            }));
+        }
         const res = await fetch(`${this.base}/api/sessions`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
