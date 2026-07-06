@@ -1,6 +1,8 @@
 const { test, before, after } = require('node:test');
 const assert = require('node:assert/strict');
-const { bootstrapTestDb } = require('../test/db');
+const BoxLiteRuntimeProvider = require('./BoxLiteRuntimeProvider');
+const workspace = require('../workspace');
+const agentBootstrap = require('../workspace/agentBootstrap');
 
 class MockBoxLiteClient {
     constructor() {
@@ -23,47 +25,15 @@ class MockBoxLiteClient {
     }
 }
 
-let ctx;
-let BoxLiteRuntimeProvider;
+let originalEnsureBootstrap;
 
-before(async () => {
-    ctx = await bootstrapTestDb([
-        '../workspace/agentBootstrap',
-        '../repositories/RepositoryEnvironmentService',
-        '../events/recordEvent',
-    ], __dirname);
-
-    delete require.cache[require.resolve('./BoxLiteRuntimeProvider')];
-    BoxLiteRuntimeProvider = require('./BoxLiteRuntimeProvider');
-
-    const now = Date.now();
-    const { schema } = ctx;
-    const rows = [
-        { userId: 'usr_swap', projectId: 'proj_image_swap' },
-        { userId: 'usr_same', projectId: 'proj_same_image' },
-        { userId: 'usr_mount', projectId: 'proj_mount' },
-    ];
-    for (const row of rows) {
-        await ctx.db.insert(schema.users).values({
-            id: row.userId,
-            username: row.userId,
-            passwordHash: 'hash',
-            role: 'admin',
-            status: 'active',
-            createdAt: now,
-        }).onConflictDoNothing();
-        await ctx.db.insert(schema.projects).values({
-            id: row.projectId,
-            userId: row.userId,
-            name: row.projectId,
-            serverPath: '',
-            createdAt: now,
-        }).onConflictDoNothing();
-    }
+before(() => {
+    originalEnsureBootstrap = agentBootstrap.ensureAgentBootstrap;
+    agentBootstrap.ensureAgentBootstrap = async () => ({ status: 'skipped' });
 });
 
-after(async () => {
-    if (ctx) await ctx.teardown();
+after(() => {
+    agentBootstrap.ensureAgentBootstrap = originalEnsureBootstrap;
 });
 
 test('ensureReady recreates blink session when stored image differs', async () => {
@@ -75,18 +45,19 @@ test('ensureReady recreates blink session when stored image differs', async () =
     const result = await provider.ensureReady(project, {
         runtimeId: 'rt_swap',
         agentId: 'droid',
+        image: 'xensemble/agent-droid:latest',
         storedImage: 'xensemble/box-base:bookworm',
     });
 
     assert.deepEqual(client.deleted, ['rt_swap']);
     assert.equal(client.opened.length, 1);
     assert.equal(client.opened[0].name, 'rt_swap');
-    assert.match(client.opened[0].image, /agent-droid/);
+    assert.equal(client.opened[0].image, 'xensemble/agent-droid:latest');
     assert.equal(client.opened[0].volumes.length, 1);
     assert.match(client.opened[0].volumes[0].host_path, /usr_swap[/\\]proj_image_swap$/);
     assert.equal(client.opened[0].volumes[0].guest_path, '/workspace');
     assert.equal(result.runtimeRef, 'rt_swap');
-    assert.match(result.image, /agent-droid/);
+    assert.equal(result.image, 'xensemble/agent-droid:latest');
     assert.match(result.mountKey, /=>[/\\]workspace$/);
 });
 
@@ -100,6 +71,7 @@ test('ensureReady keeps existing session when image is unchanged', async () => {
     await provider.ensureReady(project, {
         runtimeId: 'rt_same',
         agentId: 'claude-code',
+        image,
         storedImage: image,
         storedMount: resultMountKey(project),
     });
@@ -125,6 +97,7 @@ test('ensureReady recreates blink session when workspace mount differs', async (
 });
 
 function resultMountKey(project) {
-    const provider = new BoxLiteRuntimeProvider();
-    return provider.buildWorkspaceVolume(project).mountKey;
+    const guestPath = '/workspace';
+    const hostPath = workspace.projectDir(project.userId, project.id);
+    return `${hostPath}=>${guestPath}`;
 }

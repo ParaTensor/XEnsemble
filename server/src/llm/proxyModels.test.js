@@ -38,7 +38,7 @@ describe('LLM proxy /v1/models', () => {
     before(async () => {
         originalUpstreamUrl = process.env.LLM_GATEWAY_UPSTREAM_URL;
         resetAgentApiKeyCacheForTests();
-        ctx = await bootstrapTestDb(['../db/index', '../llm/proxy', '../llm/serviceRouter'], __dirname);
+        ctx = await bootstrapTestDb(['../llm/serviceRouter', '../llm/proxy'], __dirname);
         ({ db, schema } = ctx);
         registerLlmProxy = ctx.reloaded['../llm/proxy'].registerLlmProxy;
         resetLlmQuotaForTests();
