@@ -9,7 +9,7 @@ const { recordEvent } = require('../events/recordEvent');
 const { singleflight } = require('../runtime/singleflight');
 const { createCheckpoint } = require('../repositories/RepositoryEnvironmentService');
 const previewRegistry = require('../runtime/localPreviewRegistry');
-const { checkPreviewEntryHealth, tryRecoverPreview } = require('../workspace/ensurePreview');
+const { resolveRuntimeProvider } = require('../config/runtimeProvider');
 
 const PREVIEW_TTL_MS = 24 * 60 * 60 * 1000;
 
@@ -93,7 +93,7 @@ async function createPreview(userId, project) {
     const revision = `checkpoint:${checkpoint.id}`;
 
     // BoxLite 部署 revision 持久化：为该 checkpoint 拍 blink 快照
-    const prov = process.env.RUNTIME_PROVIDER || 'local';
+    const prov = resolveRuntimeProvider();
     if (prov === 'boxlite') {
         try {
             const ready = await ensureProjectRuntime(project);

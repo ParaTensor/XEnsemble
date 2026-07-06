@@ -14,8 +14,9 @@ const K8sRuntimeProvider = require('./K8sRuntimeProvider');
 const K8sExecAdapter = require('./K8sExecAdapter');
 const K8sFsAdapter = require('./K8sFsAdapter');
 const K8sPreviewAdapter = require('./K8sPreviewAdapter');
+const { resolveRuntimeProvider } = require('../config/runtimeProvider');
 
-const PROVIDER = process.env.RUNTIME_PROVIDER || 'local';
+const PROVIDER = resolveRuntimeProvider();
 
 let _runtime = null;
 

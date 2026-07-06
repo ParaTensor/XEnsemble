@@ -51,6 +51,7 @@ const { registerGatewayAdminRoutes } = require('./gateway/adminProxy');
 const { deleteProjectForUser } = require('./projects/deleteProject');
 const { getAgentResume, getAgentResumeLevel } = require('./agents/agentResume');
 const { ensureSessionStateDir } = require('./session/stateDir');
+const { resolveRuntimeProvider, DEFAULT_RUNTIME_PROVIDER } = require('./config/runtimeProvider');
 
 const runtime = getRuntime();
 
@@ -109,6 +110,29 @@ registerGitRoutes(fastify);
 registerGitHubAppRoutes(fastify);
 
 // -- API Routes --
+
+fastify.get('/api/v1/runtime/info', async () => {
+    const provider = resolveRuntimeProvider();
+    const configured = process.env.RUNTIME_PROVIDER?.trim() || null;
+    let blink = null;
+    if (provider === 'boxlite') {
+        const url = process.env.BLINK_API_URL || 'http://127.0.0.1:8787';
+        try {
+            const BoxLiteClient = require('./runtime/BoxLiteClient');
+            const bc = new BoxLiteClient();
+            await bc.health();
+            blink = { reachable: true, url };
+        } catch (err) {
+            blink = { reachable: false, url, error: err.message };
+        }
+    }
+    return {
+        provider,
+        configured_provider: configured,
+        default_provider: DEFAULT_RUNTIME_PROVIDER,
+        blink,
+    };
+});
 
 fastify.get('/api/v1/secrets', { preValidation: [fastify.authenticate] }, async (request, reply) => {
     const result = await db.select().from(schema.secrets).where(eq(schema.secrets.userId, request.user.id));
@@ -374,7 +398,7 @@ fastify.post('/api/v1/projects/:projectId/checkpoints', { preValidation: [fastif
     }
 
     // BoxLite/Blink 持久化：创建 blink checkpoint（VM 磁盘快照），记录到 storageRef
-    const PROVIDER_NOW = process.env.RUNTIME_PROVIDER || 'local';
+    const PROVIDER_NOW = resolveRuntimeProvider();
     if (PROVIDER_NOW === 'boxlite') {
         try {
             const ready = await ensureProjectRuntime(project);
@@ -414,7 +438,7 @@ fastify.post('/api/v1/projects/:projectId/checkpoints/:checkpointId/restore', {
     const ck = ckRows[0] || null;
 
     // BoxLite 优先使用 blink restore（VM 快照）
-    const PROVIDER_NOW = process.env.RUNTIME_PROVIDER || 'local';
+    const PROVIDER_NOW = resolveRuntimeProvider();
     if (PROVIDER_NOW === 'boxlite') {
         try {
             const ready = await ensureProjectRuntime(project);
@@ -1361,9 +1385,10 @@ fastify.get('/api/v1/workspace/files', { preValidation: [fastify.authenticate] }
 
     try {
         const relativePath = request.query.path || '';
+        const includeHidden = request.query.include_hidden === '1' || request.query.include_hidden === 'true';
         const ready = await ensureProjectRuntime(project);
         const ref = ready.runtime ? ready.runtime.runtimeRef : undefined;
-        return runtime.fs.fsList(ready.workspacePath, relativePath, { runtimeRef: ref });
+        return runtime.fs.fsList(ready.workspacePath, relativePath, { runtimeRef: ref, includeHidden });
     } catch (err) {
         request.log.error(err);
         return reply.code(500).send({ error: 'Failed to list workspace files' });
@@ -1426,7 +1451,7 @@ async function startServer() {
     await registerLlmProxy(fastify);
     startPreviewLifecycle();
 
-    if ((process.env.RUNTIME_PROVIDER || 'local') === 'boxlite') {
+    if (resolveRuntimeProvider() === 'boxlite') {
         try {
             const BoxLiteClient = require('./runtime/BoxLiteClient');
             const bc = new BoxLiteClient();

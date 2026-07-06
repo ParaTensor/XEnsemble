@@ -1,6 +1,7 @@
 // 仅 Local 有效：本地文件系统 runtime 生命周期管理。
 const { RuntimeProvider } = require('./interfaces');
 const workspace = require('../workspace');
+const { resolveRuntimeProvider } = require('../config/runtimeProvider');
 
 class LocalRuntimeProvider extends RuntimeProvider {
     /**
@@ -10,7 +11,7 @@ class LocalRuntimeProvider extends RuntimeProvider {
      */
     async ensureReady(project, opts = {}) {
         const workspacePath = workspace.createProjectDirectory(project.userId, project.id);
-        if ((process.env.RUNTIME_PROVIDER || 'local') === 'local') {
+        if (resolveRuntimeProvider() === 'local') {
             const { ensureAgentBootstrap } = require('../workspace/agentBootstrap');
             await ensureAgentBootstrap(project, workspacePath);
         }

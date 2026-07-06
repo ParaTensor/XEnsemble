@@ -2,8 +2,17 @@ const { test, describe } = require('node:test');
 const assert = require('node:assert/strict');
 
 describe('runtime registry provider selection', () => {
-    test('local provider is the default', () => {
+    test('boxlite provider is the default', () => {
         const registry = loadRegistry();
+        const rt = registry.getRuntime();
+        assert.equal(rt.provider.constructor.name, 'BoxLiteRuntimeProvider');
+        assert.equal(rt.exec.constructor.name, 'BoxLiteExecAdapter');
+        assert.equal(rt.fs.constructor.name, 'BoxLiteFsAdapter');
+        assert.equal(rt.preview.constructor.name, 'BoxLitePreviewAdapter');
+    });
+
+    test('local provider can be selected explicitly', () => {
+        const registry = loadRegistry('local');
         const rt = registry.getRuntime();
         assert.equal(rt.provider.constructor.name, 'LocalRuntimeProvider');
         assert.equal(rt.exec.constructor.name, 'LocalExecAdapter');
@@ -11,7 +20,7 @@ describe('runtime registry provider selection', () => {
         assert.equal(rt.preview.constructor.name, 'LocalPreviewAdapter');
     });
 
-    test('boxlite provider returns stubs', () => {
+    test('boxlite provider returns boxlite adapters', () => {
         const registry = loadRegistry('boxlite');
         const rt = registry.getRuntime();
         assert.equal(rt.provider.constructor.name, 'BoxLiteRuntimeProvider');

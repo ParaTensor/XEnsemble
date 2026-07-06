@@ -2,7 +2,8 @@ const { eq, isNull } = require('drizzle-orm');
 const schema = require('./schema');
 const workspace = require('../workspace');
 
-const PROVIDER = process.env.RUNTIME_PROVIDER || 'local';
+const { resolveRuntimeProvider } = require('../config/runtimeProvider');
+const PROVIDER = resolveRuntimeProvider();
 
 /** 为无 default_runtime_id 的历史 project 插入 default runtime（幂等）。 */
 async function backfillDefaultRuntimes(db) {
@@ -27,7 +28,7 @@ async function backfillDefaultRuntimes(db) {
             id: runtimeId,
             projectId: p.id,
             provider: PROVIDER,
-            runtimeRef: 'local',
+            runtimeRef: PROVIDER === 'boxlite' ? runtimeId : 'local',
             role: 'default',
             status: 'ready',
             endpoint,

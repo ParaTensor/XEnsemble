@@ -72,7 +72,7 @@ const projects = pgTable('projects', {
 const runtimes = pgTable('runtimes', {
   id: text('id').primaryKey(),
   projectId: text('project_id').notNull().references(() => projects.id),
-  provider: text('provider').notNull().default('local'),
+  provider: text('provider').notNull().default('boxlite'),
   runtimeRef: text('runtime_ref'),
   role: text('role').notNull().default('default'),
   status: text('status').default('ready'),

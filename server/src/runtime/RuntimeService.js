@@ -7,7 +7,9 @@ const { RuntimeError } = require('./interfaces');
 const { singleflight } = require('./singleflight');
 const { recordEvent } = require('../events/recordEvent');
 const { resolveBoxImage } = require('./agentBoxImages');
-const PROVIDER = process.env.RUNTIME_PROVIDER || 'local';
+const { resolveRuntimeProvider } = require('../config/runtimeProvider');
+
+const PROVIDER = resolveRuntimeProvider();
 
 function parseRuntimeSpecs(raw) {
     if (!raw) return {};
@@ -65,6 +67,7 @@ async function ensureProjectRuntime(project, opts = {}) {
                 agentId: opts.agentId,
                 image,
                 storedImage: storedSpecs.image || null,
+                storedMount: storedSpecs.workspace_mount || null,
             } : {}),
             baseSnapshotId: opts.baseSnapshotId,
             checkpointId: opts.checkpointId,
@@ -74,6 +77,9 @@ async function ensureProjectRuntime(project, opts = {}) {
         const nextSpecs = { ...storedSpecs };
         if (isBoxLite && (provision.image || image)) {
             nextSpecs.image = provision.image || image;
+        }
+        if (isBoxLite && provision.mountKey) {
+            nextSpecs.workspace_mount = provision.mountKey;
         }
         const specsJson = Object.keys(nextSpecs).length > 0 ? JSON.stringify(nextSpecs) : runtimeRow.specs;
 
