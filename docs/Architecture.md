@@ -418,4 +418,5 @@ Desktop Client 或 Self-Hosted Server 使用 **Local Runtime Provider**，Agent/
 - 用户/配额：`docs/UserManagement.md`
 - LLM 反代：`docs/LlmProxy.md`
 - Agent 说明：`docs/agents.md`
+- Agent 镜像（boxlite 构建、绑定、Admin 注册）：`docs/Agent-Images.md`
 - Desktop Client：`desktop/README.md`、`desktop/DESIGN.md`、`desktop/AGENTS.md`

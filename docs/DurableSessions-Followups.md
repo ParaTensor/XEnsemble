@@ -57,6 +57,8 @@ the P4 wake path correct even when the box disk is fully isolated from the host.
 
 ## 3. Per-agent boxlite images (glibc + node + agent CLI) **[open]**
 
+> 构建流水线与 Admin 注册见 [`Agent-Images.md`](./Agent-Images.md)；本节跟踪 **真实 agent 在 boxlite 上的 e2e 验证** 仍未闭环。
+
 Real agents cannot run in the stock box image: it is Alpine/musl, has no
 `node`, and no egress, while e.g. `droid` is a ~150 MB glibc ELF. This is why
 the P4 boxlite e2e had to use a shell stand-in agent — the mechanism under test

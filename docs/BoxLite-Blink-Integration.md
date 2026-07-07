@@ -259,7 +259,7 @@ FsAdapter 实现策略：
 - `preview/lifecycle.js`：同上
 - `LocalScrollbackBuffer.js`：路径与本地文件系统耦合
 - `server.js` spawn 调用点：同步消费 handle
-- `agentLifecycle.js`：全部假设宿主机安装
+- `agentLifecycle.js`：全部假设宿主机安装（boxlite 路径见 [`Agent-Images.md`](./Agent-Images.md)）
 - `workspace.js` + `LocalFsAdapter`：假设宿主机路径可直接访问
 - `LocalGitService`：当前通过 exec adapter，已相对抽象（较友好）
 
