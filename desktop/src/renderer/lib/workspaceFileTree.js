@@ -1,3 +1,26 @@
+const HIDDEN_WORKSPACE_DIRS = new Set(['.agents', '.git', '.xensemble', '.scrollback']);
+
+export function isHiddenWorkspacePath(itemPath) {
+  const segments = String(itemPath || '').split('/').filter(Boolean);
+  return segments.some((seg) => HIDDEN_WORKSPACE_DIRS.has(seg));
+}
+
+export function filterVisibleWorkspaceItems(items, { showHidden = false } = {}) {
+  if (showHidden) return items;
+  return items.filter((item) => !isHiddenWorkspacePath(item.path));
+}
+
+export function collectAncestorFolderPaths(filePath) {
+  if (!filePath) return [];
+  const segments = filePath.split('/').filter(Boolean);
+  if (segments.length <= 1) return [];
+  const paths = [];
+  for (let i = 1; i < segments.length; i++) {
+    paths.push(segments.slice(0, i).join('/'));
+  }
+  return paths;
+}
+
 function sortNodes(nodes) {
   nodes.sort((a, b) => {
     if (a.type !== b.type) return a.type === 'directory' ? -1 : 1;
@@ -8,10 +31,10 @@ function sortNodes(nodes) {
   }
 }
 
-export function buildFileTree(items) {
+export function buildFileTree(items, { showHidden = false } = {}) {
   const root = { type: 'directory', name: '', path: '', children: [] };
 
-  for (const item of items) {
+  for (const item of filterVisibleWorkspaceItems(items, { showHidden })) {
     const segments = item.path.split('/').filter(Boolean);
     if (!segments.length) continue;
 
@@ -37,8 +60,4 @@ export function buildFileTree(items) {
 
   sortNodes(root.children);
   return root.children;
-}
-
-export function collectFolderPaths(items) {
-  return items.filter((item) => item.type === 'directory').map((item) => item.path);
 }

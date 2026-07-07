@@ -42,4 +42,7 @@ export {
   setTokens,
   clearTokens,
   refreshAccessToken,
+  getCurrentApiBase,
+  isStoredAuthStale,
+  setAuthExpiredHandler,
 } from './auth';

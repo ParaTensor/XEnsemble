@@ -12,6 +12,7 @@ export function getProviderLabel(provider) {
 
 export function getWorkspaceRepoLabel(project) {
   if (!project?.repoProvider || project.repoProvider === 'none') return null;
+  if (project.repoProvider === 'local_git') return null;
   if (project.githubFullName) return project.githubFullName;
   if (project.repoUrl) {
     try {
@@ -26,6 +27,13 @@ export function getWorkspaceRepoLabel(project) {
 export function isGitLinkedProject(project) {
   const provider = project?.repoProvider;
   return Boolean(provider && provider !== 'none');
+}
+
+export function isWorkspaceClonePending(project) {
+  if (!isGitLinkedProject(project)) return false;
+  if (project.repoProvider === 'local_git') return false;
+  const status = project.cloneStatus ?? project.clone_status;
+  return status === 'cloning' || status === 'pending';
 }
 
 export function isOAuthNotConfiguredError(message) {

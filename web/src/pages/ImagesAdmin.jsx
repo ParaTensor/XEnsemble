@@ -23,6 +23,19 @@ import {
 } from '../lib/consoleTokens';
 import { apiFetch } from '../lib/api';
 
+const AGENT_IMAGES_BASES = [
+  '/api/v1/admin/agent-images',
+  '/api/v1/admin/boxlite/agent-images',
+];
+
+async function agentImagesFetch(pathSuffix = '', options) {
+  for (let i = 0; i < AGENT_IMAGES_BASES.length; i += 1) {
+    const res = await apiFetch(`${AGENT_IMAGES_BASES[i]}${pathSuffix}`, options);
+    if (res.status !== 404 || i === AGENT_IMAGES_BASES.length - 1) return res;
+  }
+  return apiFetch(`${AGENT_IMAGES_BASES[0]}${pathSuffix}`, options);
+}
+
 const EMPTY_REGISTER_FORM = {
   tag: '',
   image_ref: '',
@@ -42,7 +55,7 @@ function activeBadge(isActive) {
     : 'bg-zinc-50 text-zinc-600 border-zinc-200';
 }
 
-export default function BoxLiteImagesAdmin() {
+export default function ImagesAdmin() {
   const { showToast } = useToast();
   const [loading, setLoading] = useState(true);
   const [catalog, setCatalog] = useState(null);
@@ -54,14 +67,14 @@ export default function BoxLiteImagesAdmin() {
   const loadCatalog = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await apiFetch('/api/v1/admin/boxlite/agent-images');
+      const res = await agentImagesFetch();
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
-        throw new Error(data.error || 'Failed to load boxlite images');
+        throw new Error(data.error || 'Failed to load images');
       }
       setCatalog(await res.json());
     } catch (err) {
-      showToast('error', err.message || 'Failed to load boxlite images');
+      showToast('error', err.message || 'Failed to load images');
     } finally {
       setLoading(false);
     }
@@ -90,7 +103,7 @@ export default function BoxLiteImagesAdmin() {
     if (!selectedAgent) return;
     setSubmitting(true);
     try {
-      const res = await apiFetch(`/api/v1/admin/boxlite/agent-images/${selectedAgent.agent_id}/versions`, {
+      const res = await agentImagesFetch(`/${selectedAgent.agent_id}/versions`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -116,7 +129,7 @@ export default function BoxLiteImagesAdmin() {
   const runVersionAction = async (versionId, action) => {
     setActionId(`${action}:${versionId}`);
     try {
-      const res = await apiFetch(`/api/v1/admin/boxlite/agent-images/versions/${versionId}/${action}`, {
+      const res = await agentImagesFetch(`/versions/${versionId}/${action}`, {
         method: 'POST',
       });
       const data = await res.json().catch(() => ({}));
@@ -133,8 +146,8 @@ export default function BoxLiteImagesAdmin() {
   return (
     <div className={consoleAdminPageClass}>
       <PageHeader
-        title="BoxLite Images"
-        description="Register and pin OCI images used when RUNTIME_PROVIDER=boxlite."
+        title="Images"
+        description="Register and pin OCI rootfs images for sandbox agent runtimes."
         actions={(
           <Button type="button" variant="secondary" onClick={loadCatalog} disabled={loading}>
             <RefreshCw className="h-4 w-4" />
@@ -153,7 +166,7 @@ export default function BoxLiteImagesAdmin() {
         <p className="text-sm text-zinc-700">
           Build locally:
           {' '}
-          <span className="font-mono text-zinc-600">{catalog?.build_command || 'npm run build:boxlite-images'}</span>
+          <span className="font-mono text-zinc-600">{catalog?.build_command || 'npm run build:agent-images'}</span>
         </p>
         <p className="text-xs text-zinc-500">
           Push images to your registry, then register the tag here. Active versions override naming defaults; env vars like BLINK_IMAGE_DROID still win at runtime.

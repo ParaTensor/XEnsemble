@@ -10,11 +10,10 @@ RUN apt-get update \
         ca-certificates \
         curl \
         git \
-        tini \
     && rm -rf /var/lib/apt/lists/*
 
-# Node 20 (glibc) for npm-based agent CLIs.
-RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
+# Node 22 (glibc) for npm-based agent CLIs (kimi-code requires >=22.19).
+RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
     && apt-get install -y --no-install-recommends nodejs \
     && rm -rf /var/lib/apt/lists/*
 
@@ -23,5 +22,3 @@ ENV PATH="/usr/local/bin:/usr/bin:/bin:${PATH}" \
 
 WORKDIR /workspace
 RUN mkdir -p /workspace
-
-ENTRYPOINT ["/usr/bin/tini", "--"]

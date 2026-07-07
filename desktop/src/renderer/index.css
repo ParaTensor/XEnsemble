@@ -98,6 +98,11 @@
     @apply border-border;
     outline-color: color-mix(in oklch, var(--ring) 50%, transparent);
   }
+
+  button:focus,
+  button:focus-visible {
+    @apply outline-none ring-0 ring-offset-0;
+  }
 }
 
 @layer components {

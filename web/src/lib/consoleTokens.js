@@ -120,8 +120,11 @@ export const consoleStatusIconSlotClass =
 export const consoleMenuDropdownZClass = 'z-[110]';
 
 /** Icon-only actions — see docs/Designs.md § 图标按钮 */
+export const consoleButtonFocusClass =
+  'focus:outline-none focus:ring-0 focus-visible:outline-none focus-visible:ring-0';
+
 export const consoleIconButtonClass =
-  'inline-flex items-center justify-center rounded-md p-1.5 text-zinc-500 hover:bg-zinc-100 hover:text-zinc-900 disabled:opacity-40 disabled:pointer-events-none focus:outline-none focus:ring-2 focus:ring-black focus:ring-offset-1';
+  `inline-flex items-center justify-center rounded-md p-1.5 text-zinc-500 hover:bg-zinc-100 hover:text-zinc-900 disabled:opacity-40 disabled:pointer-events-none ${consoleButtonFocusClass}`;
 
 export const consoleIconButtonDangerClass =
-  'inline-flex items-center justify-center rounded-md p-1.5 text-red-500 hover:bg-red-50 hover:text-red-700 disabled:opacity-40 disabled:pointer-events-none focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-1';
+  `inline-flex items-center justify-center rounded-md p-1.5 text-red-500 hover:bg-red-50 hover:text-red-700 disabled:opacity-40 disabled:pointer-events-none ${consoleButtonFocusClass}`;

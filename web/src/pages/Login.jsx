@@ -1,4 +1,5 @@
 import { useState, useContext } from 'react';
+import { Loader2 } from 'lucide-react';
 import { AuthContext } from '../App';
 import BrandMark from '../components/BrandMark';
 import { publicFetch } from '../lib/api';
@@ -12,11 +13,14 @@ export default function Login() {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState(null);
+  const [isLoading, setIsLoading] = useState(false);
   const { login } = useContext(AuthContext);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (isLoading) return;
     setError(null);
+    setIsLoading(true);
     try {
       const endpoint = isRegister ? '/api/v1/auth/register' : '/api/v1/auth/login';
       const res = await publicFetch(endpoint, {
@@ -42,6 +46,8 @@ export default function Login() {
       login(data.access_token, data.refresh_token, data.user);
     } catch (err) {
       setError(err.message);
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -85,8 +91,11 @@ export default function Login() {
               onChange={(e) => setPassword(e.target.value)}
             />
           </div>
-          <Button type="submit" className="mt-2 w-full">
-            {isRegister ? 'Sign Up' : 'Sign In'}
+          <Button type="submit" disabled={isLoading} className="mt-2 w-full">
+            {isLoading && <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />}
+            {isLoading
+              ? (isRegister ? 'Creating account…' : 'Signing in…')
+              : (isRegister ? 'Sign Up' : 'Sign In')}
           </Button>
         </form>
 

@@ -11,7 +11,7 @@ import { ConsoleDialogShell, ConsoleInlineDialog } from '../components/ConsoleDi
 import SecretFields from '../components/settings/SecretFields';
 import { useToast } from '../components/Toast';
 import { useTerminalTheme } from '../hooks/useTerminalTheme.jsx';
-import { TerminalSquare, Play, Settings2, FolderOpen, FileText, X, RefreshCw, Plus, Trash2, Github } from 'lucide-react';
+import { TerminalSquare, Play, Settings2, FolderOpen, FileText, X, RefreshCw, Plus, Trash2, Github, Eye, EyeOff } from 'lucide-react';
 import { getSecretLabel, isSecretPasswordField } from '../lib/secretLabels';
 import { formatQuotaExceeded } from '../lib/quotaLabels';
 import {
@@ -95,6 +95,7 @@ export default React.forwardRef(function SessionsPage({
   const [viewingFile, setViewingFile] = useState(null);
   const [fileContent, setFileContent] = useState('');
   const [isLoadingFiles, setIsLoadingFiles] = useState(false);
+  const [showHiddenFiles, setShowHiddenFiles] = useState(false);
   const [workspaceOpen, setWorkspaceOpen] = useState(false);
 
   // Modals state
@@ -157,16 +158,18 @@ export default React.forwardRef(function SessionsPage({
     setSelectedAgentId((prev) => pickDefaultAgentId(agents, prev));
   }, [agents]);
 
-  const fetchWorkspaceFiles = () => {
+  const fetchWorkspaceFiles = useCallback(() => {
     if (!activeSession?.projectId) return;
     setIsLoadingFiles(true);
-    apiFetch(`/api/v1/workspace/files?project_id=${encodeURIComponent(activeSession.projectId)}`)
+    const qs = new URLSearchParams({ project_id: activeSession.projectId });
+    if (showHiddenFiles) qs.set('include_hidden', '1');
+    apiFetch(`/api/v1/workspace/files?${qs}`)
       .then(res => res.json())
       .then(data => {
         if (Array.isArray(data)) setWorkspaceFiles(data);
       })
       .finally(() => setIsLoadingFiles(false));
-  };
+  }, [activeSession?.projectId, showHiddenFiles]);
 
   // Poll workspace files occasionally when session is active
   useEffect(() => {
@@ -179,7 +182,7 @@ export default React.forwardRef(function SessionsPage({
       setViewingFile(null);
       setWorkspaceOpen(false);
     }
-  }, [activeSession]);
+  }, [activeSession, fetchWorkspaceFiles]);
 
   const selectedAgent = agents.find(a => a.id === selectedAgentId);
   const activeProject = useMemo(
@@ -1131,14 +1134,34 @@ export default React.forwardRef(function SessionsPage({
                   Files
                 </h2>
               </div>
-              <button
-                type="button"
-                onClick={fetchWorkspaceFiles}
-                title="Refresh files"
-                className={`p-1.5 ${accentBlue} rounded-md ${hoverBgCanvas} ${transitionBase}`}
-              >
-                <RefreshCw className={`w-3.5 h-3.5 ${isLoadingFiles ? 'animate-spin' : ''}`} />
-              </button>
+              <div className="flex items-center gap-0.5">
+                <button
+                  type="button"
+                  onClick={() => setShowHiddenFiles((v) => !v)}
+                  className={`p-1.5 rounded-md ${transitionBase} ${
+                    showHiddenFiles
+                      ? `${textPrimary} bg-white`
+                      : `${accentBlue} ${hoverBgCanvas}`
+                  }`}
+                  title={showHiddenFiles ? 'Hide hidden files' : 'Show hidden files'}
+                  aria-label={showHiddenFiles ? 'Hide hidden files' : 'Show hidden files'}
+                  aria-pressed={showHiddenFiles}
+                >
+                  {showHiddenFiles ? (
+                    <EyeOff className="w-3.5 h-3.5" />
+                  ) : (
+                    <Eye className="w-3.5 h-3.5" />
+                  )}
+                </button>
+                <button
+                  type="button"
+                  onClick={fetchWorkspaceFiles}
+                  title="Refresh files"
+                  className={`p-1.5 ${accentBlue} rounded-md ${hoverBgCanvas} ${transitionBase}`}
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${isLoadingFiles ? 'animate-spin' : ''}`} />
+                </button>
+              </div>
             </div>
             <div className={`flex-1 overflow-auto ${panelPadding} min-h-0`}>
               {workspaceFiles.filter((f) => f.type === 'file').length === 0 ? (
@@ -1148,6 +1171,7 @@ export default React.forwardRef(function SessionsPage({
                   items={workspaceFiles}
                   selectedPath={viewingFile?.path}
                   onOpenFile={handleOpenFile}
+                  showHidden={showHiddenFiles}
                 />
               )}
             </div>

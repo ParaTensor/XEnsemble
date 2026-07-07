@@ -168,8 +168,12 @@ export const consoleStatusIconSlotClass =
 
 export const consoleMenuDropdownZClass = 'z-[110]';
 
+/** Buttons: no focus ring/outline on click or keyboard focus. */
+export const consoleButtonFocusClass =
+  'focus:outline-none focus:ring-0 focus-visible:outline-none focus-visible:ring-0';
+
 export const consoleIconButtonClass =
-  `inline-flex items-center justify-center rounded-md p-1.5 ${textSecondary} hover:${bgSecondary} hover:${textPrimary} disabled:opacity-40 disabled:pointer-events-none focus:outline-none focus:ring-2 focus:ring-[#5B8DB8] focus:ring-offset-1 transition-colors duration-150 ease-in-out`;
+  `inline-flex items-center justify-center rounded-md p-1.5 ${textSecondary} hover:${bgSecondary} hover:${textPrimary} disabled:opacity-40 disabled:pointer-events-none ${consoleButtonFocusClass} transition-colors duration-150 ease-in-out`;
 
 export const consoleIconButtonDangerClass =
-  `inline-flex items-center justify-center rounded-md p-1.5 ${accentRed} hover:bg-[#FDECEA] disabled:opacity-40 disabled:pointer-events-none focus:outline-none focus:ring-2 focus:ring-[#C06C5D] focus:ring-offset-1 transition-colors duration-150 ease-in-out`;
+  `inline-flex items-center justify-center rounded-md p-1.5 ${accentRed} hover:bg-[#FDECEA] disabled:opacity-40 disabled:pointer-events-none ${consoleButtonFocusClass} transition-colors duration-150 ease-in-out`;

@@ -23,7 +23,7 @@ import {
   Loader2,
 } from 'lucide-react';
 import { apiFetch } from '../lib/api';
-import { getProviderLabel, getWorkspaceRepoLabel, isGitLinkedProject } from '../lib/gitLabels';
+import { getProviderLabel, getWorkspaceRepoLabel, isGitLinkedProject, isWorkspaceClonePending } from '../lib/gitLabels';
 import { formatRelativeTime } from '../lib/formatRelativeTime';
 import {
   loadSidebarPrefs,
@@ -194,9 +194,9 @@ function SidebarAccountMenu({ user, onOpenSettings, onLogout, adminLinkClass }) 
             <Globe className="w-3.5 h-3.5 shrink-0" strokeWidth={1.75} />
             Gateway
           </NavLink>
-          <NavLink to="/admin/boxlite-images" className={adminLinkClass} onClick={close}>
+          <NavLink to="/admin/images" className={adminLinkClass} onClick={close}>
             <Container className="w-3.5 h-3.5 shrink-0" strokeWidth={1.75} />
-            BoxLite Images
+            Images
           </NavLink>
           <div className="my-1 border-t border-[#E8EAED]" />
         </>
@@ -639,7 +639,7 @@ export default function AppSidebar({
                   .filter(Boolean)
                   .join(' · ')
                 : ws.name;
-              const isCloning = gitLinked && (ws.cloneStatus === 'cloning' || ws.cloneStatus === 'pending');
+              const isCloning = isWorkspaceClonePending(ws);
               return (
                 <div key={ws.id} className="rounded-lg">
                   <div className={`group flex items-center gap-0.5 rounded-lg hover:bg-[#FAFBFC] ${expanded ? 'bg-[#FAFBFC]' : ''}`}>

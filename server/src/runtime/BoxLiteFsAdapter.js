@@ -1,6 +1,7 @@
 const { FsAdapter, RuntimeError } = require('./interfaces');
 const BoxLiteClient = require('./BoxLiteClient');
 const { buildSessionStateDirRef } = require('../session/stateDirRef');
+const { isHiddenWorkspacePath } = require('../workspace/hiddenPaths');
 
 function safeRel(p) {
     const s = String(p || '.').replace(/\\/g, '/').replace(/^\//, '');
@@ -32,6 +33,7 @@ class BoxLiteFsAdapter extends FsAdapter {
                 let p = line.slice(2).trim();
                 if (!p || p === '.' || p === '..') continue;
                 if (p.startsWith('./')) p = p.slice(2);
+                if (!opts.includeHidden && isHiddenWorkspacePath(p)) continue;
                 const nameOnly = p.split('/').pop() || p;
                 res.push({
                     name: nameOnly,

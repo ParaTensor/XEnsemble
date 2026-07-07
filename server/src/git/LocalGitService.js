@@ -138,6 +138,8 @@ class LocalGitService {
                 workspaceMode: 'git',
                 repoUrl: bare,
                 repoDefaultBranch: 'main',
+                cloneStatus: 'ready',
+                cloneError: null,
             }).where(eq(schema.projects.id, project.id));
 
             const headResult = await this._git(workspacePath, ['rev-parse', 'HEAD']);

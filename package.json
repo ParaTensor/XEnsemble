@@ -10,7 +10,8 @@
     "build:desktop": "cd desktop && npm run build",
     "build:web": "cd web && npm run build",
     "build:gateway": "cd gateway && cargo build --release",
-    "build:boxlite-images": "bash boxlite/build-images.sh"
+    "build:agent-images": "bash boxlite/build-images.sh",
+    "build:boxlite-images": "npm run build:agent-images"
   },
   "devDependencies": {
     "concurrently": "^8.2.2",

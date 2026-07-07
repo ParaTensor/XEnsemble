@@ -480,17 +480,17 @@ function registerAdminRoutes(fastify) {
         }
     });
 
-    fastify.get('/api/v1/admin/boxlite/agent-images', { preValidation: adminPre }, async () => {
+    const getAgentImagesCatalog = async () => {
         const catalog = await listAgentBoxImageCatalog();
         return {
             base_image: resolveBoxBaseImage(),
             buildable_agents: listBuildableAgentImages(),
-            build_command: 'npm run build:boxlite-images',
+            build_command: 'npm run build:agent-images',
             agents: catalog,
         };
-    });
+    };
 
-    fastify.post('/api/v1/admin/boxlite/agent-images/:agentId/versions', { preValidation: adminPre }, async (request, reply) => {
+    const registerAgentImageVersion = async (request, reply) => {
         const body = request.body || {};
         try {
             const version = await registerVersion({
@@ -508,9 +508,9 @@ function registerAdminRoutes(fastify) {
             const statusCode = err instanceof RuntimeError ? err.statusCode : 500;
             return sendPublicError(reply, err, 'Failed to register image version', statusCode);
         }
-    });
+    };
 
-    fastify.post('/api/v1/admin/boxlite/agent-images/versions/:versionId/activate', { preValidation: adminPre }, async (request, reply) => {
+    const activateAgentImageVersion = async (request, reply) => {
         try {
             const version = await activateVersion(request.params.versionId, request.user.id);
             return { ok: true, version };
@@ -518,9 +518,9 @@ function registerAdminRoutes(fastify) {
             const statusCode = err instanceof RuntimeError ? err.statusCode : 500;
             return sendPublicError(reply, err, 'Failed to activate image version', statusCode);
         }
-    });
+    };
 
-    fastify.post('/api/v1/admin/boxlite/agent-images/versions/:versionId/deprecate', { preValidation: adminPre }, async (request, reply) => {
+    const deprecateAgentImageVersion = async (request, reply) => {
         try {
             const version = await deprecateVersion(request.params.versionId);
             return { ok: true, version };
@@ -528,7 +528,14 @@ function registerAdminRoutes(fastify) {
             const statusCode = err instanceof RuntimeError ? err.statusCode : 500;
             return sendPublicError(reply, err, 'Failed to deprecate image version', statusCode);
         }
-    });
+    };
+
+    for (const prefix of ['/api/v1/admin/agent-images', '/api/v1/admin/boxlite/agent-images']) {
+        fastify.get(prefix, { preValidation: adminPre }, getAgentImagesCatalog);
+        fastify.post(`${prefix}/:agentId/versions`, { preValidation: adminPre }, registerAgentImageVersion);
+        fastify.post(`${prefix}/versions/:versionId/activate`, { preValidation: adminPre }, activateAgentImageVersion);
+        fastify.post(`${prefix}/versions/:versionId/deprecate`, { preValidation: adminPre }, deprecateAgentImageVersion);
+    }
 }
 
 module.exports = { registerAdminRoutes };

@@ -3,7 +3,7 @@ import { Routes, Route, useNavigate, useLocation, Navigate } from 'react-router-
 import Login from './pages/Login';
 import Sessions from './pages/Sessions';
 import AgentsAdmin from './pages/AgentsAdmin';
-import BoxLiteImagesAdmin from './pages/BoxLiteImagesAdmin';
+import ImagesAdmin from './pages/ImagesAdmin';
 import UsersAdmin from './pages/UsersAdmin';
 import GatewayAdmin from './pages/GatewayAdmin';
 import AppSidebar from './components/AppSidebar';
@@ -12,20 +12,10 @@ import { useWorkspaces } from './hooks/useWorkspaces';
 import { cn } from './lib/utils';
 import { APP_SHELL_ADMIN_CLASS } from './lib/appShellLayout';
 import { bgCanvas } from './lib/consoleTheme';
-import { getAccessToken, setTokens, clearTokens } from './lib/api';
+import { getAccessToken, setTokens, clearTokens, apiFetch, isStoredAuthStale, setAuthExpiredHandler } from './lib/api';
 import { TerminalThemeProvider } from './hooks/useTerminalTheme.jsx';
 
 export const AuthContext = React.createContext(null);
-
-async function loadStoredAuth() {
-  const accessToken = getAccessToken();
-  const userRaw = localStorage.getItem('user');
-  let user = null;
-  if (userRaw) {
-    try { user = JSON.parse(userRaw); } catch { user = null; }
-  }
-  return { accessToken, user };
-}
 
 function AuthenticatedLayout({
   token,
@@ -50,7 +40,7 @@ function AuthenticatedLayout({
   const isAgentsAdmin = location.pathname === '/admin/agents';
   const isUsersAdmin = location.pathname === '/admin/users';
   const isGatewayAdmin = location.pathname === '/admin/gateway';
-  const isBoxLiteImagesAdmin = location.pathname === '/admin/boxlite-images';
+  const isImagesAdmin = location.pathname === '/admin/images';
 
   const offRouteClass = 'pointer-events-none invisible absolute inset-0 z-0 [&_*]:pointer-events-none';
 
@@ -105,49 +95,45 @@ function AuthenticatedLayout({
           )}
           aria-hidden={!isSessions}
         />
-        {user?.role === 'admin' && (
-          <>
+        {user?.role === 'admin' && isAgentsAdmin && (
             <div
               className={cn(
-                'flex min-h-0 flex-1 flex-col overflow-auto console-scroll-hidden',
+                'relative z-10 flex min-h-0 flex-1 flex-col overflow-auto console-scroll-hidden',
                 APP_SHELL_ADMIN_CLASS,
-                isAgentsAdmin ? 'relative z-10' : offRouteClass,
               )}
-              aria-hidden={!isAgentsAdmin}
             >
               <AgentsAdmin />
             </div>
+        )}
+        {user?.role === 'admin' && isUsersAdmin && (
             <div
               className={cn(
-                'flex min-h-0 flex-1 flex-col overflow-auto console-scroll-hidden',
+                'relative z-10 flex min-h-0 flex-1 flex-col overflow-auto console-scroll-hidden',
                 APP_SHELL_ADMIN_CLASS,
-                isUsersAdmin ? 'relative z-10' : offRouteClass,
               )}
-              aria-hidden={!isUsersAdmin}
             >
               <UsersAdmin />
             </div>
+        )}
+        {user?.role === 'admin' && isGatewayAdmin && (
             <div
               className={cn(
-                'flex min-h-0 flex-1 flex-col overflow-auto console-scroll-hidden',
+                'relative z-10 flex min-h-0 flex-1 flex-col overflow-auto console-scroll-hidden',
                 APP_SHELL_ADMIN_CLASS,
-                isGatewayAdmin ? 'relative z-10' : offRouteClass,
               )}
-              aria-hidden={!isGatewayAdmin}
             >
               <GatewayAdmin />
             </div>
+        )}
+        {user?.role === 'admin' && isImagesAdmin && (
             <div
               className={cn(
-                'flex min-h-0 flex-1 flex-col overflow-auto console-scroll-hidden',
+                'relative z-10 flex min-h-0 flex-1 flex-col overflow-auto console-scroll-hidden',
                 APP_SHELL_ADMIN_CLASS,
-                isBoxLiteImagesAdmin ? 'relative z-10' : offRouteClass,
               )}
-              aria-hidden={!isBoxLiteImagesAdmin}
             >
-              <BoxLiteImagesAdmin />
+              <ImagesAdmin />
             </div>
-          </>
         )}
       </main>
       {showSettingsModal && (
@@ -176,11 +162,61 @@ function App() {
   } = useWorkspaces(user);
 
   React.useEffect(() => {
-    loadStoredAuth().then(({ accessToken, user }) => {
-      setToken(accessToken);
-      setUser(user);
-      setAuthReady(true);
+    setAuthExpiredHandler(() => {
+      localStorage.removeItem('user');
+      setToken(null);
+      setUser(null);
+      navigate('/login', { replace: true });
     });
+    return () => setAuthExpiredHandler(null);
+  }, [navigate]);
+
+  React.useEffect(() => {
+    (async () => {
+      const accessToken = getAccessToken();
+      let storedUser = null;
+      const userRaw = localStorage.getItem('user');
+      if (userRaw) {
+        try { storedUser = JSON.parse(userRaw); } catch { storedUser = null; }
+      }
+
+      if (accessToken && isStoredAuthStale()) {
+        clearTokens();
+        localStorage.removeItem('user');
+        setToken(null);
+        setUser(null);
+        setAuthReady(true);
+        return;
+      }
+
+      if (accessToken) {
+        try {
+          const res = await apiFetch('/api/v1/auth/me');
+          if (!res.ok) {
+            clearTokens();
+            localStorage.removeItem('user');
+            setToken(null);
+            setUser(null);
+            setAuthReady(true);
+            return;
+          }
+          const me = await res.json();
+          setToken(getAccessToken());
+          setUser(me?.user || (me?.id ? me : null) || storedUser);
+          setAuthReady(true);
+          return;
+        } catch {
+          setToken(accessToken);
+          setUser(storedUser);
+          setAuthReady(true);
+          return;
+        }
+      }
+
+      setToken(null);
+      setUser(storedUser);
+      setAuthReady(true);
+    })();
   }, []);
 
   const login = async (accessToken, refreshToken, user) => {
@@ -255,12 +291,13 @@ function App() {
                 element={user?.role === 'admin' ? null : <Navigate to="/sessions" replace />}
               />
               <Route
-                path="/admin/boxlite-images"
+                path="/admin/images"
                 element={user?.role === 'admin' ? null : <Navigate to="/sessions" replace />}
               />
             </Route>
 
             <Route path="/settings" element={<Navigate to="/sessions" replace />} />
+            <Route path="/admin/boxlite-images" element={<Navigate to="/admin/images" replace />} />
             <Route path="/admin/platform" element={<Navigate to="/sessions" replace />} />
             <Route path="/" element={<Navigate to={token ? '/sessions' : '/login'} replace />} />
             <Route path="*" element={<Navigate to={token ? '/sessions' : '/login'} replace />} />

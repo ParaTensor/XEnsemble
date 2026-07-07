@@ -24,6 +24,11 @@ import {
   PanelRightOpen,
   PanelRightClose,
   FileText,
+  Eye,
+  EyeOff,
+  Square,
+  Unplug,
+  Loader2,
 } from 'lucide-react';
 import { getSecretLabel } from '../lib/secretLabels';
 import { formatQuotaExceeded } from '../lib/quotaLabels';
@@ -105,6 +110,7 @@ export default React.forwardRef(function Sessions({
   const [panelTab, setPanelTab] = useState('files');
   const [workspaceFiles, setWorkspaceFiles] = useState([]);
   const [isLoadingFiles, setIsLoadingFiles] = useState(false);
+  const [showHiddenFiles, setShowHiddenFiles] = useState(false);
   const [viewingFile, setViewingFile] = useState(null);
   const [fileContent, setFileContent] = useState('');
 
@@ -224,6 +230,9 @@ export default React.forwardRef(function Sessions({
       });
       const data = await res.json();
       if (!res.ok) {
+        if (res.status === 401 || data.error === 'Unauthorized') {
+          throw new Error('登录已过期，请重新登录。');
+        }
         if (data.error === 'quota_exceeded') {
           throw new Error(formatQuotaExceeded(data.dimension || 'max_projects', data.current, data.limit));
         }
@@ -265,6 +274,10 @@ export default React.forwardRef(function Sessions({
       const data = await response.json();
       if (!response.ok) {
         const msg = data.error || data.message || 'Failed to start session';
+        if (response.status === 401 || msg === 'Unauthorized') {
+          setLaunchModalError('登录已过期，请重新登录。');
+          return false;
+        }
         if (data.error === 'agent_not_granted') {
           setLaunchModalError('You do not have permission to use this agent.');
           return false;
@@ -473,7 +486,9 @@ export default React.forwardRef(function Sessions({
     if (!activeSession?.projectId) return;
     setIsLoadingFiles(true);
     try {
-      const res = await apiFetch(`/api/v1/workspace/files?project_id=${encodeURIComponent(activeSession.projectId)}`);
+      const qs = new URLSearchParams({ project_id: activeSession.projectId });
+      if (showHiddenFiles) qs.set('include_hidden', '1');
+      const res = await apiFetch(`/api/v1/workspace/files?${qs}`);
       const data = await res.json();
       if (!res.ok) {
         throw new Error(data.error || 'Failed to load workspace files');
@@ -484,14 +499,14 @@ export default React.forwardRef(function Sessions({
     } finally {
       setIsLoadingFiles(false);
     }
-  }, [activeSession?.projectId, showToast]);
+  }, [activeSession?.projectId, showHiddenFiles, showToast]);
 
   useEffect(() => {
     if (!activeSession?.projectId || !panelOpen || panelTab !== 'files') return undefined;
     fetchWorkspaceFiles();
     const interval = setInterval(fetchWorkspaceFiles, 10000);
     return () => clearInterval(interval);
-  }, [activeSession?.projectId, fetchWorkspaceFiles, panelOpen, panelTab]);
+  }, [activeSession?.projectId, fetchWorkspaceFiles, panelOpen, panelTab, showHiddenFiles]);
 
   const handleOpenFile = useCallback(async (file) => {
     if (!activeSession?.projectId || file?.type !== 'file') return;
@@ -670,6 +685,9 @@ export default React.forwardRef(function Sessions({
     [projects, activeSession?.projectId],
   );
 
+  const sessionAlive = sessions.find((s) => s.id === activeSession?.sessionId)?.alive === true;
+  const sessionControlPending = restartingSession || stoppingSession;
+
   return (
     <div className={className || 'h-full w-full'}>
       {/* Launch modal */}
@@ -810,14 +828,10 @@ export default React.forwardRef(function Sessions({
                   </div>
                   <div className="flex items-center gap-1.5 shrink-0">
                     <span
-                      className={`w-1.5 h-1.5 rounded-full ${
-                        sessions.find((s) => s.id === activeSession.sessionId)?.alive
-                          ? 'bg-[#4A7C59]'
-                          : 'bg-[#9AA0A6]'
-                      }`}
+                      className={`w-1.5 h-1.5 rounded-full ${sessionAlive ? 'bg-[#4A7C59]' : 'bg-[#9AA0A6]'}`}
                     />
                     <span className="text-[11px] text-[#9AA0A6]">
-                      {sessions.find((s) => s.id === activeSession.sessionId)?.alive ? 'Running' : 'Stopped'}
+                      {sessionAlive ? 'Running' : 'Stopped'}
                     </span>
                   </div>
                 </>
@@ -829,36 +843,70 @@ export default React.forwardRef(function Sessions({
               {activeSession && (
                 <>
                   <div className="mx-0.5 h-5 w-px bg-[#E8EAED]" />
+                  {sessionAlive ? (
+                    <button
+                      type="button"
+                      onClick={handleStopSession}
+                      disabled={sessionControlPending}
+                      className={`${consoleIconButtonClass} disabled:opacity-50 disabled:cursor-not-allowed`}
+                      title={stoppingSession ? 'Stopping…' : 'Stop session'}
+                      aria-label={stoppingSession ? 'Stopping session' : 'Stop session'}
+                    >
+                      {stoppingSession ? (
+                        <Loader2 className="w-4 h-4 animate-spin" strokeWidth={1.75} />
+                      ) : (
+                        <Square className="w-4 h-4" strokeWidth={1.75} />
+                      )}
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={handleRestartSession}
+                      disabled={sessionControlPending}
+                      className={`${consoleIconButtonClass} disabled:opacity-50 disabled:cursor-not-allowed`}
+                      title={restartingSession ? 'Starting…' : 'Start session'}
+                      aria-label={restartingSession ? 'Starting session' : 'Start session'}
+                    >
+                      {restartingSession ? (
+                        <Loader2 className="w-4 h-4 animate-spin" strokeWidth={1.75} />
+                      ) : (
+                        <Play className="w-4 h-4" strokeWidth={1.75} />
+                      )}
+                    </button>
+                  )}
+                  {sessionAlive && (
+                    <button
+                      type="button"
+                      onClick={handleRestartSession}
+                      disabled={sessionControlPending}
+                      className={`${consoleIconButtonClass} disabled:opacity-50 disabled:cursor-not-allowed`}
+                      title={restartingSession ? 'Restarting…' : 'Restart session'}
+                      aria-label={restartingSession ? 'Restarting session' : 'Restart session'}
+                    >
+                      {restartingSession ? (
+                        <Loader2 className="w-4 h-4 animate-spin" strokeWidth={1.75} />
+                      ) : (
+                        <RefreshCw className="w-4 h-4" strokeWidth={1.75} />
+                      )}
+                    </button>
+                  )}
                   <button
+                    type="button"
+                    onClick={() => setActiveSession(null)}
+                    className={consoleIconButtonClass}
+                    title="Disconnect view"
+                    aria-label="Disconnect view"
+                  >
+                    <Unplug className="w-4 h-4" strokeWidth={1.75} />
+                  </button>
+                  <button
+                    type="button"
                     onClick={() => setPanelOpen((prev) => !prev)}
                     className={`${consoleIconButtonClass} ${panelOpen ? 'bg-[#F4F5F6] text-[#202124]' : ''}`}
                     title={panelOpen ? 'Close workspace panel' : 'Open workspace panel'}
                     aria-label={panelOpen ? 'Close workspace panel' : 'Open workspace panel'}
                   >
                     {panelOpen ? <PanelRightClose className="w-4 h-4" strokeWidth={1.75} /> : <PanelRightOpen className="w-4 h-4" strokeWidth={1.75} />}
-                  </button>
-                  <button
-                    onClick={handleRestartSession}
-                    disabled={restartingSession || stoppingSession}
-                    className="p-2 text-[#5F6368] hover:bg-[#F4F5F6] rounded-lg transition-colors"
-                    title="Restart / Start"
-                  >
-                    {restartingSession ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4" strokeWidth={1.75} />}
-                  </button>
-                  <button
-                    onClick={handleStopSession}
-                    disabled={restartingSession || stoppingSession}
-                    className="p-2 text-[#5F6368] hover:bg-[#F4F5F6] rounded-lg transition-colors"
-                    title="Stop"
-                  >
-                    <X className="w-4 h-4" strokeWidth={1.75} />
-                  </button>
-                  <button
-                    onClick={() => setActiveSession(null)}
-                    className="p-2 text-[#5F6368] hover:bg-[#F4F5F6] rounded-lg transition-colors"
-                    title="Disconnect"
-                  >
-                    <RefreshCw className="w-4 h-4" strokeWidth={1.75} />
                   </button>
                 </>
               )}
@@ -878,7 +926,7 @@ export default React.forwardRef(function Sessions({
                       agentName={activeSession.agentName}
                       projectId={activeSession.projectId}
                       onSessionEnd={handleSessionEnd}
-                      sessionLive={sessions.find((s) => s.id === activeSession.sessionId)?.alive === true}
+                      sessionLive={sessionAlive}
                     />
                   </div>
                 </div>
@@ -912,15 +960,35 @@ export default React.forwardRef(function Sessions({
                       </button>
                     </div>
                     {panelTab === 'files' && (
-                      <button
-                        type="button"
-                        onClick={() => fetchWorkspaceFiles({ notifyError: true })}
-                        className="p-2 text-[#5F6368] hover:bg-[#F4F5F6] rounded-lg transition-colors"
-                        title="Refresh files"
-                        aria-label="Refresh files"
-                      >
-                        <RefreshCw className={`w-4 h-4 ${isLoadingFiles ? 'animate-spin' : ''}`} strokeWidth={1.75} />
-                      </button>
+                      <div className="flex items-center gap-0.5">
+                        <button
+                          type="button"
+                          onClick={() => setShowHiddenFiles((v) => !v)}
+                          className={`p-2 rounded-lg transition-colors ${
+                            showHiddenFiles
+                              ? 'text-[#202124] bg-[#F4F5F6]'
+                              : 'text-[#5F6368] hover:bg-[#F4F5F6]'
+                          }`}
+                          title={showHiddenFiles ? 'Hide hidden files' : 'Show hidden files'}
+                          aria-label={showHiddenFiles ? 'Hide hidden files' : 'Show hidden files'}
+                          aria-pressed={showHiddenFiles}
+                        >
+                          {showHiddenFiles ? (
+                            <EyeOff className="w-4 h-4" strokeWidth={1.75} />
+                          ) : (
+                            <Eye className="w-4 h-4" strokeWidth={1.75} />
+                          )}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => fetchWorkspaceFiles({ notifyError: true })}
+                          className="p-2 text-[#5F6368] hover:bg-[#F4F5F6] rounded-lg transition-colors"
+                          title="Refresh files"
+                          aria-label="Refresh files"
+                        >
+                          <RefreshCw className={`w-4 h-4 ${isLoadingFiles ? 'animate-spin' : ''}`} strokeWidth={1.75} />
+                        </button>
+                      </div>
                     )}
                   </div>
                   <div className={`min-h-0 flex-1 flex-col ${panelTab === 'files' ? 'flex' : 'hidden'}`}>
@@ -934,6 +1002,7 @@ export default React.forwardRef(function Sessions({
                           items={workspaceFiles}
                           selectedPath={viewingFile?.path}
                           onOpenFile={handleOpenFile}
+                          showHidden={showHiddenFiles}
                         />
                       )}
                     </div>

@@ -80,6 +80,40 @@ test('fsList does not follow escape symlinks', async () => {
     }
 });
 
+test('fsList hides platform system directories', async () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'xe-fs-'));
+    try {
+        fs.mkdirSync(path.join(tmp, '.agents'));
+        fs.writeFileSync(path.join(tmp, '.agents', 'preview.json'), '{}');
+        fs.mkdirSync(path.join(tmp, '.git', 'hooks'), { recursive: true });
+        fs.writeFileSync(path.join(tmp, '.gitignore'), 'node_modules');
+        fs.writeFileSync(path.join(tmp, 'index.html'), '<html></html>');
+        const adapter = new LocalFsAdapter();
+        const list = await adapter.fsList(tmp, '.');
+        const paths = list.map((item) => item.path).sort();
+        assert.deepStrictEqual(paths, ['.gitignore', 'index.html']);
+    } finally {
+        fs.rmSync(tmp, { recursive: true, force: true });
+    }
+});
+
+test('fsList includes hidden platform directories when requested', async () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'xe-fs-'));
+    try {
+        fs.mkdirSync(path.join(tmp, '.agents'));
+        fs.writeFileSync(path.join(tmp, '.agents', 'preview.json'), '{}');
+        fs.writeFileSync(path.join(tmp, 'index.html'), '<html></html>');
+        const adapter = new LocalFsAdapter();
+        const list = await adapter.fsList(tmp, '.', { includeHidden: true });
+        const paths = list.map((item) => item.path).sort();
+        assert.ok(paths.includes('.agents'));
+        assert.ok(paths.includes('.agents/preview.json'));
+        assert.ok(paths.includes('index.html'));
+    } finally {
+        fs.rmSync(tmp, { recursive: true, force: true });
+    }
+});
+
 test('fsList returns empty list for non-existent path', async () => {
     const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'xe-fs-'));
     try {

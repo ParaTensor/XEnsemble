@@ -2,6 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const { FsAdapter, RuntimeError } = require('./interfaces');
 const { resolveSafePath } = require('../workspace');
+const { HIDDEN_WORKSPACE_DIRS } = require('../workspace/hiddenPaths');
 const { buildSessionStateDirRef } = require('../session/stateDirRef');
 
 class LocalFsAdapter extends FsAdapter {
@@ -21,7 +22,7 @@ class LocalFsAdapter extends FsAdapter {
             let entries;
             try { entries = fs.readdirSync(dirPath); } catch (e) { return; }
             for (const name of entries) {
-                if (name === '.scrollback') continue; // hide internal scrollback dir
+                if (!opts.includeHidden && HIDDEN_WORKSPACE_DIRS.has(name)) continue;
                 const fullPath = path.join(dirPath, name);
                 let stat;
                 try { stat = fs.lstatSync(fullPath); } catch (e) { continue; }

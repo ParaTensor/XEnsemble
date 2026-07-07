@@ -1,7 +1,7 @@
 import { cn } from './utils';
 
 export const buttonBase =
-  'inline-flex items-center justify-center gap-2 font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:opacity-50 disabled:pointer-events-none';
+  'inline-flex items-center justify-center gap-2 font-medium transition-colors focus:outline-none focus:ring-0 focus-visible:outline-none focus-visible:ring-0 disabled:opacity-50 disabled:pointer-events-none';
 
 export const buttonSizes = {
   sm: 'h-9 px-3 text-sm rounded-md',
@@ -10,11 +10,11 @@ export const buttonSizes = {
 };
 
 export const buttonVariants = {
-  primary: 'bg-black text-white hover:bg-zinc-800 focus:ring-black',
+  primary: 'bg-black text-white hover:bg-zinc-800',
   secondary:
-    'bg-transparent border border-zinc-300 text-zinc-900 hover:bg-zinc-50 focus:ring-black',
-  ghost: 'p-2 text-zinc-500 hover:text-zinc-900 hover:bg-zinc-100 rounded-md focus:ring-black',
-  danger: 'bg-red-600 text-white hover:bg-red-700 focus:ring-red-500',
+    'bg-transparent border border-zinc-300 text-zinc-900 hover:bg-zinc-50',
+  ghost: 'p-2 text-zinc-500 hover:text-zinc-900 hover:bg-zinc-100 rounded-md',
+  danger: 'bg-red-600 text-white hover:bg-red-700',
 };
 
 export function buttonClass(variant = 'primary', size = 'md', className) {

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { ChevronDown, ChevronRight, FileText, Folder, FolderOpen } from 'lucide-react';
-import { buildFileTree, collectFolderPaths } from '../lib/workspaceFileTree';
+import { buildFileTree, collectAncestorFolderPaths } from '../lib/workspaceFileTree';
 
 function TreeNode({ node, depth, expanded, selectedPath, onToggle, onOpenFile }) {
   const indent = depth * 12;
@@ -68,13 +68,20 @@ function TreeNode({ node, depth, expanded, selectedPath, onToggle, onOpenFile })
   );
 }
 
-export default function WorkspaceFileTree({ items, selectedPath, onOpenFile }) {
-  const tree = useMemo(() => buildFileTree(items), [items]);
+export default function WorkspaceFileTree({ items, selectedPath, onOpenFile, showHidden = false }) {
+  const tree = useMemo(() => buildFileTree(items, { showHidden }), [items, showHidden]);
   const [expanded, setExpanded] = useState(() => new Set());
 
   useEffect(() => {
-    setExpanded(new Set(collectFolderPaths(items)));
-  }, [items]);
+    if (!selectedPath) return;
+    const ancestors = collectAncestorFolderPaths(selectedPath);
+    if (!ancestors.length) return;
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      for (const p of ancestors) next.add(p);
+      return next;
+    });
+  }, [selectedPath]);
 
   const toggle = (path) => {
     setExpanded((prev) => {
