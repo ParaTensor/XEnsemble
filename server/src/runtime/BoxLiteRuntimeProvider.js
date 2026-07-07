@@ -1,6 +1,7 @@
 const { RuntimeProvider, RuntimeError } = require('./interfaces');
 const BoxLiteClient = require('./BoxLiteClient');
 const { resolveBoxImage } = require('./agentBoxImages');
+const { resolveBoxliteSessionNetwork } = require('./boxliteNetwork');
 const BoxLiteExecAdapter = require('./BoxLiteExecAdapter');
 const workspace = require('../workspace');
 const { BoxLiteStreamHandle } = BoxLiteExecAdapter;
@@ -72,6 +73,7 @@ class BoxLiteRuntimeProvider extends RuntimeProvider {
                     guest_path: workspaceVolume.guest_path,
                     read_only: workspaceVolume.read_only,
                 }],
+                network: resolveBoxliteSessionNetwork(opts.network),
             });
         } catch (e) {
             if (!/already|exists/i.test(String(e))) {

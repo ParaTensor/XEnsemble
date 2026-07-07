@@ -153,6 +153,26 @@ async function resumeSession({
             throw error;
         }
 
+        try {
+            const { ensureKimiConfig } = require('../workspace/kimiConfigBootstrap');
+            await ensureKimiConfig({
+                runtime,
+                runtimeRef: runtimeReady.runtime ? runtimeReady.runtime.runtimeRef : undefined,
+                userId: requestUser.id,
+                agentId: agentMeta.id,
+                warn: (msg) => {
+                    if (fastifyLog?.warn) fastifyLog.warn(msg);
+                    else if (requestLog?.warn) requestLog.warn(msg);
+                },
+            });
+        } catch (err) {
+            if (fastifyLog?.warn) {
+                fastifyLog.warn(err, '[sessions] kimi config bootstrap failed');
+            } else if (requestLog?.warn) {
+                requestLog.warn(err, '[sessions] kimi config bootstrap failed');
+            }
+        }
+
         await db.update(schema.sessions)
             .set({
                 status: 'running',

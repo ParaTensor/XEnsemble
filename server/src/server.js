@@ -902,6 +902,19 @@ fastify.post('/api/v1/session/start', { preValidation: [fastify.authenticate] },
         resolved.env = applyStateDirEnv(resolved.env, resumeSpec, sessionStateDir.stateDirPath);
     }
 
+    try {
+        const { ensureKimiConfig } = require('./workspace/kimiConfigBootstrap');
+        await ensureKimiConfig({
+            runtime,
+            runtimeRef: ready.runtime ? ready.runtime.runtimeRef : undefined,
+            userId: request.user.id,
+            agentId: agentMeta.id,
+            warn: (msg) => request.log.warn(msg),
+        });
+    } catch (err) {
+        request.log.warn(err, '[sessions] kimi config bootstrap failed');
+    }
+
     if (project && project.repoProvider === 'github') {
         resolved.env.XENSEMBLE_GIT_BRANCH = project.currentBranch || '';
         resolved.env.XENSEMBLE_GIT_BASE_BRANCH = project.repoDefaultBranch || '';

@@ -16,7 +16,13 @@ class MockBoxLiteClient {
     }
 
     async openSession(name, image, warm = false, options = {}) {
-        this.opened.push({ name, image, warm, volumes: options.volumes || [] });
+        this.opened.push({
+            name,
+            image,
+            warm,
+            volumes: options.volumes || [],
+            network: options.network || null,
+        });
         return { event: 'session_opened' };
     }
 
@@ -56,6 +62,7 @@ test('ensureReady recreates blink session when stored image differs', async () =
     assert.equal(client.opened[0].volumes.length, 1);
     assert.match(client.opened[0].volumes[0].host_path, /usr_swap[/\\]proj_image_swap$/);
     assert.equal(client.opened[0].volumes[0].guest_path, '/workspace');
+    assert.deepEqual(client.opened[0].network, { mode: 'enabled', allow_net: [] });
     assert.equal(result.runtimeRef, 'rt_swap');
     assert.equal(result.image, 'xensemble/agent-droid:latest');
     assert.match(result.mountKey, /=>[/\\]workspace$/);

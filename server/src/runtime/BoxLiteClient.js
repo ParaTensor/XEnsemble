@@ -86,6 +86,12 @@ class BoxLiteClient {
                 read_only: !!volume.read_only,
             }));
         }
+        if (options.network) {
+            body.network = {
+                mode: options.network.mode || 'enabled',
+                allow_net: Array.isArray(options.network.allow_net) ? options.network.allow_net : [],
+            };
+        }
         const res = await fetch(`${this.base}/api/sessions`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
