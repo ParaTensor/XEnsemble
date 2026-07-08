@@ -30,7 +30,7 @@ import {
   Unplug,
   Loader2,
 } from 'lucide-react';
-import { getSecretLabel } from '../lib/secretLabels';
+import { getSecretLabel, getSecretPlaceholder, isSecretPasswordField } from '../lib/secretLabels';
 import { formatQuotaExceeded } from '../lib/quotaLabels';
 import {
   archiveSession,
@@ -114,16 +114,12 @@ export default React.forwardRef(function Sessions({
   const [viewingFile, setViewingFile] = useState(null);
   const [fileContent, setFileContent] = useState('');
 
-  // eslint-disable-next-line no-unused-vars
   const [showConfigModal, setShowConfigModal] = useState(false);
   const [configKeys, setConfigKeys] = useState({});
   const [savedConfigKeys, setSavedConfigKeys] = useState({});
-  // eslint-disable-next-line no-unused-vars
-  const [_configSaving, setConfigSaving] = useState(false);
-  // eslint-disable-next-line no-unused-vars
-  const [_configLoading, setConfigLoading] = useState(false);
-  // eslint-disable-next-line no-unused-vars
-  const [_configError, setConfigError] = useState(null);
+  const [configSaving, setConfigSaving] = useState(false);
+  const [configLoading, setConfigLoading] = useState(false);
+  const [configError, setConfigError] = useState(null);
   const { showToast } = useToast();
   const { themeId, preset } = useTerminalTheme();
   // eslint-disable-next-line no-unused-vars
@@ -856,6 +852,66 @@ export default React.forwardRef(function Sessions({
             <button onClick={() => setDeleteConfirmSession(null)} className="h-9 px-4 border rounded-md">Cancel</button>
             <button onClick={() => handleDeleteSession(deleteConfirmSession.sessionId)} className="h-9 px-4 bg-[#C06C5D] text-white rounded-md">Remove</button>
           </div>
+        </ConsoleInlineDialog>
+      )}
+
+      {/* Configure API keys (BYOK) */}
+      {showConfigModal && (
+        <ConsoleInlineDialog
+          onClose={() => { setShowConfigModal(false); setConfigError(null); }}
+          panelClassName={`${consoleDialogPanelClass} w-full max-w-md shadow-sm`}
+        >
+          <div className={`${consoleStructuredDialogHeaderClass} flex items-center gap-2.5`}>
+            <Settings2 className={`w-4 h-4 shrink-0 ${textPlaceholder}`} />
+            <h3 className={`font-semibold text-sm ${textPrimary}`}>
+              Configure API keys{selectedAgent ? ` — ${selectedAgent.name}` : ''}
+            </h3>
+          </div>
+          <form onSubmit={handleSaveConfig}>
+            <div className="p-4 space-y-3">
+              {configError && (
+                <p className="text-sm text-[#C06C5D] bg-[#FDECEA] border border-[#FADBD8] rounded-md px-3 py-2">{configError}</p>
+              )}
+              {configLoading ? (
+                <p className={`text-sm ${textPlaceholder} flex items-center gap-2`}>
+                  <Loader2 className="w-4 h-4 animate-spin" /> Loading saved keys…
+                </p>
+              ) : (
+                configRequiredKeys.map((key, idx) => (
+                  <div key={key}>
+                    <label className={`block text-xs font-semibold uppercase tracking-wider ${textPlaceholder} mb-1`}>
+                      {getSecretLabel(key)}
+                    </label>
+                    <input
+                      type={isSecretPasswordField(key) ? 'password' : 'text'}
+                      value={configKeys[key] || ''}
+                      onChange={(e) => setConfigKeys((prev) => ({ ...prev, [key]: e.target.value }))}
+                      placeholder={getSecretPlaceholder(key, { saved: !!savedConfigKeys[key] })}
+                      className={consoleInputClass}
+                      autoFocus={idx === 0}
+                      autoComplete="off"
+                    />
+                  </div>
+                ))
+              )}
+            </div>
+            <div className={consoleStructuredDialogFooterClass}>
+              <button
+                type="button"
+                onClick={() => { setShowConfigModal(false); setConfigError(null); }}
+                className={`h-9 px-3 ${bgCanvas} border ${borderHairline} ${textPrimary} rounded-md text-sm font-medium ${hoverBgSecondary} ${transitionBase}`}
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={configSaving || configLoading}
+                className={`h-9 px-3 flex items-center justify-center gap-2 bg-[#202124] text-white rounded-md text-sm font-medium hover:bg-[#3C4043] disabled:opacity-50 ${transitionBase}`}
+              >
+                {configSaving ? <><Loader2 className="w-4 h-4 animate-spin" /> Saving…</> : 'Save keys'}
+              </button>
+            </div>
+          </form>
         </ConsoleInlineDialog>
       )}
 
