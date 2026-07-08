@@ -74,7 +74,7 @@ export default function AgentConsole({
   // eslint-disable-next-line no-unused-vars
   const [connected, setConnected] = useState(false);
   // eslint-disable-next-line no-unused-vars
-  const [ended, setEnded] = useState(!sessionLive);
+  const [ended, setEnded] = useState(!shouldConnect);
 
   useEffect(() => {
     onSessionEndRef.current = onSessionEnd;
@@ -85,8 +85,8 @@ export default function AgentConsole({
   }, [onSessionConnected]);
 
   useEffect(() => {
-    setEnded(!sessionLive);
-  }, [sessionLive]);
+    setEnded(!shouldConnect);
+  }, [shouldConnect]);
 
   useEffect(() => {
     const host = hostRef.current;

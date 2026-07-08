@@ -543,6 +543,7 @@ export default React.forwardRef(function Sessions({
     }
     const agent = agents.find((a) => a.id === agentId);
     const oldSessionId = activeSession.sessionId;
+    const sessionMeta = sessions.find((s) => s.id === oldSessionId);
 
     setRestartingSession(true);
     try {
@@ -551,8 +552,25 @@ export default React.forwardRef(function Sessions({
         showToast('error', 'Configure required API keys before starting.');
         return;
       }
+
+      if (sessionMeta?.recoverable && !sessionAlive) {
+        const response = await apiFetch(`/api/v1/sessions/${encodeURIComponent(oldSessionId)}/resume`, {
+          method: 'POST',
+          body: JSON.stringify({ terminal_theme_id: themeId }),
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || data.detail || 'Failed to resume session');
+        setSessions((prev) => prev.map((s) => (
+          s.id === oldSessionId ? { ...s, alive: true, status: 'running', memoryStatus: 'running' } : s
+        )));
+        fetchWorkspaces();
+        showToast('success', 'Session resumed.');
+        return;
+      }
+
       const deleteRes = await apiFetch(`/api/v1/sessions/${encodeURIComponent(oldSessionId)}`, { method: 'DELETE' });
       if (!deleteRes.ok) throw new Error('Failed to release previous session');
+      archiveSession(oldSessionId);
 
       const response = await apiFetch('/api/v1/session/start', {
         method: 'POST',
@@ -574,9 +592,10 @@ export default React.forwardRef(function Sessions({
       });
       goToSessions();
       setSessions((prev) => {
-        if (prev.some((s) => s.id === data.session_id)) return prev;
+        const withoutOld = prev.filter((s) => s.id !== oldSessionId);
+        if (withoutOld.some((s) => s.id === data.session_id)) return withoutOld;
         const now = Date.now();
-        return [...prev, { id: data.session_id, projectId: activeSession.projectId, agentId, status: 'running', alive: true, projectName: activeSession.projectName, createdAt: now }];
+        return [...withoutOld, { id: data.session_id, projectId: activeSession.projectId, agentId, status: 'running', alive: true, projectName: activeSession.projectName, createdAt: now }];
       });
       fetchWorkspaces();
       showToast('success', 'Session started.');
@@ -685,8 +704,22 @@ export default React.forwardRef(function Sessions({
     [projects, activeSession?.projectId],
   );
 
-  const sessionAlive = sessions.find((s) => s.id === activeSession?.sessionId)?.alive === true;
+  const activeSessionMeta = useMemo(
+    () => sessions.find((s) => s.id === activeSession?.sessionId) || null,
+    [sessions, activeSession?.sessionId],
+  );
+  const sessionAlive = activeSessionMeta?.alive === true;
+  const sessionWakeable = !sessionAlive
+    && activeSessionMeta?.recoverable === true
+    && activeSessionMeta?.status === 'idle';
   const sessionControlPending = restartingSession || stoppingSession;
+
+  const handleSessionConnected = useCallback((sessionId) => {
+    setSessions((prev) => prev.map((s) => (
+      s.id === sessionId ? { ...s, alive: true, status: 'running', memoryStatus: 'running' } : s
+    )));
+    fetchWorkspaces();
+  }, [fetchWorkspaces, setSessions]);
 
   return (
     <div className={className || 'h-full w-full'}>
@@ -831,7 +864,7 @@ export default React.forwardRef(function Sessions({
                       className={`w-1.5 h-1.5 rounded-full ${sessionAlive ? 'bg-[#4A7C59]' : 'bg-[#9AA0A6]'}`}
                     />
                     <span className="text-[11px] text-[#9AA0A6]">
-                      {sessionAlive ? 'Running' : 'Stopped'}
+                      {sessionAlive ? 'Running' : sessionWakeable ? 'Idle' : 'Stopped'}
                     </span>
                   </div>
                 </>
@@ -926,7 +959,9 @@ export default React.forwardRef(function Sessions({
                       agentName={activeSession.agentName}
                       projectId={activeSession.projectId}
                       onSessionEnd={handleSessionEnd}
+                      onSessionConnected={handleSessionConnected}
                       sessionLive={sessionAlive}
+                      sessionWakeable={sessionWakeable}
                     />
                   </div>
                 </div>
