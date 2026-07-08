@@ -43,7 +43,7 @@ const { registerGitHubAppRoutes } = require('./routes/githubApp');
 const { LocalGitService } = require('./git/LocalGitService');
 const { applyTerminalMessage, subscribeTerminal } = require('./session/terminalBridge');
 const { resumeSession } = require('./session/resumeSession');
-const { createIdleHibernateMonitor } = require('./session/idleHibernate');
+const { createIdleHibernateMonitor, stopSession } = require('./session/idleHibernate');
 const { buildResumeSessionContext } = require('./session/resumeSessionContext');
 const transcriptStore = require('./runtime/TranscriptStore');
 const unigateway = require('./gateway/unigatewayManager');
@@ -740,6 +740,87 @@ fastify.get('/api/v1/sessions', { preValidation: [fastify.authenticate] }, async
         createdAt: row.createdAt,
         updatedAt: row.updatedAt,
     }));
+});
+
+fastify.post('/api/v1/sessions/:sessionId/stop', { preValidation: [fastify.authenticate] }, async (request, reply) => {
+    const { sessionId } = request.params;
+    const rows = await db.select().from(schema.sessions)
+        .where(and(eq(schema.sessions.id, sessionId), eq(schema.sessions.userId, request.user.id)));
+    if (rows.length === 0) return reply.code(404).send({ error: 'Session not found' });
+
+    const session = rows[0];
+    if (session.status === 'idle') {
+        return {
+            ok: true,
+            session_id: sessionId,
+            status: 'idle',
+            recoverable: Boolean(session.recoverable),
+        };
+    }
+    if (session.status === 'exited') {
+        return reply.code(409).send({ error: 'Session has already ended' });
+    }
+
+    try {
+        const result = await stopSession({
+            db,
+            schema,
+            runtime,
+            sessionManager,
+            session,
+            fastifyLog: request.log,
+        });
+        if (!result.stopped) {
+            const message = result.reason === 'not_alive'
+                ? 'Session is not running'
+                : 'Failed to stop session';
+            return reply.code(result.reason === 'not_alive' ? 409 : 500).send({ error: message });
+        }
+        return {
+            ok: true,
+            session_id: sessionId,
+            status: result.status || 'idle',
+            recoverable: Boolean(session.recoverable),
+        };
+    } catch (err) {
+        request.log.error(err, '[sessions] stop failed');
+        return reply.code(500).send({ error: 'Failed to stop session' });
+    }
+});
+
+fastify.get('/api/v1/sessions/:sessionId/transcript', { preValidation: [fastify.authenticate] }, async (request, reply) => {
+    const { sessionId } = request.params;
+    const parsedAfter = Number(request.query?.after);
+    const after = Number.isFinite(parsedAfter) && parsedAfter >= 0 ? parsedAfter : 0;
+
+    const rows = await db.select().from(schema.sessions)
+        .where(and(eq(schema.sessions.id, sessionId), eq(schema.sessions.userId, request.user.id)));
+    if (rows.length === 0) return reply.code(404).send({ error: 'Session not found' });
+
+    const session = rows[0];
+    if (session.status !== 'idle' && session.status !== 'exited') {
+        return reply.code(409).send({ error: 'Transcript replay is only available for stopped sessions' });
+    }
+
+    const transcriptRows = await db.select().from(schema.sessionStreams)
+        .where(eq(schema.sessionStreams.sessionId, sessionId));
+    const transcriptRef = transcriptRows[0]?.storageRef || session.streamRef || null;
+    if (!transcriptRef) {
+        return { session_id: sessionId, after, output: '', head: 0 };
+    }
+
+    const frames = transcriptStore.readFrom(transcriptRef, after);
+    const output = frames
+        .filter((frame) => frame.kind === 'out' || frame.kind === 'in')
+        .map((frame) => (typeof frame.data === 'string' ? frame.data : ''))
+        .join('');
+
+    return {
+        session_id: sessionId,
+        after,
+        output,
+        head: transcriptStore.head(transcriptRef),
+    };
 });
 
 fastify.delete('/api/v1/sessions/:sessionId', { preValidation: [fastify.authenticate] }, async (request, reply) => {

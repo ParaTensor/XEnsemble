@@ -534,6 +534,15 @@ export default React.forwardRef(function Sessions({
     fetchWorkspaces();
   };
 
+  const handleSessionIdle = (sessionId) => {
+    setSessions((prev) =>
+      prev.map((s) =>
+        s.id === sessionId ? { ...s, alive: false, memoryStatus: 'idle', status: 'idle' } : s
+      )
+    );
+    fetchWorkspaces();
+  };
+
   const handleRestartSession = async () => {
     if (!activeSession) return;
     const agentId = activeSession.agentId || sessions.find((s) => s.id === activeSession.sessionId)?.agentId;
@@ -553,7 +562,13 @@ export default React.forwardRef(function Sessions({
         return;
       }
 
-      if (sessionMeta?.recoverable && !sessionAlive) {
+      if (sessionMeta?.recoverable) {
+        if (sessionAlive) {
+          const stopRes = await apiFetch(`/api/v1/sessions/${encodeURIComponent(oldSessionId)}/stop`, { method: 'POST' });
+          const stopData = await stopRes.json();
+          if (!stopRes.ok) throw new Error(stopData.error || 'Failed to pause session');
+          handleSessionIdle(oldSessionId);
+        }
         const response = await apiFetch(`/api/v1/sessions/${encodeURIComponent(oldSessionId)}/resume`, {
           method: 'POST',
           body: JSON.stringify({ terminal_theme_id: themeId }),
@@ -564,7 +579,7 @@ export default React.forwardRef(function Sessions({
           s.id === oldSessionId ? { ...s, alive: true, status: 'running', memoryStatus: 'running' } : s
         )));
         fetchWorkspaces();
-        showToast('success', 'Session resumed.');
+        showToast('success', sessionAlive ? 'Session restarted.' : 'Session resumed.');
         return;
       }
 
@@ -610,13 +625,13 @@ export default React.forwardRef(function Sessions({
     if (!activeSession?.sessionId) return;
     setStoppingSession(true);
     try {
-      const res = await apiFetch(`/api/v1/sessions/${encodeURIComponent(activeSession.sessionId)}`, { method: 'DELETE' });
+      const res = await apiFetch(`/api/v1/sessions/${encodeURIComponent(activeSession.sessionId)}/stop`, { method: 'POST' });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Failed to stop session');
+      if (!res.ok) throw new Error(data.error || 'Failed to pause session');
       rememberRecentSession({ id: activeSession.sessionId, agentId: activeSession.agentId, projectId: activeSession.projectId, projectName: activeSession.projectName, createdAt: Date.now() });
-      handleSessionEnd(activeSession.sessionId);
+      handleSessionIdle(activeSession.sessionId);
       fetchWorkspaces();
-      showToast('success', 'Session stopped.');
+      showToast('success', 'Session paused.');
     } catch (err) {
       showToast('error', err.message);
     } finally {
@@ -882,8 +897,8 @@ export default React.forwardRef(function Sessions({
                       onClick={handleStopSession}
                       disabled={sessionControlPending}
                       className={`${consoleIconButtonClass} disabled:opacity-50 disabled:cursor-not-allowed`}
-                      title={stoppingSession ? 'Stopping…' : 'Stop session'}
-                      aria-label={stoppingSession ? 'Stopping session' : 'Stop session'}
+                      title={stoppingSession ? 'Pausing…' : 'Pause session (keep history)'}
+                      aria-label={stoppingSession ? 'Pausing session' : 'Pause session'}
                     >
                       {stoppingSession ? (
                         <Loader2 className="w-4 h-4 animate-spin" strokeWidth={1.75} />

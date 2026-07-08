@@ -20,47 +20,102 @@ async function maybeAutoCheckpointProject({ project, sessionId, fastifyLog }) {
     }
 }
 
-async function hibernateSession({
+async function stopSession({
     db,
     schema,
     runtime,
     sessionManager,
     session,
     fastifyLog,
+    requireRuntimeHibernate = false,
 }) {
+    if (!session) return { stopped: false, reason: 'missing' };
+
+    const sessionId = session.id;
+    const liveSession = sessionManager.getSession(sessionId);
+
+    if (liveSession?.status === 'idle') {
+        return { stopped: true, alreadyIdle: true, status: 'idle' };
+    }
+
+    if (requireRuntimeHibernate && !runtime?.provider?.supportsHibernate?.()) {
+        return { stopped: false, reason: 'unsupported' };
+    }
+
+    if (!sessionManager.isAlive(sessionId)) {
+        if (session.status === 'running') {
+            try {
+                await db.update(schema.sessions)
+                    .set({
+                        status: 'idle',
+                        recoverable: Boolean(session.recoverable),
+                        streamRef: session.streamRef || null,
+                        stateDirRef: session.stateDirRef || null,
+                    })
+                    .where(eq(schema.sessions.id, sessionId));
+            } catch (err) {
+                fastifyLog?.warn?.(err, '[sessions] failed to persist idle status');
+            }
+            return { stopped: true, detached: true, status: 'idle' };
+        }
+        return { stopped: false, reason: 'not_alive' };
+    }
+
+    sessionManager.beginHibernate(sessionId);
+    try {
+        const live = sessionManager.getSession(sessionId);
+        if (live?.handle) {
+            try {
+                live.handle.kill();
+            } catch (err) {
+                fastifyLog?.warn?.(err, '[sessions] failed to kill session handle during stop');
+            }
+        }
+        const runtimeRef = live?.runtimeRef || live?.runtimeId || live?.handle?.runtimeRef
+            || session.runtimeRef || session.runtimeId || session.streamRef || null;
+        if (runtime?.provider?.supportsHibernate?.() && runtimeRef) {
+            await runtime.provider.hibernate(runtimeRef);
+        }
+    } catch (err) {
+        if (fastifyLog?.warn) fastifyLog.warn(err, '[sessions] failed to stop session runtime');
+        sessionManager.cancelHibernate(sessionId);
+        return { stopped: false, reason: 'provider_failed', error: err };
+    }
+
+    if (session.projectId) {
+        const projectRows = await db.select().from(schema.projects).where(eq(schema.projects.id, session.projectId));
+        await maybeAutoCheckpointProject({ project: projectRows[0] || null, sessionId, fastifyLog });
+    }
+
+    const liveAfter = sessionManager.getSession(sessionId);
+    try {
+        await db.update(schema.sessions)
+            .set({
+                status: 'idle',
+                recoverable: Boolean(session.recoverable ?? liveAfter?.recoverable),
+                streamRef: liveAfter?.streamRef || session.streamRef || null,
+                stateDirRef: liveAfter?.stateDirRef || session.stateDirRef || null,
+            })
+            .where(eq(schema.sessions.id, sessionId));
+    } catch (err) {
+        fastifyLog?.warn?.(err, '[sessions] failed to persist idle status');
+    }
+    sessionManager.completeHibernate(sessionId);
+
+    return { stopped: true, status: 'idle' };
+}
+
+async function hibernateSession(args) {
+    const { session, sessionManager, runtime } = args;
     if (!session || !sessionManager.isAlive(session.id)) return { hibernated: false, reason: 'not_alive' };
     if (!runtime?.provider?.supportsHibernate?.()) return { hibernated: false, reason: 'unsupported' };
     const runtimeRef = session.runtimeRef || session.runtimeId || session.handle?.runtimeRef || session.streamRef;
     if (!runtimeRef) return { hibernated: false, reason: 'missing_runtime_ref' };
 
-    sessionManager.beginHibernate(session.id);
-    try {
-        await runtime.provider.hibernate(runtimeRef);
-    } catch (err) {
-        if (fastifyLog?.warn) fastifyLog.warn(err, '[sessions] failed to hibernate session runtime');
-        sessionManager.cancelHibernate(session.id);
-        return { hibernated: false, reason: 'provider_failed', error: err };
+    const result = await stopSession({ ...args, requireRuntimeHibernate: true });
+    if (!result.stopped) {
+        return { hibernated: false, reason: result.reason, error: result.error };
     }
-
-    if (session.projectId) {
-        const projectRows = await db.select().from(schema.projects).where(eq(schema.projects.id, session.projectId));
-        await maybeAutoCheckpointProject({ project: projectRows[0] || null, sessionId: session.id, fastifyLog });
-    }
-
-    try {
-        await db.update(schema.sessions)
-            .set({
-                status: 'idle',
-                recoverable: session.recoverable,
-                streamRef: session.streamRef || null,
-                stateDirRef: session.stateDirRef || null,
-            })
-            .where(eq(schema.sessions.id, session.id));
-    } catch (err) {
-        fastifyLog?.warn?.(err, '[sessions] failed to persist idle status');
-    }
-    sessionManager.completeHibernate(session.id);
-
     return { hibernated: true };
 }
 
@@ -123,6 +178,7 @@ function createIdleHibernateMonitor({
 
 module.exports = {
     shouldHibernateSession,
+    stopSession,
     hibernateSession,
     createIdleHibernateMonitor,
 };

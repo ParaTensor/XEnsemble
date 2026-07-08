@@ -9,6 +9,7 @@ let db;
 let schema;
 let sessionManager;
 let hibernateSession;
+let stopSession;
 let shouldHibernateSession;
 
 before(async () => {
@@ -20,7 +21,7 @@ before(async () => {
     ], __dirname);
     ({ db, schema } = ctx);
     sessionManager = ctx.reloaded['./SessionManager'];
-    ({ hibernateSession, shouldHibernateSession } = ctx.reloaded['./idleHibernate']);
+    ({ hibernateSession, stopSession, shouldHibernateSession } = ctx.reloaded['./idleHibernate']);
 });
 
 after(async () => {
@@ -168,6 +169,115 @@ test('hibernateSession stops runtime and leaves the session idle without exiting
         assert.equal(live.exitCode, null);
         assert.equal(live.hibernating, true);
         assert.equal(live.activeTerminalSubscribers, 0);
+    } finally {
+        sessionManager.deleteSession(sessionId);
+        await db.delete(schema.sessions).where(eq(schema.sessions.id, sessionId));
+        await db.delete(schema.runtimes).where(eq(schema.runtimes.id, runtimeId));
+        await db.delete(schema.projects).where(eq(schema.projects.id, projectId));
+        await db.delete(schema.users).where(eq(schema.users.id, userId));
+    }
+});
+
+test('stopSession pauses local sessions without runtime hibernate and keeps transcript', async () => {
+    const sessionId = `sess_stop_${Date.now()}_${Math.random().toString(16).slice(2)}`;
+    const userId = `usr_stop_${Date.now()}_${Math.random().toString(16).slice(2)}`;
+    const projectId = `proj_stop_${Date.now()}_${Math.random().toString(16).slice(2)}`;
+    const runtimeId = `rt_stop_${Date.now()}_${Math.random().toString(16).slice(2)}`;
+    const streamRef = `stream_stop_${Date.now()}_${Math.random().toString(16).slice(2)}`;
+    const cwd = '/tmp';
+    const now = Date.now();
+    let killed = false;
+    const handle = new FakeHandle(streamRef);
+    handle.kill = () => { killed = true; };
+
+    try {
+        await db.insert(schema.users).values({
+            id: userId,
+            username: `stop_${now}`,
+            passwordHash: 'hash',
+            role: 'user',
+            status: 'active',
+            createdAt: now,
+            updatedAt: now,
+        });
+        await db.insert(schema.projects).values({
+            id: projectId,
+            userId,
+            name: 'Stop Project',
+            serverPath: cwd,
+            workspaceMode: 'local',
+            createdAt: now,
+        });
+        await db.insert(schema.runtimes).values({
+            id: runtimeId,
+            projectId,
+            provider: 'local',
+            runtimeRef: 'runtime_ref_local',
+            role: 'default',
+            status: 'ready',
+            createdAt: now,
+            updatedAt: now,
+        });
+        await db.insert(schema.sessions).values({
+            id: sessionId,
+            userId,
+            projectId,
+            agentId: 'claude-code',
+            cwd,
+            streamRef,
+            stateDirRef: '.xensemble/state/sess_stop',
+            recoverable: true,
+            status: 'running',
+            runtimeId,
+            createdAt: now,
+        });
+
+        sessionManager.createSession(sessionId, handle, 'claude-code', {
+            projectId,
+            runtimeId,
+            runtimeRef: 'runtime_ref_local',
+            stateDirRef: '.xensemble/state/sess_stop',
+            transcriptRef: streamRef,
+            userId,
+        });
+        handle.dataListeners.forEach((cb) => cb('paused history\n'));
+
+        const sessionRow = (await db.select().from(schema.sessions).where(eq(schema.sessions.id, sessionId)))[0];
+        const runtime = {
+            provider: {
+                supportsHibernate() {
+                    return false;
+                },
+                async hibernate() {
+                    throw new Error('should not hibernate local runtime');
+                },
+            },
+        };
+
+        const result = await stopSession({
+            db,
+            schema,
+            runtime,
+            sessionManager,
+            session: sessionRow,
+            fastifyLog: { warn() {} },
+        });
+
+        assert.deepEqual(result, { stopped: true, status: 'idle' });
+        assert.equal(killed, true);
+
+        const rows = await db.select().from(schema.sessions).where(eq(schema.sessions.id, sessionId));
+        assert.equal(rows[0].status, 'idle');
+        assert.equal(rows[0].recoverable, true);
+        assert.equal(rows[0].streamRef, streamRef);
+
+        const live = sessionManager.getSession(sessionId);
+        assert.equal(live.status, 'idle');
+        assert.equal(live.handle, null);
+        assert.match(live.history, /paused history/);
+
+        const transcriptStore = ctx.reloaded['../runtime/TranscriptStore'];
+        assert.equal(transcriptStore.hasTranscript(streamRef), true);
     } finally {
         sessionManager.deleteSession(sessionId);
         await db.delete(schema.sessions).where(eq(schema.sessions.id, sessionId));

@@ -3,7 +3,7 @@ import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import '@xterm/xterm/css/xterm.css';
 
-import { getAccessToken, getWsUrl } from '../lib/api';
+import { getAccessToken, getWsUrl, apiFetch } from '../lib/api';
 import { useTerminalTheme } from '../hooks/useTerminalTheme.jsx';
 
 const FALLBACK_XTERM_THEME = {
@@ -70,11 +70,12 @@ export default function AgentConsole({
   const onSessionEndRef = useRef(onSessionEnd);
   const onSessionConnectedRef = useRef(onSessionConnected);
   const connectedRef = useRef(false);
-  const shouldConnect = sessionLive || sessionWakeable;
+  const shouldConnect = sessionLive;
+  const shouldReplayIdle = sessionWakeable && !sessionLive;
   // eslint-disable-next-line no-unused-vars
   const [connected, setConnected] = useState(false);
   // eslint-disable-next-line no-unused-vars
-  const [ended, setEnded] = useState(!shouldConnect);
+  const [ended, setEnded] = useState(!shouldConnect && !shouldReplayIdle);
 
   useEffect(() => {
     onSessionEndRef.current = onSessionEnd;
@@ -85,8 +86,8 @@ export default function AgentConsole({
   }, [onSessionConnected]);
 
   useEffect(() => {
-    setEnded(!shouldConnect);
-  }, [shouldConnect]);
+    setEnded(!shouldConnect && !shouldReplayIdle);
+  }, [shouldConnect, shouldReplayIdle]);
 
   useEffect(() => {
     const host = hostRef.current;
@@ -157,9 +158,25 @@ export default function AgentConsole({
     });
     resizeObserver.observe(host);
 
-    if (!sessionId || !shouldConnect) {
+    if (!sessionId || (!shouldConnect && !shouldReplayIdle)) {
       terminal.write('\r\n\x1b[33m[System] Session is not running.\x1b[0m\r\n');
       setEnded(true);
+    } else if (shouldReplayIdle) {
+      (async () => {
+        try {
+          const response = await apiFetch(`/api/v1/sessions/${encodeURIComponent(sessionId)}/transcript`);
+          const data = await response.json();
+          if (!response.ok) throw new Error(data.error || 'Failed to load session history');
+          if (data.output) terminal.write(data.output);
+          terminal.write('\r\n\x1b[33m[System] Session paused. Click Start to resume.\x1b[0m\r\n');
+          setEnded(true);
+        } catch (error) {
+          if (!disposed) {
+            terminal.write(`\r\n\x1b[31m[System] ${error?.message || 'Failed to load session history'}\x1b[0m\r\n`);
+            setEnded(true);
+          }
+        }
+      })();
     } else {
       (async () => {
         try {
@@ -247,7 +264,7 @@ export default function AgentConsole({
       terminalRef.current = null;
       fitAddonRef.current = null;
     };
-  }, [sessionId, shouldConnect]);
+  }, [sessionId, shouldConnect, shouldReplayIdle]);
 
   return (
     <div className="flex h-full min-h-0 flex-col overflow-hidden bg-transparent">
