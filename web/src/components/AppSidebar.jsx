@@ -66,7 +66,9 @@ function sortSessions(list, prefs) {
 }
 
 function buildWorkspaces(projects, sessions, prefs) {
-  const visible = sessions.filter((s) => !isArchivedSession(prefs, s.id));
+  const visible = sessions.filter(
+    (s) => !isArchivedSession(prefs, s.id) && s.status !== 'exited',
+  );
   const byProject = {};
   for (const s of visible) {
     const pid = s.projectId || '_orphan';

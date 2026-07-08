@@ -56,7 +56,9 @@ export default function AgentConsole({
   sessionId,
   /* agentName kept for API compat */
   onSessionEnd,
+  onSessionConnected,
   sessionLive = true,
+  sessionWakeable = false,
 }) {
   const { preset } = useTerminalTheme();
   const xtermTheme = preset?.xterm || FALLBACK_XTERM_THEME;
@@ -66,7 +68,9 @@ export default function AgentConsole({
   const fitAddonRef = useRef(null);
   const wsRef = useRef(null);
   const onSessionEndRef = useRef(onSessionEnd);
+  const onSessionConnectedRef = useRef(onSessionConnected);
   const connectedRef = useRef(false);
+  const shouldConnect = sessionLive || sessionWakeable;
   // eslint-disable-next-line no-unused-vars
   const [connected, setConnected] = useState(false);
   // eslint-disable-next-line no-unused-vars
@@ -75,6 +79,10 @@ export default function AgentConsole({
   useEffect(() => {
     onSessionEndRef.current = onSessionEnd;
   }, [onSessionEnd]);
+
+  useEffect(() => {
+    onSessionConnectedRef.current = onSessionConnected;
+  }, [onSessionConnected]);
 
   useEffect(() => {
     setEnded(!sessionLive);
@@ -149,7 +157,7 @@ export default function AgentConsole({
     });
     resizeObserver.observe(host);
 
-    if (!sessionId || !sessionLive) {
+    if (!sessionId || !shouldConnect) {
       terminal.write('\r\n\x1b[33m[System] Session is not running.\x1b[0m\r\n');
       setEnded(true);
     } else {
@@ -163,6 +171,7 @@ export default function AgentConsole({
             connectedRef.current = true;
             setConnected(true);
             setEnded(false);
+            onSessionConnectedRef.current?.(sessionId);
             requestAnimationFrame(() => {
               requestAnimationFrame(() => {
                 if (!disposed) fitTerminal();
@@ -238,7 +247,7 @@ export default function AgentConsole({
       terminalRef.current = null;
       fitAddonRef.current = null;
     };
-  }, [sessionId, sessionLive]);
+  }, [sessionId, shouldConnect]);
 
   return (
     <div className="flex h-full min-h-0 flex-col overflow-hidden bg-transparent">
