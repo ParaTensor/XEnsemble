@@ -21,6 +21,16 @@ Blink **不是另起炉灶**，而是 Architecture.md §5.4.2 所定义的 **Box
 
 这是目前“正确且低契约风险”的替代本地进程隔离的路线。
 
+### 1.1 多沙箱抽象归属（决策）
+
+出现 blink 之外的沙箱技术（如 Tencent [CubeSandbox](https://github.com/tencentcloud/CubeSandbox)、在线/托管沙箱 API）时，**在 XEnsemble 控制面新增一档 `RuntimeProvider` 接入，不在 blink 内部再造"多厂商 broker"**。原因：
+
+- Blink 自身定位为"基于 BoxLite/libkrun 的 execution plane（library + service + CLI）"，把登录/配额/console 留给控制面；让它 broker 其它厂商会造成定位冲突与依赖倒置（控制面依赖执行后端，而非相反）。
+- 针对 agent 生命周期的编排与能力协商都在控制面，沙箱抽象自然落在控制面的四层接口（`RuntimeProvider / ExecAdapter / FsAdapter / PreviewAdapter`）上。
+- **优先复用 blink 的 REST 契约（`docs/XENSEMBLE.md`）作为归一化协议**：为厂商写 shim 说这套 REST 方言，即可复用现成的 `BoxLite*Adapter`，省去一整套 Adapter；差异过大再单独实现 Provider。即抽象是协议，blink 是参考实现之一。
+
+完整规范见 `docs/Architecture.md` §5.4.4。
+
 ---
 
 ## 2. 现有隔离机制 vs Blink

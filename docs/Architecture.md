@@ -183,6 +183,24 @@ Desktop Client 或 Self-Hosted Server 使用 **Local Runtime Provider**，Agent/
 - **生产能力**：使用 requests/limits、ResourceQuota、NetworkPolicy、SecurityContext、ServiceAccount、日志与指标系统实现隔离、调度和观测。
 - **当前状态**：`server/src/runtime/K8s*.js` 已提供占位实现。可通过 `RUNTIME_PROVIDER=k8s` 加载，但所有方法均返回 `501 Not Implemented`。
 
+#### 5.4.4 接入更多沙箱后端（多沙箱 = 多 Provider）
+
+**决策**：当出现 BoxLite/blink 之外的沙箱技术（如 Tencent [CubeSandbox](https://github.com/tencentcloud/CubeSandbox)、各类在线/托管沙箱 API）时，一律**新增一档 `RuntimeProvider` 实现**接入，而**不**在执行面（如 blink）内部再造一层"多厂商 broker"。理由：
+
+- **抽象归属**：针对 agent 生命周期（session、quota、preview、deployment、鉴权、审计）的编排在控制面，能力协商（`supportsHibernate()`、`docs/DurableSessions.md` 的 `recoverable` 分级）也在控制面；沙箱抽象自然落在控制面的四层接口上。
+- **定位与依赖方向**：blink 自身定位为"基于 BoxLite/libkrun 的 execution plane（library + service + CLI）"，明确把登录/配额/console 留给控制面（见 blink `README.md` / `docs/PRODUCT.md`）。控制面依赖执行后端，而非相反；让执行后端去 broker 其它厂商会造成定位冲突与依赖倒置。
+- **零控制面侵入**：新增后端只需实现 `RuntimeProvider / ExecAdapter / FsAdapter / PreviewAdapter` 四件套，并在 `registry.js` 增加分支；`server.js`、SessionManager、Deployment、Gateway、鉴权/quota 均不改动。
+
+**接入规范**（沿用 §5.4.2 BoxLite 的约束）：
+
+- **Provider 映射**：维护 `runtimeId ↔ 厂商 sandbox id/name` 映射，**绝不向客户端暴露**厂商内部 id、token 或内部 URL。
+- **Exec**：`spawn` 提供交互式 PTY（或等价 stdin/stdout/resize/stream），`exec` 跑短任务/git 操作。
+- **Fs**：无原生文件 API 时先用 session 内 `exec`（`ls`/`cat`）兜底，后续有原生端点再替换。
+- **Preview**：由 XEnsemble Preview Gateway 反代，客户端仍访问 `/preview/:deploymentId`。
+- **能力差异显式声明**：托管/在线沙箱可能不支持 checkpoint/export/warm；用 `supportsHibernate()` 与 `recoverable` 分级表达，控制面按能力降级（如不支持 resume 则退回 transcript 续传），**禁止在控制面硬编码某后端专有能力**。
+
+**优先复用 blink 的 REST 契约作为归一化协议**：若为某厂商写一层 shim，使其对外说 blink `docs/XENSEMBLE.md` 的 REST 方言，则 XEnsemble 现成的 `BoxLite*Adapter` 可近乎零改动复用，省去一整套 Adapter；仅当厂商 API 差异过大时才单独实现 Provider。即：**抽象是协议，blink 是参考实现之一**，而非抽象本身。
+
 ### 5.5 LLM Gateway
 
 - `gateway/` Rust 二进制继续作为可选内置 LLM 路由。
