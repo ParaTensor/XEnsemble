@@ -1,9 +1,9 @@
-# BoxLite Runtime Provider 与 Blink 集成分析与推进方案
+# 沙箱执行面集成分析与推进方案
 
 > 状态：分析阶段（未实施）  
 > 日期：2026-06-26  
-> 目的：记录使用 `/Users/xinference/github/blink` 作为后端 Agent 沙箱，替代现有本地进程隔离的完整分析、差距、风险与分阶段方案。  
-> 对齐：`docs/Architecture.md` §5.4.2 BoxLite Managed Sandbox Runtime（Phase 3）
+> 目的：记录托管沙箱执行面（当前首选 blink/libkrun，亦可经 shim 接入 CubeSandbox 等）替代本地进程隔离的完整分析、差距、风险与分阶段方案。  
+> 对齐：`docs/Architecture.md` §5.4.2（BoxLite Managed Sandbox）、§5.4.4（多沙箱后端）
 
 **重要**：本文档仅为分析与规划，**暂不改动任何代码**。所有实现决策需在本文档评审通过后推进。
 

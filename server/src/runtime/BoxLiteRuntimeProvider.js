@@ -10,6 +10,25 @@ function buildWorkspaceMountKey(hostPath, guestPath) {
     return `${hostPath}=>${guestPath}`;
 }
 
+function resolveAgentProbeCommand(agentId) {
+    if (!agentId) return null;
+    const { DEFAULT_AGENTS } = require('../agents/defaultAgents');
+    const agent = DEFAULT_AGENTS.find((entry) => entry.id === agentId);
+    return agent?.cmd || null;
+}
+
+async function probeAgentCommand(client, sessionName, cmd, workspacePath) {
+    if (!cmd) return true;
+    const result = await client.execForResult(
+        sessionName,
+        'sh',
+        ['-lc', `command -v ${JSON.stringify(cmd)} >/dev/null 2>&1`],
+        {},
+        workspacePath || '/',
+    );
+    return result.exitCode === 0;
+}
+
 class BoxLiteRuntimeProvider extends RuntimeProvider {
     constructor() {
         super();
@@ -63,21 +82,42 @@ class BoxLiteRuntimeProvider extends RuntimeProvider {
         workspace.createProjectDirectory(project.userId, project.id);
         const storedImage = opts.storedImage || null;
         const storedMount = opts.storedMount || null;
-        if ((storedImage && storedImage !== image) || storedMount !== mountKey) {
-            await this.client.deleteSession(name);
+        const imageMismatch = storedImage !== image;
+        const recreateForImage = imageMismatch && (opts.forceRecreate || opts.agentId);
+        if (recreateForImage || storedMount !== mountKey) {
+            try {
+                await this.client.deleteSession(name);
+            } catch (_) {
+                // Blink session may already be gone or stuck — openSession will recreate.
+            }
         }
-        try {
-            await this.client.openSession(name, image, warm, {
-                volumes: [{
-                    host_path: workspaceVolume.host_path,
-                    guest_path: workspaceVolume.guest_path,
-                    read_only: workspaceVolume.read_only,
-                }],
-                network: resolveBoxliteSessionNetwork(opts.network),
-            });
-        } catch (e) {
-            if (!/already|exists/i.test(String(e))) {
-                throw new RuntimeError(`BoxLite ensureReady failed: ${e.message}`, 502);
+        const openOptions = {
+            volumes: [{
+                host_path: workspaceVolume.host_path,
+                guest_path: workspaceVolume.guest_path,
+                read_only: workspaceVolume.read_only,
+            }],
+            network: resolveBoxliteSessionNetwork(opts.network),
+        };
+        const openSession = async () => {
+            try {
+                await this.client.openSession(name, image, warm, openOptions);
+            } catch (e) {
+                if (!/already|exists/i.test(String(e))) {
+                    throw new RuntimeError(`BoxLite ensureReady failed: ${e.message}`, 502);
+                }
+            }
+        };
+        await openSession();
+        const probeCmd = resolveAgentProbeCommand(opts.agentId);
+        if (probeCmd && !(await probeAgentCommand(this.client, name, probeCmd, guestWorkspacePath))) {
+            await this.client.deleteSession(name);
+            await openSession();
+            if (!(await probeAgentCommand(this.client, name, probeCmd, guestWorkspacePath))) {
+                throw new RuntimeError(
+                    `BoxLite ensureReady failed: agent command "${probeCmd}" is missing from sandbox image ${image}`,
+                    502,
+                );
             }
         }
         if (opts && (opts.checkpointId || opts.baseSnapshotId)) {

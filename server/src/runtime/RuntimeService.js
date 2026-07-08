@@ -25,6 +25,21 @@ function runtimeKey(projectId, runtimeId) {
     return `${projectId}:${runtimeId || 'default'}`;
 }
 
+function runtimeFlightKey(projectId, runtimeId, opts = {}) {
+    const base = runtimeKey(projectId, runtimeId);
+    // Do not coalesce agent provisioning with passive attach (git status polls, workspace FS, …).
+    if (opts.agentId || opts.forceRecreate || opts.image) return `${base}:provision`;
+    return `${base}:attach`;
+}
+
+function isAttachOnlyRuntimeCall(opts = {}) {
+    return !opts.agentId
+        && !opts.forceRecreate
+        && !opts.image
+        && !opts.baseSnapshotId
+        && !opts.checkpointId;
+}
+
 /**
  * 确保 project 有 default runtime 记录并完成 provider provision / restore。
  * opts.baseSnapshotId / opts.checkpointId 预留给云 provider 恢复 repo snapshot 或 session checkpoint。
@@ -32,7 +47,26 @@ function runtimeKey(projectId, runtimeId) {
  */
 async function ensureProjectRuntime(project, opts = {}) {
     const targetRuntimeId = opts.runtimeId || project.defaultRuntimeId;
-    return singleflight(runtimeKey(project.id, targetRuntimeId), async () => {
+
+    // Passive callers only need the persisted runtime row; re-entering ensureReady races with session start.
+    if (isAttachOnlyRuntimeCall(opts) && targetRuntimeId) {
+        const rows = await db.select().from(schema.runtimes)
+            .where(and(
+                eq(schema.runtimes.id, targetRuntimeId),
+                eq(schema.runtimes.projectId, project.id),
+            ));
+        const runtimeRow = rows[0];
+        const workspacePath = runtimeRow?.endpoint || project.serverPath;
+        if (runtimeRow?.status === 'ready' && runtimeRow.runtimeRef && workspacePath) {
+            return {
+                runtime: runtimeRow,
+                workspacePath,
+                recoverable: false,
+            };
+        }
+    }
+
+    return singleflight(runtimeFlightKey(project.id, targetRuntimeId, opts), async () => {
         const rt = getRuntime();
 
         let runtimeRow = null;
@@ -55,14 +89,23 @@ async function ensureProjectRuntime(project, opts = {}) {
         const isBoxLite = PROVIDER === 'boxlite';
         let image = null;
         if (isBoxLite) {
-            image = await resolveBoxImage({
-                agentId: opts.agentId,
-                image: opts.image,
-            });
+            // Keep the provisioned agent image for attach-only callers (git status, workspace FS, …).
+            // Without this, resolveBoxImage() falls back to box-base and ensureReady tears down a live agent sandbox.
+            if (opts.agentId || opts.image) {
+                image = await resolveBoxImage({
+                    agentId: opts.agentId,
+                    image: opts.image,
+                });
+            } else if (storedSpecs.image) {
+                image = storedSpecs.image;
+            } else {
+                image = await resolveBoxImage({});
+            }
         }
 
         const provision = await rt.provider.ensureReady(project, {
             runtimeId: runtimeRow.id,
+            forceRecreate: !!opts.forceRecreate,
             ...(isBoxLite ? {
                 agentId: opts.agentId,
                 image,

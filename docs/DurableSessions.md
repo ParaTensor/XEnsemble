@@ -198,14 +198,14 @@ flowchart LR
 
 | Provider | 脱离方式 | 备注 |
 |----------|----------|------|
-| **Local（推荐）** | 复用 **blink / BoxLite 本机形态（libkrun）**：Agent 跑在 sandbox 内，生命周期独立于控制面；控制面通过 blink 的 `WS /executions/{id}/attach` 重连 | 已有 `docs/BoxLite-Blink-Integration.md` 与蓝图构建的 blink-server，不必自造轮子 |
+| **Local（推荐）** | 复用 **blink / BoxLite 本机形态（libkrun）**：Agent 跑在 sandbox 内，生命周期独立于控制面；控制面通过 blink 的 `WS /executions/{id}/attach` 重连 | 已有 `docs/Sandbox-Integration.md` 与蓝图构建的 blink-server，不必自造轮子 |
 | **Local（无 KVM 兜底）** | 一个**常驻 `agent-host` 守护进程**（独立生命周期）持有 PTY，暴露 unix socket；控制面用 detached spawn 拉起后经 socket 重连 | 纯本机开发/无 `/dev/kvm` 环境的降级路径；仅把"父子关系"解开 |
-| **BoxLite** | 同 Local 推荐路径，sandbox 由 BoxLite 托管；控制面重连 sandbox 的 exec/PTY 通道 | 与 `docs/BoxLite-Blink-Integration.md` 对齐，最契合本设计 |
+| **BoxLite** | 同 Local 推荐路径，sandbox 由 BoxLite 托管；控制面重连 sandbox 的 exec/PTY 通道 | 与 `docs/Sandbox-Integration.md` 对齐，最契合本设计 |
 | **K8s** | Agent 跑在 Pod 内，控制面重连 Pod 的 attach 流 | 生产层，天然脱离 |
 
 **决策**：不新造"detached 进程 + 专用 agent-host"作为主路径；**主路径统一走 blink/BoxLite（libkrun）**，`agent-host` 守护进程仅作为无 KVM 环境的兜底。这样"进程脱离"与执行面三层 Provider 的既有演进方向合流，不增加第四种执行形态。
 
-> **与现有文档的差异需知会**：`docs/BoxLite-Blink-Integration.md` §恢复模型 目前写的是"跨重启 live PTY 不可恢复，接受 `recoverable=false`（与 Local 一致）"。本设计**主动推翻**这一让步——通过 transcript 续传 + state 目录 `--resume` 把 `recoverable` 提升为 `true`（详见 §4、§9-Q3 的能力分级）。落地 P3 时需同步更新该文档。
+> **与现有文档的差异需知会**：`docs/Sandbox-Integration.md` §恢复模型 目前写的是"跨重启 live PTY 不可恢复，接受 `recoverable=false`（与 Local 一致）"。本设计**主动推翻**这一让步——通过 transcript 续传 + state 目录 `--resume` 把 `recoverable` 提升为 `true`（详见 §4、§9-Q3 的能力分级）。落地 P3 时需同步更新该文档。
 
 `StreamHandle` 接口补充一个 `reattach(streamRef)` 语义：从 `streamRef` 恢复一个可读写的句柄，而非只在 `createSession` 时新建。
 
@@ -324,7 +324,7 @@ flowchart LR
 
 **决策**：见 §5.2。主路径统一复用 **blink / BoxLite（libkrun）** 的本机 sandbox 形态，控制面经 blink 的 `WS /executions/{id}/attach` 重连；**不新增第四种执行形态**。纯本机无 `/dev/kvm` 时降级到常驻 `agent-host` 守护进程（独立生命周期 + unix socket 重连）。
 
-理由：仓库已有 `docs/BoxLite-Blink-Integration.md` 与蓝图构建的 blink-server，BoxLite sandbox 生命周期天然独立于控制面，正是"进程脱离"所需；让本特性与三层 Provider 演进合流，而非旁生一条。
+理由：仓库已有 `docs/Sandbox-Integration.md` 与蓝图构建的 blink-server，BoxLite sandbox 生命周期天然独立于控制面，正是"进程脱离"所需；让本特性与三层 Provider 演进合流，而非旁生一条。
 
 ### Q3 — State 目录的通用性 → **runtime 声明契约 + 能力分级降级**
 

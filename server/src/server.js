@@ -936,27 +936,67 @@ fastify.post('/api/v1/session/start', { preValidation: [fastify.authenticate] },
     });
 
     let handle;
+    const spawnOpts = {
+        name: agentMeta.name,
+        cwd: workspacePath,
+        runtimeRef: ready.runtime ? ready.runtime.runtimeRef : undefined,
+        uid: process.env.RUNTIME_UID,
+        gid: process.env.RUNTIME_GID,
+    };
     try {
         handle = await runtime.exec.spawn(
             agentMeta.cmd,
             agentMeta.args,
             resolved.env,
-            {
-                name: agentMeta.name,
-                cwd: workspacePath,
-                runtimeRef: ready.runtime ? ready.runtime.runtimeRef : undefined,
-                uid: process.env.RUNTIME_UID,
-                gid: process.env.RUNTIME_GID,
-            }
+            spawnOpts,
         );
     } catch (err) {
-        await db.delete(schema.sessions).where(eq(schema.sessions.id, sessionId));
-        if (err instanceof AgentSpawnError) {
+        if (
+            err instanceof AgentSpawnError
+            && resolveRuntimeProvider() === 'boxlite'
+            && ready.runtime?.runtimeRef
+        ) {
+            request.log.warn(err, '[sessions] spawn failed, recreating boxlite runtime');
+            try {
+                ready = await ensureProjectRuntime(project, {
+                    agentId: agent_id,
+                    runtimeId: ready.runtime.id,
+                    forceRecreate: true,
+                });
+                workspacePath = ready.workspacePath;
+                runtimeId = ready.runtime.id;
+                spawnOpts.cwd = workspacePath;
+                spawnOpts.runtimeRef = ready.runtime.runtimeRef;
+                handle = await runtime.exec.spawn(
+                    agentMeta.cmd,
+                    agentMeta.args,
+                    resolved.env,
+                    spawnOpts,
+                );
+            } catch (retryErr) {
+                await db.delete(schema.sessions).where(eq(schema.sessions.id, sessionId));
+                const publicErr = retryErr instanceof AgentSpawnError ? retryErr : err;
+                request.log.error(publicErr);
+                return reply.code(publicErr.statusCode || 500).send({
+                    error: 'Failed to start agent session',
+                    detail: publicErr.message,
+                });
+            }
+        } else {
+            await db.delete(schema.sessions).where(eq(schema.sessions.id, sessionId));
+            if (err instanceof AgentSpawnError) {
+                request.log.error(err);
+                return reply.code(err.statusCode).send({
+                    error: 'Failed to start agent session',
+                    detail: err.message,
+                });
+            }
             request.log.error(err);
-            return reply.code(err.statusCode).send({ error: 'Failed to start agent session' });
+            return reply.code(500).send({
+                error: 'Failed to start agent session',
+                detail: err.message,
+            });
         }
-        request.log.error(err);
-        return reply.code(500).send({ error: 'Failed to start agent session' });
     }
 
     sessionManager.createSession(sessionId, handle, agent_id, {

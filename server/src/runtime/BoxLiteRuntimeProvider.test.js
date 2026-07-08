@@ -15,6 +15,11 @@ class MockBoxLiteClient {
         this.deleted.push(name);
     }
 
+    async stopSession(name) {
+        this.stopped = this.stopped || [];
+        this.stopped.push(name);
+    }
+
     async openSession(name, image, warm = false, options = {}) {
         this.opened.push({
             name,
@@ -26,7 +31,12 @@ class MockBoxLiteClient {
         return { event: 'session_opened' };
     }
 
-    async execForResult() {
+    async execForResult(sessionName, command, args = [], env = {}, workingDir = null) {
+        this.execCalls = this.execCalls || [];
+        this.execCalls.push({ sessionName, command, args, env, workingDir });
+        if (typeof this.execHandler === 'function') {
+            return this.execHandler({ sessionName, command, args, env, workingDir });
+        }
         return this.execResults.shift() || { exitCode: 0, stdout: '', stderr: '' };
     }
 }
@@ -68,6 +78,43 @@ test('ensureReady recreates blink session when stored image differs', async () =
     assert.match(result.mountKey, /=>[/\\]workspace$/);
 });
 
+test('ensureReady recreates blink session when stored image is missing', async () => {
+    const provider = new BoxLiteRuntimeProvider();
+    const client = new MockBoxLiteClient();
+    provider.client = client;
+
+    const project = { id: 'proj_first_agent', userId: 'usr_first' };
+    await provider.ensureReady(project, {
+        runtimeId: 'rt_first',
+        agentId: 'kimi-code',
+        image: 'xensemble/agent-kimi-code:latest',
+        storedImage: null,
+    });
+
+    assert.deepEqual(client.deleted, ['rt_first']);
+    assert.equal(client.opened[0].image, 'xensemble/agent-kimi-code:latest');
+});
+
+test('ensureReady forceRecreate deletes blink session even when image matches', async () => {
+    const provider = new BoxLiteRuntimeProvider();
+    const client = new MockBoxLiteClient();
+    provider.client = client;
+
+    const image = 'xensemble/agent-kimi-code:latest';
+    const project = { id: 'proj_force', userId: 'usr_force' };
+    await provider.ensureReady(project, {
+        runtimeId: 'rt_force',
+        agentId: 'kimi-code',
+        image,
+        storedImage: image,
+        storedMount: resultMountKey(project),
+        forceRecreate: true,
+    });
+
+    assert.deepEqual(client.deleted, ['rt_force']);
+    assert.deepEqual(client.stopped, ['rt_force']);
+});
+
 test('ensureReady keeps existing session when image is unchanged', async () => {
     const provider = new BoxLiteRuntimeProvider();
     const client = new MockBoxLiteClient();
@@ -85,6 +132,51 @@ test('ensureReady keeps existing session when image is unchanged', async () => {
 
     assert.deepEqual(client.deleted, []);
     assert.equal(client.opened[0].image, image);
+});
+
+test('ensureReady recreates blink session when agent command probe fails', async () => {
+    const provider = new BoxLiteRuntimeProvider();
+    const client = new MockBoxLiteClient();
+    provider.client = client;
+    let probeAttempts = 0;
+    client.execHandler = ({ command, args }) => {
+        const shell = Array.isArray(args) ? args.join(' ') : '';
+        if (command === 'sh' && shell.includes('command -v')) {
+            probeAttempts += 1;
+            return { exitCode: probeAttempts >= 2 ? 0 : 127, stdout: '', stderr: '' };
+        }
+        return { exitCode: 0, stdout: '', stderr: '' };
+    };
+
+    const project = { id: 'proj_probe', userId: 'usr_probe' };
+    await provider.ensureReady(project, {
+        runtimeId: 'rt_probe',
+        agentId: 'kimi-code',
+        image: 'xensemble/agent-kimi-code:latest',
+        storedImage: 'xensemble/agent-kimi-code:latest',
+        storedMount: resultMountKey(project),
+    });
+
+    assert.equal(probeAttempts, 2);
+    assert.deepEqual(client.deleted, ['rt_probe']);
+    assert.equal(client.opened.length, 2);
+});
+
+test('ensureReady keeps existing session when image differs but agentId is absent', async () => {
+    const provider = new BoxLiteRuntimeProvider();
+    const client = new MockBoxLiteClient();
+    provider.client = client;
+
+    const project = { id: 'proj_attach', userId: 'usr_attach' };
+    await provider.ensureReady(project, {
+        runtimeId: 'rt_attach',
+        image: 'xensemble/box-base:bookworm',
+        storedImage: 'xensemble/agent-kimi-code:latest',
+        storedMount: resultMountKey(project),
+    });
+
+    assert.deepEqual(client.deleted, []);
+    assert.equal(client.opened[0].image, 'xensemble/box-base:bookworm');
 });
 
 test('ensureReady recreates blink session when workspace mount differs', async () => {

@@ -273,7 +273,7 @@ export default React.forwardRef(function Sessions({
       });
       const data = await response.json();
       if (!response.ok) {
-        const msg = data.error || data.message || 'Failed to start session';
+        const msg = data.detail || data.error || data.message || 'Failed to start session';
         if (response.status === 401 || msg === 'Unauthorized') {
           setLaunchModalError('登录已过期，请重新登录。');
           return false;

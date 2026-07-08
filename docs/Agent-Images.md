@@ -3,7 +3,7 @@
 > 状态：已实现（2026-07-07）  
 > 适用范围：`RUNTIME_PROVIDER=boxlite` 下的 per-agent OCI rootfs 镜像、构建流水线、Admin 版本注册  
 > 上位规范：[`Architecture.md`](./Architecture.md) §5.4.2 BoxLite Managed Sandbox Runtime  
-> 相关：[`BoxLite-Blink-Integration.md`](./BoxLite-Blink-Integration.md)、[`DurableSessions-Followups.md`](./DurableSessions-Followups.md) §3
+> 相关：[`Sandbox-Integration.md`](./Sandbox-Integration.md)、[`DurableSessions-Followups.md`](./DurableSessions-Followups.md) §3
 
 ---
 
@@ -348,6 +348,6 @@ node --test src/runtime/agentBoxImages.test.js \
 
 ## 12. 相关文档
 
-- 执行面集成总览：[`BoxLite-Blink-Integration.md`](./BoxLite-Blink-Integration.md)  
+- 执行面集成总览：[`Sandbox-Integration.md`](./Sandbox-Integration.md)  
 - Agent catalog 与认证：[`agents.md`](./agents.md)  
 - 可恢复会话与镜像依赖：[`DurableSessions.md`](./DurableSessions.md)、[`DurableSessions-Followups.md`](./DurableSessions-Followups.md)

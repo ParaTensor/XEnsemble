@@ -106,7 +106,14 @@ class BoxLiteClient {
 
     async deleteSession(name) {
         if (!name) return;
-        await fetch(`${this.base}/api/sessions/${encodeURIComponent(name)}`, { method: 'DELETE' }).catch(() => {});
+        await this.stopSession(name).catch(() => {});
+        const res = await fetch(`${this.base}/api/sessions/${encodeURIComponent(name)}`, {
+            method: 'DELETE',
+        });
+        if (!res.ok) {
+            const t = await res.text().catch(() => '');
+            throw new Error(`delete session failed: ${res.status} ${t}`);
+        }
     }
 
     async stopSession(name) {
