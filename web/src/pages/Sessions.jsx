@@ -29,6 +29,7 @@ import {
   Square,
   Unplug,
   Loader2,
+  Trash2,
 } from 'lucide-react';
 import { getSecretLabel, getSecretPlaceholder, isSecretPasswordField } from '../lib/secretLabels';
 import { formatQuotaExceeded } from '../lib/quotaLabels';
@@ -50,6 +51,7 @@ import {
   consoleInputClass,
   bgCanvas,
   textPrimary,
+  textSecondary,
   textTertiary,
   textPlaceholder,
   borderHairline,
@@ -127,8 +129,8 @@ export default React.forwardRef(function Sessions({
   const [restartingSession, setRestartingSession] = useState(false);
   const [stoppingSession, setStoppingSession] = useState(false);
   const [deleteConfirmSession, setDeleteConfirmSession] = useState(null);
-  // eslint-disable-next-line no-unused-vars
-  const [_deleteConfirmWorkspace, setDeleteConfirmWorkspace] = useState(null);
+  const [deleteConfirmWorkspace, setDeleteConfirmWorkspace] = useState(null);
+  const [deletingWorkspaceId, setDeletingWorkspaceId] = useState(null);
 
   const [showNewInstanceModal, setShowNewInstanceModal] = useState(false);
   const [showImportDialog, setShowImportDialog] = useState(false);
@@ -661,8 +663,8 @@ export default React.forwardRef(function Sessions({
     });
   };
 
-  // eslint-disable-next-line no-unused-vars
   const handleDeleteWorkspace = async (workspaceId) => {
+    setDeletingWorkspaceId(workspaceId);
     try {
       if (workspaceId === '_orphan') {
         const orphanSessions = sessions.filter((s) => !s.projectId);
@@ -684,6 +686,8 @@ export default React.forwardRef(function Sessions({
       showToast('success', workspaceId === '_orphan' ? 'Unassigned sessions cleared.' : 'Workspace deleted.');
     } catch (err) {
       showToast('error', err.message);
+    } finally {
+      setDeletingWorkspaceId(null);
     }
   };
 
@@ -851,6 +855,76 @@ export default React.forwardRef(function Sessions({
           <div className={consoleStructuredDialogFooterClass}>
             <button onClick={() => setDeleteConfirmSession(null)} className="h-9 px-4 border rounded-md">Cancel</button>
             <button onClick={() => handleDeleteSession(deleteConfirmSession.sessionId)} className="h-9 px-4 bg-[#C06C5D] text-white rounded-md">Remove</button>
+          </div>
+        </ConsoleInlineDialog>
+      )}
+
+      {deleteConfirmWorkspace && (
+        <ConsoleInlineDialog
+          onClose={() => setDeleteConfirmWorkspace(null)}
+          panelClassName={`${consoleDialogPanelClass} w-full max-w-md shadow-sm`}
+        >
+          <div className={`${consoleStructuredDialogHeaderClass} flex items-center gap-3`}>
+            <Trash2 className={`w-5 h-5 shrink-0 ${textPlaceholder}`} />
+            <h3 className={`font-semibold text-sm ${textPrimary}`}>
+              {deleteConfirmWorkspace.isOrphan ? 'Clear unassigned sessions' : 'Delete workspace'}
+            </h3>
+          </div>
+          <div className={`p-5 text-sm ${textSecondary}`}>
+            {deleteConfirmWorkspace.isOrphan ? (
+              <>
+                Remove all sessions in <span className={`font-medium ${textPrimary}`}>Unassigned</span>?
+                {deleteConfirmWorkspace.sessionCount > 0 && (
+                  <span>
+                    {' '}
+                    This will remove {deleteConfirmWorkspace.sessionCount} session
+                    {deleteConfirmWorkspace.sessionCount === 1 ? '' : 's'}
+                    {deleteConfirmWorkspace.liveCount > 0 && (
+                      <> (including {deleteConfirmWorkspace.liveCount} running)</>
+                    )}
+                    .
+                  </span>
+                )}
+                <p className={`mt-2 text-xs ${textPlaceholder}`}>Unassigned is not a workspace — it groups sessions without a project. Clearing it removes those sessions from history.</p>
+              </>
+            ) : (
+              <>
+                Permanently delete <span className={`font-medium ${textPrimary}`}>{deleteConfirmWorkspace.workspaceName}</span>?
+                {deleteConfirmWorkspace.sessionCount > 0 && (
+                  <span>
+                    {' '}
+                    This will remove {deleteConfirmWorkspace.sessionCount} session
+                    {deleteConfirmWorkspace.sessionCount === 1 ? '' : 's'}
+                    {deleteConfirmWorkspace.liveCount > 0 && (
+                      <> (including {deleteConfirmWorkspace.liveCount} running)</>
+                    )}
+                    .
+                  </span>
+                )}
+                <p className={`mt-2 text-xs ${textPlaceholder}`}>All workspace files on the server will be deleted. This frees your workspace quota.</p>
+              </>
+            )}
+          </div>
+          <div className={consoleStructuredDialogFooterClass}>
+            <button
+              type="button"
+              onClick={() => setDeleteConfirmWorkspace(null)}
+              className={`h-9 px-4 ${bgCanvas} border ${borderHairline} ${textPrimary} rounded-md text-sm font-medium ${hoverBgSecondary} ${transitionBase}`}
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              disabled={deletingWorkspaceId === deleteConfirmWorkspace.workspaceId}
+              onClick={() => handleDeleteWorkspace(deleteConfirmWorkspace.workspaceId)}
+              className={`h-9 px-4 flex items-center justify-center gap-2 bg-[#C06C5D] text-white rounded-md text-sm font-medium hover:bg-[#A35A4D] disabled:opacity-50 ${transitionBase}`}
+            >
+              {deletingWorkspaceId === deleteConfirmWorkspace.workspaceId
+                ? <><Loader2 className="w-4 h-4 animate-spin" /> Removing…</>
+                : deleteConfirmWorkspace.isOrphan
+                  ? 'Clear all'
+                  : 'Delete workspace'}
+            </button>
           </div>
         </ConsoleInlineDialog>
       )}
