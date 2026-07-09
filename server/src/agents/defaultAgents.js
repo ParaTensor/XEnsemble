@@ -34,6 +34,11 @@ const DEFAULT_AGENTS = [
         cmd: 'opencode',
         args: [],
         env_required: ['ANTHROPIC_API_KEY', 'OPENAI_API_KEY'],
+        resume: {
+            level: 'L2',
+            stateEnv: 'XDG_DATA_HOME',
+            resumeArgs: ['--continue'],
+        },
     },
     {
         id: 'amp',
