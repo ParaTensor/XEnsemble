@@ -116,14 +116,47 @@ export default function AgentConsole({
 
     let disposed = false;
     let serverEnded = false;
+    let lastSentCols = 0;
+    let lastSentRows = 0;
+    const resizeTimers = [];
 
-    const fitTerminal = () => {
-      fitAddon.fit();
-      const cols = terminal.cols || 0;
-      const rows = terminal.rows || 0;
+    const sendResize = (cols, rows) => {
       if (cols > 0 && rows > 0 && wsRef.current?.readyState === WebSocket.OPEN) {
         wsRef.current.send(JSON.stringify({ type: 'resize', cols, rows }));
       }
+    };
+
+    const fitTerminal = (force = false) => {
+      fitAddon.fit();
+      const cols = terminal.cols || 0;
+      const rows = terminal.rows || 0;
+      if (cols <= 0 || rows <= 0) return;
+      const changed = cols !== lastSentCols || rows !== lastSentRows;
+      if (!changed && !force) return;
+      lastSentCols = cols;
+      lastSentRows = rows;
+      if (wsRef.current?.readyState !== WebSocket.OPEN) return;
+      if (force && !changed) {
+        // Full-screen TUIs (opencode) only repaint on a size change. When the
+        // fitted size matches the backend PTY default, nudge the dimensions so
+        // the TUI clears stale rendering artifacts and redraws at full size.
+        sendResize(cols > 1 ? cols - 1 : cols + 1, rows);
+        setTimeout(() => { if (!disposed) sendResize(cols, rows); }, 50);
+      } else {
+        sendResize(cols, rows);
+      }
+    };
+
+    // After the terminal (re)connects, opencode's TUI boots inside the sandbox
+    // slightly later than the WS open event; resend the size a few times so it
+    // initializes at the correct dimensions instead of the backend default.
+    const scheduleResizeResends = () => {
+      [150, 500, 1200].forEach((delay) => {
+        const t = setTimeout(() => {
+          if (!disposed) fitTerminal(true);
+        }, delay);
+        resizeTimers.push(t);
+      });
     };
 
     terminal.attachCustomKeyEventHandler((event) => {
@@ -191,9 +224,10 @@ export default function AgentConsole({
             onSessionConnectedRef.current?.(sessionId);
             requestAnimationFrame(() => {
               requestAnimationFrame(() => {
-                if (!disposed) fitTerminal();
+                if (!disposed) fitTerminal(true);
               });
             });
+            scheduleResizeResends();
           };
 
           ws.onmessage = (event) => {
@@ -252,6 +286,7 @@ export default function AgentConsole({
 
     return () => {
       disposed = true;
+      resizeTimers.forEach((t) => clearTimeout(t));
       resizeObserver.disconnect();
       host.removeEventListener('mousedown', focusTerminal);
       host.removeEventListener('click', focusTerminal);

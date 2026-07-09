@@ -100,12 +100,30 @@ class BoxLiteRuntimeProvider extends RuntimeProvider {
             network: resolveBoxliteSessionNetwork(opts.network),
         };
         const openSession = async () => {
-            try {
-                await this.client.openSession(name, image, warm, openOptions);
-            } catch (e) {
-                if (!/already|exists/i.test(String(e))) {
+            // Blink can transiently 500 (e.g. "mkdir memory dir") when a VM is
+            // still tearing down from a recent stop/hibernate. Retry a few times
+            // with backoff before surfacing the error.
+            const TRANSIENT_RE = /mkdir memory dir|memory dir|resource busy|temporarily|try again/i;
+            const MAX_ATTEMPTS = 4;
+            let lastErr = null;
+            for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt += 1) {
+                try {
+                    await this.client.openSession(name, image, warm, openOptions);
+                    return;
+                } catch (e) {
+                    if (/already|exists/i.test(String(e))) {
+                        return;
+                    }
+                    lastErr = e;
+                    if (attempt < MAX_ATTEMPTS && TRANSIENT_RE.test(String(e))) {
+                        await new Promise((r) => setTimeout(r, attempt * 500));
+                        continue;
+                    }
                     throw new RuntimeError(`BoxLite ensureReady failed: ${e.message}`, 502);
                 }
+            }
+            if (lastErr) {
+                throw new RuntimeError(`BoxLite ensureReady failed: ${lastErr.message}`, 502);
             }
         };
         await openSession();
