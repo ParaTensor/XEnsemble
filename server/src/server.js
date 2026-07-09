@@ -264,7 +264,6 @@ fastify.post('/api/v1/projects', { preValidation: [fastify.authenticate] }, asyn
 
     const projectId = `proj_${crypto.randomBytes(8).toString('hex')}`;
     const createdAt = Date.now();
-    const stubProject = { id: projectId, userId: request.user.id, serverPath: '', defaultRuntimeId: null };
 
     let workspacePath;
     let defaultRuntimeId;
@@ -277,11 +276,16 @@ fastify.post('/api/v1/projects', { preValidation: [fastify.authenticate] }, asyn
             cloneStatus: null,
             createdAt,
         });
-        const { runtime, workspacePath: ws } = await ensureProjectRuntime(
-            { ...stubProject, id: projectId },
-        );
-        workspacePath = ws;
-        defaultRuntimeId = runtime.id;
+        // Do not provision a runtime/VM yet: the agent image is unknown at creation
+        // time, so eagerly provisioning would pin the default runtime to box-base and
+        // force a delete+rebuild (losing state) on the first agent session. The default
+        // runtime is created lazily on first session start with the correct agent image.
+        const workspace = require('./workspace');
+        workspacePath = workspace.createProjectDirectory(request.user.id, projectId);
+        await db.update(schema.projects)
+            .set({ serverPath: workspacePath })
+            .where(eq(schema.projects.id, projectId));
+        defaultRuntimeId = null;
     } catch (err) {
         request.log.error(err);
         await db.delete(schema.projects).where(eq(schema.projects.id, projectId)).catch(() => {});

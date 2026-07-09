@@ -8,6 +8,7 @@ const { singleflight } = require('./singleflight');
 const { recordEvent } = require('../events/recordEvent');
 const { resolveBoxImage } = require('./agentBoxImages');
 const { resolveRuntimeProvider } = require('../config/runtimeProvider');
+const workspace = require('../workspace');
 
 const PROVIDER = resolveRuntimeProvider();
 
@@ -174,26 +175,50 @@ async function getOrCreateDefaultRuntime(project) {
         }
     }
 
-    const rt = getRuntime();
+    // Reuse an existing default runtime row for this project if one is already
+    // recorded (avoids accumulating orphan runtimes when defaultRuntimeId drifted).
+    const existing = await db.select().from(schema.runtimes)
+        .where(and(
+            eq(schema.runtimes.projectId, project.id),
+            eq(schema.runtimes.role, 'default'),
+        ));
+    if (existing.length > 0) {
+        const row = existing[0];
+        if (project.defaultRuntimeId !== row.id) {
+            await db.update(schema.projects).set({ defaultRuntimeId: row.id })
+                .where(eq(schema.projects.id, project.id));
+        }
+        return {
+            runtime: row,
+            workspacePath: row.endpoint || project.serverPath,
+            recoverable: false,
+        };
+    }
+
+    // Create the default runtime as a metadata-only row. We deliberately do NOT
+    // provision a VM here: the caller (ensureProjectRuntime) will run ensureReady
+    // once with the correct agent image. Provisioning here without an agentId would
+    // pin the runtime to box-base and trigger a delete+rebuild (losing state) on the
+    // first agent session.
     const runtimeId = `rt_${crypto.randomBytes(6).toString('hex')}`;
-    const provision = await rt.provider.ensureReady(project, { runtimeId });
+    const workspacePath = workspace.createProjectDirectory(project.userId, project.id);
     const now = Date.now();
 
     await db.insert(schema.runtimes).values({
         id: runtimeId,
         projectId: project.id,
         provider: PROVIDER,
-        runtimeRef: provision.runtimeRef,
+        runtimeRef: PROVIDER === 'boxlite' ? runtimeId : 'local',
         role: 'default',
         status: 'ready',
-        endpoint: provision.workspacePath,
+        endpoint: workspacePath,
         createdAt: now,
         updatedAt: now,
     });
 
     await db.update(schema.projects).set({
         defaultRuntimeId: runtimeId,
-        serverPath: provision.workspacePath,
+        serverPath: workspacePath,
     }).where(eq(schema.projects.id, project.id));
 
     await recordEvent({
@@ -209,15 +234,16 @@ async function getOrCreateDefaultRuntime(project) {
         id: runtimeId,
         projectId: project.id,
         provider: PROVIDER,
-        runtimeRef: provision.runtimeRef,
+        runtimeRef: PROVIDER === 'boxlite' ? runtimeId : 'local',
         role: 'default',
         status: 'ready',
-        endpoint: provision.workspacePath,
+        endpoint: workspacePath,
+        specs: null,
     };
 
     return {
         runtime: runtimeRow,
-        workspacePath: provision.workspacePath,
+        workspacePath,
         recoverable: false,
     };
 }
