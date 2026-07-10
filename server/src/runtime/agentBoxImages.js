@@ -22,7 +22,11 @@ const AGENT_BOX_IMAGE_CATALOG = {
     'opencode': {
         tag: 'opencode',
         buildable: true,
-        install: 'npm install -g opencode-ai@latest',
+        // opencode-ai's postinstall installs the platform binary (glibc opencode-linux-x64)
+        // and hard-links it into bin/opencode.exe. We drop the redundant "baseline" CPU
+        // variant (~180MB, only needed for very old CPUs) to keep the image small — the VM
+        // root disk is tight and a bloated image leaves no room for runtime data.
+        install: 'npm install -g opencode-ai@latest && rm -rf "$(npm root -g)/opencode-ai/node_modules/opencode-linux-x64-baseline"',
     },
     'cline': { tag: 'cline', buildable: true },
     'codebuddy': { tag: 'codebuddy', buildable: true },
