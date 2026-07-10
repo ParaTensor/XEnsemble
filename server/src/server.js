@@ -27,7 +27,7 @@ const { recoverRunningSessions } = require('./session/recoverRunningSessions');
 
 const { db } = require('./db/index');
 const schema = require('./db/schema');
-const { eq, and, sql } = require('drizzle-orm');
+const { eq, and, ne, sql } = require('drizzle-orm');
 const auth = require('./auth/index');
 const { assertActiveUser } = require('./auth/assertActiveUser');
 const { registerAuthHooks } = require('./auth/hooks');
@@ -315,7 +315,7 @@ fastify.delete('/api/v1/projects/:projectId', { preValidation: [fastify.authenti
     if (!project) return reply.code(404).send({ error: 'Project not found' });
 
     try {
-        await deleteProjectForUser(request.user.id, project);
+        await deleteProjectForUser(request.user.id, project, { log: request.log });
         return { ok: true };
     } catch (err) {
         request.log.error(err);
@@ -833,10 +833,35 @@ fastify.delete('/api/v1/sessions/:sessionId', { preValidation: [fastify.authenti
         .where(and(eq(schema.sessions.id, sessionId), eq(schema.sessions.userId, request.user.id)));
     if (rows.length === 0) return reply.code(404).send({ error: 'Session not found' });
 
+    const session = rows[0];
     sessionManager.deleteSession(sessionId);
     await db.update(schema.sessions)
         .set({ status: 'exited' })
         .where(eq(schema.sessions.id, sessionId));
+
+    // Destroy the boxlite/blink VM if no other live session for this project still
+    // uses the same runtime. Without this, deleting a session leaves an orphan VM
+    // behind (which can later fail/panic once its workspace dir is removed).
+    if (session.runtimeId) {
+        try {
+            const siblings = await db.select({ id: schema.sessions.id }).from(schema.sessions)
+                .where(and(
+                    eq(schema.sessions.runtimeId, session.runtimeId),
+                    ne(schema.sessions.id, sessionId),
+                    ne(schema.sessions.status, 'exited'),
+                ));
+            if (siblings.length === 0) {
+                const runtimeRows = await db.select().from(schema.runtimes)
+                    .where(eq(schema.runtimes.id, session.runtimeId));
+                const runtimeRef = runtimeRows[0]?.runtimeRef;
+                if (runtimeRef && typeof runtime.provider.destroy === 'function') {
+                    await runtime.provider.destroy(runtimeRef);
+                }
+            }
+        } catch (err) {
+            request.log.warn({ err, sessionId }, '[sessions] failed to destroy runtime on session delete');
+        }
+    }
     return { ok: true };
 });
 
