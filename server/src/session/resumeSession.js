@@ -1,6 +1,6 @@
 const { eq } = require('drizzle-orm');
 const { sessionStateDirExists } = require('./stateDir');
-const { getAgentResume, getAgentResumeLevel } = require('../agents/agentResume');
+const { getAgentResume, getAgentResumeLevel, isSessionRecoverable } = require('../agents/agentResume');
 
 const inFlightResumes = new Map();
 
@@ -25,8 +25,14 @@ async function registerSessionLifecycle({
     fastifyLog,
 }) {
     sessionManager.onExit(sessionId, () => {
+        // If the process/attach drops but the session is recoverable (L2 agent with
+        // a persisted state dir), keep it as `idle` so the user can resume it later
+        // instead of terminating it as `exited`. Only genuinely non-recoverable
+        // sessions become `exited` here.
+        const live = sessionManager.getSession(sessionId);
+        const nextStatus = live && !live.hibernating && isSessionRecoverable(live) ? 'idle' : 'exited';
         db.update(schema.sessions)
-            .set({ status: 'exited' })
+            .set({ status: nextStatus })
             .where(eq(schema.sessions.id, sessionId))
             .catch((err) => fastifyLog.error(err, 'Failed to persist session exit status'));
 

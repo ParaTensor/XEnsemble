@@ -42,7 +42,7 @@ const { registerGitRoutes } = require('./routes/git');
 const { registerGitHubAppRoutes } = require('./routes/githubApp');
 const { LocalGitService } = require('./git/LocalGitService');
 const { applyTerminalMessage, subscribeTerminal } = require('./session/terminalBridge');
-const { resumeSession } = require('./session/resumeSession');
+const { resumeSession, registerSessionLifecycle } = require('./session/resumeSession');
 const { createIdleHibernateMonitor, stopSession } = require('./session/idleHibernate');
 const { buildResumeSessionContext } = require('./session/resumeSessionContext');
 const transcriptStore = require('./runtime/TranscriptStore');
@@ -1093,18 +1093,13 @@ fastify.post('/api/v1/session/start', { preValidation: [fastify.authenticate] },
         userId: request.user.id,
     });
 
-    sessionManager.onExit(sessionId, () => {
-        db.update(schema.sessions)
-            .set({ status: 'exited' })
-            .where(eq(schema.sessions.id, sessionId))
-            .catch((err) => fastify.log.error(err, 'Failed to persist session exit status'));
-
-        if (project && project.workspaceMode === 'git') {
-            const { GitOperationService } = require('./github/GitOperationService');
-            const gitOps = new GitOperationService({ getToken: () => null });
-            gitOps.commitAll(project, `chore(xensemble): auto-checkpoint session ${sessionId}`)
-                .catch(() => { /* best-effort: ignore if nothing to commit or workspace missing */ });
-        }
+    await registerSessionLifecycle({
+        db,
+        schema,
+        sessionManager,
+        sessionId,
+        project,
+        fastifyLog: fastify.log,
     });
 
     const streamRef = handle.streamRef ?? null;

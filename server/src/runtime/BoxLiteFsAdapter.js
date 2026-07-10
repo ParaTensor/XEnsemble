@@ -21,7 +21,7 @@ class BoxLiteFsAdapter extends FsAdapter {
         const rel = safeRel(relativePath);
         const cwd = rootDir || '/workspace';
         try {
-            const cmd = `cd ${JSON.stringify(cwd)} && find ${JSON.stringify(rel)} -maxdepth 2 \\( -type f -o -type d \\) -printf '%y %p\\n' 2>/dev/null | head -200`;
+            const cmd = `cd ${JSON.stringify(cwd)} && find ${JSON.stringify(rel)} -maxdepth 6 \\( -type f -o -type d \\) -printf '%y %p\\n' 2>/dev/null | head -500`;
             const r = await this.client.execForResult(name, 'sh', ['-c', cmd], {}, cwd);
             const out = (r.stdout || '').trim();
             if (!out) return [];
