@@ -90,6 +90,9 @@ export default function WorkspaceShell({ projectId }) {
 
     let disposed = false;
     let serverEnded = false;
+    let reconnectAttempts = 0;
+    let reconnectTimer = null;
+    const MAX_RECONNECTS = 5;
 
     const fitTerminal = () => {
       fitAddon.fit();
@@ -98,6 +101,25 @@ export default function WorkspaceShell({ projectId }) {
       if (cols > 0 && rows > 0 && wsRef.current?.readyState === WebSocket.OPEN) {
         wsRef.current.send(JSON.stringify({ type: 'resize', cols, rows }));
       }
+    };
+
+    // The workspace shell process lives inside the same sandbox VM as the agent.
+    // Restarting the agent can tear down and rebuild that VM, killing the shell
+    // (reported as exit code -1). Since the workspace dir is persistent, transparently
+    // reopen a fresh shell instead of leaving a dead terminal.
+    const scheduleReconnect = (reason) => {
+      if (disposed) return;
+      if (reconnectAttempts >= MAX_RECONNECTS) {
+        terminal.write(`\r\n\x1b[31m[System] Workspace shell could not be restored${reason ? ` (${reason})` : ''}. Switch tabs to retry.\x1b[0m\r\n`);
+        serverEnded = true;
+        return;
+      }
+      reconnectAttempts += 1;
+      const delay = Math.min(500 * reconnectAttempts, 3000);
+      terminal.write('\r\n\x1b[33m[System] Reconnecting workspace shell…\x1b[0m\r\n');
+      reconnectTimer = setTimeout(() => {
+        if (!disposed) connect();
+      }, delay);
     };
 
     terminal.attachCustomKeyEventHandler((event) => {
@@ -136,7 +158,7 @@ export default function WorkspaceShell({ projectId }) {
       terminal.write('\r\n\x1b[33m[System] Select a workspace to open a shell.\x1b[0m\r\n');
       serverEnded = true;
     } else {
-      (async () => {
+      var connect = () => {
         try {
           const ws = new WebSocket(getWorkspaceShellWsUrl(projectId, getAccessToken()));
           wsRef.current = ws;
@@ -144,6 +166,7 @@ export default function WorkspaceShell({ projectId }) {
           ws.onopen = () => {
             if (disposed) return;
             connectedRef.current = true;
+            reconnectAttempts = 0;
             requestAnimationFrame(() => {
               requestAnimationFrame(() => {
                 if (!disposed) fitTerminal();
@@ -162,22 +185,30 @@ export default function WorkspaceShell({ projectId }) {
               return;
             }
             if (msg.type === 'error') {
-              terminal.write(`\r\n\x1b[31m[System] ${msg.data}\x1b[0m\r\n`);
-              serverEnded = true;
-              ws.close();
+              // Backend lost the shell (e.g. VM rebuilt on agent restart) — reopen.
+              connectedRef.current = false;
+              try { ws.close(); } catch { /* ignore */ }
+              scheduleReconnect(msg.data);
               return;
             }
             if (msg.type === 'exit') {
-              if (msg.message) terminal.write(msg.message);
-              serverEnded = true;
-              ws.close();
+              const code = msg.data;
+              connectedRef.current = false;
+              try { ws.close(); } catch { /* ignore */ }
+              if (code === 0) {
+                // User exited the shell normally.
+                if (msg.message) terminal.write(msg.message);
+                serverEnded = true;
+              } else {
+                // Abnormal exit (e.g. -1 when the VM was torn down) — reopen.
+                scheduleReconnect(`code ${code}`);
+              }
             }
           };
 
           ws.onerror = () => {
             if (disposed || serverEnded) return;
-            terminal.write('\r\n\x1b[31m[System] Workspace shell connection failed.\x1b[0m\r\n');
-            serverEnded = true;
+            connectedRef.current = false;
             if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING) {
               ws.close();
             }
@@ -187,19 +218,16 @@ export default function WorkspaceShell({ projectId }) {
             if (disposed || serverEnded) return;
             const wasConnected = connectedRef.current;
             connectedRef.current = false;
-            if (!wasConnected) {
-              terminal.write('\r\n\x1b[31m[System] Workspace shell connection failed.\x1b[0m\r\n');
-            } else if (!event.wasClean) {
-              terminal.write('\r\n\x1b[33m[System] Disconnected from workspace shell.\x1b[0m\r\n');
-            }
-            serverEnded = true;
+            if (event.wasClean) return;
+            scheduleReconnect(wasConnected ? 'disconnected' : 'connection failed');
           };
         } catch (error) {
           if (!disposed) {
-            terminal.write(`\r\n\x1b[31m[System] ${error?.message || 'Failed to connect'}\x1b[0m\r\n`);
+            scheduleReconnect(error?.message || 'connect error');
           }
         }
-      })();
+      };
+      connect();
     }
 
     requestAnimationFrame(() => {
@@ -208,6 +236,7 @@ export default function WorkspaceShell({ projectId }) {
 
     return () => {
       disposed = true;
+      if (reconnectTimer) clearTimeout(reconnectTimer);
       resizeObserver.disconnect();
       host.removeEventListener('mousedown', focusTerminal);
       host.removeEventListener('click', focusTerminal);
