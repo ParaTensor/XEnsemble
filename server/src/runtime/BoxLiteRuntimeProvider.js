@@ -138,6 +138,39 @@ class BoxLiteRuntimeProvider extends RuntimeProvider {
                 );
             }
         }
+
+        // Clean up runtime writable caches so VM disk has room for agent state.
+        // The image build already purges these, but they re-accumulate across
+        // sessions. We only remove rebuildable caches — XDG/L2 state under
+        // /root/.config (agent resume data) is intentionally preserved.
+        try {
+            await this.client.execForResult(name, 'sh', ['-c',
+                'for d in /root/.npm/_cacache /root/.cache /tmp; do rm -rf "$d"/* 2>/dev/null || true; done',
+            ]);
+        } catch (_) {
+            // Best-effort: if the cleanup fails the agent still runs.
+        }
+
+        if (opts.agentId && opts.agentId !== 'shell') {
+            const probeCmd = resolveAgentProbeCommand(opts.agentId);
+            if (probeCmd && !(await probeAgentCommand(this.client, name, probeCmd, guestWorkspacePath))) {
+                await this.client.deleteSession(name);
+                await openSession();
+                // Re-run cleanup after rebuild
+                try {
+                    await this.client.execForResult(name, 'sh', ['-c',
+                        'for d in /root/.npm/_cacache /root/.cache /tmp; do rm -rf "$d"/* 2>/dev/null || true; done',
+                    ]);
+                } catch (_) {}
+                if (!(await probeAgentCommand(this.client, name, probeCmd, guestWorkspacePath))) {
+                    throw new RuntimeError(
+                        `BoxLite ensureReady failed: agent command "${probeCmd}" is missing from sandbox image ${image}`,
+                        502,
+                    );
+                }
+            }
+        }
+
         if (opts && (opts.checkpointId || opts.baseSnapshotId)) {
             const snap = opts.checkpointId || opts.baseSnapshotId;
             try {

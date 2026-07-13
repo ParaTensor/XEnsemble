@@ -24,6 +24,7 @@ const sessionManager = require('./session/SessionManager');
 const { WorkspaceShellManager, subscribeWorkspaceShell } = require('./session/workspaceShell');
 const { reconcileRunningSessions } = require('./session/reconcileRunningSessions');
 const { recoverRunningSessions } = require('./session/recoverRunningSessions');
+const { reconcileCustomImageBuilds } = require('./runtime/reconcileCustomImageBuilds');
 
 const { db } = require('./db/index');
 const schema = require('./db/schema');
@@ -40,6 +41,7 @@ const { registerTerminalHttpRoutes } = require('./routes/terminalHttp');
 const { registerGitHubRoutes } = require('./routes/github');
 const { registerGitRoutes } = require('./routes/git');
 const { registerGitHubAppRoutes } = require('./routes/githubApp');
+const { registerCustomImageRoutes } = require('./routes/customImages');
 const { LocalGitService } = require('./git/LocalGitService');
 const { applyTerminalMessage, subscribeTerminal } = require('./session/terminalBridge');
 const { resumeSession, registerSessionLifecycle } = require('./session/resumeSession');
@@ -108,6 +110,7 @@ registerGatewayAdminRoutes(fastify);
 registerGitHubRoutes(fastify);
 registerGitRoutes(fastify);
 registerGitHubAppRoutes(fastify);
+registerCustomImageRoutes(fastify);
 
 // -- API Routes --
 
@@ -737,6 +740,8 @@ fastify.get('/api/v1/sessions', { preValidation: [fastify.authenticate] }, async
         agentId: row.agentId,
         status: row.status,
         recoverable: Boolean(row.recoverable),
+        customImageId: row.customImageId || null,
+        shellOnly: row.agentId === 'shell' || undefined,
         memoryStatus: sessionManager.getSession(row.id)?.status ?? row.status,
         alive: sessionManager.isAlive(row.id),
         projectName: row.projectId ? projectNames[row.projectId] : null,
@@ -929,7 +934,9 @@ fastify.post('/api/v1/sessions/:sessionId/resume', { preValidation: [fastify.aut
 
 // 启动 Agent Session（通过 RuntimeProvider + ExecAdapter）
 fastify.post('/api/v1/session/start', { preValidation: [fastify.authenticate] }, async (request, reply) => {
-    const { agent_id, project_id, terminal_theme_id } = request.body;
+    const { agent_id, project_id, terminal_theme_id, custom_image_id } = request.body;
+    const isShellOnly = !!(custom_image_id && !agent_id);
+
     if (!project_id) {
         return reply.code(400).send({ error: 'project_id is required. Select or create a project first.' });
     }
@@ -937,17 +944,33 @@ fastify.post('/api/v1/session/start', { preValidation: [fastify.authenticate] },
     const project = await getProjectForUser(request.user.id, project_id);
     if (!project) return reply.code(404).send({ error: 'Project not found' });
 
-    const agentAccess = await policy.checkAgentAccess(request.user.id, agent_id, request.user.role);
-    if (!agentAccess.ok) return policy.agentAccessErrorReply(reply, agentAccess);
+    if (!isShellOnly) {
+        const agentAccess = await policy.checkAgentAccess(request.user.id, agent_id, request.user.role);
+        if (!agentAccess.ok) return policy.agentAccessErrorReply(reply, agentAccess);
+    }
 
     const sessionQuota = await policy.checkQuota(request.user.id, 'sessions', request.user.role);
     if (!sessionQuota.ok) return policy.quotaErrorReply(reply, sessionQuota);
+
+    let customImageRef = null;
+    if (custom_image_id) {
+        try {
+            const { getReadyImageRef } = require('./runtime/CustomImageService');
+            customImageRef = await getReadyImageRef(custom_image_id, request.user.id);
+        } catch (err) {
+            const statusCode = err instanceof RuntimeError ? err.statusCode : 500;
+            return sendPublicError(reply, err, 'Cannot use custom image', statusCode);
+        }
+    }
 
     let workspacePath;
     let runtimeId;
     let ready;
     try {
-        ready = await ensureProjectRuntime(project, { agentId: agent_id });
+        ready = await ensureProjectRuntime(project, {
+            agentId: isShellOnly ? 'shell' : agent_id,
+            ...(customImageRef ? { image: customImageRef } : {}),
+        });
         workspacePath = ready.workspacePath;
         runtimeId = ready.runtime.id;
     } catch (err) {
@@ -958,6 +981,35 @@ fastify.post('/api/v1/session/start', { preValidation: [fastify.authenticate] },
         return reply.code(500).send({ error: 'Project workspace directory is missing and could not be recreated' });
     }
 
+    const sessionId = `sess_${crypto.randomBytes(8).toString('hex')}`;
+
+    if (isShellOnly) {
+        await db.insert(schema.sessions).values({
+            id: sessionId,
+            userId: request.user.id,
+            projectId: project_id,
+            runtimeId,
+            agentId: 'shell',
+            cwd: workspacePath,
+            streamRef: null,
+            stateDirRef: null,
+            recoverable: false,
+            status: 'running',
+            customImageId: custom_image_id || null,
+            createdAt: Date.now(),
+        });
+
+        return reply.code(201).send({
+            session_id: sessionId,
+            project_id,
+            agent_id: 'shell',
+            shell_only: true,
+            custom_image_id: custom_image_id || null,
+        });
+    }
+
+    // --- regular agent session path below ---
+
     const dbAgents = await db.select().from(schema.agents).where(eq(schema.agents.id, agent_id));
     if (dbAgents.length === 0) return reply.code(404).send({ error: 'Agent not found' });
     const agentMeta = {
@@ -967,8 +1019,6 @@ fastify.post('/api/v1/session/start', { preValidation: [fastify.authenticate] },
     };
     const resumeSpec = getAgentResume(agentMeta.id);
     const recoverable = getAgentResumeLevel(agentMeta.id) === 'L2';
-
-    const sessionId = `sess_${crypto.randomBytes(8).toString('hex')}`;
 
     const authMode = await agentGatewayConfig.getAgentAuthMode(agentMeta.id);
     let sessionToken = null;
@@ -1042,6 +1092,7 @@ fastify.post('/api/v1/session/start', { preValidation: [fastify.authenticate] },
         stateDirRef: sessionStateDir?.stateDirRef || null,
         recoverable,
         status: 'running',
+        customImageId: custom_image_id || null,
         createdAt: Date.now(),
     });
 
@@ -1666,6 +1717,27 @@ async function startServer() {
         }
     } catch (err) {
         fastify.log.warn(err, '[sessions] failed to reconcile stale sessions');
+    }
+
+    try {
+        const builds = await reconcileCustomImageBuilds(db, schema);
+        if (builds.reconciled > 0) {
+            fastify.log.info(
+                `[custom-images] marked ${builds.reconciled} interrupted build(s) as failed`,
+            );
+        }
+    } catch (err) {
+        fastify.log.warn(err, '[custom-images] failed to reconcile interrupted builds');
+    }
+
+    try {
+        const { initService: initCustomImageService, getFeatureStatus } = require('./runtime/CustomImageService');
+        await initCustomImageService();
+        fastify.log.info(
+            `[custom-images] service initialized (${JSON.stringify(getFeatureStatus())})`,
+        );
+    } catch (err) {
+        fastify.log.warn(err, '[custom-images] failed to initialize service');
     }
 
     const idleHibernateMonitor = createIdleHibernateMonitor({

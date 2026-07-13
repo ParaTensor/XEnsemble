@@ -94,6 +94,7 @@ const sessions = pgTable('sessions', {
   recoverable: boolean('recoverable').default(false),
   status: text('status').default('running'),
   title: text('title'),
+  customImageId: text('custom_image_id'),
   createdAt: bigint('created_at', { mode: 'number' }).notNull(),
 });
 
@@ -339,6 +340,33 @@ const agentBoxImages = pgTable('agent_box_images', {
   agentActiveIdx: index('idx_agent_box_images_agent_active').on(table.agentId, table.isActive),
 }));
 
+const customImages = pgTable('custom_images', {
+  id: text('id').primaryKey(),
+  ownerUserId: text('owner_user_id').notNull().references(() => users.id),
+  name: text('name').notNull(),
+  slug: text('slug').notNull(),
+  components: text('components').notNull(),
+  imageRef: text('image_ref'),
+  createdAt: bigint('created_at', { mode: 'number' }).notNull(),
+  updatedAt: bigint('updated_at', { mode: 'number' }).notNull(),
+}, (table) => ({
+  unqOwnerName: unique().on(table.ownerUserId, table.name),
+}));
+
+const customImageBuilds = pgTable('custom_image_builds', {
+  id: text('id').primaryKey(),
+  customImageId: text('custom_image_id').notNull().references(() => customImages.id),
+  state: text('state').notNull().default('queued'),
+  imageRef: text('image_ref'),
+  logsRef: text('logs_ref'),
+  failureReason: text('failure_reason'),
+  startedAt: bigint('started_at', { mode: 'number' }),
+  finishedAt: bigint('finished_at', { mode: 'number' }),
+  createdAt: bigint('created_at', { mode: 'number' }).notNull(),
+}, (table) => ({
+  imageStateIdx: index('idx_custom_image_builds_image_state').on(table.customImageId, table.state),
+}));
+
 module.exports = {
   users,
   userQuotas,
@@ -365,4 +393,6 @@ module.exports = {
   gitOAuthStates,
   mergeRequests,
   agentBoxImages,
+  customImages,
+  customImageBuilds,
 };

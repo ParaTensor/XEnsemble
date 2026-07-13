@@ -2,6 +2,11 @@ const { eq } = require('drizzle-orm');
 const { sessionStateDirExists } = require('./stateDir');
 const { getAgentResume, getAgentResumeLevel, isSessionRecoverable } = require('../agents/agentResume');
 
+async function resolveCustomImageRef(customImageId, userId) {
+    const { getReadyImageRef } = require('../runtime/CustomImageService');
+    return getReadyImageRef(customImageId, userId);
+}
+
 const inFlightResumes = new Map();
 
 function withResumeLock(sessionId, fn) {
@@ -74,8 +79,37 @@ async function resumeSession({
                 terminal_theme_id: terminalThemeId || null,
                 spawn_env_preview: resolvedSpawnEnv?.spawn_env_preview || null,
                 state_dir_ref: session.stateDirRef || null,
+                shell_only: session.agentId === 'shell' || undefined,
             };
         }
+
+        // Shell-only session: runtime is the shell itself, no agent to resume.
+        if (session.agentId === 'shell') {
+            const runtimeReady = await ensureProjectRuntime(project, {
+                runtimeId: session.runtimeId || undefined,
+                agentId: 'shell',
+                ...(session.customImageId ? { image: await resolveCustomImageRef(session.customImageId, requestUser.id) } : {}),
+            });
+
+            await db.update(schema.sessions)
+                .set({ status: 'running' })
+                .where(eq(schema.sessions.id, session.id));
+
+            return {
+                session_id: session.id,
+                status: 'running',
+                runtime_id: session.runtimeId || null,
+                stream_ref: session.streamRef || null,
+                recoverable: false,
+                terminal_theme_id: terminalThemeId || null,
+                spawn_env_preview: null,
+                state_dir_ref: null,
+                shell_only: true,
+                custom_image_id: session.customImageId || null,
+            };
+        }
+
+        // --- regular agent session resume below ---
 
         const resumeSpec = getAgentResume(agentMeta.id);
         if (getAgentResumeLevel(agentMeta.id) !== 'L2' || !resumeSpec?.stateEnv || !session.stateDirRef || !session.recoverable) {
@@ -96,6 +130,7 @@ async function resumeSession({
         const runtimeReady = await ensureProjectRuntime(project, {
             runtimeId: session.runtimeId || undefined,
             agentId: session.agentId || agentMeta.id,
+            ...(session.customImageId ? { image: await resolveCustomImageRef(session.customImageId, requestUser.id) } : {}),
         });
 
         const workspacePath = runtimeReady.workspacePath;

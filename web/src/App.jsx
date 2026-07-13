@@ -4,6 +4,7 @@ import Login from './pages/Login';
 import Sessions from './pages/Sessions';
 import AgentsAdmin from './pages/AgentsAdmin';
 import ImagesAdmin from './pages/ImagesAdmin';
+import CustomImages from './pages/CustomImages';
 import UsersAdmin from './pages/UsersAdmin';
 import GatewayAdmin from './pages/GatewayAdmin';
 import AppSidebar from './components/AppSidebar';
@@ -41,6 +42,7 @@ function AuthenticatedLayout({
   const isUsersAdmin = location.pathname === '/admin/users';
   const isGatewayAdmin = location.pathname === '/admin/gateway';
   const isImagesAdmin = location.pathname === '/admin/images';
+  const isCustomImages = location.pathname === '/custom-images';
 
   const offRouteClass = 'pointer-events-none invisible absolute inset-0 z-0 [&_*]:pointer-events-none';
 
@@ -133,6 +135,16 @@ function AuthenticatedLayout({
               )}
             >
               <ImagesAdmin />
+            </div>
+        )}
+        {isCustomImages && (
+            <div
+              className={cn(
+                'relative z-10 flex min-h-0 flex-1 flex-col overflow-auto console-scroll-hidden',
+                APP_SHELL_ADMIN_CLASS,
+              )}
+            >
+              <CustomImages />
             </div>
         )}
       </main>
@@ -277,6 +289,7 @@ function App() {
               }
             >
               <Route path="/sessions" element={null} />
+              <Route path="/custom-images" element={null} />
               <Route path="/console" element={<Navigate to="/sessions" replace />} />
               <Route
                 path="/admin/agents"

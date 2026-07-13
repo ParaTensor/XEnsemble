@@ -135,6 +135,8 @@ export default React.forwardRef(function Sessions({
   const [showNewInstanceModal, setShowNewInstanceModal] = useState(false);
   const [showImportDialog, setShowImportDialog] = useState(false);
   const [createNewWorkspaceInline, setCreateNewWorkspaceInline] = useState(false);
+  const [customImageId, setCustomImageId] = useState('');
+  const [customImages, setCustomImages] = useState([]);
 
   const getAgentLabel = useCallback(
     (agentId) => agents.find((a) => a.id === agentId)?.name || agentId,
@@ -267,6 +269,7 @@ export default React.forwardRef(function Sessions({
           agent_id: selectedAgentId,
           project_id: projectId,
           terminal_theme_id: themeId,
+          custom_image_id: customImageId || undefined,
         })
       });
       const data = await response.json();
@@ -352,6 +355,7 @@ export default React.forwardRef(function Sessions({
   const openLaunchModal = (mode = 'session', workspace = null) => {
     setLaunchModalError(null);
     setCreateNewWorkspaceInline(false);
+    setCustomImageId('');
     if (mode === 'workspace') {
       setLaunchModalMode('workspace');
       setStartSessionAfterCreate(false);
@@ -380,6 +384,14 @@ export default React.forwardRef(function Sessions({
       setSelectedAgentId(sorted[0].id);
     }
     setShowNewInstanceModal(true);
+
+    apiFetch('/api/v1/custom-images').then((res) => res.json()).then((data) => {
+      if (Array.isArray(data)) {
+        setCustomImages(data.filter((img) => img.status === 'ready'));
+      }
+    }).catch(() => {
+      setCustomImages([]);
+    });
   };
 
   const handleLaunchFromModal = async () => {
@@ -587,7 +599,12 @@ export default React.forwardRef(function Sessions({
 
       const response = await apiFetch('/api/v1/session/start', {
         method: 'POST',
-        body: JSON.stringify({ agent_id: agentId, project_id: activeSession.projectId, terminal_theme_id: themeId }),
+        body: JSON.stringify({
+          agent_id: agentId,
+          project_id: activeSession.projectId,
+          terminal_theme_id: themeId,
+          custom_image_id: sessionMeta?.customImageId || undefined,
+        }),
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || 'Failed to start session');
@@ -815,6 +832,43 @@ export default React.forwardRef(function Sessions({
                     </button>
                   )}
                 </div>
+                <SelectMenu
+                  value={selectedAgentId}
+                  onChange={setSelectedAgentId}
+                  options={agentSelectOptions}
+                  placeholder="Select agent"
+                />
+              </div>
+            )}
+            {launchModalMode !== 'workspace' && customImages.length > 0 && (
+              <div>
+                <label className={`text-xs font-semibold uppercase tracking-wider ${textPlaceholder} mb-1 block`}>Image</label>
+                <SelectMenu
+                  value={customImageId}
+                  onChange={(v) => {
+                    setCustomImageId(v);
+                    if (v) {
+                      const img = customImages.find((c) => c.id === v);
+                      if (img) {
+                        const agentComp = (img.components || []).find((c) => (c.component_id || '').startsWith('agent:'));
+                        const agentId = agentComp ? agentComp.component_id.replace('agent:', '') : '';
+                        if (agentId && agents.find((a) => a.id === agentId)) {
+                          setSelectedAgentId(agentId);
+                        }
+                      }
+                    }
+                  }}
+                  options={[
+                    { value: '', label: 'Built-in (agent default)' },
+                    ...customImages.map((img) => ({ value: img.id, label: img.name })),
+                  ]}
+                  placeholder="Built-in (agent default)"
+                />
+              </div>
+            )}
+            {launchModalMode !== 'workspace' && (
+              <div>
+                <label className={`text-xs font-semibold uppercase tracking-wider ${textPlaceholder} mb-1 block`}>Agent</label>
                 <SelectMenu
                   value={selectedAgentId}
                   onChange={setSelectedAgentId}
@@ -1095,20 +1149,20 @@ export default React.forwardRef(function Sessions({
               <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
                 <div className="flex min-h-0 flex-1 flex-col p-4">
                   <div
-                    className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-[#E8EAED] shadow-sm"
-                    style={{ backgroundColor: preset.xterm.background }}
-                  >
-                    <AgentConsole
-                      key={activeSession.sessionId}
-                      sessionId={activeSession.sessionId}
-                      agentName={activeSession.agentName}
-                      projectId={activeSession.projectId}
-                      onSessionEnd={handleSessionEnd}
-                      onSessionConnected={handleSessionConnected}
-                      sessionLive={sessionAlive}
-                      sessionWakeable={sessionWakeable}
-                    />
-                  </div>
+                     className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-[#E8EAED] shadow-sm"
+                     style={{ backgroundColor: preset.xterm.background }}
+                   >
+                     <AgentConsole
+                       key={activeSession.sessionId}
+                       sessionId={activeSession.sessionId}
+                       agentName={activeSession.agentName}
+                       projectId={activeSession.projectId}
+                       onSessionEnd={handleSessionEnd}
+                       onSessionConnected={handleSessionConnected}
+                       sessionLive={sessionAlive}
+                       sessionWakeable={sessionWakeable}
+                     />
+                   </div>
                 </div>
                 <GitStatusBar projectId={activeSession.projectId} project={activeProject} />
               </div>
