@@ -362,7 +362,7 @@ export default function CustomImages() {
                 </Button>
                 <Button type="submit" disabled={creating || !imageName.trim() || selectedComponentIds.length === 0} size="sm">
                   {creating ? (
-                    <><Loader2 className="h-3.5 w-3.5 animate-spin" />&ensp;Building\u2026</>
+                    <><Loader2 className="h-3.5 w-3.5 animate-spin" />&ensp;Building…</>
                   ) : (
                     'Start Build'
                   )}
@@ -394,7 +394,7 @@ export default function CustomImages() {
                   className="bg-red-600 hover:bg-red-700 text-white"
                 >
                   {deletingId === confirmDelete.id ? (
-                    <><Loader2 className="h-3.5 w-3.5 animate-spin" />&ensp;Deleting\u2026</>
+                    <><Loader2 className="h-3.5 w-3.5 animate-spin" />&ensp;Deleting…</>
                   ) : (
                     'Delete'
                   )}
@@ -421,7 +421,7 @@ export default function CustomImages() {
             {loading && images.length === 0 ? (
               <tr>
                 <td colSpan={5} className={cn(consoleTableBodyCellClass, 'text-center text-zinc-400')}>
-                  <Loader2 className="h-4 w-4 inline-block animate-spin" /> Loading\u2026
+                  <Loader2 className="h-4 w-4 inline-block animate-spin" /> Loading…
                 </td>
               </tr>
             ) : images.length === 0 ? (

@@ -19,36 +19,21 @@ function renderInstallSteps(selection) {
   steps.push('# Custom image: ' + installList.map((i) => `${i.name}@${i.version}`).join(', '));
   steps.push('');
 
-  steps.push('# Language / runtime installs');
+  const merged = [];
 
-  const langSteps = [];
   for (const item of langs) {
-    const envPrefix = `# Install ${item.name} ${item.version}`;
-    langSteps.push(envPrefix);
-    langSteps.push(`RUN set -eux; ${item.install}`);
+    merged.push(`  echo ">>> ${item.name} ${item.version}"`);
+    merged.push(`  ${item.install}`);
   }
 
-  if (langSteps.length > 0) {
-    steps.push(...langSteps);
-    steps.push('');
-  }
-
-  steps.push('# Agent installs');
-
-  const agentSteps = [];
   for (const item of agents) {
-    const envPrefix = `# Install ${item.name}`;
-    agentSteps.push(envPrefix);
-    agentSteps.push(`RUN set -eux; ${item.install}`);
+    merged.push(`  echo ">>> ${item.name}"`);
+    merged.push(`  ${item.install}`);
   }
 
-  if (agentSteps.length > 0) {
-    steps.push(...agentSteps);
-    steps.push('');
-  }
+  merged.push('  rm -rf /root/.npm /root/.cache /tmp/* /var/tmp/* 2>/dev/null || true');
 
-  steps.push('# Cleanup');
-  steps.push('RUN rm -rf /root/.npm /root/.cache /tmp/* /var/tmp/* 2>/dev/null || true');
+  steps.push(`RUN set -eux; \\\n${merged.join(' && \\\n')}`);
 
   return steps.join('\n');
 }

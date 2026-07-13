@@ -386,9 +386,8 @@ export default React.forwardRef(function Sessions({
     setShowNewInstanceModal(true);
 
     apiFetch('/api/v1/custom-images').then((res) => res.json()).then((data) => {
-      if (Array.isArray(data)) {
-        setCustomImages(data.filter((img) => img.status === 'ready'));
-      }
+      const list = data.images || (Array.isArray(data) ? data : []);
+      setCustomImages(list.filter((img) => img.status === 'ready'));
     }).catch(() => {
       setCustomImages([]);
     });
@@ -822,24 +821,6 @@ export default React.forwardRef(function Sessions({
                 )}
               </div>
             )}
-            {launchModalMode !== 'workspace' && (
-              <div>
-                <div className="flex items-center justify-between gap-2 mb-1">
-                  <label className={`text-xs font-semibold uppercase tracking-wider ${textPlaceholder}`}>Agent</label>
-                  {selectedAgent?.llm_auth_mode === 'byok' && selectedAgent?.env_required?.length > 0 && (
-                    <button type="button" onClick={() => openConfigModal()} className={`text-xs font-medium ${textPlaceholder} hover:text-[#202124]`}>
-                      <Settings2 className="w-3.5 h-3.5 inline" /> Configure Keys
-                    </button>
-                  )}
-                </div>
-                <SelectMenu
-                  value={selectedAgentId}
-                  onChange={setSelectedAgentId}
-                  options={agentSelectOptions}
-                  placeholder="Select agent"
-                />
-              </div>
-            )}
             {launchModalMode !== 'workspace' && customImages.length > 0 && (
               <div>
                 <label className={`text-xs font-semibold uppercase tracking-wider ${textPlaceholder} mb-1 block`}>Image</label>
@@ -868,7 +849,14 @@ export default React.forwardRef(function Sessions({
             )}
             {launchModalMode !== 'workspace' && (
               <div>
-                <label className={`text-xs font-semibold uppercase tracking-wider ${textPlaceholder} mb-1 block`}>Agent</label>
+                <div className="flex items-center justify-between gap-2 mb-1">
+                  <label className={`text-xs font-semibold uppercase tracking-wider ${textPlaceholder}`}>Agent</label>
+                  {selectedAgent?.llm_auth_mode === 'byok' && selectedAgent?.env_required?.length > 0 && (
+                    <button type="button" onClick={() => openConfigModal()} className={`text-xs font-medium ${textPlaceholder} hover:text-[#202124]`}>
+                      <Settings2 className="w-3.5 h-3.5 inline" /> Configure Keys
+                    </button>
+                  )}
+                </div>
                 <SelectMenu
                   value={selectedAgentId}
                   onChange={setSelectedAgentId}
