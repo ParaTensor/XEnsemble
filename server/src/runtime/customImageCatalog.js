@@ -6,9 +6,15 @@ const CATEGORY_LANGUAGE = 'language';
 
 const LANGUAGE_INSTALL = {
   python: {
-    '3.11': { install: 'apt-get update && apt-get install -y python3.11 python3.11-venv python3.11-dev && rm -rf /var/lib/apt/lists/*', default: false },
-    '3.12': { install: 'apt-get update && apt-get install -y python3.12 python3.12-venv python3.12-dev && rm -rf /var/lib/apt/lists/*', default: true },
-    '3.13': { install: 'apt-get update && apt-get install -y python3.13 python3.13-venv python3.13-dev && rm -rf /var/lib/apt/lists/*', default: false },
+    '3.11': { install: 'apt-get update && apt-get install -y python3.11 python3.11-venv python3.11-dev && rm -rf /var/lib/apt/lists/*', default: true },
+    '3.12': {
+      install: 'apt-get update && apt-get install -y build-essential libssl-dev zlib1g-dev libbz2-dev libreadline-dev libsqlite3-dev libncursesw5-dev xz-utils tk-dev libxml2-dev libxmlsec1-dev libffi-dev liblzma-dev && curl -fsSL https://www.python.org/ftp/python/3.12.9/Python-3.12.9.tar.xz | tar -xJ -C /tmp && cd /tmp/Python-3.12.9 && ./configure --enable-optimizations --with-ensurepip=install && make -j$(nproc) && make altinstall && rm -rf /tmp/Python-3.12.9 /var/lib/apt/lists/*',
+      default: false,
+    },
+    '3.13': {
+      install: 'apt-get update && apt-get install -y build-essential libssl-dev zlib1g-dev libbz2-dev libreadline-dev libsqlite3-dev libncursesw5-dev xz-utils tk-dev libxml2-dev libxmlsec1-dev libffi-dev liblzma-dev && curl -fsSL https://www.python.org/ftp/python/3.13.3/Python-3.13.3.tar.xz | tar -xJ -C /tmp && cd /tmp/Python-3.13.3 && ./configure --enable-optimizations --with-ensurepip=install && make -j$(nproc) && make altinstall && rm -rf /tmp/Python-3.13.3 /var/lib/apt/lists/*',
+      default: false,
+    },
   },
   go: {
     '1.21': { install: 'curl -fsSL https://go.dev/dl/go1.21.13.linux-amd64.tar.gz | tar -C /usr/local -xz && ln -sf /usr/local/go/bin/go /usr/local/bin/go && ln -sf /usr/local/go/bin/gofmt /usr/local/bin/gofmt', default: false },
@@ -18,13 +24,19 @@ const LANGUAGE_INSTALL = {
   },
   java: {
     '17': { install: 'apt-get update && apt-get install -y openjdk-17-jdk-headless && rm -rf /var/lib/apt/lists/*', default: false },
-    '21': { install: 'apt-get update && apt-get install -y openjdk-21-jdk-headless && rm -rf /var/lib/apt/lists/*', default: true },
-    '24': { install: 'apt-get update && apt-get install -y openjdk-24-jdk-headless && rm -rf /var/lib/apt/lists/*', default: false },
+    '21': {
+      install: 'curl -fsSL https://github.com/adoptium/temurin21-binaries/releases/download/jdk-21.0.5%2B11/OpenJDK21U-jdk_x64_linux_hotspot_21.0.5_11.tar.gz -o /tmp/jdk21.tar.gz && mkdir -p /usr/lib/jvm/java-21 && tar -xzf /tmp/jdk21.tar.gz -C /usr/lib/jvm/java-21 --strip-components=1 && update-alternatives --install /usr/bin/java java /usr/lib/jvm/java-21/bin/java 1 && update-alternatives --install /usr/bin/javac javac /usr/lib/jvm/java-21/bin/javac 1 && rm /tmp/jdk21.tar.gz',
+      default: true,
+    },
+    '24': {
+      install: 'curl -fsSL https://github.com/adoptium/temurin24-binaries/releases/download/jdk-24.0.2%2B12/OpenJDK24U-jdk_x64_linux_hotspot_24.0.2_12.tar.gz -o /tmp/jdk24.tar.gz && mkdir -p /usr/lib/jvm/java-24 && tar -xzf /tmp/jdk24.tar.gz -C /usr/lib/jvm/java-24 --strip-components=1 && update-alternatives --install /usr/bin/java java /usr/lib/jvm/java-24/bin/java 2 && update-alternatives --install /usr/bin/javac javac /usr/lib/jvm/java-24/bin/javac 2 && rm /tmp/jdk24.tar.gz',
+      default: false,
+    },
   },
   nodejs: {
-    '20': { install: 'curl -fsSL https://deb.nodesource.com/setup_20.x | bash - && apt-get install -y nodejs && rm -rf /var/lib/apt/lists/*', default: false },
-    '22': { install: 'curl -fsSL https://deb.nodesource.com/setup_22.x | bash - && apt-get install -y nodejs && rm -rf /var/lib/apt/lists/*', default: true },
-    '23': { install: 'curl -fsSL https://deb.nodesource.com/setup_23.x | bash - && apt-get install -y nodejs && rm -rf /var/lib/apt/lists/*', default: false },
+    '20': { install: 'curl -fsSL https://nodejs.org/dist/v20.19.0/node-v20.19.0-linux-x64.tar.gz | tar -xz -C /usr/local --strip-components=1', default: false },
+    '22': { install: 'curl -fsSL https://nodejs.org/dist/v22.15.0/node-v22.15.0-linux-x64.tar.gz | tar -xz -C /usr/local --strip-components=1', default: false },
+    '23': { install: 'curl -fsSL https://nodejs.org/dist/v23.4.0/node-v23.4.0-linux-x64.tar.gz | tar -xz -C /usr/local --strip-components=1', default: false },
   },
 };
 
