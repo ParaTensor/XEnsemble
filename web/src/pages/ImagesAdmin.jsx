@@ -17,11 +17,12 @@ import {
   consoleDialogAdminFormPanelClass,
   consoleSectionLabelClass,
   consoleStructuredDialogPanelClass,
+  consoleAdminTableShellClass,
   consoleTableBodyCellClass,
   consoleTableHeadCellClass,
-  consoleTableShellClass,
 } from '../lib/consoleTokens';
 import { apiFetch } from '../lib/api';
+import { cn } from '../lib/utils';
 
 const AGENT_IMAGES_BASES = [
   '/api/v1/admin/agent-images',
@@ -173,7 +174,7 @@ export default function ImagesAdmin() {
         </p>
       </div>
 
-      <div className={consoleTableShellClass}>
+      <div className={cn(consoleAdminTableShellClass, 'overflow-auto')}>
         <table className="w-full min-w-[960px] border-collapse text-left">
           <thead>
             <tr className="border-b border-zinc-200">

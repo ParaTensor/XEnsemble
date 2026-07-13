@@ -31,7 +31,7 @@ function renderInstallSteps(selection) {
     merged.push(`  ${item.install}`);
   }
 
-  merged.push('  rm -rf /root/.npm /root/.cache /tmp/* /var/tmp/* 2>/dev/null || true');
+  merged.push('  rm -rf /root/.npm /root/.cache /tmp/* /var/tmp/* 2>/dev/null; true');
 
   steps.push(`RUN set -eux; \\\n${merged.join(' && \\\n')}`);
 

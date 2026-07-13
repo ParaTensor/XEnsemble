@@ -18,9 +18,9 @@ import {
   consoleStatusBadgeClass,
   consoleStatusIconSlotClass,
   consoleStructuredDialogPanelClass,
+  consoleAdminTableShellClass,
   consoleTableBodyCellClass,
   consoleTableHeadCellClass,
-  consoleTableShellClass,
 } from '../lib/consoleTokens';
 import { cn } from '../lib/utils';
 import { apiFetch } from '../lib/api';
@@ -406,7 +406,7 @@ export default function CustomImages() {
       )}
 
       {/* Image List */}
-      <div className={consoleTableShellClass}>
+      <div className={cn(consoleAdminTableShellClass, 'overflow-auto')}>
         <table className="w-full min-w-[640px] border-collapse text-left">
           <thead>
             <tr className="border-b border-zinc-200">

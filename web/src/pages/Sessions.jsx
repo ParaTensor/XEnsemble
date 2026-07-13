@@ -162,6 +162,15 @@ export default React.forwardRef(function Sessions({
     setSelectedAgentId((prev) => pickDefaultAgentId(agents, prev));
   }, [agents]);
 
+  useEffect(() => {
+    apiFetch('/api/v1/custom-images').then((res) => res.json()).then((data) => {
+      const list = data.images || (Array.isArray(data) ? data : []);
+      setCustomImages(list.filter((img) => img.status === 'ready'));
+    }).catch(() => {
+      setCustomImages([]);
+    });
+  }, []);
+
   const selectedAgent = agents.find(a => a.id === selectedAgentId);
 
   const openConfigModal = async () => {
@@ -384,13 +393,6 @@ export default React.forwardRef(function Sessions({
       setSelectedAgentId(sorted[0].id);
     }
     setShowNewInstanceModal(true);
-
-    apiFetch('/api/v1/custom-images').then((res) => res.json()).then((data) => {
-      const list = data.images || (Array.isArray(data) ? data : []);
-      setCustomImages(list.filter((img) => img.status === 'ready'));
-    }).catch(() => {
-      setCustomImages([]);
-    });
   };
 
   const handleLaunchFromModal = async () => {
@@ -823,13 +825,13 @@ export default React.forwardRef(function Sessions({
             )}
             {launchModalMode !== 'workspace' && customImages.length > 0 && (
               <div>
-                <label className={`text-xs font-semibold uppercase tracking-wider ${textPlaceholder} mb-1 block`}>Image</label>
+                <label className={`text-xs font-semibold uppercase tracking-wider ${textPlaceholder} mb-1 block`}>Image type</label>
                 <SelectMenu
-                  value={customImageId}
+                  value={customImageId ? 'custom' : ''}
                   onChange={(v) => {
-                    setCustomImageId(v);
-                    if (v) {
-                      const img = customImages.find((c) => c.id === v);
+                    if (v === 'custom') {
+                      setCustomImageId(customImages[0]?.id || '');
+                      const img = customImages[0];
                       if (img) {
                         const agentComp = (img.components || []).find((c) => (c.component_id || '').startsWith('agent:'));
                         const agentId = agentComp ? agentComp.component_id.replace('agent:', '') : '';
@@ -837,13 +839,37 @@ export default React.forwardRef(function Sessions({
                           setSelectedAgentId(agentId);
                         }
                       }
+                    } else {
+                      setCustomImageId('');
+                      setSelectedAgentId('');
                     }
                   }}
                   options={[
-                    { value: '', label: 'Built-in (agent default)' },
-                    ...customImages.map((img) => ({ value: img.id, label: img.name })),
+                    { value: '', label: 'Built-in' },
+                    { value: 'custom', label: 'Custom (your images)' },
                   ]}
-                  placeholder="Built-in (agent default)"
+                  placeholder="Built-in"
+                />
+              </div>
+            )}
+            {launchModalMode !== 'workspace' && customImageId && (
+              <div>
+                <label className={`text-xs font-semibold uppercase tracking-wider ${textPlaceholder} mb-1 block`}>Custom image</label>
+                <SelectMenu
+                  value={customImageId}
+                  onChange={(v) => {
+                    setCustomImageId(v);
+                    const img = customImages.find((c) => c.id === v);
+                    if (img) {
+                      const agentComp = (img.components || []).find((c) => (c.component_id || '').startsWith('agent:'));
+                      const agentId = agentComp ? agentComp.component_id.replace('agent:', '') : '';
+                      if (agentId && agents.find((a) => a.id === agentId)) {
+                        setSelectedAgentId(agentId);
+                      }
+                    }
+                  }}
+                  options={customImages.map((img) => ({ value: img.id, label: img.name }))}
+                  placeholder="Select image"
                 />
               </div>
             )}
@@ -860,7 +886,16 @@ export default React.forwardRef(function Sessions({
                 <SelectMenu
                   value={selectedAgentId}
                   onChange={setSelectedAgentId}
-                  options={agentSelectOptions}
+                  options={
+                    customImageId
+                      ? agentSelectOptions.filter((opt) => {
+                          const img = customImages.find((c) => c.id === customImageId);
+                          if (!img) return true;
+                          const agentComp = (img.components || []).find((c) => (c.component_id || '').startsWith('agent:'));
+                          return !agentComp || opt.value === agentComp.component_id.replace('agent:', '');
+                        })
+                      : agentSelectOptions
+                  }
                   placeholder="Select agent"
                 />
               </div>
