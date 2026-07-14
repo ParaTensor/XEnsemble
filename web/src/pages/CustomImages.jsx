@@ -268,85 +268,104 @@ export default function CustomImages() {
 
                 <div>
                   <div className={consoleSectionLabelClass}>Components</div>
-                  <div className="border border-zinc-200 rounded-lg divide-y divide-zinc-100 max-h-64 overflow-y-auto console-scroll-hidden">
+                  <div className="border border-zinc-200 rounded-lg max-h-64 overflow-y-auto console-scroll-hidden">
                     {!catalog?.components?.length ? (
                       <p className="px-3 py-4 text-xs text-zinc-400">No components available.</p>
                     ) : (
-                      catalog.components.map((comp) => {
-                        const checked = selectedComponentIds.includes(comp.id);
-                        const isAgent = comp.category === 'agent';
-                        const agentAlreadySelected = selectedComponentIds.some(
-                          (id) => componentMap[id]?.category === 'agent',
-                        );
-                        const disabled = isAgent && agentAlreadySelected && !checked;
+                      (() => {
+                        const CATEGORY_ORDER = ['agent', 'language', 'database', 'devops', 'package-manager', 'shell-tool'];
+                        const CATEGORY_LABELS = {
+                          agent: 'Agents', language: 'Languages', database: 'Databases',
+                          devops: 'DevOps', 'package-manager': 'Package Managers', 'shell-tool': 'Shell Tools',
+                        };
+                        const grouped = {};
+                        for (const comp of catalog.components) {
+                          (grouped[comp.category] || (grouped[comp.category] = [])).push(comp);
+                        }
+                        return CATEGORY_ORDER.filter((cat) => grouped[cat]?.length > 0).map((cat) => (
+                          <div key={cat}>
+                            <div className="px-3 py-1.5 text-xs font-semibold uppercase tracking-wider text-zinc-500 bg-zinc-50 border-b border-zinc-100">
+                              {CATEGORY_LABELS[cat] || cat}
+                            </div>
+                            {grouped[cat].map((comp) => {
+                              const checked = selectedComponentIds.includes(comp.id);
+                              const isAgent = comp.category === 'agent';
+                              const agentAlreadySelected = selectedComponentIds.some(
+                                (id) => componentMap[id]?.category === 'agent',
+                              );
+                              const disabled = isAgent && agentAlreadySelected && !checked;
 
-                        return (
-                          <label
-                            key={comp.id}
-                            className={cn(
-                              'flex items-center gap-2 px-3 py-2 cursor-pointer hover:bg-zinc-50 transition-colors',
-                              disabled && 'opacity-40 cursor-not-allowed hover:bg-transparent',
-                            )}
-                          >
-                            <input
-                              type="checkbox"
-                              checked={checked}
-                              disabled={creating || disabled}
-                              onChange={() => {
-                                if (creating || disabled) return;
-                                if (checked) {
-                                  setSelectedComponentIds((prev) => prev.filter((id) => id !== comp.id));
-                                  setComponentVersions((prev) => {
-                                    const next = { ...prev };
-                                    delete next[comp.id];
-                                    return next;
-                                  });
-                                } else {
-                                  // If selecting an agent and one is already selected, replace it
-                                  if (isAgent && agentAlreadySelected) {
-                                    const existingAgent = selectedComponentIds.find(
-                                      (id) => componentMap[id]?.category === 'agent',
-                                    );
-                                    setSelectedComponentIds((prev) =>
-                                      prev.filter((id) => id !== existingAgent).concat(comp.id),
-                                    );
-                                    setComponentVersions((prev) => {
-                                      const next = { ...prev };
-                                      delete next[existingAgent];
-                                      next[comp.id] = comp.defaultVersion;
-                                      return next;
-                                    });
-                                  } else {
-                                    setSelectedComponentIds((prev) => [...prev, comp.id]);
-                                    setComponentVersions((prev) => ({
-                                      ...prev,
-                                      [comp.id]: comp.defaultVersion,
-                                    }));
-                                  }
-                                }
-                              }}
-                              className="h-4 w-4 shrink-0 rounded border-zinc-300 text-zinc-900 focus:ring-black"
-                            />
-                            <span className="flex-1 min-w-0 truncate text-sm text-zinc-800">
-                              {comp.name}
-                            </span>
-                            <span className="text-xs text-zinc-400 capitalize shrink-0">{comp.category}</span>
-                            {checked && comp.versions && comp.versions.length > 0 && (
-                              <SelectMenu
-                                value={componentVersions[comp.id] || comp.defaultVersion || ''}
-                                onChange={(v) => {
-                                  setComponentVersions((prev) => ({ ...prev, [comp.id]: v }));
-                                }}
-                                options={comp.versions.map((v) => ({ value: v.version, label: v.version }))}
-                                disabled={creating}
-                                className="w-24 shrink-0"
-                              />
-                            )}
-                          </label>
-                        );
-                      })
+                              return (
+                                <label
+                                  key={comp.id}
+                                  className={cn(
+                                    'flex items-center gap-2 px-3 py-2 cursor-pointer hover:bg-zinc-50 transition-colors',
+                                    disabled && 'opacity-40 cursor-not-allowed hover:bg-transparent',
+                                  )}
+                                >
+                                  <input
+                                    type="checkbox"
+                                    checked={checked}
+                                    disabled={creating || disabled}
+                                    onChange={() => {
+                                      if (creating || disabled) return;
+                                      if (checked) {
+                                        setSelectedComponentIds((prev) => prev.filter((id) => id !== comp.id));
+                                        setComponentVersions((prev) => {
+                                          const next = { ...prev };
+                                          delete next[comp.id];
+                                          return next;
+                                        });
+                                      } else {
+                                        if (isAgent && agentAlreadySelected) {
+                                          const existingAgent = selectedComponentIds.find(
+                                            (id) => componentMap[id]?.category === 'agent',
+                                          );
+                                          setSelectedComponentIds((prev) =>
+                                            prev.filter((id) => id !== existingAgent).concat(comp.id),
+                                          );
+                                          setComponentVersions((prev) => {
+                                            const next = { ...prev };
+                                            delete next[existingAgent];
+                                            next[comp.id] = comp.defaultVersion;
+                                            return next;
+                                          });
+                                        } else {
+                                          setSelectedComponentIds((prev) => [...prev, comp.id]);
+                                          setComponentVersions((prev) => ({
+                                            ...prev,
+                                            [comp.id]: comp.defaultVersion,
+                                          }));
+                                        }
+                                      }
+                                    }}
+                                    className="h-4 w-4 shrink-0 rounded border-zinc-300 text-zinc-900 focus:ring-black"
+                                  />
+                                  <span className="flex-1 min-w-0 truncate text-sm text-zinc-800">
+                                    {comp.name}
+                                  </span>
+                                  {checked && comp.versions && comp.versions.length > 0 && (
+                                    <SelectMenu
+                                      value={componentVersions[comp.id] || comp.defaultVersion || ''}
+                                      onChange={(v) => {
+                                        setComponentVersions((prev) => ({ ...prev, [comp.id]: v }));
+                                      }}
+                                      options={comp.versions.map((v) => ({ value: v.version, label: v.version }))}
+                                      disabled={creating}
+                                      className="w-24 shrink-0"
+                                    />
+                                  )}
+                                </label>
+                              );
+                            })}
+                          </div>
+                        ));
+                      })()
                     )}
                   </div>
+                  {selectedComponentIds.includes('lang:rust') && !selectedComponentIds.includes('lang:cpp') && (
+                    <p className="text-xs text-amber-600 mt-1">Tip: select <b>C/C++</b> with Rust to enable <code>cargo build</code> (gcc required for native compilation).</p>
+                  )}
                   {selectedComponentIds.length > 0 && (
                     <p className="text-xs text-zinc-400 mt-1">
                       {selectedComponentIds.length} component{selectedComponentIds.length > 1 ? 's' : ''} selected
@@ -406,7 +425,7 @@ export default function CustomImages() {
       )}
 
       {/* Image List */}
-      <div className={cn(consoleAdminTableShellClass, 'overflow-auto')}>
+      <div className={cn(consoleAdminTableShellClass, '!overflow-auto')}>
         <table className="w-full min-w-[640px] border-collapse text-left">
           <thead>
             <tr className="border-b border-zinc-200">

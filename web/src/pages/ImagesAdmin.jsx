@@ -174,7 +174,7 @@ export default function ImagesAdmin() {
         </p>
       </div>
 
-      <div className={cn(consoleAdminTableShellClass, 'overflow-auto')}>
+      <div className={cn(consoleAdminTableShellClass, '!overflow-auto')}>
         <table className="w-full min-w-[960px] border-collapse text-left">
           <thead>
             <tr className="border-b border-zinc-200">
