@@ -338,7 +338,9 @@ async function deleteImage(ownerUserId, imageId) {
   if (image.imageRef) {
     try {
       const registryHost = getImageRegistry();
-      const [namePart, tag] = image.imageRef.split(':');
+      const lastColon = image.imageRef.lastIndexOf(':');
+      const namePart = image.imageRef.slice(0, lastColon);
+      const tag = image.imageRef.slice(lastColon + 1);
       const repoName = namePart.slice(registryHost.length + 1);
       const getDigest = await fetch(
         `http://${registryHost.replace(/^https?:\/\//, '')}/v2/${repoName}/manifests/${tag}`,

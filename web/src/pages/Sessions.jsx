@@ -162,14 +162,18 @@ export default React.forwardRef(function Sessions({
     setSelectedAgentId((prev) => pickDefaultAgentId(agents, prev));
   }, [agents]);
 
-  useEffect(() => {
-    apiFetch('/api/v1/custom-images').then((res) => res.json()).then((data) => {
+  const fetchCustomImages = useCallback(() => {
+    return apiFetch('/api/v1/custom-images').then((res) => res.json()).then((data) => {
       const list = data.images || (Array.isArray(data) ? data : []);
       setCustomImages(list.filter((img) => img.status === 'ready'));
     }).catch(() => {
       setCustomImages([]);
     });
   }, []);
+
+  useEffect(() => {
+    fetchCustomImages();
+  }, [fetchCustomImages]);
 
   const selectedAgent = agents.find(a => a.id === selectedAgentId);
 
@@ -365,6 +369,7 @@ export default React.forwardRef(function Sessions({
     setLaunchModalError(null);
     setCreateNewWorkspaceInline(false);
     setCustomImageId('');
+    fetchCustomImages();
     if (mode === 'workspace') {
       setLaunchModalMode('workspace');
       setStartSessionAfterCreate(false);
