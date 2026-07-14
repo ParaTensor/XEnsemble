@@ -76,7 +76,7 @@ const TOOLS_INSTALL = {
     'latest': { install: 'curl -fsSL "https://dl.k8s.io/release/$(curl -fsSL https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl" -o /usr/local/bin/kubectl && chmod +x /usr/local/bin/kubectl', default: true },
   },
   terraform: {
-    '1.10': { install: 'apt-get update && apt-get install -y unzip && curl -fsSL https://releases.hashicorp.com/terraform/1.10.5/terraform_1.10.5_linux_amd64.zip -o /tmp/tf.zip && unzip -q /tmp/tf.zip -d /usr/local/bin && rm /tmp/tf.zip /var/lib/apt/lists/*', default: true },
+    '1.10': { install: 'apt-get update && apt-get install -y unzip && curl -fsSL https://releases.hashicorp.com/terraform/1.10.5/terraform_1.10.5_linux_amd64.zip -o /tmp/tf.zip && unzip -q /tmp/tf.zip -d /usr/local/bin && rm -rf /tmp/tf.zip /var/lib/apt/lists/*', default: true },
   },
   yarn: {
     'latest': { install: 'npm install -g yarn', default: true },
