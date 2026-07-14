@@ -100,10 +100,7 @@ class BoxLiteRuntimeProvider extends RuntimeProvider {
             network: resolveBoxliteSessionNetwork(opts.network),
         };
         const openSession = async () => {
-            // Blink can transiently 500 (e.g. "mkdir memory dir") when a VM is
-            // still tearing down from a recent stop/hibernate. Retry a few times
-            // with backoff before surfacing the error.
-            const TRANSIENT_RE = /mkdir memory dir|memory dir|resource busy|temporarily|try again/i;
+            const TRANSIENT_RE = /mkdir.*memory|memory dir|resource busy|temporarily|try again/i;
             const MAX_ATTEMPTS = 4;
             let lastErr = null;
             for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt += 1) {
@@ -119,11 +116,22 @@ class BoxLiteRuntimeProvider extends RuntimeProvider {
                         await new Promise((r) => setTimeout(r, attempt * 500));
                         continue;
                     }
-                    throw new RuntimeError(`BoxLite ensureReady failed: ${e.message}`, 502);
+                    // If all retries exhausted on a transient-like error that isn't
+                    // "resource busy" (i.e. disk/filesystem-level failure), try one
+                    // delete+recreate cycle — the VM's rootfs might be corrupted.
+                    if (TRANSIENT_RE.test(String(e)) && !/resource busy/i.test(String(e))) {
+                        try { await this.client.deleteSession(name); } catch (_) {}
+                        await new Promise((r) => setTimeout(r, 1000));
+                        try {
+                            await this.client.openSession(name, image, warm, openOptions);
+                            return;
+                        } catch (e2) {
+                            if (/already|exists/i.test(String(e2))) return;
+                            lastErr = e2;
+                        }
+                    }
+                    throw new RuntimeError(`BoxLite ensureReady failed: ${lastErr.message}`, 502);
                 }
-            }
-            if (lastErr) {
-                throw new RuntimeError(`BoxLite ensureReady failed: ${lastErr.message}`, 502);
             }
         };
         await openSession();

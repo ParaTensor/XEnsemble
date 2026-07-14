@@ -104,9 +104,13 @@ function slugify(text) {
     .slice(0, 64) || `img-${crypto.randomBytes(3).toString('hex')}`;
 }
 
-function buildImageRef(ownerUserId, slug, buildId) {
+function buildImageRef(ownerUserId, slug, components) {
   const registry = getImageRegistry();
-  return `${registry}/custom-${ownerUserId}-${slug}:${buildId}`;
+  const contentHash = crypto.createHash('sha256')
+    .update((typeof components === 'string' ? JSON.parse(components) : components)
+      .map((s) => `${s.component_id}@${s.version}`).sort().join('\n'))
+    .digest('hex').slice(0, 12);
+  return `${registry}/custom-${ownerUserId}-${slug}:${contentHash}`;
 }
 
 function ensureLogDir() {
@@ -184,6 +188,9 @@ async function createImage({ ownerUserId, name, selection }) {
   }
 
   const agentCount = selection.filter((s) => (s.component_id || '').startsWith('agent:')).length;
+  if (agentCount === 0) {
+    throw new RuntimeError('custom image must include at least one agent', 400);
+  }
   if (agentCount > 1) {
     throw new RuntimeError('custom image must contain at most one agent', 400);
   }
@@ -215,6 +222,48 @@ async function createImage({ ownerUserId, name, selection }) {
   const now = Date.now();
   const imageId = `cimg_${crypto.randomBytes(8).toString('hex')}`;
   const buildId = `cbld_${crypto.randomBytes(8).toString('hex')}`;
+
+  // Check if an image built from the exact same selection already exists.
+  // Content hash = sorted component_id + version pairs, deterministic.
+  const contentHash = crypto.createHash('sha256')
+    .update(selection.map((s) => `${s.component_id}@${s.version}`).sort().join('\n'))
+    .digest('hex').slice(0, 12);
+
+  const dupBuild = await db.select().from(schema.customImageBuilds)
+    .where(and(
+      eq(schema.customImageBuilds.state, 'ready'),
+      sql`${schema.customImageBuilds.imageRef} LIKE ${'%:' + contentHash}`,
+    ))
+    .limit(1);
+  if (dupBuild.length > 0 && dupBuild[0].imageRef) {
+    await db.insert(schema.customImages).values({
+      id: imageId,
+      ownerUserId,
+      name: name.trim(),
+      slug,
+      components: JSON.stringify(selection),
+      imageRef: dupBuild[0].imageRef,
+      createdAt: now,
+      updatedAt: now,
+    });
+    await db.insert(schema.customImageBuilds).values({
+      id: buildId,
+      customImageId: imageId,
+      state: 'ready',
+      imageRef: dupBuild[0].imageRef,
+      logsRef: null,
+      failureReason: null,
+      startedAt: now,
+      finishedAt: now,
+      createdAt: now,
+    });
+    return {
+      ...formatImageRow(
+        { id: imageId, ownerUserId, name: name.trim(), slug, components: JSON.stringify(selection), imageRef: dupBuild[0].imageRef, createdAt: now, updatedAt: now },
+        { id: buildId, customImageId: imageId, state: 'ready', imageRef: dupBuild[0].imageRef, logsRef: null, failureReason: null, startedAt: now, finishedAt: now, createdAt: now },
+      ),
+    };
+  }
 
   await db.insert(schema.customImages).values({
     id: imageId,
@@ -377,7 +426,7 @@ async function executeBuild(image, build) {
     fs.mkdirSync(contextDir, { recursive: true });
     fs.writeFileSync(dockerfilePath, dockerfile);
 
-    imageRef = buildImageRef(image.ownerUserId, image.slug, buildId);
+    imageRef = buildImageRef(image.ownerUserId, image.slug, image.components);
 
     const buildCmd = `docker build -t ${imageRef} -f ${dockerfilePath} ${contextDir}`;
     const pushCmd = `docker push ${imageRef}`;

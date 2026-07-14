@@ -430,8 +430,8 @@ export default function CustomImages() {
           <thead>
             <tr className="border-b border-zinc-200">
               <th className={consoleTableHeadCellClass}>Name</th>
+              <th className={consoleTableHeadCellClass}>Components</th>
               <th className={consoleTableHeadCellClass}>Status</th>
-              <th className={consoleTableHeadCellClass}>Image Ref</th>
               <th className={consoleTableHeadCellClass}>Created</th>
               <th className={consoleTableHeadCellClass}>Actions</th>
             </tr>
@@ -463,8 +463,35 @@ export default function CustomImages() {
                   <td className={consoleTableBodyCellClass}>
                     {stateBadge(img.status)}
                   </td>
-                  <td className={cn(consoleTableBodyCellClass, 'font-mono text-xs text-zinc-500 max-w-[260px] truncate')} title={img.image_ref || ''}>
-                    {img.image_ref || '\u2014'}
+                  <td className={cn(consoleTableBodyCellClass, 'max-w-[320px]')}>
+                    {(() => {
+                      const comps = Array.isArray(img.components) ? img.components : [];
+                      if (comps.length === 0) return <span className="text-zinc-400">\u2014</span>;
+                      const names = comps.map((c) => {
+                        const id = (c.component_id || '').replace(/^(agent:|lang:|tool:)/, '');
+                        return id;
+                      });
+                      const max = 5;
+                      if (names.length <= max) {
+                        return (
+                          <div className="flex flex-wrap gap-1">
+                            {names.map((n, i) => (
+                              <span key={i} className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-zinc-100 text-zinc-700">{n}</span>
+                            ))}
+                          </div>
+                        );
+                      }
+                      return (
+                        <div className="flex flex-wrap gap-1">
+                          {names.slice(0, max).map((n, i) => (
+                            <span key={i} className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-zinc-100 text-zinc-700">{n}</span>
+                          ))}
+                          <span className="text-xs text-zinc-400" title={names.slice(max).join(', ')}>
+                            +{names.length - max} more
+                          </span>
+                        </div>
+                      );
+                    })()}
                   </td>
                   <td className={cn(consoleTableBodyCellClass, 'text-zinc-500')}>
                     {formatTime(img.created_at)}

@@ -10,9 +10,6 @@ function renderInstallSteps(selection) {
   const installList = selectionToInstallList(selection).sort(
     (a, b) => a.component_id.localeCompare(b.component_id),
   );
-  const agents = installList.filter((i) => i.category === 'agent');
-  const langs = installList.filter((i) => i.category === 'language');
-  const tools = installList.filter((i) => !['agent', 'language'].includes(i.category));
 
   const steps = [];
 
@@ -20,26 +17,17 @@ function renderInstallSteps(selection) {
   steps.push('# Custom image: ' + installList.map((i) => `${i.name}@${i.version}`).join(', '));
   steps.push('');
 
-  const merged = [];
-
-  for (const item of tools) {
-    merged.push(`  echo ">>> ${item.name} ${item.version}"`);
-    merged.push(`  ${item.install}`);
+  // Each component is its own RUN layer so Docker can reuse
+  // cached layers when the same component+version appears in a
+  // different image build.
+  for (const item of installList) {
+    steps.push(`# ${item.name}`);
+    steps.push(`RUN set -eux; \\\n  echo ">>> ${item.name} ${item.version}" && \\\n  ${item.install}`);
+    steps.push('');
   }
 
-  for (const item of langs) {
-    merged.push(`  echo ">>> ${item.name} ${item.version}"`);
-    merged.push(`  ${item.install}`);
-  }
-
-  for (const item of agents) {
-    merged.push(`  echo ">>> ${item.name}"`);
-    merged.push(`  ${item.install}`);
-  }
-
-  merged.push('  rm -rf /root/.npm /root/.cache /tmp/* /var/tmp/* 2>/dev/null; true');
-
-  steps.push(`RUN set -eux; \\\n${merged.join(' && \\\n')}`);
+  steps.push('# Cleanup');
+  steps.push('RUN rm -rf /root/.npm /root/.cache /tmp/* /var/tmp/* 2>/dev/null; true');
 
   return steps.join('\n');
 }
