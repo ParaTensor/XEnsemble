@@ -12,6 +12,7 @@ function renderInstallSteps(selection) {
   );
   const agents = installList.filter((i) => i.category === 'agent');
   const langs = installList.filter((i) => i.category === 'language');
+  const tools = installList.filter((i) => !['agent', 'language'].includes(i.category));
 
   const steps = [];
 
@@ -20,6 +21,11 @@ function renderInstallSteps(selection) {
   steps.push('');
 
   const merged = [];
+
+  for (const item of tools) {
+    merged.push(`  echo ">>> ${item.name} ${item.version}"`);
+    merged.push(`  ${item.install}`);
+  }
 
   for (const item of langs) {
     merged.push(`  echo ">>> ${item.name} ${item.version}"`);
@@ -46,7 +52,7 @@ function renderDockerfile(selection) {
 ARG BASE_IMAGE=${baseImage}
 FROM \${BASE_IMAGE}
 
-ENV PATH="/usr/local/bin:/root/.local/bin:\${PATH}" HOME="/root"
+ENV PATH="/usr/local/bin:/root/.local/bin:/root/.cargo/bin:\${PATH}" HOME="/root"
 
 ${installSteps}
 

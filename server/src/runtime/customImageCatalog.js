@@ -3,6 +3,10 @@ const { AGENT_BOX_IMAGE_CATALOG } = require('./agentBoxImages');
 
 const CATEGORY_AGENT = 'agent';
 const CATEGORY_LANGUAGE = 'language';
+const CATEGORY_DATABASE = 'database';
+const CATEGORY_DEVOPS = 'devops';
+const CATEGORY_PACKAGE_MANAGER = 'package-manager';
+const CATEGORY_SHELL_TOOL = 'shell-tool';
 
 const LANGUAGE_INSTALL = {
   python: {
@@ -21,6 +25,7 @@ const LANGUAGE_INSTALL = {
     '1.22': { install: 'curl -fsSL https://go.dev/dl/go1.22.12.linux-amd64.tar.gz | tar -C /usr/local -xz && ln -sf /usr/local/go/bin/go /usr/local/bin/go && ln -sf /usr/local/go/bin/gofmt /usr/local/bin/gofmt', default: false },
     '1.23': { install: 'curl -fsSL https://go.dev/dl/go1.23.6.linux-amd64.tar.gz | tar -C /usr/local -xz && ln -sf /usr/local/go/bin/go /usr/local/bin/go && ln -sf /usr/local/go/bin/gofmt /usr/local/bin/gofmt', default: true },
     '1.24': { install: 'curl -fsSL https://go.dev/dl/go1.24.0.linux-amd64.tar.gz | tar -C /usr/local -xz && ln -sf /usr/local/go/bin/go /usr/local/bin/go && ln -sf /usr/local/go/bin/gofmt /usr/local/bin/gofmt', default: false },
+    '1.25': { install: 'curl -fsSL https://go.dev/dl/go1.25.0.linux-amd64.tar.gz | tar -C /usr/local -xz && ln -sf /usr/local/go/bin/go /usr/local/bin/go && ln -sf /usr/local/go/bin/gofmt /usr/local/bin/gofmt', default: false },
   },
   java: {
     '17': { install: 'apt-get update && apt-get install -y openjdk-17-jdk-headless && rm -rf /var/lib/apt/lists/*', default: false },
@@ -34,10 +39,91 @@ const LANGUAGE_INSTALL = {
     },
   },
   nodejs: {
+    '18': { install: 'curl -fsSL https://nodejs.org/dist/v18.20.7/node-v18.20.7-linux-x64.tar.gz | tar -xz -C /usr/local --strip-components=1', default: false },
     '20': { install: 'curl -fsSL https://nodejs.org/dist/v20.19.0/node-v20.19.0-linux-x64.tar.gz | tar -xz -C /usr/local --strip-components=1', default: false },
     '22': { install: 'curl -fsSL https://nodejs.org/dist/v22.15.0/node-v22.15.0-linux-x64.tar.gz | tar -xz -C /usr/local --strip-components=1', default: false },
     '23': { install: 'curl -fsSL https://nodejs.org/dist/v23.4.0/node-v23.4.0-linux-x64.tar.gz | tar -xz -C /usr/local --strip-components=1', default: false },
   },
+  rust: {
+    'stable': { install: 'curl --proto "=https" --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable', default: true },
+  },
+  ruby: {
+    '3.1': { install: 'apt-get update && apt-get install -y ruby-full && rm -rf /var/lib/apt/lists/*', default: true },
+  },
+  php: {
+    '8.2': { install: 'apt-get update && apt-get install -y php-cli php-curl php-mbstring php-xml && rm -rf /var/lib/apt/lists/*', default: true },
+  },
+  cpp: {
+    'latest': { install: 'apt-get update && apt-get install -y build-essential cmake gdb && rm -rf /var/lib/apt/lists/*', default: true },
+  },
+  dotnet: {
+    '8.0': { install: 'curl -fsSL https://dot.net/v1/dotnet-install.sh | bash -s -- --channel 8.0 && ln -sf /root/.dotnet/dotnet /usr/local/bin/dotnet', default: true },
+    '9.0': { install: 'curl -fsSL https://dot.net/v1/dotnet-install.sh | bash -s -- --channel 9.0 && ln -sf /root/.dotnet/dotnet /usr/local/bin/dotnet', default: false },
+  },
+};
+
+const TOOLS_INSTALL = {
+  postgresql: {
+    '16': { install: 'apt-get update && apt-get install -y postgresql-client && rm -rf /var/lib/apt/lists/*', default: true },
+  },
+  mysql: {
+    'latest': { install: 'apt-get update && apt-get install -y default-mysql-client && rm -rf /var/lib/apt/lists/*', default: true },
+  },
+  redis: {
+    'latest': { install: 'apt-get update && apt-get install -y redis-tools && rm -rf /var/lib/apt/lists/*', default: true },
+  },
+  kubectl: {
+    'latest': { install: 'curl -fsSL "https://dl.k8s.io/release/$(curl -fsSL https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl" -o /usr/local/bin/kubectl && chmod +x /usr/local/bin/kubectl', default: true },
+  },
+  terraform: {
+    '1.10': { install: 'apt-get update && apt-get install -y unzip && curl -fsSL https://releases.hashicorp.com/terraform/1.10.5/terraform_1.10.5_linux_amd64.zip -o /tmp/tf.zip && unzip -q /tmp/tf.zip -d /usr/local/bin && rm /tmp/tf.zip /var/lib/apt/lists/*', default: true },
+  },
+  yarn: {
+    'latest': { install: 'npm install -g yarn', default: true },
+  },
+  pnpm: {
+    'latest': { install: 'npm install -g pnpm', default: true },
+  },
+  bun: {
+    'latest': { install: 'npm install -g bun', default: true },
+  },
+  jq: {
+    'latest': { install: 'apt-get update && apt-get install -y jq && rm -rf /var/lib/apt/lists/*', default: true },
+  },
+  ripgrep: {
+    'latest': { install: 'apt-get update && apt-get install -y ripgrep && rm -rf /var/lib/apt/lists/*', default: true },
+  },
+  tree: {
+    'latest': { install: 'apt-get update && apt-get install -y tree && rm -rf /var/lib/apt/lists/*', default: true },
+  },
+};
+
+const TOOLS_CATEGORIES = {
+  postgresql: CATEGORY_DATABASE,
+  mysql: CATEGORY_DATABASE,
+  redis: CATEGORY_DATABASE,
+  kubectl: CATEGORY_DEVOPS,
+  terraform: CATEGORY_DEVOPS,
+  yarn: CATEGORY_PACKAGE_MANAGER,
+  pnpm: CATEGORY_PACKAGE_MANAGER,
+  bun: CATEGORY_PACKAGE_MANAGER,
+  jq: CATEGORY_SHELL_TOOL,
+  ripgrep: CATEGORY_SHELL_TOOL,
+  tree: CATEGORY_SHELL_TOOL,
+};
+
+const TOOLS_NAMES = {
+  postgresql: 'PostgreSQL Client',
+  mysql: 'MySQL Client',
+  redis: 'Redis CLI',
+  kubectl: 'kubectl',
+  terraform: 'Terraform',
+  yarn: 'Yarn',
+  pnpm: 'pnpm',
+  bun: 'Bun',
+  jq: 'jq',
+  ripgrep: 'ripgrep',
+  tree: 'tree',
 };
 
 function buildCatalog() {
@@ -60,7 +146,7 @@ function buildCatalog() {
 
   const languages = Object.keys(LANGUAGE_INSTALL).map((langId) => {
     const versions = LANGUAGE_INSTALL[langId];
-    const names = { python: 'Python', go: 'Go', java: 'Java', nodejs: 'Node.js' };
+    const names = { python: 'Python', go: 'Go', java: 'Java', nodejs: 'Node.js', rust: 'Rust', ruby: 'Ruby', php: 'PHP', cpp: 'C/C++', dotnet: '.NET' };
     const versionList = Object.keys(versions).map((v) => ({
       version: v,
       is_default: Boolean(versions[v].default),
@@ -75,7 +161,23 @@ function buildCatalog() {
     };
   });
 
-  return [...agents, ...languages];
+  const tools = Object.keys(TOOLS_INSTALL).map((toolId) => {
+    const versions = TOOLS_INSTALL[toolId];
+    const versionList = Object.keys(versions).map((v) => ({
+      version: v,
+      is_default: Boolean(versions[v].default),
+    }));
+    const defaultVer = versionList.find((v) => v.is_default)?.version || versionList[0]?.version;
+    return {
+      id: `tool:${toolId}`,
+      name: TOOLS_NAMES[toolId] || toolId,
+      category: TOOLS_CATEGORIES[toolId] || CATEGORY_PACKAGE_MANAGER,
+      versions: versionList,
+      defaultVersion: defaultVer,
+    };
+  });
+
+  return [...agents, ...languages, ...tools];
 }
 
 function getInstallFragment(componentId, version) {
@@ -90,12 +192,23 @@ function getInstallFragment(componentId, version) {
     const entry = versions[version];
     return entry ? entry.install : null;
   }
+  if (componentId.startsWith('tool:')) {
+    const toolId = componentId.slice('tool:'.length);
+    const versions = TOOLS_INSTALL[toolId];
+    if (!versions) return null;
+    const entry = versions[version];
+    return entry ? entry.install : null;
+  }
   return null;
 }
 
 function getCategory(componentId) {
   if (componentId.startsWith('agent:')) return CATEGORY_AGENT;
   if (componentId.startsWith('lang:')) return CATEGORY_LANGUAGE;
+  if (componentId.startsWith('tool:')) {
+    const toolId = componentId.slice('tool:'.length);
+    return TOOLS_CATEGORIES[toolId] || null;
+  }
   return null;
 }
 
@@ -131,7 +244,7 @@ function validateSelection(selection) {
       continue;
     }
     if (
-      !componentId.startsWith('agent:') && !componentId.startsWith('lang:')
+      !componentId.startsWith('agent:') && !componentId.startsWith('lang:') && !componentId.startsWith('tool:')
     ) {
       unknowns.push(componentId);
       continue;
@@ -198,7 +311,14 @@ function selectionToInstallList(selection) {
 module.exports = {
   CATEGORY_AGENT,
   CATEGORY_LANGUAGE,
+  CATEGORY_DATABASE,
+  CATEGORY_DEVOPS,
+  CATEGORY_PACKAGE_MANAGER,
+  CATEGORY_SHELL_TOOL,
   LANGUAGE_INSTALL,
+  TOOLS_INSTALL,
+  TOOLS_CATEGORIES,
+  TOOLS_NAMES,
   CUSTOM_IMAGE_CATALOG,
   getCatalog,
   getComponentById,
