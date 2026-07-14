@@ -16,6 +16,8 @@ function createClient(url = resolveDatabaseUrl()) {
     return postgres(url, {
         max: Number(process.env.DATABASE_POOL_MAX || 10),
         ssl: process.env.DATABASE_SSL === 'true' ? 'require' : undefined,
+        idle_timeout: 300,         // Keep pool connections alive across Docker builds
+        connect_timeout: 10,
     });
 }
 

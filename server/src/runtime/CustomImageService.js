@@ -334,6 +334,28 @@ async function deleteImage(ownerUserId, imageId) {
   const image = await assertOwnership(ownerUserId, imageId);
   if (!image) throw new RuntimeError('custom image not found', 404);
 
+  // Delete from Docker registry (best-effort).
+  if (image.imageRef) {
+    try {
+      const registryHost = getImageRegistry();
+      const [namePart, tag] = image.imageRef.split(':');
+      const repoName = namePart.slice(registryHost.length + 1);
+      const getDigest = await fetch(
+        `http://${registryHost.replace(/^https?:\/\//, '')}/v2/${repoName}/manifests/${tag}`,
+        { method: 'HEAD', headers: { Accept: 'application/vnd.oci.image.index.v1+json' } },
+      );
+      if (getDigest.ok) {
+        const digest = getDigest.headers.get('docker-content-digest');
+        if (digest) {
+          await fetch(
+            `http://${registryHost.replace(/^https?:\/\//, '')}/v2/${repoName}/manifests/${digest}`,
+            { method: 'DELETE' },
+          ).catch(() => {});
+        }
+      }
+    } catch (_) { /* registry cleanup is best-effort */ }
+  }
+
   await db.delete(schema.customImageBuilds)
     .where(eq(schema.customImageBuilds.customImageId, imageId));
 
@@ -365,11 +387,7 @@ async function processBuildQueue(ownerUserId) {
         .where(eq(schema.customImages.id, build.customImageId));
       if (imageRows.length === 0) {
         await db.update(schema.customImageBuilds)
-          .set({
-            state: 'failed',
-            failureReason: 'custom image record not found',
-            finishedAt: Date.now(),
-          })
+          .set({ state: 'failed', failureReason: 'custom image record not found', finishedAt: Date.now() })
           .where(eq(schema.customImageBuilds.id, build.id));
         continue;
       }
@@ -379,6 +397,16 @@ async function processBuildQueue(ownerUserId) {
 
       await globalSemaphore.acquire();
       await userSem.acquire();
+
+      try {
+        await db.update(schema.customImageBuilds)
+          .set({ state: 'building', startedAt: Date.now() })
+          .where(eq(schema.customImageBuilds.id, build.id));
+      } catch (e) {
+        userSem.release();
+        globalSemaphore.release();
+        continue;
+      }
 
       setImmediate(() => executeBuild(image, build).finally(() => {
         userSem.release();
@@ -395,14 +423,6 @@ async function executeBuild(image, build) {
   const imageId = image.id;
 
   const startedAt = Date.now();
-
-  try {
-    await db.update(schema.customImageBuilds)
-      .set({ state: 'building', startedAt })
-      .where(eq(schema.customImageBuilds.id, buildId));
-  } catch (err) {
-    return;
-  }
 
   let imageRef;
   let logsRef = null;
@@ -456,8 +476,6 @@ async function executeBuild(image, build) {
       });
       proc.on('error', reject);
     });
-
-    logStream.write('\n=== Pushing to registry ===\n');
     await new Promise((resolve, reject) => {
       const proc = exec(pushCmd, {
         timeout: BUILD_TIMEOUT_MS,
@@ -466,8 +484,6 @@ async function executeBuild(image, build) {
 
       proc.stdout.on('data', appendTail);
       proc.stderr.on('data', appendTail);
-      proc.stdout.pipe(logStream);
-      proc.stderr.pipe(logStream);
 
       proc.on('close', (code) => {
         if (code === 0) {
@@ -478,32 +494,33 @@ async function executeBuild(image, build) {
       });
       proc.on('error', reject);
     });
-
-    logStream.write(`\n=== Build completed at ${new Date().toISOString()} ===\n`);
     logStream.end();
 
-    await db.update(schema.customImageBuilds)
-      .set({
-        state: 'ready',
-        imageRef,
-        logsRef,
-        finishedAt: Date.now(),
-      })
-      .where(eq(schema.customImageBuilds.id, buildId));
+    for (let attempt = 1; attempt <= 3; attempt += 1) {
+      try {
+        await db.execute(sql`SELECT 1`);
+      } catch (_) {
+        await new Promise((r) => setTimeout(r, 2000));
+      }
+      try {
+        await db.update(schema.customImageBuilds)
+          .set({ state: 'ready', imageRef, logsRef, finishedAt: Date.now() })
+          .where(eq(schema.customImageBuilds.id, buildId));
 
-    await db.update(schema.customImages)
-      .set({ imageRef, updatedAt: Date.now() })
-      .where(eq(schema.customImages.id, imageId));
+        await db.update(schema.customImages)
+          .set({ imageRef, updatedAt: Date.now() })
+          .where(eq(schema.customImages.id, imageId));
+        break;
+      } catch (dbErr) {
+        if (attempt === 3) throw dbErr;
+        await new Promise((r) => setTimeout(r, 2000));
+      }
+    }
 
     try { fs.rmSync(contextDir, { recursive: true }); } catch { /* ok */ }
   } catch (err) {
     const tail = outputTail.trim();
-    const failureReason = (tail
-      ? `${err.message}\n${tail}`
-      : err.message).slice(-500);
-
-    // eslint-disable-next-line no-console
-    console.error(`[custom-images] build ${buildId} (image ${imageId}) failed: ${err.message}`);
+    const failureReason = (tail ? `${err.message}\n${tail}` : err.message).slice(-500);
 
     try {
       await db.update(schema.customImageBuilds)
