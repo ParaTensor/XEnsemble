@@ -8,6 +8,11 @@ const DEFAULT_AGENTS = [
         args: [],
         // Kimi Code authenticates via `kimi login` / config.toml — no BYOK env injection.
         env_required: [],
+        resume: {
+            level: 'L2',
+            stateEnv: 'KIMI_CODE_HOME',
+            resumeArgs: ['--continue'],
+        },
     },
     {
         id: 'claude-code',
