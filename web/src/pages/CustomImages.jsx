@@ -430,8 +430,8 @@ export default function CustomImages() {
           <thead>
             <tr className="border-b border-zinc-200">
               <th className={consoleTableHeadCellClass}>Name</th>
-              <th className={consoleTableHeadCellClass}>Components</th>
               <th className={consoleTableHeadCellClass}>Status</th>
+              <th className={consoleTableHeadCellClass}>Components</th>
               <th className={consoleTableHeadCellClass}>Created</th>
               <th className={consoleTableHeadCellClass}>Actions</th>
             </tr>
