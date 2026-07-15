@@ -57,6 +57,14 @@ const { resolveRuntimeProvider, DEFAULT_RUNTIME_PROVIDER } = require('./config/r
 
 const runtime = getRuntime();
 
+async function markSessionFailed(sessionId, errMsg, log) {
+    await db.update(schema.sessions).set({ status: 'failed' }).where(eq(schema.sessions.id, sessionId));
+    try {
+        await db.execute(sql`UPDATE sessions SET provisioning_error = ${errMsg} WHERE id = ${sessionId}`);
+    } catch {}
+    if (log) log({ sessionId }, `[sessions] provisioning failed: ${errMsg}`);
+}
+
 function formatAgentRow(a) {
     return {
         id: a.id,
@@ -734,6 +742,13 @@ fastify.get('/api/v1/sessions', { preValidation: [fastify.authenticate] }, async
     const projectRows = await db.select().from(schema.projects)
         .where(eq(schema.projects.userId, request.user.id));
     const projectNames = Object.fromEntries(projectRows.map((p) => [p.id, p.name]));
+    let provisioningErrorMap = {};
+    try {
+        const errorRows = await db.execute(sql`SELECT id, provisioning_error FROM sessions WHERE user_id = ${request.user.id}`);
+        for (const r of errorRows.rows || []) {
+            provisioningErrorMap[r.id] = r.provisioning_error;
+        }
+    } catch {}
     return rows.map((row) => ({
         id: row.id,
         projectId: row.projectId,
@@ -741,7 +756,7 @@ fastify.get('/api/v1/sessions', { preValidation: [fastify.authenticate] }, async
         status: row.status,
         recoverable: Boolean(row.recoverable),
         customImageId: row.customImageId || null,
-        provisioningError: row.provisioningError || null,
+        provisioningError: provisioningErrorMap[row.id] || null,
         shellOnly: row.agentId === 'shell' || undefined,
         memoryStatus: sessionManager.getSession(row.id)?.status ?? row.status,
         alive: sessionManager.isAlive(row.id),
@@ -1089,10 +1104,7 @@ fastify.post('/api/v1/session/start', { preValidation: [fastify.authenticate] },
             runtimeId = ready.runtime.id;
         } catch (err) {
             fastify.log.error({ err, sessionId }, '[sessions] async provisioning: ensureProjectRuntime failed');
-            await db.update(schema.sessions).set({
-                status: 'failed',
-                provisioningError: err instanceof RuntimeError ? err.message : (err.message || 'Failed to prepare project runtime'),
-            }).where(eq(schema.sessions.id, sessionId));
+            await markSessionFailed(sessionId, err instanceof RuntimeError ? err.message : (err.message || 'Failed to prepare project runtime'));
             return;
         }
 
@@ -1113,17 +1125,11 @@ fastify.post('/api/v1/session/start', { preValidation: [fastify.authenticate] },
                 });
             } catch (err) {
                 fastify.log.error({ err, sessionId }, '[sessions] async provisioning: ensureSessionStateDir failed');
-                await db.update(schema.sessions).set({
-                    status: 'failed',
-                    provisioningError: 'Failed to prepare agent state directory',
-                }).where(eq(schema.sessions.id, sessionId));
+                await markSessionFailed(sessionId, 'Failed to prepare agent state directory');
                 return;
             }
             if (!sessionStateDir) {
-                await db.update(schema.sessions).set({
-                    status: 'failed',
-                    provisioningError: 'Failed to prepare agent state directory',
-                }).where(eq(schema.sessions.id, sessionId));
+                await markSessionFailed(sessionId, 'Failed to prepare agent state directory');
                 return;
             }
             resolved.env = applyStateDirEnv(resolved.env, resumeSpec, sessionStateDir.stateDirPath);
@@ -1193,22 +1199,16 @@ fastify.post('/api/v1/session/start', { preValidation: [fastify.authenticate] },
                     );
                 } catch (retryErr) {
                     fastify.log.error({ err: retryErr, sessionId }, '[sessions] spawn retry failed');
-                    await db.update(schema.sessions).set({
-                        status: 'failed',
-                        provisioningError: retryErr instanceof AgentSpawnError
-                            ? retryErr.message
-                            : (retryErr.message || 'Failed to start agent session'),
-                    }).where(eq(schema.sessions.id, sessionId));
+                    await markSessionFailed(sessionId, retryErr instanceof AgentSpawnError
+                        ? retryErr.message
+                        : (retryErr.message || 'Failed to start agent session'));
                     return;
                 }
             } else {
                 fastify.log.error({ err, sessionId }, '[sessions] spawn failed');
-                await db.update(schema.sessions).set({
-                    status: 'failed',
-                    provisioningError: err instanceof AgentSpawnError
-                        ? err.message
-                        : (err.message || 'Failed to start agent session'),
-                }).where(eq(schema.sessions.id, sessionId));
+                await markSessionFailed(sessionId, err instanceof AgentSpawnError
+                    ? err.message
+                    : (err.message || 'Failed to start agent session'));
                 return;
             }
         }
@@ -1248,10 +1248,7 @@ fastify.post('/api/v1/session/start', { preValidation: [fastify.authenticate] },
         }).where(eq(schema.sessions.id, sessionId));
     })().catch((err) => {
         fastify.log.error({ err, sessionId }, '[sessions] async provisioning uncaught error');
-        db.update(schema.sessions).set({
-            status: 'failed',
-            provisioningError: err.message || 'Unexpected error during session provisioning',
-        }).where(eq(schema.sessions.id, sessionId)).catch(() => {});
+        markSessionFailed(sessionId, err.message || 'Unexpected error during session provisioning').catch(() => {});
     });
 });
 

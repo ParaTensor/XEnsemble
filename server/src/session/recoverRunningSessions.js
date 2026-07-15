@@ -1,4 +1,4 @@
-const { eq } = require('drizzle-orm');
+const { eq, sql } = require('drizzle-orm');
 const { registerSessionLifecycle } = require('./resumeSession');
 const { isSessionRecoverable } = require('../agents/agentResume');
 
@@ -18,8 +18,10 @@ async function recoverRunningSessions({
     for (const session of pending) {
         await db.update(schema.sessions).set({
             status: 'failed',
-            provisioningError: 'Server restarted during session provisioning',
         }).where(eq(schema.sessions.id, session.id));
+        try {
+            await db.execute(sql`UPDATE sessions SET provisioning_error = ${'Server restarted during session provisioning'} WHERE id = ${session.id}`);
+        } catch {}
         fastifyLog.warn({ sessionId: session.id }, '[sessions] marked pending session as failed after restart');
     }
 

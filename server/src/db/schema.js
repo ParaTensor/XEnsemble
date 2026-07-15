@@ -95,7 +95,6 @@ const sessions = pgTable('sessions', {
   status: text('status').default('running'),
   title: text('title'),
   customImageId: text('custom_image_id'),
-  provisioningError: text('provisioning_error'),
   createdAt: bigint('created_at', { mode: 'number' }).notNull(),
 });
 

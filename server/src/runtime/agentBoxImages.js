@@ -10,15 +10,19 @@ const DEFAULT_BASE_IMAGE = 'xensemble/box-base:bookworm';
  * Agents with buildable:false are skipped by the build pipeline.
  */
 const AGENT_BOX_IMAGE_CATALOG = {
-    'kimi-code': { tag: 'kimi-code', buildable: true },
-    'claude-code': { tag: 'claude-code', buildable: true },
+    // engines: >=22.19.0 — uses RegExp /v flag, requires Node.js 22+
+    'kimi-code': { tag: 'kimi-code', buildable: true, minNodeVersion: '22' },
+    // engines: >=22.0.0
+    'claude-code': { tag: 'claude-code', buildable: true, minNodeVersion: '22' },
     'droid': {
         tag: 'droid',
         buildable: true,
         install: 'curl -fsSL https://app.factory.ai/cli | sh',
     },
-    'commandcode': { tag: 'commandcode', buildable: true },
-    'openclaw': { tag: 'openclaw', buildable: true },
+    // effective >=20 (ink@6 dep requires node >=20)
+    'commandcode': { tag: 'commandcode', buildable: true, minNodeVersion: '20' },
+    // engines: >=22.22.3 <23 || >=24.15.0 <25 || >=25.9.0
+    'openclaw': { tag: 'openclaw', buildable: true, minNodeVersion: '22' },
     'opencode': {
         tag: 'opencode',
         buildable: true,
@@ -28,13 +32,21 @@ const AGENT_BOX_IMAGE_CATALOG = {
         // root disk is tight and a bloated image leaves no room for runtime data.
         install: 'npm install -g opencode-ai@latest && rm -rf "$(npm root -g)/opencode-ai/node_modules/opencode-linux-x64-baseline"',
     },
+    // prebuilt standalone binary — no Node.js version requirement
     'cline': { tag: 'cline', buildable: true },
+    // no engines field — skip
     'codebuddy': { tag: 'codebuddy', buildable: true },
-    'glm-agent': { tag: 'glm-agent', buildable: true },
-    'qoder': { tag: 'qoder', buildable: true },
-    'qwen-code': { tag: 'qwen-code', buildable: true },
-    'minimax-cli': { tag: 'minimax-cli', buildable: true },
-    'pi': { tag: 'pi', buildable: true, install: 'npm install -g --ignore-scripts @earendil-works/pi-coding-agent' },
+    // engines: >=18.0.0
+    'glm-agent': { tag: 'glm-agent', buildable: true, minNodeVersion: '18' },
+    // engines: >=20.0.0
+    'qoder': { tag: 'qoder', buildable: true, minNodeVersion: '20' },
+    // engines: >=22.0.0
+    'qwen-code': { tag: 'qwen-code', buildable: true, minNodeVersion: '22' },
+    // engines: >=18
+    'minimax-cli': { tag: 'minimax-cli', buildable: true, minNodeVersion: '18' },
+    // engines: >=22.19.0
+    'pi': { tag: 'pi', buildable: true, minNodeVersion: '22', install: 'npm install -g --ignore-scripts @earendil-works/pi-coding-agent' },
+    // prebuilt standalone binary — no Node.js version requirement
     'github-copilot': { tag: 'github-copilot', buildable: true },
     'cursor': { buildable: false, reason: 'install script requires host-specific setup' },
     'amp': { buildable: false, reason: 'install script is host-specific' },

@@ -40,9 +40,9 @@ const LANGUAGE_INSTALL = {
   },
   nodejs: {
     '18': { install: 'curl -fsSL https://nodejs.org/dist/v18.20.7/node-v18.20.7-linux-x64.tar.gz | tar -xz -C /usr/local --strip-components=1', default: false },
-    '20': { install: 'curl -fsSL https://nodejs.org/dist/v20.19.0/node-v20.19.0-linux-x64.tar.gz | tar -xz -C /usr/local --strip-components=1', default: false },
-    '22': { install: 'curl -fsSL https://nodejs.org/dist/v22.15.0/node-v22.15.0-linux-x64.tar.gz | tar -xz -C /usr/local --strip-components=1', default: false },
-    '23': { install: 'curl -fsSL https://nodejs.org/dist/v23.4.0/node-v23.4.0-linux-x64.tar.gz | tar -xz -C /usr/local --strip-components=1', default: false },
+    '20': { install: 'curl -fsSL https://nodejs.org/dist/v20.20.2/node-v20.20.2-linux-x64.tar.gz | tar -xz -C /usr/local --strip-components=1', default: false },
+    '22': { install: 'curl -fsSL https://nodejs.org/dist/v22.23.1/node-v22.23.1-linux-x64.tar.gz | tar -xz -C /usr/local --strip-components=1', default: true },
+    '23': { install: 'curl -fsSL https://nodejs.org/dist/v23.11.1/node-v23.11.1-linux-x64.tar.gz | tar -xz -C /usr/local --strip-components=1', default: false },
   },
   rust: {
     'stable': { install: 'curl --proto "=https" --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable', default: true },
@@ -141,6 +141,7 @@ function buildCatalog() {
         category: CATEGORY_AGENT,
         versions: [{ version: 'latest', is_default: true }],
         defaultVersion: 'latest',
+        ...(entry.minNodeVersion ? { minNodeVersion: entry.minNodeVersion } : {}),
       };
     });
 
@@ -231,6 +232,10 @@ function validateSelection(selection) {
   const unknowns = [];
   const errors = [];
 
+  // Track selected agents and nodejs version for cross-compatibility checks
+  const selectedAgents = [];
+  let selectedNodejsVersion = null;
+
   for (let i = 0; i < selection.length; i++) {
     const item = selection[i];
     const { component_id: componentId, version } = item || {};
@@ -275,12 +280,36 @@ function validateSelection(selection) {
       errors.push(`duplicate component: "${component.name}" (${componentId})`);
     }
     seen.add(componentId);
+
+    if (componentId.startsWith('agent:')) {
+      selectedAgents.push({ componentId, name: component.name });
+    }
+    if (componentId === 'lang:nodejs') {
+      selectedNodejsVersion = version;
+    }
   }
 
   if (unknowns.length > 0) {
     errors.push(
       `unknown component id(s): ${unknowns.join(', ')}`,
     );
+  }
+
+  // Cross-compatibility: check agent minNodeVersion requirements
+  if (selectedNodejsVersion) {
+    const selectedNodeMajor = parseInt(selectedNodejsVersion, 10);
+    for (const agent of selectedAgents) {
+      const agentId = agent.componentId.slice('agent:'.length);
+      const catalogEntry = AGENT_BOX_IMAGE_CATALOG[agentId];
+      if (catalogEntry?.minNodeVersion) {
+        const requiredMajor = parseInt(catalogEntry.minNodeVersion, 10);
+        if (!Number.isNaN(selectedNodeMajor) && !Number.isNaN(requiredMajor) && selectedNodeMajor < requiredMajor) {
+          errors.push(
+            `agent "${agent.name}" requires Node.js >= ${catalogEntry.minNodeVersion}, but Node.js ${selectedNodejsVersion} was selected`,
+          );
+        }
+      }
+    }
   }
 
   if (errors.length > 0) {

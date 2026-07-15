@@ -141,3 +141,108 @@ test('selectionToInstallList maps selection to install fragments', () => {
   assert.equal(list[1].component_id, 'agent:claude-code');
   assert.equal(list[1].category, CATEGORY_AGENT);
 });
+
+// --- Agent × Node.js cross-compatibility tests ---
+
+// Helper: test all agents that require Node.js >= 22
+const NODE22_AGENTS = ['kimi-code', 'claude-code', 'qwen-code', 'openclaw', 'pi'];
+for (const agentId of NODE22_AGENTS) {
+  test(`validateSelection rejects ${agentId} with Node.js 18`, () => {
+    const result = validateSelection([
+      { component_id: `agent:${agentId}`, version: 'latest' },
+      { component_id: 'lang:nodejs', version: '18' },
+    ]);
+    assert.equal(result.ok, false);
+    assert.match(result.error, /requires Node.js >= 22.*Node.js 18/);
+  });
+
+  test(`validateSelection rejects ${agentId} with Node.js 20`, () => {
+    const result = validateSelection([
+      { component_id: `agent:${agentId}`, version: 'latest' },
+      { component_id: 'lang:nodejs', version: '20' },
+    ]);
+    assert.equal(result.ok, false);
+    assert.match(result.error, /requires Node.js >= 22.*Node.js 20/);
+  });
+
+  test(`validateSelection accepts ${agentId} with Node.js 22`, () => {
+    const result = validateSelection([
+      { component_id: `agent:${agentId}`, version: 'latest' },
+      { component_id: 'lang:nodejs', version: '22' },
+    ]);
+    assert.equal(result.ok, true);
+  });
+
+  test(`validateSelection accepts ${agentId} without explicit Node.js`, () => {
+    const result = validateSelection([
+      { component_id: `agent:${agentId}`, version: 'latest' },
+      { component_id: 'lang:python', version: '3.11' },
+    ]);
+    assert.equal(result.ok, true);
+  });
+}
+
+// Helper: test all agents that require Node.js >= 20
+const NODE20_AGENTS = ['qoder', 'commandcode'];
+for (const agentId of NODE20_AGENTS) {
+  test(`validateSelection rejects ${agentId} with Node.js 18`, () => {
+    const result = validateSelection([
+      { component_id: `agent:${agentId}`, version: 'latest' },
+      { component_id: 'lang:nodejs', version: '18' },
+    ]);
+    assert.equal(result.ok, false);
+    assert.match(result.error, /requires Node.js >= 20.*Node.js 18/);
+  });
+
+  test(`validateSelection accepts ${agentId} with Node.js 20`, () => {
+    const result = validateSelection([
+      { component_id: `agent:${agentId}`, version: 'latest' },
+      { component_id: 'lang:nodejs', version: '20' },
+    ]);
+    assert.equal(result.ok, true);
+  });
+}
+
+// Helper: test all agents that require Node.js >= 18
+const NODE18_AGENTS = ['glm-agent', 'minimax-cli'];
+for (const agentId of NODE18_AGENTS) {
+  test(`validateSelection accepts ${agentId} with Node.js 18`, () => {
+    const result = validateSelection([
+      { component_id: `agent:${agentId}`, version: 'latest' },
+      { component_id: 'lang:nodejs', version: '18' },
+    ]);
+    assert.equal(result.ok, true);
+  });
+}
+
+// Agents without minNodeVersion — should accept any Node.js version
+const NO_REQUIREMENT_AGENTS = ['opencode', 'cline', 'codebuddy', 'github-copilot', 'droid'];
+for (const agentId of NO_REQUIREMENT_AGENTS) {
+  test(`validateSelection accepts ${agentId} with Node.js 18 (no minNodeVersion)`, () => {
+    const result = validateSelection([
+      { component_id: `agent:${agentId}`, version: 'latest' },
+      { component_id: 'lang:nodejs', version: '18' },
+    ]);
+    assert.equal(result.ok, true);
+  });
+}
+
+test('validateSelection reports error for the highest-requirement agent when multiple selected', () => {
+  const result = validateSelection([
+    { component_id: 'agent:kimi-code', version: 'latest' },
+    { component_id: 'agent:qoder', version: 'latest' },
+    { component_id: 'lang:nodejs', version: '18' },
+  ]);
+  assert.equal(result.ok, false);
+  assert.match(result.error, /kimi-code.*requires Node.js >= 22/);
+  assert.match(result.error, /qoder.*requires Node.js >= 20/);
+});
+
+test('catalog exposes minNodeVersion for agents that declare it', () => {
+  const catalog = getCatalog();
+  const kimi = catalog.find((c) => c.id === 'agent:kimi-code');
+  assert.equal(kimi.minNodeVersion, '22');
+
+  const opencode = catalog.find((c) => c.id === 'agent:opencode');
+  assert.equal(opencode.minNodeVersion, undefined);
+});
