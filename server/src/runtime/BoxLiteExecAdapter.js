@@ -1,6 +1,7 @@
 const { ExecAdapter, AgentSpawnError, StreamHandle } = require('./interfaces');
 const BoxLiteClient = require('./BoxLiteClient');
-const { decodeExecutionFrame } = BoxLiteClient;
+const { decodeExecutionFrameRaw } = BoxLiteClient;
+const { StringDecoder } = require('string_decoder');
 
 class BoxLiteStreamHandle extends StreamHandle {
     constructor(ws, streamRef, options = {}) {
@@ -11,13 +12,19 @@ class BoxLiteStreamHandle extends StreamHandle {
         this._dataCbs = [];
         this._exitCbs = [];
         this._closed = false;
+        this._decoders = {};
 
         ws.on('message', (data, isBinary) => {
             if (isBinary) {
                 const buf = Buffer.from(data);
-                const decoded = decodeExecutionFrame(buf, this._preferSeqFrames);
-                for (const cb of this._dataCbs) {
-                    try { cb(decoded.payload, decoded.rseq, decoded.channel); } catch (_) {}
+                const decoded = decodeExecutionFrameRaw(buf, this._preferSeqFrames);
+                const ch = decoded.channel;
+                if (ch !== undefined) {
+                    if (!this._decoders[ch]) this._decoders[ch] = new StringDecoder('utf8');
+                    var payload = this._decoders[ch].write(decoded.payload);
+                    for (const cb of this._dataCbs) {
+                        try { cb(payload, decoded.rseq, ch); } catch (_) {}
+                    }
                 }
             } else {
                 try {
@@ -111,7 +118,14 @@ class BoxLiteExecAdapter extends ExecAdapter {
         const spec = {
             command: String(cmd || 'sh'),
             args: Array.isArray(args) ? args : [],
-            env: env || {},
+            env: {
+                LANG: 'C.UTF-8',
+                LC_ALL: 'C.UTF-8',
+                TERM: 'xterm-256color',
+                COLUMNS: '120',
+                LINES: '32',
+                ...env,
+            },
             tty: true,
             rows: 32,
             cols: 120,

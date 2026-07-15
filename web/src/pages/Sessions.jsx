@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import AgentConsole from '../components/AgentConsole';
 import WorkspaceFileTree from '../components/WorkspaceFileTree';
@@ -110,6 +110,12 @@ export default React.forwardRef(function Sessions({
   const [_error, setError] = useState(null);
   const [panelOpen, setPanelOpen] = useState(false);
   const [panelTab, setPanelTab] = useState('files');
+  const [panelWidth, setPanelWidth] = useState(() => {
+    const saved = typeof window !== 'undefined' ? window.localStorage.getItem('xensemble.panel.width') : null;
+    const w = saved ? parseInt(saved, 10) : NaN;
+    return Number.isFinite(w) && w >= 280 && w <= 640 ? w : 320;
+  });
+  const resizingRef = useRef(null);
   const [workspaceFiles, setWorkspaceFiles] = useState([]);
   const [isLoadingFiles, setIsLoadingFiles] = useState(false);
   const [showHiddenFiles, setShowHiddenFiles] = useState(false);
@@ -137,6 +143,33 @@ export default React.forwardRef(function Sessions({
   const [createNewWorkspaceInline, setCreateNewWorkspaceInline] = useState(false);
   const [customImageId, setCustomImageId] = useState('');
   const [customImages, setCustomImages] = useState([]);
+
+  useEffect(() => {
+    if (panelWidth >= 280 && panelWidth <= 640) {
+      window.localStorage.setItem('xensemble.panel.width', String(panelWidth));
+    }
+  }, [panelWidth]);
+
+  const startPanelResize = useCallback((e) => {
+    e.preventDefault();
+    const startX = e.clientX;
+    const startW = panelWidth;
+    const onMove = (ev) => {
+      const delta = startX - ev.clientX;
+      const next = Math.min(640, Math.max(280, startW + delta));
+      setPanelWidth(next);
+    };
+    const onUp = () => {
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    };
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+  }, [panelWidth]);
 
   const getAgentLabel = useCallback(
     (agentId) => agents.find((a) => a.id === agentId)?.name || agentId,
@@ -1239,7 +1272,13 @@ export default React.forwardRef(function Sessions({
                 <GitStatusBar projectId={activeSession.projectId} project={activeProject} />
               </div>
               {panelOpen && (
-                <div className="flex min-h-0 w-80 shrink-0 flex-col border-l border-[#E8EAED] bg-white">
+                <>
+                <div
+                  onMouseDown={startPanelResize}
+                  className="w-1 shrink-0 cursor-col-resize bg-[#E8EAED] hover:bg-[#202124] transition-colors"
+                  title="Drag to resize"
+                />
+                <div className="flex min-h-0 shrink-0 flex-col border-l border-[#E8EAED] bg-white" style={{ width: panelWidth }}>
                   <div className="flex h-12 items-center justify-between border-b border-[#E8EAED] px-3 shrink-0">
                     <div className="flex items-center gap-1">
                       <button
@@ -1317,6 +1356,7 @@ export default React.forwardRef(function Sessions({
                     <WorkspaceShell projectId={activeSession.projectId} />
                   </div>
                 </div>
+                </>
               )}
             </div>
             )

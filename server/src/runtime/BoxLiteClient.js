@@ -1,11 +1,12 @@
 const WebSocket = require('ws');
+const { StringDecoder } = require('string_decoder');
 
-function decodeExecutionFrame(buf, seqFramed = true) {
+function decodeExecutionFrameRaw(buf, seqFramed = true) {
     const channel = buf.length > 0 ? buf[0] : undefined;
     if (!seqFramed) {
         return {
             channel,
-            payload: buf.length > 1 ? buf.slice(1).toString('utf8') : '',
+            payload: buf.length > 1 ? buf.slice(1) : Buffer.alloc(0),
             rseq: undefined,
         };
     }
@@ -13,15 +14,24 @@ function decodeExecutionFrame(buf, seqFramed = true) {
     if (buf.length < 9) {
         return {
             channel,
-            payload: '',
+            payload: Buffer.alloc(0),
             rseq: undefined,
         };
     }
 
     return {
         channel,
-        payload: buf.slice(9).toString('utf8'),
+        payload: buf.slice(9),
         rseq: Number(buf.readBigUInt64BE(1)),
+    };
+}
+
+function decodeExecutionFrame(buf, seqFramed = true) {
+    const { channel, payload, rseq } = decodeExecutionFrameRaw(buf, seqFramed);
+    return {
+        channel,
+        payload: payload.toString('utf8'),
+        rseq,
     };
 }
 
@@ -160,19 +170,21 @@ class BoxLiteClient {
             let stdout = '';
             let stderr = '';
             let settled = false;
+            const decoders = { 0x01: new StringDecoder('utf8'), 0x02: new StringDecoder('utf8') };
             const done = (code) => {
                 if (settled) return;
                 settled = true;
+                stdout += decoders[0x01].end();
+                stderr += decoders[0x02].end();
                 try { ws.close(); } catch (_) {}
                 resolve({ exitCode: code ?? 0, stdout, stderr });
             };
             ws.on('message', (data, isBinary) => {
                 if (isBinary) {
                     const buf = Buffer.from(data);
-                    const decoded = decodeExecutionFrame(buf, true);
-                    const text = decoded.payload;
-                    if (decoded.channel === 0x01) stdout += text;
-                    else if (decoded.channel === 0x02) stderr += text;
+                    const decoded = decodeExecutionFrameRaw(buf, true);
+                    if (decoded.channel === 0x01) stdout += decoders[0x01].write(decoded.payload);
+                    else if (decoded.channel === 0x02) stderr += decoders[0x02].write(decoded.payload);
                 } else {
                     try {
                         const msg = JSON.parse(data.toString());
@@ -260,3 +272,4 @@ class BoxLiteClient {
 
 module.exports = BoxLiteClient;
 module.exports.decodeExecutionFrame = decodeExecutionFrame;
+module.exports.decodeExecutionFrameRaw = decodeExecutionFrameRaw;
