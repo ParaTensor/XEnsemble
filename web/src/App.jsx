@@ -3,8 +3,7 @@ import { Routes, Route, useNavigate, useLocation, Navigate } from 'react-router-
 import Login from './pages/Login';
 import Sessions from './pages/Sessions';
 import AgentsAdmin from './pages/AgentsAdmin';
-import ImagesAdmin from './pages/ImagesAdmin';
-import CustomImages from './pages/CustomImages';
+import ImagesManager from './pages/ImagesManager';
 import UsersAdmin from './pages/UsersAdmin';
 import GatewayAdmin from './pages/GatewayAdmin';
 import AppSidebar from './components/AppSidebar';
@@ -43,6 +42,7 @@ function AuthenticatedLayout({
   const isGatewayAdmin = location.pathname === '/admin/gateway';
   const isImagesAdmin = location.pathname === '/admin/images';
   const isCustomImages = location.pathname === '/custom-images';
+  const isImagesManager = isCustomImages || isImagesAdmin;
 
   const offRouteClass = 'pointer-events-none invisible absolute inset-0 z-0 [&_*]:pointer-events-none';
 
@@ -127,24 +127,14 @@ function AuthenticatedLayout({
               <GatewayAdmin />
             </div>
         )}
-        {user?.role === 'admin' && isImagesAdmin && (
+        {isImagesManager && (
             <div
               className={cn(
                 'relative z-10 flex min-h-0 flex-1 flex-col overflow-auto console-scroll-hidden',
                 APP_SHELL_ADMIN_CLASS,
               )}
             >
-              <ImagesAdmin />
-            </div>
-        )}
-        {isCustomImages && (
-            <div
-              className={cn(
-                'relative z-10 flex min-h-0 flex-1 flex-col overflow-auto console-scroll-hidden',
-                APP_SHELL_ADMIN_CLASS,
-              )}
-            >
-              <CustomImages />
+              <ImagesManager />
             </div>
         )}
       </main>
@@ -305,7 +295,7 @@ function App() {
               />
               <Route
                 path="/admin/images"
-                element={user?.role === 'admin' ? null : <Navigate to="/sessions" replace />}
+                element={user?.role === 'admin' ? null : <Navigate to="/custom-images" replace />}
               />
             </Route>
 

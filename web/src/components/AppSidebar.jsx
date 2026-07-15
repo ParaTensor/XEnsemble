@@ -19,7 +19,6 @@ import {
   Bot,
   Globe,
   Container,
-  Boxes,
   GitBranch,
   Loader2,
 } from 'lucide-react';
@@ -184,8 +183,8 @@ function SidebarAccountMenu({ user, onOpenSettings, onLogout, adminLinkClass }) 
         </p>
       )}
       <NavLink to="/custom-images" className={adminLinkClass} onClick={close}>
-        <Boxes className="w-3.5 h-3.5 shrink-0" strokeWidth={1.75} />
-        Custom Images
+        <Container className="w-3.5 h-3.5 shrink-0" strokeWidth={1.75} />
+        Images
       </NavLink>
       {isAdmin && (
         <>
@@ -200,10 +199,6 @@ function SidebarAccountMenu({ user, onOpenSettings, onLogout, adminLinkClass }) 
           <NavLink to="/admin/gateway" className={adminLinkClass} onClick={close}>
             <Globe className="w-3.5 h-3.5 shrink-0" strokeWidth={1.75} />
             Gateway
-          </NavLink>
-          <NavLink to="/admin/images" className={adminLinkClass} onClick={close}>
-            <Container className="w-3.5 h-3.5 shrink-0" strokeWidth={1.75} />
-            Images
           </NavLink>
           <div className="my-1 border-t border-[#E8EAED]" />
         </>

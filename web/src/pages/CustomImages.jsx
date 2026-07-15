@@ -64,7 +64,7 @@ async function fetchImages() {
   return { images: data.images ?? data, count: data.count, max: data.max };
 }
 
-export default function CustomImages() {
+export function CustomImagesContent() {
   const { showToast } = useToast();
   const nameRef = useRef(null);
   const [loading, setLoading] = useState(true);
@@ -213,7 +213,7 @@ export default function CustomImages() {
   const enabled = catalog?.enabled !== false;
 
   return (
-    <div className={consoleAdminPageClass}>
+    <>
       <PageHeader
         title="Custom Images"
         description="Build custom agent images from curated components"
@@ -519,6 +519,14 @@ export default function CustomImages() {
           </tbody>
         </table>
       </div>
+    </>
+  );
+}
+
+export default function CustomImages() {
+  return (
+    <div className={consoleAdminPageClass}>
+      <CustomImagesContent />
     </div>
   );
 }

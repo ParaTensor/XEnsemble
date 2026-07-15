@@ -56,7 +56,7 @@ function activeBadge(isActive) {
     : 'bg-zinc-50 text-zinc-600 border-zinc-200';
 }
 
-export default function ImagesAdmin() {
+export function ImagesAdminContent() {
   const { showToast } = useToast();
   const [loading, setLoading] = useState(true);
   const [catalog, setCatalog] = useState(null);
@@ -145,7 +145,7 @@ export default function ImagesAdmin() {
   };
 
   return (
-    <div className={consoleAdminPageClass}>
+    <>
       <PageHeader
         title="Images"
         description="Register and pin OCI rootfs images for sandbox agent runtimes."
@@ -344,6 +344,14 @@ export default function ImagesAdmin() {
           </form>
         </ConsoleDialogShell>
       )}
+    </>
+  );
+}
+
+export default function ImagesAdmin() {
+  return (
+    <div className={consoleAdminPageClass}>
+      <ImagesAdminContent />
     </div>
   );
 }
