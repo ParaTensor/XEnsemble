@@ -1,1 +1,1 @@
-ALTER TABLE "sessions" ADD COLUMN "provisioning_error" text;
+ALTER TABLE "sessions" ADD COLUMN IF NOT EXISTS "provisioning_error" text;

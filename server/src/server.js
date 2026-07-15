@@ -58,10 +58,7 @@ const { resolveRuntimeProvider, DEFAULT_RUNTIME_PROVIDER } = require('./config/r
 const runtime = getRuntime();
 
 async function markSessionFailed(sessionId, errMsg, log) {
-    await db.update(schema.sessions).set({ status: 'failed' }).where(eq(schema.sessions.id, sessionId));
-    try {
-        await db.execute(sql`UPDATE sessions SET provisioning_error = ${errMsg} WHERE id = ${sessionId}`);
-    } catch {}
+    await db.update(schema.sessions).set({ status: 'failed', provisioningError: errMsg }).where(eq(schema.sessions.id, sessionId));
     if (log) log({ sessionId }, `[sessions] provisioning failed: ${errMsg}`);
 }
 
