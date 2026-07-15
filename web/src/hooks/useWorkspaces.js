@@ -68,9 +68,10 @@ export function useWorkspaces(user) {
   useEffect(() => {
     if (!user?.id) return undefined;
     fetchWorkspaces();
-    const poll = setInterval(fetchWorkspaces, 5000);
+    const hasPending = sessions.some((s) => s.status === 'pending');
+    const poll = setInterval(fetchWorkspaces, hasPending ? 2000 : 5000);
     return () => clearInterval(poll);
-  }, [fetchWorkspaces, user?.id]);
+  }, [fetchWorkspaces, user?.id, sessions]);
 
   useEffect(() => {
     if (sessions.length === 0) return;

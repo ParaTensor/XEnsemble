@@ -10,6 +10,19 @@ async function recoverRunningSessions({
     transcriptStore,
     fastifyLog,
 }) {
+    // Mark sessions left in 'pending' state as 'failed' — the async provisioning
+    // was interrupted by a server restart and cannot be resumed.
+    const pending = await db.select({ id: schema.sessions.id })
+        .from(schema.sessions)
+        .where(eq(schema.sessions.status, 'pending'));
+    for (const session of pending) {
+        await db.update(schema.sessions).set({
+            status: 'failed',
+            provisioningError: 'Server restarted during session provisioning',
+        }).where(eq(schema.sessions.id, session.id));
+        fastifyLog.warn({ sessionId: session.id }, '[sessions] marked pending session as failed after restart');
+    }
+
     const running = await db.select({
         id: schema.sessions.id,
         userId: schema.sessions.userId,

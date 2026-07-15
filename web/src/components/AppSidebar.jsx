@@ -456,7 +456,9 @@ export default function AppSidebar({
   const renderNestedSessionRow = (s, ws) => {
     const isActive = activeSession?.sessionId === s.id;
     const isLive = s.alive === true;
-    const canResume = !isLive && s.recoverable === true;
+    const isPending = s.status === 'pending';
+    const isFailed = s.status === 'failed';
+    const canResume = !isLive && !isPending && !isFailed && s.recoverable === true;
     const isResuming = resumingSessionId === s.id;
     const label = s.title?.trim() || getAgentLabel(s.agentId);
     const timestamp = s.createdAt ? formatRelativeTime(s.createdAt) : '';
@@ -483,6 +485,12 @@ export default function AppSidebar({
               <Container className="w-2.5 h-2.5 shrink-0" />
               {imageName}
             </span>
+          )}
+          {isPending && (
+            <Loader2 className="w-3 h-3 shrink-0 animate-spin text-[#E8B339]" />
+          )}
+          {isFailed && (
+            <span className="w-1.5 h-1.5 rounded-full bg-[#C06C5D] shrink-0" />
           )}
           {timestamp && (
             <span className={`shrink-0 text-[11px] ${textPlaceholder}`}>{timestamp}</span>

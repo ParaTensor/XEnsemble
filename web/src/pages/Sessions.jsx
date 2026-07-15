@@ -304,6 +304,8 @@ export default React.forwardRef(function Sessions({
         throw new Error(msg);
       }
 
+      const isPending = response.status === 202 || data.status === 'pending';
+
       rememberRecentSession({
         id: data.session_id,
         agentId: selectedAgentId,
@@ -330,7 +332,7 @@ export default React.forwardRef(function Sessions({
             projectId,
             agentId: selectedAgentId,
             status: data.status || 'running',
-            alive: true,
+            alive: !isPending,
             projectName: projectName || projectId,
             createdAt: now,
           },
@@ -747,7 +749,9 @@ export default React.forwardRef(function Sessions({
     [sessions, activeSession?.sessionId],
   );
   const sessionAlive = activeSessionMeta?.alive === true;
-  const sessionWakeable = !sessionAlive
+  const sessionPending = activeSessionMeta?.status === 'pending';
+  const sessionFailed = activeSessionMeta?.status === 'failed';
+  const sessionWakeable = !sessionAlive && !sessionPending && !sessionFailed
     && activeSessionMeta?.recoverable === true
     && activeSessionMeta?.status === 'idle';
   const sessionControlPending = restartingSession || stoppingSession;
@@ -1088,10 +1092,10 @@ export default React.forwardRef(function Sessions({
                   </div>
                   <div className="flex items-center gap-1.5 shrink-0">
                     <span
-                      className={`w-1.5 h-1.5 rounded-full ${sessionAlive ? 'bg-[#4A7C59]' : 'bg-[#9AA0A6]'}`}
+                      className={`w-1.5 h-1.5 rounded-full ${sessionAlive ? 'bg-[#4A7C59]' : sessionPending ? 'bg-[#E8B339]' : sessionFailed ? 'bg-[#C06C5D]' : 'bg-[#9AA0A6]'}`}
                     />
                     <span className="text-[11px] text-[#9AA0A6]">
-                      {sessionAlive ? 'Running' : sessionWakeable ? 'Idle' : 'Stopped'}
+                      {sessionAlive ? 'Running' : sessionPending ? 'Preparing…' : sessionFailed ? 'Failed' : sessionWakeable ? 'Idle' : 'Stopped'}
                     </span>
                   </div>
                 </>
@@ -1103,52 +1107,56 @@ export default React.forwardRef(function Sessions({
               {activeSession && (
                 <>
                   <div className="mx-0.5 h-5 w-px bg-[#E8EAED]" />
-                  {sessionAlive ? (
-                    <button
-                      type="button"
-                      onClick={handleStopSession}
-                      disabled={sessionControlPending}
-                      className={`${consoleIconButtonClass} disabled:opacity-50 disabled:cursor-not-allowed`}
-                      title={stoppingSession ? 'Pausing…' : 'Pause session (keep history)'}
-                      aria-label={stoppingSession ? 'Pausing session' : 'Pause session'}
-                    >
-                      {stoppingSession ? (
-                        <Loader2 className="w-4 h-4 animate-spin" strokeWidth={1.75} />
+                  {!sessionPending && !sessionFailed && (
+                    <>
+                      {sessionAlive ? (
+                        <button
+                          type="button"
+                          onClick={handleStopSession}
+                          disabled={sessionControlPending}
+                          className={`${consoleIconButtonClass} disabled:opacity-50 disabled:cursor-not-allowed`}
+                          title={stoppingSession ? 'Pausing…' : 'Pause session (keep history)'}
+                          aria-label={stoppingSession ? 'Pausing session' : 'Pause session'}
+                        >
+                          {stoppingSession ? (
+                            <Loader2 className="w-4 h-4 animate-spin" strokeWidth={1.75} />
+                          ) : (
+                            <Square className="w-4 h-4" strokeWidth={1.75} />
+                          )}
+                        </button>
                       ) : (
-                        <Square className="w-4 h-4" strokeWidth={1.75} />
+                        <button
+                          type="button"
+                          onClick={handleRestartSession}
+                          disabled={sessionControlPending}
+                          className={`${consoleIconButtonClass} disabled:opacity-50 disabled:cursor-not-allowed`}
+                          title={restartingSession ? 'Starting…' : 'Start session'}
+                          aria-label={restartingSession ? 'Starting session' : 'Start session'}
+                        >
+                          {restartingSession ? (
+                            <Loader2 className="w-4 h-4 animate-spin" strokeWidth={1.75} />
+                          ) : (
+                            <Play className="w-4 h-4" strokeWidth={1.75} />
+                          )}
+                        </button>
                       )}
-                    </button>
-                  ) : (
-                    <button
-                      type="button"
-                      onClick={handleRestartSession}
-                      disabled={sessionControlPending}
-                      className={`${consoleIconButtonClass} disabled:opacity-50 disabled:cursor-not-allowed`}
-                      title={restartingSession ? 'Starting…' : 'Start session'}
-                      aria-label={restartingSession ? 'Starting session' : 'Start session'}
-                    >
-                      {restartingSession ? (
-                        <Loader2 className="w-4 h-4 animate-spin" strokeWidth={1.75} />
-                      ) : (
-                        <Play className="w-4 h-4" strokeWidth={1.75} />
+                      {sessionAlive && (
+                        <button
+                          type="button"
+                          onClick={handleRestartSession}
+                          disabled={sessionControlPending}
+                          className={`${consoleIconButtonClass} disabled:opacity-50 disabled:cursor-not-allowed`}
+                          title={restartingSession ? 'Restarting…' : 'Restart session'}
+                          aria-label={restartingSession ? 'Restarting session' : 'Restart session'}
+                        >
+                          {restartingSession ? (
+                            <Loader2 className="w-4 h-4 animate-spin" strokeWidth={1.75} />
+                          ) : (
+                            <RefreshCw className="w-4 h-4" strokeWidth={1.75} />
+                          )}
+                        </button>
                       )}
-                    </button>
-                  )}
-                  {sessionAlive && (
-                    <button
-                      type="button"
-                      onClick={handleRestartSession}
-                      disabled={sessionControlPending}
-                      className={`${consoleIconButtonClass} disabled:opacity-50 disabled:cursor-not-allowed`}
-                      title={restartingSession ? 'Restarting…' : 'Restart session'}
-                      aria-label={restartingSession ? 'Restarting session' : 'Restart session'}
-                    >
-                      {restartingSession ? (
-                        <Loader2 className="w-4 h-4 animate-spin" strokeWidth={1.75} />
-                      ) : (
-                        <RefreshCw className="w-4 h-4" strokeWidth={1.75} />
-                      )}
-                    </button>
+                    </>
                   )}
                   <button
                     type="button"
@@ -1173,6 +1181,42 @@ export default React.forwardRef(function Sessions({
             </div>
           </div>
           {activeSession ? (
+            sessionPending ? (
+              <div className="flex min-h-0 flex-1 flex-col items-center justify-center bg-white p-8 text-center">
+                <Loader2 className="w-8 h-8 text-[#9AA0A6] animate-spin mb-4" strokeWidth={1.5} />
+                <h3 className="text-lg font-semibold text-[#202124] mb-1.5">Preparing your environment…</h3>
+                <p className="text-sm text-[#9AA0A6] max-w-sm">
+                  Pulling image and starting virtual machine. This usually takes less than a minute.
+                </p>
+              </div>
+            ) : sessionFailed ? (
+              <div className="flex min-h-0 flex-1 flex-col items-center justify-center bg-white p-8 text-center">
+                <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-[#FDECEA] mb-5">
+                  <X className="w-7 h-7 text-[#C06C5D]" strokeWidth={1.5} />
+                </div>
+                <h3 className="text-lg font-semibold text-[#202124] mb-1.5">Session failed to start</h3>
+                <p className="text-sm text-[#9AA0A6] max-w-md mb-5">
+                  {activeSessionMeta?.provisioningError || 'An unexpected error occurred during provisioning.'}
+                </p>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => handleDeleteSession(activeSession.sessionId)}
+                    className="h-9 px-4 flex items-center gap-2 bg-[#C06C5D] text-white rounded-md text-sm font-medium hover:bg-[#A85544] disabled:opacity-50 transition-colors"
+                  >
+                    <Trash2 className="w-4 h-4" strokeWidth={1.75} />
+                    Delete session
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setActiveSession(null)}
+                    className="h-9 px-4 flex items-center gap-2 bg-white border border-[#E8EAED] text-[#202124] rounded-md text-sm font-medium hover:bg-[#F4F5F6] transition-colors"
+                  >
+                    Dismiss
+                  </button>
+                </div>
+              </div>
+            ) : (
             <div className="flex min-h-0 min-w-0 flex-1 flex-row overflow-hidden">
               <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
                 <div className="flex min-h-0 flex-1 flex-col p-4">
@@ -1275,6 +1319,7 @@ export default React.forwardRef(function Sessions({
                 </div>
               )}
             </div>
+            )
           ) : launchingSession ? (
             <div className="flex-1 bg-white" />
           ) : (

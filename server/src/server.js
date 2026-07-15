@@ -741,6 +741,7 @@ fastify.get('/api/v1/sessions', { preValidation: [fastify.authenticate] }, async
         status: row.status,
         recoverable: Boolean(row.recoverable),
         customImageId: row.customImageId || null,
+        provisioningError: row.provisioningError || null,
         shellOnly: row.agentId === 'shell' || undefined,
         memoryStatus: sessionManager.getSession(row.id)?.status ?? row.status,
         alive: sessionManager.isAlive(row.id),
@@ -963,27 +964,28 @@ fastify.post('/api/v1/session/start', { preValidation: [fastify.authenticate] },
         }
     }
 
-    let workspacePath;
-    let runtimeId;
-    let ready;
-    try {
-        ready = await ensureProjectRuntime(project, {
-            agentId: isShellOnly ? 'shell' : agent_id,
-            ...(customImageRef ? { image: customImageRef } : {}),
-        });
-        workspacePath = ready.workspacePath;
-        runtimeId = ready.runtime.id;
-    } catch (err) {
-        if (err instanceof RuntimeError) {
-            return sendPublicError(reply, err, 'Failed to prepare project runtime', err.statusCode);
-        }
-        request.log.error(err);
-        return reply.code(500).send({ error: 'Project workspace directory is missing and could not be recreated' });
-    }
-
     const sessionId = `sess_${crypto.randomBytes(8).toString('hex')}`;
 
+    // --- shell-only: synchronous fast path (no agent spawn, default image) ---
     if (isShellOnly) {
+        let workspacePath;
+        let runtimeId;
+        let ready;
+        try {
+            ready = await ensureProjectRuntime(project, {
+                agentId: 'shell',
+                ...(customImageRef ? { image: customImageRef } : {}),
+            });
+            workspacePath = ready.workspacePath;
+            runtimeId = ready.runtime.id;
+        } catch (err) {
+            if (err instanceof RuntimeError) {
+                return sendPublicError(reply, err, 'Failed to prepare project runtime', err.statusCode);
+            }
+            request.log.error(err);
+            return reply.code(500).send({ error: 'Project workspace directory is missing and could not be recreated' });
+        }
+
         await db.insert(schema.sessions).values({
             id: sessionId,
             userId: request.user.id,
@@ -1008,7 +1010,7 @@ fastify.post('/api/v1/session/start', { preValidation: [fastify.authenticate] },
         });
     }
 
-    // --- regular agent session path below ---
+    // --- regular agent session: async provisioning ---
 
     const dbAgents = await db.select().from(schema.agents).where(eq(schema.agents.id, agent_id));
     if (dbAgents.length === 0) return reply.code(404).send({ error: 'Agent not found' });
@@ -1048,153 +1050,209 @@ fastify.post('/api/v1/session/start', { preValidation: [fastify.authenticate] },
         return reply.code(400).send({ error: resolved.error });
     }
 
-    const sessionStateDir = resumeSpec?.stateEnv
-        ? await ensureSessionStateDir(runtime.fs, {
-            workspaceRoot: workspacePath,
-            sessionId,
-            runtimeRef: ready.runtime ? ready.runtime.runtimeRef : undefined,
-        })
-        : null;
-    if (resumeSpec?.stateEnv && !sessionStateDir) {
-        return reply.code(500).send({ error: 'Failed to prepare agent state directory' });
-    }
-    if (sessionStateDir) {
-        resolved.env = applyStateDirEnv(resolved.env, resumeSpec, sessionStateDir.stateDirPath);
-    }
-
-    try {
-        const { ensureKimiConfig } = require('./workspace/kimiConfigBootstrap');
-        await ensureKimiConfig({
-            runtime,
-            runtimeRef: ready.runtime ? ready.runtime.runtimeRef : undefined,
-            userId: request.user.id,
-            agentId: agentMeta.id,
-            warn: (msg) => request.log.warn(msg),
-        });
-    } catch (err) {
-        request.log.warn(err, '[sessions] kimi config bootstrap failed');
-    }
-
-    if (project && project.repoProvider === 'github') {
-        resolved.env.XENSEMBLE_GIT_BRANCH = project.currentBranch || '';
-        resolved.env.XENSEMBLE_GIT_BASE_BRANCH = project.repoDefaultBranch || '';
-        resolved.env.XENSEMBLE_REPO_URL = project.githubFullName || '';
-    }
-
+    // Insert session as pending — user sees a provisioning UI immediately
     await db.insert(schema.sessions).values({
         id: sessionId,
         userId: request.user.id,
         projectId: project_id,
-        runtimeId,
+        runtimeId: null,
         agentId: agent_id,
-        cwd: workspacePath,
+        cwd: '',
         streamRef: null,
-        stateDirRef: sessionStateDir?.stateDirRef || null,
+        stateDirRef: null,
         recoverable,
-        status: 'running',
+        status: 'pending',
         customImageId: custom_image_id || null,
         createdAt: Date.now(),
     });
 
-    let handle;
-    const spawnOpts = {
-        name: agentMeta.name,
-        cwd: workspacePath,
-        runtimeRef: ready.runtime ? ready.runtime.runtimeRef : undefined,
-        uid: process.env.RUNTIME_UID,
-        gid: process.env.RUNTIME_GID,
-    };
-    try {
-        handle = await runtime.exec.spawn(
-            agentMeta.cmd,
-            agentMeta.args,
-            resolved.env,
-            spawnOpts,
-        );
-    } catch (err) {
-        if (
-            err instanceof AgentSpawnError
-            && resolveRuntimeProvider() === 'boxlite'
-            && ready.runtime?.runtimeRef
-        ) {
-            request.log.warn(err, '[sessions] spawn failed, recreating boxlite runtime');
-            try {
-                ready = await ensureProjectRuntime(project, {
-                    agentId: agent_id,
-                    runtimeId: ready.runtime.id,
-                    forceRecreate: true,
-                });
-                workspacePath = ready.workspacePath;
-                runtimeId = ready.runtime.id;
-                spawnOpts.cwd = workspacePath;
-                spawnOpts.runtimeRef = ready.runtime.runtimeRef;
-                handle = await runtime.exec.spawn(
-                    agentMeta.cmd,
-                    agentMeta.args,
-                    resolved.env,
-                    spawnOpts,
-                );
-            } catch (retryErr) {
-                await db.delete(schema.sessions).where(eq(schema.sessions.id, sessionId));
-                const publicErr = retryErr instanceof AgentSpawnError ? retryErr : err;
-                request.log.error(publicErr);
-                return reply.code(publicErr.statusCode || 500).send({
-                    error: 'Failed to start agent session',
-                    detail: publicErr.message,
-                });
-            }
-        } else {
-            await db.delete(schema.sessions).where(eq(schema.sessions.id, sessionId));
-            if (err instanceof AgentSpawnError) {
-                request.log.error(err);
-                return reply.code(err.statusCode).send({
-                    error: 'Failed to start agent session',
-                    detail: err.message,
-                });
-            }
-            request.log.error(err);
-            return reply.code(500).send({
-                error: 'Failed to start agent session',
-                detail: err.message,
-            });
-        }
-    }
-
-    sessionManager.createSession(sessionId, handle, agent_id, {
-        transcriptRef: handle.streamRef,
-        projectId: project_id,
-        runtimeId,
-        runtimeRef: ready.runtime ? ready.runtime.runtimeRef : undefined,
-        stateDirRef: sessionStateDir?.stateDirRef || null,
-        userId: request.user.id,
-    });
-
-    await registerSessionLifecycle({
-        db,
-        schema,
-        sessionManager,
-        sessionId,
-        project,
-        fastifyLog: fastify.log,
-    });
-
-    const streamRef = handle.streamRef ?? null;
-    if (streamRef) {
-        await db.update(schema.sessions)
-            .set({ streamRef })
-            .where(eq(schema.sessions.id, sessionId));
-    }
-
-    return {
+    // Return 202 immediately — the frontend enters the agent page and shows a loading state
+    reply.code(202).send({
         session_id: sessionId,
-        status: 'running',
-        runtime_id: runtimeId,
-        stream_ref: streamRef,
-        recoverable,
-        terminal_theme_id: resolved.terminal_theme_id,
-        spawn_env_preview: resolved.spawn_env_preview,
-        state_dir_ref: sessionStateDir?.stateDirRef || null,
-    };
+        status: 'pending',
+        project_id,
+        agent_id: agent_id,
+    });
+
+    // --- async provisioning: VM creation + agent spawn ---
+    (async () => {
+        let ready;
+        let workspacePath;
+        let runtimeId;
+
+        try {
+            ready = await ensureProjectRuntime(project, {
+                agentId: agent_id,
+                ...(customImageRef ? { image: customImageRef } : {}),
+            });
+            workspacePath = ready.workspacePath;
+            runtimeId = ready.runtime.id;
+        } catch (err) {
+            fastify.log.error({ err, sessionId }, '[sessions] async provisioning: ensureProjectRuntime failed');
+            await db.update(schema.sessions).set({
+                status: 'failed',
+                provisioningError: err instanceof RuntimeError ? err.message : (err.message || 'Failed to prepare project runtime'),
+            }).where(eq(schema.sessions.id, sessionId));
+            return;
+        }
+
+        // Update cwd and runtimeId now that the VM is ready
+        await db.update(schema.sessions).set({
+            cwd: workspacePath,
+            runtimeId,
+        }).where(eq(schema.sessions.id, sessionId));
+
+        // Prepare agent state directory (L2 resume)
+        let sessionStateDir = null;
+        if (resumeSpec?.stateEnv) {
+            try {
+                sessionStateDir = await ensureSessionStateDir(runtime.fs, {
+                    workspaceRoot: workspacePath,
+                    sessionId,
+                    runtimeRef: ready.runtime ? ready.runtime.runtimeRef : undefined,
+                });
+            } catch (err) {
+                fastify.log.error({ err, sessionId }, '[sessions] async provisioning: ensureSessionStateDir failed');
+                await db.update(schema.sessions).set({
+                    status: 'failed',
+                    provisioningError: 'Failed to prepare agent state directory',
+                }).where(eq(schema.sessions.id, sessionId));
+                return;
+            }
+            if (!sessionStateDir) {
+                await db.update(schema.sessions).set({
+                    status: 'failed',
+                    provisioningError: 'Failed to prepare agent state directory',
+                }).where(eq(schema.sessions.id, sessionId));
+                return;
+            }
+            resolved.env = applyStateDirEnv(resolved.env, resumeSpec, sessionStateDir.stateDirPath);
+        }
+
+        if (sessionStateDir?.stateDirRef) {
+            await db.update(schema.sessions).set({
+                stateDirRef: sessionStateDir.stateDirRef,
+            }).where(eq(schema.sessions.id, sessionId));
+        }
+
+        try {
+            const { ensureKimiConfig } = require('./workspace/kimiConfigBootstrap');
+            await ensureKimiConfig({
+                runtime,
+                runtimeRef: ready.runtime ? ready.runtime.runtimeRef : undefined,
+                userId: request.user.id,
+                agentId: agentMeta.id,
+                warn: (msg) => fastify.log.warn(msg),
+            });
+        } catch (err) {
+            fastify.log.warn({ err, sessionId }, '[sessions] kimi config bootstrap failed');
+        }
+
+        if (project && project.repoProvider === 'github') {
+            resolved.env.XENSEMBLE_GIT_BRANCH = project.currentBranch || '';
+            resolved.env.XENSEMBLE_GIT_BASE_BRANCH = project.repoDefaultBranch || '';
+            resolved.env.XENSEMBLE_REPO_URL = project.githubFullName || '';
+        }
+
+        let handle;
+        const spawnOpts = {
+            name: agentMeta.name,
+            cwd: workspacePath,
+            runtimeRef: ready.runtime ? ready.runtime.runtimeRef : undefined,
+            uid: process.env.RUNTIME_UID,
+            gid: process.env.RUNTIME_GID,
+        };
+        try {
+            handle = await runtime.exec.spawn(
+                agentMeta.cmd,
+                agentMeta.args,
+                resolved.env,
+                spawnOpts,
+            );
+        } catch (err) {
+            if (
+                err instanceof AgentSpawnError
+                && resolveRuntimeProvider() === 'boxlite'
+                && ready.runtime?.runtimeRef
+            ) {
+                fastify.log.warn({ err, sessionId }, '[sessions] spawn failed, recreating boxlite runtime');
+                try {
+                    ready = await ensureProjectRuntime(project, {
+                        agentId: agent_id,
+                        runtimeId: ready.runtime.id,
+                        forceRecreate: true,
+                    });
+                    workspacePath = ready.workspacePath;
+                    spawnOpts.cwd = workspacePath;
+                    spawnOpts.runtimeRef = ready.runtime.runtimeRef;
+                    handle = await runtime.exec.spawn(
+                        agentMeta.cmd,
+                        agentMeta.args,
+                        resolved.env,
+                        spawnOpts,
+                    );
+                } catch (retryErr) {
+                    fastify.log.error({ err: retryErr, sessionId }, '[sessions] spawn retry failed');
+                    await db.update(schema.sessions).set({
+                        status: 'failed',
+                        provisioningError: retryErr instanceof AgentSpawnError
+                            ? retryErr.message
+                            : (retryErr.message || 'Failed to start agent session'),
+                    }).where(eq(schema.sessions.id, sessionId));
+                    return;
+                }
+            } else {
+                fastify.log.error({ err, sessionId }, '[sessions] spawn failed');
+                await db.update(schema.sessions).set({
+                    status: 'failed',
+                    provisioningError: err instanceof AgentSpawnError
+                        ? err.message
+                        : (err.message || 'Failed to start agent session'),
+                }).where(eq(schema.sessions.id, sessionId));
+                return;
+            }
+        }
+
+        // Guard: if the user deleted the session while provisioning, abort
+        const currentRows = await db.select({ status: schema.sessions.status })
+            .from(schema.sessions)
+            .where(eq(schema.sessions.id, sessionId));
+        if (!currentRows[0] || currentRows[0].status !== 'pending') {
+            fastify.log.info({ sessionId }, '[sessions] session no longer pending, discarding spawn result');
+            try { handle.kill(); } catch {}
+            return;
+        }
+
+        sessionManager.createSession(sessionId, handle, agent_id, {
+            transcriptRef: handle.streamRef,
+            projectId: project_id,
+            runtimeId,
+            runtimeRef: ready.runtime ? ready.runtime.runtimeRef : undefined,
+            stateDirRef: sessionStateDir?.stateDirRef || null,
+            userId: request.user.id,
+        });
+
+        await registerSessionLifecycle({
+            db,
+            schema,
+            sessionManager,
+            sessionId,
+            project,
+            fastifyLog: fastify.log,
+        });
+
+        const streamRef = handle.streamRef ?? null;
+        await db.update(schema.sessions).set({
+            status: 'running',
+            streamRef: streamRef || null,
+        }).where(eq(schema.sessions.id, sessionId));
+    })().catch((err) => {
+        fastify.log.error({ err, sessionId }, '[sessions] async provisioning uncaught error');
+        db.update(schema.sessions).set({
+            status: 'failed',
+            provisioningError: err.message || 'Unexpected error during session provisioning',
+        }).where(eq(schema.sessions.id, sessionId)).catch(() => {});
+    });
 });
 
 // WebSocket Terminal（协议不变；与 /api/v1/terminal/* HTTP 通道共享 terminalBridge）
