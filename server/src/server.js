@@ -194,14 +194,17 @@ fastify.get('/api/v1/agents', { preValidation: [fastify.authenticate] }, async (
         return a.name.localeCompare(b.name);
     });
     const gatewayConfigs = await agentGatewayConfig.getAll();
-    return Promise.all(filtered.map(async (a) => {
+    return filtered.map((a) => {
         const cfg = gatewayConfigs[a.id];
+        const authMode = cfg?.llm_auth_mode === 'gateway' || cfg?.llm_auth_mode === 'byok'
+            ? cfg.llm_auth_mode
+            : 'byok';
         return {
             ...formatAgentRow(a),
-            llm_auth_mode: await agentGatewayConfig.getAgentAuthMode(a.id),
+            llm_auth_mode: authMode,
             gateway_model: cfg?.model || null,
         };
-    }));
+    });
 });
 
 fastify.post('/api/v1/agents', { preValidation: [fastify.authenticate, fastify.requireAdmin] }, async (request, reply) => {
@@ -738,32 +741,31 @@ fastify.get('/api/v1/projects/:projectId/merge-requests/:mrId/comments', {
 
 // Sessions — list
 fastify.get('/api/v1/sessions', { preValidation: [fastify.authenticate] }, async (request, reply) => {
-    const rows = await db.select().from(schema.sessions).where(eq(schema.sessions.userId, request.user.id));
-    const projectRows = await db.select().from(schema.projects)
-        .where(eq(schema.projects.userId, request.user.id));
-    const projectNames = Object.fromEntries(projectRows.map((p) => [p.id, p.name]));
-    let provisioningErrorMap = {};
-    try {
-        const errorRows = await db.execute(sql`SELECT id, provisioning_error FROM sessions WHERE user_id = ${request.user.id}`);
-        for (const r of errorRows.rows || []) {
-            provisioningErrorMap[r.id] = r.provisioning_error;
-        }
-    } catch {}
-    return rows.map((row) => ({
+    const result = await db.execute(sql`
+        SELECT s.id, s.project_id, s.agent_id, s.status, s.recoverable,
+               s.custom_image_id, s.title, s.created_at,
+               p.name AS project_name,
+               s.provisioning_error
+        FROM sessions s
+        LEFT JOIN projects p ON p.id = s.project_id
+        WHERE s.user_id = ${request.user.id}
+    `);
+    const rawRows = result.rows || result;
+    return rawRows.map((row) => ({
         id: row.id,
-        projectId: row.projectId,
-        agentId: row.agentId,
+        projectId: row.project_id,
+        agentId: row.agent_id,
         status: row.status,
         recoverable: Boolean(row.recoverable),
-        customImageId: row.customImageId || null,
-        provisioningError: provisioningErrorMap[row.id] || null,
-        shellOnly: row.agentId === 'shell' || undefined,
+        customImageId: row.custom_image_id || null,
+        provisioningError: row.provisioning_error || null,
+        shellOnly: row.agent_id === 'shell' || undefined,
         memoryStatus: sessionManager.getSession(row.id)?.status ?? row.status,
         alive: sessionManager.isAlive(row.id),
-        projectName: row.projectId ? projectNames[row.projectId] : null,
+        projectName: row.project_id ? row.project_name : null,
         title: row.title || null,
-        createdAt: row.createdAt,
-        updatedAt: row.updatedAt,
+        createdAt: Number(row.created_at),
+        updatedAt: null,
     }));
 });
 
