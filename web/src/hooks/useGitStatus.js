@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { useToast } from '../components/Toast';
 import * as githubApi from '../lib/githubApi';
 
-const POLL_INTERVAL_MS = 2000;
+const POLL_INTERVAL_MS = 15000;
 
 export function useGitStatus(projectId) {
   const { showToast } = useToast();

@@ -84,11 +84,13 @@ class BoxLiteRuntimeProvider extends RuntimeProvider {
         const storedMount = opts.storedMount || null;
         const imageMismatch = storedImage !== image;
         const recreateForImage = imageMismatch && (opts.forceRecreate || opts.agentId);
-        if (recreateForImage || storedMount !== mountKey) {
+        const needRecreate = recreateForImage || storedMount !== mountKey;
+        if (needRecreate) {
             try {
                 await this.client.deleteSession(name);
+                await new Promise((r) => setTimeout(r, 300));
             } catch (_) {
-                // Blink session may already be gone or stuck — openSession will recreate.
+                // Ignore — openSession will detect the stale session below.
             }
         }
         const openOptions = {
@@ -109,6 +111,12 @@ class BoxLiteRuntimeProvider extends RuntimeProvider {
                     return;
                 } catch (e) {
                     if (/already|exists/i.test(String(e))) {
+                        if (needRecreate) {
+                            throw new RuntimeError(
+                                `BoxLite ensureReady failed: session "${name}" still exists after delete — cannot recreate with image ${image}`,
+                                502,
+                            );
+                        }
                         return;
                     }
                     lastErr = e;
@@ -126,7 +134,12 @@ class BoxLiteRuntimeProvider extends RuntimeProvider {
                             await this.client.openSession(name, image, warm, openOptions);
                             return;
                         } catch (e2) {
-                            if (/already|exists/i.test(String(e2))) return;
+                            if (/already|exists/i.test(String(e2))) {
+                                throw new RuntimeError(
+                                    `BoxLite ensureReady failed: session "${name}" still exists after delete+recreate retry`,
+                                    502,
+                                );
+                            }
                             lastErr = e2;
                         }
                     }
@@ -135,47 +148,32 @@ class BoxLiteRuntimeProvider extends RuntimeProvider {
             }
         };
         await openSession();
-        const probeCmd = resolveAgentProbeCommand(opts.agentId);
-        if (probeCmd && !(await probeAgentCommand(this.client, name, probeCmd, guestWorkspacePath))) {
-            await this.client.deleteSession(name);
-            await openSession();
-            if (!(await probeAgentCommand(this.client, name, probeCmd, guestWorkspacePath))) {
-                throw new RuntimeError(
-                    `BoxLite ensureReady failed: agent command "${probeCmd}" is missing from sandbox image ${image}`,
-                    502,
-                );
-            }
-        }
 
         // Clean up runtime writable caches so VM disk has room for agent state.
         // The image build already purges these, but they re-accumulate across
         // sessions. We only remove rebuildable caches — XDG/L2 state under
         // /root/.config (agent resume data) is intentionally preserved.
-        try {
-            await this.client.execForResult(name, 'sh', ['-c',
-                'for d in /root/.npm/_cacache /root/.cache /tmp; do rm -rf "$d"/* 2>/dev/null || true; done',
-            ]);
-        } catch (_) {
-            // Best-effort: if the cleanup fails the agent still runs.
-        }
+        const cleanCaches = async () => {
+            try {
+                await this.client.execForResult(name, 'sh', ['-c',
+                    'for d in /root/.npm/_cacache /root/.cache /tmp; do rm -rf "$d"/* 2>/dev/null || true; done',
+                ]);
+            } catch (_) {
+                // Best-effort: if the cleanup fails the agent still runs.
+            }
+        };
+        await cleanCaches();
 
-        if (opts.agentId && opts.agentId !== 'shell') {
-            const probeCmd = resolveAgentProbeCommand(opts.agentId);
-            if (probeCmd && !(await probeAgentCommand(this.client, name, probeCmd, guestWorkspacePath))) {
-                await this.client.deleteSession(name);
-                await openSession();
-                // Re-run cleanup after rebuild
-                try {
-                    await this.client.execForResult(name, 'sh', ['-c',
-                        'for d in /root/.npm/_cacache /root/.cache /tmp; do rm -rf "$d"/* 2>/dev/null || true; done',
-                    ]);
-                } catch (_) {}
-                if (!(await probeAgentCommand(this.client, name, probeCmd, guestWorkspacePath))) {
-                    throw new RuntimeError(
-                        `BoxLite ensureReady failed: agent command "${probeCmd}" is missing from sandbox image ${image}`,
-                        502,
-                    );
-                }
+        const probeCmd = resolveAgentProbeCommand(opts.agentId);
+        if (probeCmd && !(await probeAgentCommand(this.client, name, probeCmd, guestWorkspacePath))) {
+            await this.client.deleteSession(name);
+            await openSession();
+            await cleanCaches();
+            if (!(await probeAgentCommand(this.client, name, probeCmd, guestWorkspacePath))) {
+                throw new RuntimeError(
+                    `BoxLite ensureReady failed: agent command "${probeCmd}" is missing from sandbox image ${image}`,
+                    502,
+                );
             }
         }
 

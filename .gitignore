@@ -10,3 +10,6 @@ web/dist
 server/test.db
 deploy/logs/
 *.log
+openspec/
+.opencode/
+opencode.json

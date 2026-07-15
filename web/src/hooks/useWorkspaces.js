@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { apiFetch } from '../lib/api';
 import {
   readBootstrapConsoleState,
@@ -15,6 +15,8 @@ export function useWorkspaces(user) {
   const [projects, setProjects] = useState(() => readBootstrapConsoleState(null).projects);
   const [sessions, setSessions] = useState(() => readBootstrapConsoleState(null).sessions);
   const [activeSession, setActiveSession] = useState(() => readBootstrapConsoleState(null).activeSession);
+
+  const hasPendingRef = useRef(false);
 
   const fetchAgents = useCallback(async () => {
     try {
@@ -66,12 +68,23 @@ export function useWorkspaces(user) {
   }, [fetchAgents, fetchProjects, fetchSessions]);
 
   useEffect(() => {
+    hasPendingRef.current = sessions.some((s) => s.status === 'pending');
+  }, [sessions]);
+
+  useEffect(() => {
     if (!user?.id) return undefined;
+    let timer;
+    const scheduleNext = () => {
+      const interval = hasPendingRef.current ? 2000 : 15000;
+      timer = setTimeout(async () => {
+        await fetchWorkspaces();
+        scheduleNext();
+      }, interval);
+    };
     fetchWorkspaces();
-    const hasPending = sessions.some((s) => s.status === 'pending');
-    const poll = setInterval(fetchWorkspaces, hasPending ? 2000 : 15000);
-    return () => clearInterval(poll);
-  }, [fetchWorkspaces, user?.id, sessions]);
+    scheduleNext();
+    return () => clearTimeout(timer);
+  }, [fetchWorkspaces, user?.id]);
 
   useEffect(() => {
     if (sessions.length === 0) return;
