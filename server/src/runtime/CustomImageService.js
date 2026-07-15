@@ -334,23 +334,39 @@ async function deleteImage(ownerUserId, imageId) {
   const image = await assertOwnership(ownerUserId, imageId);
   if (!image) throw new RuntimeError('custom image not found', 404);
 
+  // Check if any active session is using this image.
+  const activeSessions = await db.select({ id: schema.sessions.id, projectId: schema.sessions.projectId })
+    .from(schema.sessions)
+    .where(and(
+      eq(schema.sessions.customImageId, imageId),
+      sql`${schema.sessions.status} NOT IN ('exited')`,
+    ));
+  if (activeSessions.length > 0) {
+    throw new RuntimeError(
+      `Cannot delete image: ${activeSessions.length} active session(s) are using it`,
+      409,
+    );
+  }
+
   // Delete from Docker registry (best-effort).
   if (image.imageRef) {
     try {
-      const registryHost = getImageRegistry();
-      const lastColon = image.imageRef.lastIndexOf(':');
-      const namePart = image.imageRef.slice(0, lastColon);
-      const tag = image.imageRef.slice(lastColon + 1);
-      const repoName = namePart.slice(registryHost.length + 1);
+      const ref = image.imageRef;
+      const lastColon = ref.lastIndexOf(':');
+      const namePart = ref.slice(0, lastColon);
+      const tag = ref.slice(lastColon + 1);
+      const firstSlash = namePart.indexOf('/');
+      const hostPort = namePart.slice(0, firstSlash);
+      const repoName = namePart.slice(firstSlash + 1);
       const getDigest = await fetch(
-        `http://${registryHost.replace(/^https?:\/\//, '')}/v2/${repoName}/manifests/${tag}`,
+        `http://${hostPort}/v2/${repoName}/manifests/${tag}`,
         { method: 'HEAD', headers: { Accept: 'application/vnd.oci.image.index.v1+json' } },
       );
       if (getDigest.ok) {
         const digest = getDigest.headers.get('docker-content-digest');
         if (digest) {
           await fetch(
-            `http://${registryHost.replace(/^https?:\/\//, '')}/v2/${repoName}/manifests/${digest}`,
+            `http://${hostPort}/v2/${repoName}/manifests/${digest}`,
             { method: 'DELETE' },
           ).catch(() => {});
         }

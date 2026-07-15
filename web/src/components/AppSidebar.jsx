@@ -297,7 +297,17 @@ export default function AppSidebar({
   const [searchQuery, setSearchQuery] = useState('');
   const [activeOnlyFilter, setActiveOnlyFilter] = useState(false);
   const [resumingSessionId, setResumingSessionId] = useState(null);
+  const [customImageMap, setCustomImageMap] = useState({});
   const { showToast } = useToast();
+
+  useEffect(() => {
+    apiFetch('/api/v1/custom-images').then((res) => res.json()).then((data) => {
+      const list = data.images || (Array.isArray(data) ? data : []);
+      const map = {};
+      for (const img of list) { map[img.id] = img.name; }
+      setCustomImageMap(map);
+    }).catch(() => {});
+  }, [sessions.length]);
 
   const refreshSidebarPrefs = useCallback(() => setSidebarPrefs(loadSidebarPrefs()), []);
 
@@ -450,6 +460,7 @@ export default function AppSidebar({
     const isResuming = resumingSessionId === s.id;
     const label = s.title?.trim() || getAgentLabel(s.agentId);
     const timestamp = s.createdAt ? formatRelativeTime(s.createdAt) : '';
+    const imageName = s.customImageId ? customImageMap[s.customImageId] : null;
 
     return (
       <div
@@ -462,11 +473,17 @@ export default function AppSidebar({
           type="button"
           onClick={() => selectSession(s, ws)}
           className="flex flex-1 min-w-0 items-center gap-2 text-left"
-          title={label}
+          title={imageName ? `${label} · ${imageName}` : label}
         >
           <span className={`flex-1 truncate text-[13px] ${isActive ? 'font-medium text-[#202124]' : 'text-[#3C4043]'}`}>
             {label}
           </span>
+          {imageName && (
+            <span className="shrink-0 inline-flex items-center gap-0.5 px-1 py-0.5 rounded text-[10px] bg-zinc-100 text-zinc-500 max-w-[80px] truncate">
+              <Container className="w-2.5 h-2.5 shrink-0" />
+              {imageName}
+            </span>
+          )}
           {timestamp && (
             <span className={`shrink-0 text-[11px] ${textPlaceholder}`}>{timestamp}</span>
           )}
