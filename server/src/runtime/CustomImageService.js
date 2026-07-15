@@ -4,7 +4,7 @@ const fs = require('fs');
 const { exec } = require('child_process');
 const { promisify } = require('util');
 const execAsync = promisify(exec);
-const { eq, and, desc, sql } = require('drizzle-orm');
+const { eq, and, desc, sql, inArray } = require('drizzle-orm');
 const { db } = require('../db/index');
 const schema = require('../db/schema');
 const { RuntimeError } = require('./interfaces');
@@ -305,11 +305,23 @@ async function listImages(ownerUserId) {
     .where(eq(schema.customImages.ownerUserId, ownerUserId))
     .orderBy(desc(schema.customImages.createdAt));
 
-  const result = [];
-  for (const image of images) {
-    const latestBuild = await getLatestBuild(image.id);
-    result.push(formatImageRow(image, latestBuild));
+  if (images.length === 0) return { images: [], count: 0, max: MAX_PER_USER };
+
+  const imageIds = images.map((img) => img.id);
+  const allBuilds = await db.select().from(schema.customImageBuilds)
+    .where(inArray(schema.customImageBuilds.customImageId, imageIds))
+    .orderBy(desc(schema.customImageBuilds.createdAt));
+
+  const latestBuildMap = new Map();
+  for (const build of allBuilds) {
+    if (!latestBuildMap.has(build.customImageId)) {
+      latestBuildMap.set(build.customImageId, build);
+    }
   }
+
+  const result = images.map((image) =>
+    formatImageRow(image, latestBuildMap.get(image.id) || null),
+  );
   return { images: result, count: result.length, max: MAX_PER_USER };
 }
 

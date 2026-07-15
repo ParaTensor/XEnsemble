@@ -120,7 +120,7 @@ export function CustomImagesContent() {
         }
         setPollIds(stillPolling);
       } catch { /* ignore polling errors */ }
-    }, 3000);
+    }, 10000);
 
     return () => clearInterval(interval);
   }, [pollIds.size]);
