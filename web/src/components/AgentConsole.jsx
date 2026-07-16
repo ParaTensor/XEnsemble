@@ -99,8 +99,9 @@ export default function AgentConsole({
     const terminal = new Terminal({
       cols: 120,
       rows: 32,
-      scrollback: 10000,
+      scrollback: 5000,
       convertEol: true,
+      smoothScrollDuration: 0,
       fontFamily: 'Menlo, Monaco, Consolas, "Liberation Mono", monospace',
       fontSize: 13,
       lineHeight: 1.2,
@@ -120,12 +121,12 @@ export default function AgentConsole({
       webglAddon.onContextLoss(() => { webglAddon.dispose(); });
       terminal.loadAddon(webglAddon);
     } catch (_) {
-      // WebGL not available, fall back to default canvas renderer
+      console.warn('WebGL renderer unavailable, falling back to canvas');
     }
     terminalRef.current = terminal;
 
     const showOverlay = () => {
-      if (hostRef.current) hostRef.current.style.opacity = '0';
+      if (hostRef.current) hostRef.current.style.setProperty('opacity', '0', 'important');
       if (overlayRef.current) overlayRef.current.style.display = 'flex';
     };
     const hideOverlay = () => {
@@ -398,7 +399,7 @@ export default function AgentConsole({
     <div className="relative flex h-full min-h-0 flex-col overflow-hidden bg-transparent">
       <div
         ref={overlayRef}
-        className="absolute inset-0 z-10 items-center justify-center bg-zinc-900/90 backdrop-blur-sm"
+        className="absolute inset-0 z-10 items-center justify-center bg-zinc-950 backdrop-blur-sm"
         style={{ display: 'none' }}
       >
         <div className="flex items-center gap-2 text-sm text-zinc-400">
