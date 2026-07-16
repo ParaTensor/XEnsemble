@@ -13,3 +13,5 @@ deploy/logs/
 openspec/
 .opencode/
 opencode.json
+skills-lock.json
+.agents/

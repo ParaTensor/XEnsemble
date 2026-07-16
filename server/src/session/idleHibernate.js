@@ -89,7 +89,6 @@ async function stopSession({
                 await db.update(schema.sessions)
                     .set({
                         status: 'idle',
-                        recoverable: Boolean(session.recoverable),
                         streamRef: session.streamRef || null,
                         stateDirRef: session.stateDirRef || null,
                     })
@@ -137,7 +136,6 @@ async function stopSession({
         await db.update(schema.sessions)
             .set({
                 status: 'idle',
-                recoverable: Boolean(session.recoverable ?? liveAfter?.recoverable),
                 streamRef: liveAfter?.streamRef || session.streamRef || null,
                 stateDirRef: liveAfter?.stateDirRef || session.stateDirRef || null,
             })
