@@ -6,6 +6,7 @@ import '@xterm/xterm/css/xterm.css';
 
 import { getAccessToken, getWsUrl, apiFetch } from '../lib/api';
 import { useTerminalTheme } from '../hooks/useTerminalTheme.jsx';
+import { Loader2 } from 'lucide-react';
 
 const FALLBACK_XTERM_THEME = {
   background: '#09090b',
@@ -65,6 +66,7 @@ export default function AgentConsole({
   const xtermTheme = preset?.xterm || FALLBACK_XTERM_THEME;
 
   const hostRef = useRef(null);
+  const overlayRef = useRef(null);
   const terminalRef = useRef(null);
   const fitAddonRef = useRef(null);
   const wsRef = useRef(null);
@@ -121,6 +123,20 @@ export default function AgentConsole({
       // WebGL not available, fall back to default canvas renderer
     }
     terminalRef.current = terminal;
+
+    const showOverlay = () => {
+      if (hostRef.current) hostRef.current.style.opacity = '0';
+      if (overlayRef.current) overlayRef.current.style.display = 'flex';
+    };
+    const hideOverlay = () => {
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          if (hostRef.current) hostRef.current.style.opacity = '1';
+          if (overlayRef.current) overlayRef.current.style.display = 'none';
+          terminal.scrollToBottom();
+        });
+      });
+    };
 
     let disposed = false;
     let serverEnded = false;
@@ -257,11 +273,18 @@ export default function AgentConsole({
       setEnded(true);
     } else if (shouldReplayIdle) {
       (async () => {
+        showOverlay();
         try {
           const response = await apiFetch(`/api/v1/sessions/${encodeURIComponent(sessionId)}/transcript`);
           const data = await response.json();
           if (!response.ok) throw new Error(data.error || 'Failed to load session history');
-          if (data.output) terminal.write(data.output);
+          if (data.output) {
+            terminal.write(data.output, () => {
+              if (!disposed) hideOverlay();
+            });
+          } else {
+            hideOverlay();
+          }
           terminal.write('\r\n\x1b[33m[System] Session paused. Click Start to resume.\x1b[0m\r\n');
           setEnded(true);
         } catch (error) {
@@ -274,6 +297,7 @@ export default function AgentConsole({
     } else {
       (async () => {
         try {
+          showOverlay();
           const ws = new WebSocket(getWsUrl(sessionId, getAccessToken()));
           wsRef.current = ws;
 
@@ -291,11 +315,18 @@ export default function AgentConsole({
             scheduleResizeResends();
           };
 
+          let replayPending = 0;
           ws.onmessage = (event) => {
             if (disposed) return;
             const msg = parseMessage(event.data);
             if (msg.type === 'output') {
-              terminal.write(msg.data);
+              replayPending++;
+              terminal.write(msg.data, () => {
+                replayPending--;
+                if (replayPending <= 0 && !disposed) {
+                  hideOverlay();
+                }
+              });
               return;
             }
             if (msg.type === 'error') {
@@ -364,9 +395,19 @@ export default function AgentConsole({
   }, [sessionId, shouldConnect, shouldReplayIdle]);
 
   return (
-    <div className="flex h-full min-h-0 flex-col overflow-hidden bg-transparent">
+    <div className="relative flex h-full min-h-0 flex-col overflow-hidden bg-transparent">
+      <div
+        ref={overlayRef}
+        className="absolute inset-0 z-10 items-center justify-center bg-zinc-900/90 backdrop-blur-sm"
+        style={{ display: 'none' }}
+      >
+        <div className="flex items-center gap-2 text-sm text-zinc-400">
+          <Loader2 className="h-4 w-4 animate-spin" />
+          Loading history…
+        </div>
+      </div>
       <div className="flex min-h-0 flex-1 flex-col overflow-hidden p-0">
-        <div ref={hostRef} className="min-h-0 w-full flex-1" />
+        <div ref={hostRef} className="min-h-0 w-full flex-1 transition-opacity duration-150" />
       </div>
     </div>
   );
