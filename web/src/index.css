@@ -132,6 +132,10 @@
     @apply bg-zinc-400;
   }
 
+  .xterm-viewport {
+    scroll-behavior: smooth;
+  }
+
   .console-scroll-hidden {
     scrollbar-width: none;
     -ms-overflow-style: none;

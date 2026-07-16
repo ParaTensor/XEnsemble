@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
-import { WebglAddon } from '@xterm/addon-webgl';
 import '@xterm/xterm/css/xterm.css';
 
 import { getAccessToken, getWsUrl, apiFetch } from '../lib/api';
@@ -56,6 +55,7 @@ function getArrowSequence(key, applicationCursorKeys) {
 
 export default function AgentConsole({
   sessionId,
+  reconnectVersion = 0,
   /* agentName kept for API compat */
   onSessionEnd,
   onSessionConnected,
@@ -99,7 +99,7 @@ export default function AgentConsole({
     const terminal = new Terminal({
       cols: 120,
       rows: 32,
-      scrollback: 5000,
+      scrollback: 10000,
       convertEol: true,
       smoothScrollDuration: 0,
       fontFamily: 'Menlo, Monaco, Consolas, "Liberation Mono", monospace',
@@ -116,25 +116,24 @@ export default function AgentConsole({
     terminal.loadAddon(fitAddon);
     host.replaceChildren();
     terminal.open(host);
-    try {
-      const webglAddon = new WebglAddon();
-      webglAddon.onContextLoss(() => { webglAddon.dispose(); });
-      terminal.loadAddon(webglAddon);
-    } catch (_) {
-      console.warn('WebGL renderer unavailable, falling back to canvas');
-    }
     terminalRef.current = terminal;
 
+    let overlayTimer = null;
     const showOverlay = () => {
-      if (hostRef.current) hostRef.current.style.setProperty('opacity', '0', 'important');
+      if (hostRef.current) hostRef.current.style.opacity = '0';
       if (overlayRef.current) overlayRef.current.style.display = 'flex';
+      overlayTimer = setTimeout(() => { hideOverlay(); }, 5000);
     };
     const hideOverlay = () => {
+      if (overlayTimer) { clearTimeout(overlayTimer); overlayTimer = null; }
       requestAnimationFrame(() => {
         if (disposed) return;
         if (hostRef.current) hostRef.current.style.opacity = '1';
         if (overlayRef.current) overlayRef.current.style.display = 'none';
+        const viewport = hostRef.current?.querySelector('.xterm-viewport');
+        if (viewport) viewport.style.scrollBehavior = 'auto';
         terminal.scrollToBottom();
+        if (viewport) viewport.style.scrollBehavior = 'smooth';
       });
     };
 
@@ -143,27 +142,6 @@ export default function AgentConsole({
     let lastSentCols = 0;
     let lastSentRows = 0;
     const resizeTimers = [];
-
-    const copyToClipboard = (text) => {
-      const textarea = document.createElement('textarea');
-      textarea.value = text;
-      textarea.style.position = 'fixed';
-      textarea.style.top = '-9999px';
-      textarea.style.left = '-9999px';
-      document.body.appendChild(textarea);
-      textarea.select();
-      try { document.execCommand('copy'); } catch (_) {}
-      document.body.removeChild(textarea);
-    };
-
-    const handleContextMenu = (e) => {
-      e.preventDefault();
-      const selection = terminal.getSelection();
-      if (selection) {
-        copyToClipboard(selection);
-        terminal.clearSelection();
-      }
-    };
 
     const sendResize = (cols, rows) => {
       if (cols > 0 && rows > 0 && wsRef.current?.readyState === WebSocket.OPEN) {
@@ -204,6 +182,18 @@ export default function AgentConsole({
       });
     };
 
+    const copyToClipboard = (text) => {
+      const textarea = document.createElement('textarea');
+      textarea.value = text;
+      textarea.style.position = 'fixed';
+      textarea.style.top = '-9999px';
+      textarea.style.left = '-9999px';
+      document.body.appendChild(textarea);
+      textarea.select();
+      try { document.execCommand('copy'); } catch (_) {}
+      document.body.removeChild(textarea);
+    };
+
     terminal.attachCustomKeyEventHandler((event) => {
       if (event.type !== 'keydown') return true;
 
@@ -236,6 +226,15 @@ export default function AgentConsole({
       wsRef.current.send(JSON.stringify({ type: 'input', data }));
     });
 
+    const handleContextMenu = (e) => {
+      e.preventDefault();
+      const selection = terminal.getSelection();
+      if (selection) {
+        copyToClipboard(selection);
+        terminal.clearSelection();
+      }
+    };
+
     const focusTerminal = () => {
       if (!serverEnded) terminal.focus();
     };
@@ -243,10 +242,21 @@ export default function AgentConsole({
     host.addEventListener('click', focusTerminal);
     host.addEventListener('contextmenu', handleContextMenu);
 
-    const handleWindowResize = () => {
-      if (!disposed) fitTerminal();
-    };
-    window.addEventListener('resize', handleWindowResize);
+    let lastHostWidth = 0;
+    let lastHostHeight = 0;
+    const resizeObserver = new ResizeObserver(() => {
+      requestAnimationFrame(() => {
+        if (disposed) return;
+        const rect = host.getBoundingClientRect();
+        const w = Math.floor(rect.width);
+        const h = Math.floor(rect.height);
+        if (Math.abs(w - lastHostWidth) <= 1 && Math.abs(h - lastHostHeight) <= 1) return;
+        lastHostWidth = w;
+        lastHostHeight = h;
+        fitTerminal();
+      });
+    });
+    resizeObserver.observe(host);
 
     if (!sessionId || (!shouldConnect && !shouldReplayIdle)) {
       terminal.write('\r\n\x1b[33m[System] Session is not running.\x1b[0m\r\n');
@@ -258,18 +268,14 @@ export default function AgentConsole({
           const response = await apiFetch(`/api/v1/sessions/${encodeURIComponent(sessionId)}/transcript`);
           const data = await response.json();
           if (!response.ok) throw new Error(data.error || 'Failed to load session history');
-          if (data.output) {
-            terminal.write(data.output, () => {
-              if (!disposed) hideOverlay();
-            });
-          } else {
-            hideOverlay();
-          }
+          if (data.output) terminal.write(data.output);
           terminal.write('\r\n\x1b[33m[System] Session paused. Click Start to resume.\x1b[0m\r\n');
+          hideOverlay();
           setEnded(true);
         } catch (error) {
           if (!disposed) {
             terminal.write(`\r\n\x1b[31m[System] ${error?.message || 'Failed to load session history'}\x1b[0m\r\n`);
+            hideOverlay();
             setEnded(true);
           }
         }
@@ -295,21 +301,18 @@ export default function AgentConsole({
             scheduleResizeResends();
           };
 
-          let replayPending = 0;
+          let replayDone = false;
           ws.onmessage = (event) => {
             if (disposed) return;
             const msg = parseMessage(event.data);
             if (msg.type === 'output') {
-              replayPending++;
               terminal.write(msg.data, () => {
-                replayPending--;
-                if (replayPending <= 0 && !disposed) {
-                  hideOverlay();
-                }
+                if (!replayDone && !disposed) { replayDone = true; hideOverlay(); }
               });
               return;
             }
             if (msg.type === 'error') {
+              hideOverlay();
               terminal.write(`\r\n\x1b[31m[System] ${msg.data}\x1b[0m\r\n`);
               serverEnded = true;
               setEnded(true);
@@ -318,6 +321,7 @@ export default function AgentConsole({
               return;
             }
             if (msg.type === 'exit') {
+              hideOverlay();
               if (msg.message) terminal.write(msg.message);
               serverEnded = true;
               setEnded(true);
@@ -328,11 +332,13 @@ export default function AgentConsole({
 
           ws.onerror = () => {
             if (disposed || serverEnded) return;
+            hideOverlay();
             terminal.write('\r\n\x1b[31m[System] Terminal connection failed.\x1b[0m\r\n');
           };
 
           ws.onclose = (event) => {
             if (disposed || serverEnded) return;
+            hideOverlay();
             const wasConnected = connectedRef.current;
             connectedRef.current = false;
             if (!wasConnected) {
@@ -359,7 +365,7 @@ export default function AgentConsole({
     return () => {
       disposed = true;
       resizeTimers.forEach((t) => clearTimeout(t));
-      window.removeEventListener('resize', handleWindowResize);
+      resizeObserver.disconnect();
       host.removeEventListener('mousedown', focusTerminal);
       host.removeEventListener('click', focusTerminal);
       host.removeEventListener('contextmenu', handleContextMenu);
@@ -373,13 +379,13 @@ export default function AgentConsole({
       fitAddonRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sessionId]);
+  }, [sessionId, reconnectVersion]);
 
   return (
     <div className="relative flex h-full min-h-0 flex-col overflow-hidden bg-transparent">
       <div
         ref={overlayRef}
-        className="absolute inset-0 z-10 items-center justify-center bg-zinc-950 backdrop-blur-sm"
+        className="absolute inset-0 z-10 flex items-center justify-center bg-zinc-900/90 backdrop-blur-sm"
         style={{ display: 'none' }}
       >
         <div className="flex items-center gap-2 text-sm text-zinc-400">

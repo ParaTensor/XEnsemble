@@ -1260,8 +1260,9 @@ export default React.forwardRef(function Sessions({
                      style={{ backgroundColor: preset.xterm.background }}
                    >
                       <AgentConsole
-                        key={`${activeSession.sessionId}:${reconnectVersion}`}
+                        key={activeSession.sessionId}
                         sessionId={activeSession.sessionId}
+                        reconnectVersion={reconnectVersion}
                        agentName={activeSession.agentName}
                        projectId={activeSession.projectId}
                        onSessionEnd={handleSessionEnd}
