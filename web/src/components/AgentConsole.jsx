@@ -120,6 +120,36 @@ export default function AgentConsole({
     let lastSentRows = 0;
     const resizeTimers = [];
 
+    const copyToClipboard = (text) => {
+      if (navigator.clipboard?.writeText) {
+        navigator.clipboard.writeText(text).catch(() => {
+          fallbackCopy(text);
+        });
+      } else {
+        fallbackCopy(text);
+      }
+    };
+
+    const fallbackCopy = (text) => {
+      const textarea = document.createElement('textarea');
+      textarea.value = text;
+      textarea.style.position = 'fixed';
+      textarea.style.opacity = '0';
+      document.body.appendChild(textarea);
+      textarea.select();
+      try { document.execCommand('copy'); } catch (_) {}
+      document.body.removeChild(textarea);
+    };
+
+    const handleContextMenu = (e) => {
+      e.preventDefault();
+      const selection = terminal.getSelection();
+      if (selection) {
+        copyToClipboard(selection);
+        terminal.clearSelection();
+      }
+    };
+
     const sendResize = (cols, rows) => {
       if (cols > 0 && rows > 0 && wsRef.current?.readyState === WebSocket.OPEN) {
         wsRef.current.send(JSON.stringify({ type: 'resize', cols, rows }));
@@ -161,6 +191,19 @@ export default function AgentConsole({
 
     terminal.attachCustomKeyEventHandler((event) => {
       if (event.type !== 'keydown') return true;
+
+      const isCopyShortcut = (event.ctrlKey && event.shiftKey && (event.key === 'C' || event.key === 'c'))
+        || (event.metaKey && !event.ctrlKey && (event.key === 'c' || event.key === 'C'));
+      if (isCopyShortcut) {
+        const selection = terminal.getSelection();
+        if (selection) {
+          event.preventDefault();
+          copyToClipboard(selection);
+          terminal.clearSelection();
+          return false;
+        }
+      }
+
       const sequence = getArrowSequence(event.key, terminal.modes.applicationCursorKeysMode);
       if (!sequence) return true;
       if (event.metaKey || event.ctrlKey || event.altKey) return true;
@@ -183,6 +226,7 @@ export default function AgentConsole({
     };
     host.addEventListener('mousedown', focusTerminal);
     host.addEventListener('click', focusTerminal);
+    host.addEventListener('contextmenu', handleContextMenu);
 
     const resizeObserver = new ResizeObserver(() => {
       requestAnimationFrame(() => {
@@ -290,6 +334,7 @@ export default function AgentConsole({
       resizeObserver.disconnect();
       host.removeEventListener('mousedown', focusTerminal);
       host.removeEventListener('click', focusTerminal);
+      host.removeEventListener('contextmenu', handleContextMenu);
       if (wsRef.current) {
         wsRef.current.close();
         wsRef.current = null;
