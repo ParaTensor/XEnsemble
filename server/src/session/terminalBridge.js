@@ -106,13 +106,22 @@ async function subscribeTerminal(sessionId, send, options = {}) {
         clearInterval(metricsInterval);
     };
 
+    const REPLAY_CHUNK_SIZE = 512 * 1024;
+
     const flushFrames = (frames) => {
+        let batchedData = '';
+        let lastBatchSeq = null;
+
         for (const frame of frames) {
-            if (cleaned) return;
+            if (cleaned) break;
             if (frame.seq != null && frame.seq <= lastSentSeq) {
                 continue;
             }
             if (frame.kind === 'exit') {
+                if (batchedData) {
+                    maybeSend({ type: 'output', data: batchedData, seq: lastBatchSeq ?? undefined });
+                    batchedData = '';
+                }
                 pendingExit = frame;
                 if (frame.seq != null) {
                     lastSentSeq = frame.seq;
@@ -125,10 +134,18 @@ async function subscribeTerminal(sessionId, send, options = {}) {
                 }
                 continue;
             }
-            maybeSend({ type: 'output', data: frame.data, seq: frame.seq ?? undefined });
+            batchedData += frame.data;
             if (frame.seq != null) {
                 lastSentSeq = frame.seq;
+                lastBatchSeq = frame.seq;
             }
+            if (batchedData.length >= REPLAY_CHUNK_SIZE) {
+                maybeSend({ type: 'output', data: batchedData, seq: lastBatchSeq ?? undefined });
+                batchedData = '';
+            }
+        }
+        if (batchedData) {
+            maybeSend({ type: 'output', data: batchedData, seq: lastBatchSeq ?? undefined });
         }
     };
 
