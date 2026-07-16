@@ -133,6 +133,7 @@ export default React.forwardRef(function Sessions({
   // eslint-disable-next-line no-unused-vars
   const [_deletingSessionId, setDeletingSessionId] = useState(null);
   const [restartingSession, setRestartingSession] = useState(false);
+  const [reconnectVersion, setReconnectVersion] = useState(0);
   const [stoppingSession, setStoppingSession] = useState(false);
   const [deleteConfirmSession, setDeleteConfirmSession] = useState(null);
   const [deleteConfirmWorkspace, setDeleteConfirmWorkspace] = useState(null);
@@ -629,6 +630,7 @@ export default React.forwardRef(function Sessions({
         setSessions((prev) => prev.map((s) => (
           s.id === oldSessionId ? { ...s, alive: true, status: 'running', memoryStatus: 'running' } : s
         )));
+        setReconnectVersion((v) => v + 1);
         fetchWorkspaces();
         showToast('success', sessionAlive ? 'Session restarted.' : 'Session resumed.');
         return;
@@ -1257,9 +1259,9 @@ export default React.forwardRef(function Sessions({
                      className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-[#E8EAED] shadow-sm"
                      style={{ backgroundColor: preset.xterm.background }}
                    >
-                     <AgentConsole
-                       key={activeSession.sessionId}
-                       sessionId={activeSession.sessionId}
+                      <AgentConsole
+                        key={`${activeSession.sessionId}:${reconnectVersion}`}
+                        sessionId={activeSession.sessionId}
                        agentName={activeSession.agentName}
                        projectId={activeSession.projectId}
                        onSessionEnd={handleSessionEnd}

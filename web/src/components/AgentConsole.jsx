@@ -130,11 +130,10 @@ export default function AgentConsole({
     };
     const hideOverlay = () => {
       requestAnimationFrame(() => {
-        requestAnimationFrame(() => {
-          if (hostRef.current) hostRef.current.style.opacity = '1';
-          if (overlayRef.current) overlayRef.current.style.display = 'none';
-          terminal.scrollToBottom();
-        });
+        if (disposed) return;
+        if (hostRef.current) hostRef.current.style.opacity = '1';
+        if (overlayRef.current) overlayRef.current.style.display = 'none';
+        terminal.scrollToBottom();
       });
     };
 
@@ -392,7 +391,8 @@ export default function AgentConsole({
       terminalRef.current = null;
       fitAddonRef.current = null;
     };
-  }, [sessionId, shouldConnect, shouldReplayIdle]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionId]);
 
   return (
     <div className="relative flex h-full min-h-0 flex-col overflow-hidden bg-transparent">
@@ -407,7 +407,7 @@ export default function AgentConsole({
         </div>
       </div>
       <div className="flex min-h-0 flex-1 flex-col overflow-hidden p-0">
-        <div ref={hostRef} className="min-h-0 w-full flex-1 transition-opacity duration-150" />
+        <div ref={hostRef} className="min-h-0 w-full flex-1" />
       </div>
     </div>
   );
