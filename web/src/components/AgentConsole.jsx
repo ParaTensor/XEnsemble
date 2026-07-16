@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
+import { WebglAddon } from '@xterm/addon-webgl';
 import '@xterm/xterm/css/xterm.css';
 
 import { getAccessToken, getWsUrl, apiFetch } from '../lib/api';
@@ -112,12 +113,21 @@ export default function AgentConsole({
     terminal.loadAddon(fitAddon);
     host.replaceChildren();
     terminal.open(host);
+    try {
+      const webglAddon = new WebglAddon();
+      webglAddon.onContextLoss(() => { webglAddon.dispose(); });
+      terminal.loadAddon(webglAddon);
+    } catch (_) {
+      // WebGL not available, fall back to default canvas renderer
+    }
     terminalRef.current = terminal;
 
     let disposed = false;
     let serverEnded = false;
     let lastSentCols = 0;
     let lastSentRows = 0;
+    let lastHostWidth = 0;
+    let lastHostHeight = 0;
     const resizeTimers = [];
 
     const copyToClipboard = (text) => {
@@ -230,7 +240,14 @@ export default function AgentConsole({
 
     const resizeObserver = new ResizeObserver(() => {
       requestAnimationFrame(() => {
-        if (!disposed) fitTerminal();
+        if (disposed) return;
+        const rect = host.getBoundingClientRect();
+        const w = Math.floor(rect.width);
+        const h = Math.floor(rect.height);
+        if (w === lastHostWidth && h === lastHostHeight) return;
+        lastHostWidth = w;
+        lastHostHeight = h;
+        fitTerminal();
       });
     });
     resizeObserver.observe(host);
