@@ -142,8 +142,6 @@ export default function AgentConsole({
     let serverEnded = false;
     let lastSentCols = 0;
     let lastSentRows = 0;
-    let lastHostWidth = 0;
-    let lastHostHeight = 0;
     const resizeTimers = [];
 
     const copyToClipboard = (text) => {
@@ -245,19 +243,10 @@ export default function AgentConsole({
     host.addEventListener('click', focusTerminal);
     host.addEventListener('contextmenu', handleContextMenu);
 
-    const resizeObserver = new ResizeObserver(() => {
-      requestAnimationFrame(() => {
-        if (disposed) return;
-        const rect = host.getBoundingClientRect();
-        const w = Math.floor(rect.width);
-        const h = Math.floor(rect.height);
-        if (w === lastHostWidth && h === lastHostHeight) return;
-        lastHostWidth = w;
-        lastHostHeight = h;
-        fitTerminal();
-      });
-    });
-    resizeObserver.observe(host);
+    const handleWindowResize = () => {
+      if (!disposed) fitTerminal();
+    };
+    window.addEventListener('resize', handleWindowResize);
 
     if (!sessionId || (!shouldConnect && !shouldReplayIdle)) {
       terminal.write('\r\n\x1b[33m[System] Session is not running.\x1b[0m\r\n');
@@ -370,7 +359,7 @@ export default function AgentConsole({
     return () => {
       disposed = true;
       resizeTimers.forEach((t) => clearTimeout(t));
-      resizeObserver.disconnect();
+      window.removeEventListener('resize', handleWindowResize);
       host.removeEventListener('mousedown', focusTerminal);
       host.removeEventListener('click', focusTerminal);
       host.removeEventListener('contextmenu', handleContextMenu);
