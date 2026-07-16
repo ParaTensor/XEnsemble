@@ -1,5 +1,46 @@
 const { eq } = require('drizzle-orm');
 
+const AGENT_EXIT_TIMEOUT_MS = 10000;
+
+async function waitForAgentExit(runtime, runtimeRef, agentId) {
+    if (!runtime?.exec?.exec || !runtimeRef || !agentId) {
+        await new Promise((r) => setTimeout(r, 3000));
+        return;
+    }
+    let agentCmd = agentId;
+    try {
+        const { DEFAULT_AGENTS } = require('../agents/defaultAgents');
+        const agent = DEFAULT_AGENTS.find((a) => a.id === agentId);
+        if (agent?.cmd) agentCmd = agent.cmd;
+    } catch (_) {}
+
+    const script = [
+        'for f in /proc/[0-9]*/cmdline; do',
+        '  p=${f#/proc/}; p=${p%/cmdline}',
+        '  [ "$p" = "$$" ] && continue',
+        '  cat "$f" 2>/dev/null | tr "\\0" " " | grep -q "$1" && kill -TERM "$p" 2>/dev/null',
+        'done',
+        'i=0',
+        'while [ $i -lt 20 ]; do',
+        '  found=0',
+        '  for f in /proc/[0-9]*/cmdline; do',
+        '    p=${f#/proc/}; p=${p%/cmdline}',
+        '    [ "$p" = "$$" ] && continue',
+        '    cat "$f" 2>/dev/null | tr "\\0" " " | grep -q "$1" && { found=1; break; }',
+        '  done',
+        '  [ "$found" = "0" ] && exit 0',
+        '  sleep 0.5',
+        '  i=$((i+1))',
+        'done',
+    ].join('\n');
+
+    try {
+        await runtime.exec.exec('sh', ['-c', script, 'sh', agentCmd], {}, { runtimeRef, cwd: '/' });
+    } catch (_) {
+        await new Promise((r) => setTimeout(r, 3000));
+    }
+}
+
 function shouldHibernateSession(session, now, thresholdMs, supportsHibernate) {
     if (!supportsHibernate || thresholdMs <= 0) return false;
     if (!session || session.status !== 'running' || !session.handle) return false;
@@ -70,11 +111,15 @@ async function stopSession({
             } catch (err) {
                 fastifyLog?.warn?.(err, '[sessions] failed to kill session handle during stop');
             }
+            const runtimeRef = live?.runtimeRef || live?.runtimeId || null;
+            if (runtimeRef) {
+                await waitForAgentExit(runtime, runtimeRef, live.agentId);
+            }
         }
-        const runtimeRef = live?.runtimeRef || live?.runtimeId || live?.handle?.runtimeRef
+        const rtRef = live?.runtimeRef || live?.runtimeId || live?.handle?.runtimeRef
             || session.runtimeRef || session.runtimeId || session.streamRef || null;
-        if (runtime?.provider?.supportsHibernate?.() && runtimeRef) {
-            await runtime.provider.hibernate(runtimeRef);
+        if (runtime?.provider?.supportsHibernate?.() && rtRef) {
+            await runtime.provider.hibernate(rtRef);
         }
     } catch (err) {
         if (fastifyLog?.warn) fastifyLog.warn(err, '[sessions] failed to stop session runtime');

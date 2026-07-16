@@ -2,6 +2,9 @@ const { eq } = require('drizzle-orm');
 const { sessionStateDirExists } = require('./stateDir');
 const { getAgentResume, getAgentResumeLevel, isSessionRecoverable } = require('../agents/agentResume');
 
+const CRASH_UPTIME_MS = 30000;
+const CRASH_THRESHOLD = 3;
+
 async function resolveCustomImageRef(customImageId, userId) {
     const { getReadyImageRef } = require('../runtime/CustomImageService');
     return getReadyImageRef(customImageId, userId);
@@ -30,12 +33,17 @@ async function registerSessionLifecycle({
     fastifyLog,
 }) {
     sessionManager.onExit(sessionId, () => {
-        // If the process/attach drops but the session is recoverable (L2 agent with
-        // a persisted state dir), keep it as `idle` so the user can resume it later
-        // instead of terminating it as `exited`. Only genuinely non-recoverable
-        // sessions become `exited` here.
         const live = sessionManager.getSession(sessionId);
-        const nextStatus = live && !live.hibernating && isSessionRecoverable(live) ? 'idle' : 'exited';
+        if (live && !live.hibernating) {
+            const uptime = Date.now() - (live.spawnedAt || 0);
+            if (uptime < CRASH_UPTIME_MS) {
+                live.crashCount = (live.crashCount || 0) + 1;
+            } else {
+                live.crashCount = 0;
+            }
+        }
+        const circuitTripped = live && (live.crashCount || 0) >= CRASH_THRESHOLD;
+        const nextStatus = live && !live.hibernating && !circuitTripped && isSessionRecoverable(live) ? 'idle' : 'exited';
         db.update(schema.sessions)
             .set({ status: nextStatus })
             .where(eq(schema.sessions.id, sessionId))

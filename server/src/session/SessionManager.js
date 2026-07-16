@@ -19,6 +19,7 @@ class SessionManager {
     }
 
     createSession(sessionId, handle, agentId, options = {}) {
+        const prev = this.sessions.get(sessionId);
         const transcriptRef = options.transcriptRef || handle?.transcriptRef || handle?.streamRef || null;
         const session = {
             id: sessionId,
@@ -32,6 +33,8 @@ class SessionManager {
             streamRef: handle?.streamRef || null,
             transcriptRef,
             createdAt: Date.now(),
+            spawnedAt: Date.now(),
+            crashCount: prev?.crashCount || 0,
             history: '',
             status: 'running',
             exitCode: null,

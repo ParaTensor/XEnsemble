@@ -113,11 +113,15 @@ class BoxLiteRuntimeProvider extends RuntimeProvider {
                     if (/already|exists/i.test(String(e))) {
                         if (needRecreate) {
                             throw new RuntimeError(
-                                `BoxLite ensureReady failed: session "${name}" still exists after delete — cannot recreate with image ${image}`,
+                                `BoxLite ensureReady failed: session "${name}" still exists after delete - cannot recreate with image ${image}`,
                                 502,
                             );
                         }
                         return;
+                    }
+                    if (/mkdir.*memory/i.test(String(e))) {
+                        const info = await this.client.getSessionStatus(name);
+                        if (info && info.running) return;
                     }
                     lastErr = e;
                     if (attempt < MAX_ATTEMPTS && TRANSIENT_RE.test(String(e))) {

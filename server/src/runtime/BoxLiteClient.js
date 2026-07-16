@@ -114,6 +114,13 @@ class BoxLiteClient {
         return res.json();
     }
 
+    async getSessionStatus(name) {
+        const res = await fetch(`${this.base}/api/sessions/${encodeURIComponent(name)}`);
+        if (!res.ok) return null;
+        const data = await res.json().catch(() => null);
+        return data?.session || null;
+    }
+
     async deleteSession(name) {
         if (!name) return;
         await this.stopSession(name).catch(() => {});
