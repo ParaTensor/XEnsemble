@@ -57,7 +57,7 @@ flowchart TB
 |------|------|
 | **Agent** | 平台 catalog 中的一条记录（`agents` 表）：`id`、`cmd`、`args`、认证方式等 |
 | **Agent 镜像** | 含该 agent CLI 的 OCI rootfs，命名 `{registry}/agent-{tag}:{version}` |
-| **Base 镜像** | `xensemble/box-base:bookworm` — Debian + Node + git/curl，无 agent CLI |
+| **Base 镜像** | `xensemble/box-base:bookworm` — Debian + Node + git/curl/gh/vim 等常用工具，无 agent CLI |
 | **Project Runtime** | 每个 project 一条 `runtimes` 记录；boxlite 下对应一个 blink session（name = `runtimeId`） |
 | **镜像版本** | `agent_box_images` 表中的一行；同一 agent 可有多版本，**至多一个 `is_active`** |
 
@@ -124,14 +124,14 @@ boxlite 下启动这些 agent 会 **400**，除非设置 `BLINK_IMAGE_<AGENT_ID>
 boxlite/
   build-images.sh           # 构建 base + 全部 buildable agent
   images/
-    base/Dockerfile         # debian:bookworm-slim + Node 22 + git/curl
+    base/Dockerfile         # debian:bookworm-slim + Node 22 + git/curl/gh/vim 等常用工具
     agent/Dockerfile        # ARG AGENT_INSTALL — 在 base 上 RUN install
 ```
 
 ### 4.2 Base 镜像
 
 - **默认 tag**：`xensemble/box-base:bookworm`  
-- **内容**：Debian bookworm-slim、Node **22**（glibc，满足 kimi-code ≥22.19）、git、curl、ca-certificates  
+- **内容**：Debian bookworm-slim、Node **22**（glibc，满足 kimi-code ≥22.19）、git、curl、ca-certificates、openssh-client（git over SSH）、less、vim-tiny、make、unzip、file、gh（GitHub CLI，官方 apt 源）  
 - **不含**：API key、用户凭证、tini entrypoint（由 blink 管理生命周期）
 
 ### 4.3 Per-agent 镜像

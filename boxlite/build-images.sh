@@ -13,6 +13,13 @@ docker build \
   -f "${ROOT_DIR}/boxlite/images/base/Dockerfile" \
   "${ROOT_DIR}/boxlite/images/base"
 
+# Push the base BEFORE building agents so the agents' `FROM ${BASE_IMAGE}`
+# resolves to the freshly built base in the registry. Pushing it at the end
+# causes agents to build on a stale base (the registry still holds the old tag).
+if [[ "${PUSH}" == "1" ]]; then
+  docker push "${BASE_IMAGE}"
+fi
+
 build_agent() {
   local agent_id="$1"
   local install_cmd="$2"
@@ -43,9 +50,5 @@ for (const entry of listBuildableAgentImages()) {
 }
 NODE
 )
-
-if [[ "${PUSH}" == "1" ]]; then
-  docker push "${BASE_IMAGE}"
-fi
 
 echo "Done. Set BLINK_BASE_IMAGE=${BASE_IMAGE} and BLINK_IMAGE_<AGENT>=${REGISTRY}/agent-<id>:${TAG} as needed."
