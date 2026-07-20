@@ -123,7 +123,7 @@ export default React.forwardRef(function Sessions({
   const [showHiddenFiles, setShowHiddenFiles] = useState(false);
   const [viewingFile, setViewingFile] = useState(null);
   const [fileContent, setFileContent] = useState('');
-  const editorTabs = useEditorTabs();
+  const editorTabs = useEditorTabs(activeSession?.projectId);
 
   const [showConfigModal, setShowConfigModal] = useState(false);
   const [configKeys, setConfigKeys] = useState({});

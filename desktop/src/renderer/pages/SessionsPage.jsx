@@ -96,7 +96,7 @@ export default React.forwardRef(function SessionsPage({
   const [workspaceFiles, setWorkspaceFiles] = useState([]);
   const [viewingFile, setViewingFile] = useState(null);
   const [fileContent, setFileContent] = useState('');
-  const editorTabs = useEditorTabs();
+  const editorTabs = useEditorTabs(activeSession?.projectId);
   const [isLoadingFiles, setIsLoadingFiles] = useState(false);
   const [showHiddenFiles, setShowHiddenFiles] = useState(false);
   const [workspaceOpen, setWorkspaceOpen] = useState(false);

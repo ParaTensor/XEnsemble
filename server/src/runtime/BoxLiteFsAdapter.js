@@ -38,6 +38,8 @@ class BoxLiteFsAdapter extends FsAdapter {
                 let p = parts.slice(1, -1).join(' ').trim();
                 if (!p || p === '.' || p === '..') continue;
                 if (p.startsWith('./')) p = p.slice(2);
+                // 跳过被列目录自身（find <path> 会返回 <path> 自身作为第一个结果）
+                if (p === rel) continue;
                 if (!opts.includeHidden && isHiddenWorkspacePath(p)) continue;
                 const nameOnly = p.split('/').pop() || p;
                 const entry = {

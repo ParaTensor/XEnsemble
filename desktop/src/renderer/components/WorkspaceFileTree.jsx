@@ -130,8 +130,12 @@ function LazyTree({ items, selectedPath, onOpenFile, projectId, onFetchDir }) {
   const buildTree = useCallback((dirPath, depth) => {
     const items = dirChildren[dirPath] || [];
     const nodes = [];
+    // 防御性深度限制：防止循环引用或异常数据导致栈溢出
+    if (depth > 100) return nodes;
     for (const item of items) {
       if (item.type === 'directory') {
+        // 跳过自身引用（item.path === dirPath 会导致无限递归）
+        if (item.path === dirPath) continue;
         nodes.push({
           ...item,
           children: expanded.has(item.path) ? buildTree(item.path, depth + 1) : [],

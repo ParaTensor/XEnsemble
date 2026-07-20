@@ -187,6 +187,32 @@ test('BoxLite fsList with depth=recursive uses find -maxdepth 6', async () => {
     assert.ok(cmd.includes('-maxdepth 6'), 'should use maxdepth 6');
 });
 
+// ─── 防回归：find <path> 返回 <path> 自身时必须跳过 ───
+
+test('BoxLite fsList skips the listed directory itself (find returns self)', async () => {
+    const adapter = new BoxLiteFsAdapter();
+    const client = new MockBoxLiteClient();
+    adapter.client = client;
+    // 模拟真实 find src -maxdepth 1 的输出（第一行是 src 自身）
+    client.execForResult = async (sessionName, command, args = []) => {
+        client.calls.push({ sessionName, command, args });
+        if (command === 'sh' && args[0] === '-c' && args[1].includes('find')) {
+            return {
+                exitCode: 0,
+                stdout: 'd src 0\nd src/components 0\nf src/index.js 100',
+                stderr: '',
+            };
+        }
+        return { exitCode: 1, stdout: '', stderr: '' };
+    };
+    const list = await adapter.fsList('/workspace', 'src', { depth: 'single', runtimeRef: 'sess1' });
+    const paths = list.map((e) => e.path);
+    // 自身条目 'src' 必须被跳过，否则 buildTree 无限递归
+    assert.ok(!paths.includes('src'), 'must skip the listed directory itself');
+    assert.ok(paths.includes('src/components'), 'should include subdirectories');
+    assert.ok(paths.includes('src/index.js'), 'should include files');
+});
+
 // ─── 3.A.2: fsList returns size field ───
 
 test('BoxLite fsList returns size field via find -printf %s', async () => {

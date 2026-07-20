@@ -1,12 +1,24 @@
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import { useWorkspaceFiles } from './useWorkspaceFiles';
 
-export function useEditorTabs() {
+export function useEditorTabs(projectId) {
   const [tabs, setTabs] = useState([]);
   const [activePath, setActivePath] = useState(null);
   const [diffView, setDiffView] = useState(null);
   const { listFiles, readFile, writeFile, createDir } = useWorkspaceFiles();
   const fetchDirLock = useRef({});
+  const lastProjectId = useRef(projectId);
+
+  // projectId 变化时重置 state，防止跨项目 state 泄漏
+  useEffect(() => {
+    if (lastProjectId.current !== projectId) {
+      lastProjectId.current = projectId;
+      setTabs([]);
+      setActivePath(null);
+      setDiffView(null);
+      fetchDirLock.current = {};
+    }
+  }, [projectId]);
 
   const openFile = useCallback(async (projectId, file) => {
     if (!file || file.type !== 'file') return;
