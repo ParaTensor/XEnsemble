@@ -99,6 +99,7 @@ export default function WorkspacePanel({
 
   const activeTab = tabs.find((t) => t.path === activePath);
   const activePathRef = useRef(activePath);
+  // 在 render 期间更新 ref（而非 useEffect），确保子组件 effect 运行时已是最新值。
   activePathRef.current = activePath;
 
   const dirtyTabs = tabs.filter((t) => t.content !== t.originalContent && !t.isBinary);

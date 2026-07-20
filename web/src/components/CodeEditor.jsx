@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useRef, useState, useEffect } from 'react';
 import Editor, { loader } from '@monaco-editor/react';
 import { FileWarning, Loader2, Pencil, Save } from 'lucide-react';
 import { consoleButtonFocusClass } from '@/lib/consoleTheme';
@@ -60,6 +60,12 @@ export default function CodeEditor({ content, path, readOnly: readOnlyProp, isBi
   // spec: 文本文件默认只读，点击 Edit 才可编辑
   const [editing, setEditing] = useState(false);
   const editorRef = useRef(null);
+  // 用 ref 存储最新 onSave，避免 addCommand 的 stale closure
+  const onSaveRef = useRef(onSave);
+  onSaveRef.current = onSave;
+
+  // 切换 tab 时重置编辑状态，回到只读模式
+  useEffect(() => { setEditing(false); }, [path]);
 
   const canEdit = !readOnlyProp && !isBinary;
   const isReadOnly = !editing || !canEdit;
@@ -69,9 +75,9 @@ export default function CodeEditor({ content, path, readOnly: readOnlyProp, isBi
     // 用 monaco 命名空间常量，避免硬编码数字（版本升级会失效）
     editor.addCommand(
       monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS,
-      () => onSave?.()
+      () => onSaveRef.current?.()
     );
-  }, [onSave]);
+  }, []);
 
   const handleKeyDown = useCallback((e) => {
     if ((e.ctrlKey || e.metaKey) && e.key === 's') {
