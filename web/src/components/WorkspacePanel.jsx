@@ -85,6 +85,8 @@ export default function WorkspacePanel({
   }, [onSaveTab]);
 
   const activeTab = tabs.find((t) => t.path === activePath);
+  const activePathRef = useRef(activePath);
+  useEffect(() => { activePathRef.current = activePath; }, [activePath]);
 
   return (
     <div className="flex h-full min-h-0" data-testid="workspace-panel">
@@ -165,8 +167,8 @@ export default function WorkspacePanel({
                   saving={saving}
                   onSave={() => handleSave(activeTab.path)}
                   onChange={(value) => {
-                    // 修复：将编辑器新内容传回父组件更新 tab.content
-                    onSelectTab?.(activeTab.path, value);
+                    const currentPath = activePathRef.current;
+                    onSelectTab?.(currentPath, value);
                   }}
                 />
               )}
