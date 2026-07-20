@@ -31,6 +31,10 @@ describe('WorkspacePanel', () => {
     onFetchDir: vi.fn().mockResolvedValue([]),
     onCreateFile: vi.fn(),
     onCreateDir: vi.fn(),
+    gitChanges: null,
+    onGitFileClick: vi.fn(),
+    gitDiffView: null,
+    onCloseGitDiff: vi.fn(),
   };
 
   it('renders empty state when no file is open', async () => {
@@ -101,49 +105,45 @@ describe('WorkspacePanel', () => {
     });
   });
 
-  it('shows changes panel tab and dirty file count', () => {
-    const tabs = [
-      { path: 'src/a.js', content: 'modified', originalContent: 'original', isBinary: false },
-      { path: 'src/b.js', content: 'same', originalContent: 'same', isBinary: false },
-    ];
-    render(<WorkspacePanel {...defaultProps} tabs={tabs} activePath="src/a.js" />);
-    expect(screen.getByText('1')).toBeInTheDocument();
+  it('shows git changes file count badge', () => {
+    const gitChanges = {
+      files: [{ path: 'src/a.js', status: ' M' }, { path: 'src/b.js', status: '??' }],
+      dirty: true,
+      ahead: 0,
+      behind: 0,
+    };
+    render(<WorkspacePanel {...defaultProps} gitChanges={gitChanges} />);
+    expect(screen.getByText('2')).toBeInTheDocument();
   });
 
-  it('shows dirty files in changes panel', () => {
-    const tabs = [
-      { path: 'src/a.js', content: 'modified', originalContent: 'original', isBinary: false },
-    ];
-    render(<WorkspacePanel {...defaultProps} tabs={tabs} activePath="src/a.js" />);
-    fireEvent.click(screen.getAllByText('变更')[0]);
+  it('shows git files in changes panel', () => {
+    const gitChanges = {
+      files: [{ path: 'src/a.js', status: ' M' }],
+      dirty: true,
+      ahead: 0,
+      behind: 0,
+    };
+    render(<WorkspacePanel {...defaultProps} gitChanges={gitChanges} />);
     expect(screen.getByText('src/a.js')).toBeInTheDocument();
     expect(screen.getByText('M')).toBeInTheDocument();
   });
 
-  it('shows empty state in changes panel when no dirty files', () => {
-    render(<WorkspacePanel {...defaultProps} />);
-    fireEvent.click(screen.getAllByText('变更')[0]);
-    expect(screen.getByText(/暂无未保存的变更/)).toBeInTheDocument();
+  it('shows empty state in changes panel when no git files', () => {
+    const gitChanges = { files: [], dirty: false, ahead: 0, behind: 0 };
+    render(<WorkspacePanel {...defaultProps} gitChanges={gitChanges} />);
+    expect(screen.getByText(/暂无变更/)).toBeInTheDocument();
   });
 
-  it('calls onShowDiff and onSelectTab when clicking dirty file', () => {
-    const onSelectTab = vi.fn();
-    const onShowDiff = vi.fn();
-    const tabs = [
-      { path: 'src/a.js', content: 'modified', originalContent: 'original', isBinary: false },
-    ];
-    render(
-      <WorkspacePanel
-        {...defaultProps}
-        tabs={tabs}
-        activePath="src/a.js"
-        onSelectTab={onSelectTab}
-        onShowDiff={onShowDiff}
-      />
-    );
-    fireEvent.click(screen.getAllByText('变更')[0]);
+  it('calls onGitFileClick when clicking git file', () => {
+    const onGitFileClick = vi.fn();
+    const gitChanges = {
+      files: [{ path: 'src/a.js', status: ' M' }],
+      dirty: true,
+      ahead: 0,
+      behind: 0,
+    };
+    render(<WorkspacePanel {...defaultProps} gitChanges={gitChanges} onGitFileClick={onGitFileClick} />);
     fireEvent.click(screen.getByText('src/a.js'));
-    expect(onSelectTab).toHaveBeenCalledWith('src/a.js');
-    expect(onShowDiff).toHaveBeenCalledWith('src/a.js');
+    expect(onGitFileClick).toHaveBeenCalledWith('src/a.js');
   });
 });

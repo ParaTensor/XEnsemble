@@ -46,6 +46,12 @@ export const getGitDiff = (projectId, { base, head } = {}) => {
   return request(`/api/v1/projects/${encodeURIComponent(projectId)}/git/diff${query ? `?${query}` : ''}`);
 };
 
+export const getGitFileDiff = (projectId, filePath) =>
+  request(`/api/v1/projects/${encodeURIComponent(projectId)}/git/file-diff?path=${encodeURIComponent(filePath)}`);
+
+export const getGitFileContent = (projectId, filePath, ref = 'HEAD') =>
+  request(`/api/v1/projects/${encodeURIComponent(projectId)}/git/file-content?path=${encodeURIComponent(filePath)}&ref=${encodeURIComponent(ref)}`);
+
 export const listBranches = (projectId) =>
   request(`/api/v1/projects/${encodeURIComponent(projectId)}/branches`);
 

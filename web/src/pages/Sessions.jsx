@@ -15,6 +15,7 @@ import SelectMenu from '../components/SelectMenu';
 import { useToast } from '../components/Toast';
 import { useTerminalTheme } from '../hooks/useTerminalTheme.jsx';
 import { useEditorTabs } from '../hooks/useEditorTabs';
+import { useGitChanges } from '../hooks/useGitChanges';
 import {
   TerminalSquare,
   Play,
@@ -124,6 +125,8 @@ export default React.forwardRef(function Sessions({
   const [viewingFile, setViewingFile] = useState(null);
   const [fileContent, setFileContent] = useState('');
   const editorTabs = useEditorTabs(activeSession?.projectId);
+  const gitChanges = useGitChanges(activeSession?.projectId);
+  const [gitDiffView, setGitDiffView] = useState(null);
 
   const [showConfigModal, setShowConfigModal] = useState(false);
   const [configKeys, setConfigKeys] = useState({});
@@ -579,6 +582,31 @@ export default React.forwardRef(function Sessions({
       showToast('error', err.message);
     }
   }, [activeSession?.projectId, showToast]);
+
+  const handleGitFileClick = useCallback(async (filePath) => {
+    if (!activeSession?.projectId) return;
+    setGitDiffView({ path: filePath, original: null, modified: null, loading: true });
+    try {
+      const [headRes, currentRes] = await Promise.all([
+        apiFetch(`/api/v1/projects/${encodeURIComponent(activeSession.projectId)}/git/file-content?path=${encodeURIComponent(filePath)}&ref=HEAD`),
+        apiFetch(`/api/v1/workspace/file?project_id=${encodeURIComponent(activeSession.projectId)}&path=${encodeURIComponent(filePath)}`),
+      ]);
+      const [headData, currentData] = await Promise.all([headRes.json(), currentRes.json()]);
+      setGitDiffView({
+        path: filePath,
+        original: headData.content || '',
+        modified: currentData.content || '',
+        loading: false,
+      });
+    } catch (err) {
+      setGitDiffView(null);
+      showToast('error', err.message);
+    }
+  }, [activeSession?.projectId, showToast]);
+
+  const handleCloseGitDiff = useCallback(() => {
+    setGitDiffView(null);
+  }, []);
 
   const handleSessionEnd = (sessionId) => {
     setSessions((prev) =>
@@ -1358,6 +1386,10 @@ export default React.forwardRef(function Sessions({
                         onShowDiff={(path) => editorTabs.showDiff(activeSession.projectId, path).catch((e) => showToast('error', e.message))}
                         diffView={editorTabs.diffView}
                         onCloseDiff={editorTabs.closeDiff}
+                        gitChanges={gitChanges}
+                        onGitFileClick={handleGitFileClick}
+                        gitDiffView={gitDiffView}
+                        onCloseGitDiff={handleCloseGitDiff}
                       />
                     )}
                   </div>

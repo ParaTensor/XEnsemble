@@ -195,6 +195,7 @@ class GitOperationService {
         let staged = false;
         let unstaged = false;
         let untracked = false;
+        const files = [];
 
         for (const line of lines) {
             if (line.length < 2) {
@@ -202,9 +203,12 @@ class GitOperationService {
             }
             const x = line[0];
             const y = line[1];
+            const filePath = line.slice(3).trim();
+            const entry = { path: filePath, status: x + y };
             if (x === '?' && y === '?') {
                 untracked = true;
                 dirty = true;
+                entry.type = 'untracked';
             } else {
                 if (x !== ' ') {
                     staged = true;
@@ -214,7 +218,15 @@ class GitOperationService {
                     unstaged = true;
                     dirty = true;
                 }
+                if (x !== ' ' && y !== ' ') {
+                    entry.type = 'both';
+                } else if (x !== ' ') {
+                    entry.type = 'staged';
+                } else {
+                    entry.type = 'modified';
+                }
             }
+            files.push(entry);
         }
 
         let ahead = 0;
@@ -228,7 +240,7 @@ class GitOperationService {
             // No upstream or no commits yet.
         }
 
-        return { branch, sha, dirty, staged, unstaged, untracked, ahead, behind };
+        return { branch, sha, dirty, staged, unstaged, untracked, ahead, behind, files };
     }
 
     async commitAll(project, message) {
@@ -256,6 +268,16 @@ class GitOperationService {
             args.push(base);
         }
         const { stdout } = await this._execGit(project, args);
+        return stdout;
+    }
+
+    async getFileDiff(project, filePath) {
+        const { stdout } = await this._execGit(project, ['diff', '--', filePath]);
+        return stdout;
+    }
+
+    async getFileContentAtRef(project, filePath, ref = 'HEAD') {
+        const { stdout } = await this._execGit(project, ['show', `${ref}:${filePath}`]);
         return stdout;
     }
 
