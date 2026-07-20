@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 
 vi.mock('@monaco-editor/react', () => ({
@@ -36,6 +36,10 @@ describe('WorkspacePanel', () => {
     gitDiffView: null,
     onCloseGitDiff: vi.fn(),
   };
+
+  beforeEach(() => {
+    sessionStorage.clear();
+  });
 
   it('renders empty state when no file is open', async () => {
     render(<WorkspacePanel {...defaultProps} />);
@@ -105,10 +109,11 @@ describe('WorkspacePanel', () => {
     });
   });
 
-  it('shows git changes file count badge', () => {
+  it('shows git changes badge on activity bar', () => {
     const gitChanges = {
       files: [{ path: 'src/a.js', status: ' M' }, { path: 'src/b.js', status: '??' }],
       dirty: true,
+      branch: 'main',
       ahead: 0,
       behind: 0,
     };
@@ -116,34 +121,46 @@ describe('WorkspacePanel', () => {
     expect(screen.getByText('2')).toBeInTheDocument();
   });
 
-  it('shows git files in changes panel', () => {
+  it('shows git files and branch in source control panel', async () => {
     const gitChanges = {
       files: [{ path: 'src/a.js', status: ' M' }],
       dirty: true,
+      branch: 'main',
       ahead: 0,
       behind: 0,
     };
     render(<WorkspacePanel {...defaultProps} gitChanges={gitChanges} />);
-    expect(screen.getByText('src/a.js')).toBeInTheDocument();
-    expect(screen.getByText('M')).toBeInTheDocument();
+    // 点击活动栏的变更图标
+    fireEvent.click(screen.getByTitle(/源代码管理/));
+    await waitFor(() => {
+      expect(screen.getByText('main')).toBeInTheDocument();
+      expect(screen.getByText('a.js')).toBeInTheDocument();
+      expect(screen.getByText('M')).toBeInTheDocument();
+    });
   });
 
-  it('shows empty state in changes panel when no git files', () => {
-    const gitChanges = { files: [], dirty: false, ahead: 0, behind: 0 };
+  it('shows empty state in source control when no git files', async () => {
+    const gitChanges = { files: [], dirty: false, branch: 'main', ahead: 0, behind: 0 };
     render(<WorkspacePanel {...defaultProps} gitChanges={gitChanges} />);
-    expect(screen.getByText(/暂无变更/)).toBeInTheDocument();
+    fireEvent.click(screen.getByTitle(/源代码管理/));
+    await waitFor(() => {
+      expect(screen.getByText(/暂无已保存的更改/)).toBeInTheDocument();
+    });
   });
 
-  it('calls onGitFileClick when clicking git file', () => {
+  it('calls onGitFileClick when clicking git file', async () => {
     const onGitFileClick = vi.fn();
     const gitChanges = {
       files: [{ path: 'src/a.js', status: ' M' }],
       dirty: true,
+      branch: 'main',
       ahead: 0,
       behind: 0,
     };
     render(<WorkspacePanel {...defaultProps} gitChanges={gitChanges} onGitFileClick={onGitFileClick} />);
-    fireEvent.click(screen.getByText('src/a.js'));
+    fireEvent.click(screen.getByTitle(/源代码管理/));
+    await waitFor(() => { expect(screen.getByText('a.js')).toBeInTheDocument(); });
+    fireEvent.click(screen.getByText('a.js'));
     expect(onGitFileClick).toHaveBeenCalledWith('src/a.js');
   });
 });
