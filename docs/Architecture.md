@@ -2,17 +2,17 @@
 
 > 状态：生产架构规范  
 > 日期：2026-06-19  
-> 适用范围：`server/` 控制面、`gateway/` LLM Gateway、`desktop/` Desktop Client、`client/` Web 管理面、Runtime Provider  
+> 适用范围：`server/` 控制面、`gateway/` LLM Gateway、`web/` Web Console、`desktop/` Desktop Client、Runtime Provider  
 
 ---
 
 ## 1. 设计目标
 
-将 XEnsemble 从“带 Web Console 的 Local MVP”演进为**以后台服务为核心、Desktop Client 为主入口**的生产架构：
+将 XEnsemble 从“带 Web Console 的 Local MVP”演进为**以后台服务为核心、Web Console 为主入口**的生产架构：
 
-1. **不再支持在线 Web Coding**：普通用户不再通过浏览器进行代码编辑、Web Terminal 交互、iframe Preview 等在线 Coding 操作，降低前端维护成本。
-2. **Client-Server 模式**：XEnsemble Server 作为独立后台服务运行，用户主要通过 **XEnsemble Desktop Client**（桌面原生应用）连接并使用。
-3. **保留 Web 管理面**：现有 `client/` Web UI 继续保留，作为 **Admin 管理台、平台状态页、用户登录/注册入口**（可选）。普通用户的 Coding 工作流迁移到 Desktop Client。
+1. **在线 Web Coding 为主入口**：普通用户通过浏览器完成代码编辑、Web Terminal、iframe Preview 等 Coding 操作；`web/` 是日常工作流的主界面。
+2. **Client-Server 模式**：XEnsemble Server 作为独立后台服务运行；Desktop Client 作为可选原生客户端，与 Web Console 共用同一套控制面 API。
+3. **Web 管理面与 Coding 一体**：`web/` 同时承载普通用户 Console（Session / Terminal / Preview / Workspace）与 Admin 管理台、平台状态、登录/注册。
 4. **执行面三层 Provider**：执行面统一通过 `RuntimeProvider` 抽象管理生命周期，按部署成熟度分为 Local Process、BoxLite Managed Sandbox、K8s Production Runtime 三层；控制面 API、Session、Deployment、Workspace 逻辑不得绑定具体底层。
 5. **生产就绪默认**：强制安全密钥、Refresh Token、进程级隔离、Secrets 不落地。Local 层服务于开发/PC/单机早期部署；BoxLite 层服务于托管 sandbox 隔离；K8s 层服务于多机、多用户、弹性伸缩的生产运维部署。
 
@@ -22,9 +22,9 @@
 
 | 约束 | 说明 |
 |------|------|
-| Web 不作为用户 Coding 入口 | 普通用户的终端、文件编辑、iframe 预览等操作不在 Web 端提供；后台 Coding 类 API 优先面向 Desktop Client。 |
-| Desktop Client 是主入口 | 用户的日常交互（登录、启动 Agent、查看终端、管理项目/Agent、触发 Preview）默认通过 Desktop Client 完成。 |
-| Web 管理面保留 | Admin 管理、用户/Agent/平台配置、状态展示等仍可通过 `client/` Web 管理台操作。 |
+| Web Console 是用户 Coding 主入口 | 普通用户的终端、文件编辑、iframe 预览等操作在 `web/` 提供；后台 Coding 类 API 同时服务 Web 与 Desktop Client。 |
+| Desktop Client 为可选入口 | 登录、Agent、终端、预览等能力可通过 Desktop Client 完成，与 Web 共用协议；不替代 Web 主路径。 |
+| Web 管理面保留 | Admin 管理、用户/Agent/平台配置、状态展示等仍通过 `web/` 操作。 |
 | 执行面三层实现 | Local Process 便于开发/PC/单机部署；BoxLite 提供托管 sandbox 隔离；K8s 面向多机、多用户、弹性伸缩生产运维。 |
 | 向后兼容协议 | 现有 REST/WS 消息格式尽量保留，仅在鉴权层增强（WS 也带 token）。 |
 | 执行面抽象不变 | 继续沿用 `RuntimeProvider / ExecAdapter / FsAdapter / PreviewAdapter` 四层接口。 |
@@ -63,13 +63,16 @@ Desktop Client 或 Self-Hosted Server 使用 **Local Runtime Provider**，Agent/
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
-│                         XEnsemble Desktop Client                         │
+│                         web/ Web Console（主入口）                        │
 │  ┌─────────────┐  ┌─────────────┐  ┌─────────────────────┐             │
 │  │ 登录 / 设置  │  │ 项目管理     │  │ Agent / Session 管理 │             │
 │  └─────────────┘  └─────────────┘  └─────────────────────┘             │
 │  ┌─────────────┐  ┌─────────────┐  ┌─────────────────────┐             │
-│  │ 本地编辑器   │  │ 终端 (xterm) │  │ 系统浏览器预览       │             │
+│  │ Workspace 编辑│  │ 终端 (xterm) │  │ iframe Preview      │             │
 │  └─────────────┘  └─────────────┘  └─────────────────────┘             │
+│  ┌─────────────┐  ┌─────────────┐                                      │
+│  │ Admin 管理台 │  │ 平台状态     │                                      │
+│  └─────────────┘  └─────────────┘                                      │
 └───────────────────┬─────────────────────────────────────────────────────┘
                     │ HTTPS / WSS
                     ▼
@@ -99,8 +102,8 @@ Desktop Client 或 Self-Hosted Server 使用 **Local Runtime Provider**，Agent/
         └─────────────────────┘
 
 ┌─────────────────────────────────┐
-│  client/ Web 管理面（保留）      │
-│  Admin / 平台设置 / 状态展示      │
+│  desktop/ Desktop Client（可选） │
+│  原生终端 / 本地编辑器 / 系统浏览器│
 └─────────────────────────────────┘
 ```
 
@@ -108,34 +111,32 @@ Desktop Client 或 Self-Hosted Server 使用 **Local Runtime Provider**，Agent/
 
 ## 5. 组件职责
 
-### 5.1 Desktop Client
+### 5.1 Web Console（`web/`）
+
+- **身份**：浏览器端 React 应用；普通用户 Coding 与 Admin 管理的主入口。
+- **职责**：
+  - **Coding Console**：项目 / Agent / Session / Deployment；Web Terminal（xterm + WSS）；Workspace 文件浏览与编辑；iframe Preview。
+  - **Admin 管理台**：用户/配额/Agent 授权/平台设置/Gateway 配置。
+  - **状态展示**：项目列表、Session 状态、Deployment 状态、事件审计。
+  - **登录/注册入口**：用户获取账号并进入 Console 工作流。
+- **约束**：所有执行面操作经控制面 API/WS；不直接调用 Runtime Provider 或沙箱厂商 API。
+
+### 5.2 Desktop Client（`desktop/`）
 
 - **身份**：原生桌面应用（推荐 Electron / Tauri / 独立原生框架）。本项目代码位于 `desktop/`。
 - **职责**：
   - 登录后台，保存 Refresh Token 到系统钥匙串，管理 Access Token 生命周期。
-  - 展示项目、Agent、Session、Deployment 列表与管理界面（普通用户主界面）。
+  - 展示项目、Agent、Session、Deployment 列表与管理界面。
   - 嵌入终端组件（xterm.js 等）通过 WSS 连接后台 `/ws/v1/terminal`。
   - 本地编辑器集成：调用用户本机 VS Code / Cursor / 其他编辑器打开 workspace；不内嵌代码编辑器。
   - 预览：收到 `publicUrl` 后调用系统默认浏览器打开；不内嵌 iframe 预览。
-  - 文件同步：通过 SFTP/SSHFS/Git 或专用同步协议把 Server 端 workspace 映射到本地目录（可选，第一阶段可要求用户直接用 Git）。
-- **禁止**：内嵌 Web IDE、在 Client 里直接读写后端 FS（必须通过 API/FS 适配器）。
-
-### 5.2 Web 管理面（`client/`）
-
-- **身份**：保留的浏览器端 React 应用。
-- **职责**：
-  - **Admin 管理台**：用户/配额/Agent 授权/平台设置/Gateway 配置。
-  - **状态展示**：项目列表、Session 状态、Deployment 状态、事件审计。
-  - **登录/注册入口**：可作为用户首次获取账号的入口，但 Coding 主流程跳转到 Desktop Client。
-- **限制**：
-  - 不再提供 Web Terminal（普通用户）。
-  - 不再提供 iframe Preview。
-  - 不提供浏览器内代码编辑器。
-- **后续演进**：Admin 能力未来也可下沉到 Desktop Client；Web 管理面逐步转型为纯运营/运维后台。
+  - 文件同步：通过 SFTP/SSHFS/Git 或专用同步协议把 Server 端 workspace 映射到本地目录（可选）。
+- **禁止**：在 Client 里直接读写后端 FS（必须通过 API/FS 适配器）。
+- **定位**：可选增强入口，与 Web Console 共用控制面协议；不以 Desktop 替代 Web 主路径。
 
 ### 5.3 控制面（XEnsemble Server）
 
-基于现有 Fastify 服务，剥离面向普通用户的 Web Coding 功能，保留并强化以下模块：
+基于现有 Fastify 服务，保留并强化面向 Web / Desktop 的 Coding 与管理能力：
 
 | 模块 | 生产化调整 |
 |------|------------|
@@ -171,7 +172,7 @@ Desktop Client 或 Self-Hosted Server 使用 **Local Runtime Provider**，Agent/
 - **BoxLiteFsAdapter**：通过 sandbox 文件 API 管理 workspace；不得向客户端暴露 sandbox 内部路径或 sandbox id。
 - **BoxLitePreviewAdapter**：在 sandbox 内启动 preview，并由 XEnsemble Preview Gateway 反代；客户端仍访问 `/preview/:deploymentId`。
 - **约束**：Desktop/Web 不直接调用 BoxLite；BoxLite token、内部 URL、sandbox id 均为控制面内部细节。
-- **当前状态**：`server/src/runtime/BoxLite*.js` 已提供占位实现。可通过 `RUNTIME_PROVIDER=boxlite` 加载，但所有方法均返回 `501 Not Implemented`。
+- **当前状态**：`server/src/runtime/BoxLiteRuntimeProvider` / `BoxLiteExecAdapter` / `BoxLiteFsAdapter` 已接 blink（默认 `RUNTIME_PROVIDER=boxlite`）；`BoxLitePreviewAdapter` 仍为 stub。详见 [`docs/Sandbox-Integration.md`](./Sandbox-Integration.md)。
 
 #### 5.4.3 K8s Production Runtime（Phase 2 / 未来开发）
 
@@ -205,7 +206,7 @@ Desktop Client 或 Self-Hosted Server 使用 **Local Runtime Provider**，Agent/
 
 - `gateway/` Rust 二进制继续作为可选内置 LLM 路由。
 - 生产推荐以外部 UniGateway（`LLM_GATEWAY_UPSTREAM_URL`）运行，控制面只负责 session token 鉴权与转发。
-- Desktop Client 不直接连接 UniGateway。
+- Desktop Client / Web Console 不直接连接 UniGateway。
 
 ---
 
@@ -217,7 +218,7 @@ Desktop Client 或 Self-Hosted Server 使用 **Local Runtime Provider**，Agent/
 - **刷新**：`POST /api/v1/auth/refresh` 用 Refresh Token 换取新的 Access Token。
 - **Access Token**：短期（如 15 分钟），用于 API/WS。
 - **Refresh Token**：长期（如 30 天），存储于 `refresh_tokens` 表，支持撤销与设备绑定。
-- Desktop Client 使用系统钥匙串保存 Refresh Token。
+- Desktop Client 使用系统钥匙串保存 Refresh Token；Web Console 使用安全的浏览器存储策略。
 
 ### 6.2 REST API
 
@@ -232,13 +233,10 @@ Desktop Client 或 Self-Hosted Server 使用 **Local Runtime Provider**，Agent/
 - `/api/v1/secrets`
 - `/api/v1/agents`（按授权过滤）
 - `/api/v1/llm/*`（Agent 使用，非 Client 直接调用）
-- `/api/v1/workspace/*`（保留受控文件列表/读取，供 Desktop Client 文件浏览器与 Web 管理面使用，不用于编辑）
+- `/api/v1/workspace/*`（受控文件列表/读取/写入，供 Web Console 与 Desktop Client 使用）
 
-**移除/禁用**：
-- 浏览器内代码编辑器相关接口（如有）；
-- Web 端面向普通用户的 Web Terminal 入口（Admin 调试场景可单独控制）；
-- Web 端 iframe Preview；
-- 允许 `origin: '*'` 的 CORS；改为只允许配置的 Web 管理面 origin 与 Desktop Client origin。
+**约束**：
+- CORS 不允许 `origin: '*'`；改为只允许配置的 Web Console origin 与 Desktop Client origin。
 
 ### 6.3 WebSocket 终端
 
@@ -246,7 +244,7 @@ Desktop Client 或 Self-Hosted Server 使用 **Local Runtime Provider**，Agent/
 - 必须携带 Access Token；后台校验 token、用户 `active`、session 归属与 `status === 'running'`。
 - 消息格式与现有协议保持一致。
 - HTTP(SSE+POST) 回退保留，供企业防火墙环境使用。
-- Web 管理面不再默认暴露 Web Terminal；仅 Desktop Client 使用。
+- Web Console 与 Desktop Client 均可使用 Web Terminal。
 
 ### 6.4 Preview 访问
 
@@ -255,7 +253,7 @@ Desktop Client 或 Self-Hosted Server 使用 **Local Runtime Provider**，Agent/
   - 通过 `POST /api/v1/projects/:id/preview`、`POST /api/v1/deployments`、`POST /api/v1/deployments/:id/start` 生成/轮换。
   - 已有 running deployment 可通过 `POST /api/v1/deployments/:id/preview-token` 签发新 token。
   - 访问时通过 `x-preview-token` header 或 `?preview_token=...` query 携带。
-- Desktop Client 收到 URL 后调用系统浏览器打开；Web 管理面可展示“外部打开”链接，但不 iframe 嵌入。
+- Web Console 以 iframe 嵌入 Preview；Desktop Client 可调用系统浏览器打开同一 URL。
 - Gateway 校验 Host 白名单、token、deployment 状态、用户 `active`、project 归属。
 
 ---
@@ -281,9 +279,6 @@ Desktop Client 或 Self-Hosted Server 使用 **Local Runtime Provider**，Agent/
 
 ### 7.3 废弃/移除
 
-- 浏览器内代码编辑器及其 API。
-- Web 端面向普通用户的 Web Terminal（Admin 调试可保留开关）。
-- Web 端 iframe Preview。
 - 不再把 `scrollback` 作为控制面持久化字段；事实来源在 Runtime 侧（本地可用文件/ring-buffer 缓存）。
 - 内存单飞/内存配额（替换为 Redis）。
 - 硬编码 JWT/加密密钥回退。
@@ -303,7 +298,7 @@ Desktop Client 或 Self-Hosted Server 使用 **Local Runtime Provider**，Agent/
 | Secrets | 仅启动/重启时注入；不写入镜像、volume、deployment record、build log；provider key 不存明文 TOML。 |
 | Preview | deployment-scoped token；校验 Host；公开/租户内两种模式可配置。 |
 | Desktop Client | Refresh Token 存系统钥匙串；不缓存用户 secrets 明文。 |
-| Web 管理面 | Admin 权限校验；不暴露普通用户 Coding 能力。 |
+| Web Console | 普通用户 Coding 与 Admin 分权；Admin API 需 admin 校验；终端/Preview/Workspace 均走鉴权 API。 |
 
 ---
 
@@ -332,8 +327,9 @@ Desktop Client 或 Self-Hosted Server 使用 **Local Runtime Provider**，Agent/
       ├─ Preview processes
       └─ Workspace directories
 
-[Desktop Clients] ──HTTPS/WSS──▶ [Server]
-[Admin Browser]   ──HTTPS──────▶ [Server] (Web 管理面)
+[Web Console]     ──HTTPS/WSS──▶ [Server]
+[Desktop Clients] ──HTTPS/WSS──▶ [Server]（可选）
+[Admin Browser]   ──HTTPS──────▶ [Server]（Web 管理面）
 ```
 
 ### 10.2 BoxLite 托管 Sandbox
@@ -348,7 +344,8 @@ Desktop Client 或 Self-Hosted Server 使用 **Local Runtime Provider**，Agent/
                                       ├─ Workspace filesystem
                                       └─ Preview process
 
-[Desktop Clients] ──HTTPS/WSS──▶ [Server]
+[Web Console]     ──HTTPS/WSS──▶ [Server]
+[Desktop Clients] ──HTTPS/WSS──▶ [Server]（可选）
 [Preview Browser] ──HTTPS──────▶ [Server Preview Gateway] ──▶ [BoxLite Sandbox]
 ```
 
@@ -374,23 +371,20 @@ Desktop Client 或 Self-Hosted Server 使用 **Local Runtime Provider**，Agent/
 
 | 能力 | 处理方式 | 说明 |
 |------|----------|------|
-| 浏览器内代码编辑器 | 删除 | 用户用本地编辑器。 |
-| Web Terminal（普通用户） | 移除入口 | 终端只在 Desktop Client；Admin 调试可保留开关。 |
-| Web Admin UI | **保留** | 作为 Admin 管理台，与 Desktop Client 共用 API。 |
-| iframe Preview | 删除 | Preview 用系统浏览器打开；Web 管理面仅展示链接。 |
-| Web Console 作为用户 Coding 主入口 | 废弃 | Desktop Client 成为主入口。 |
+| Web Console（Coding + Admin） | **保留并强化** | 用户 Coding 主入口；与 Desktop Client 共用 API。 |
+| Desktop Client | **保留（可选）** | 原生终端 / 本地编辑器 / 系统浏览器预览。 |
 | 内存单飞/内存配额 | 替换为 Redis | 支持多实例。 |
 | 硬编码 JWT/加密密钥 | 删除回退 | 未配置则启动失败。 |
 | `trustProxy: true` 默认 | 关闭或白名单 | 防止 IP/协议欺骗。 |
-| CORS `origin: '*'` | 受限 | 只允许 Web 管理面与 Desktop Client origin。 |
+| CORS `origin: '*'` | 受限 | 只允许 Web Console 与 Desktop Client origin。 |
 | K8s 作为第一阶段默认 | 推迟到生产运维层 | 先使用 Local Process 降低部署门槛；需要托管隔离时优先接 BoxLite。 |
 
 ---
 
 ## 12. 迁移路径
 
-### Phase 1 — 剥离 Web Coding & 强化认证 & 本地执行加固
-1. 移除 `client/` 中面向普通用户的 Coding 入口（Web Terminal、iframe Preview、代码编辑器）。
+### Phase 1 — 强化 Web Console & 认证 & 本地执行加固
+1. 保留并持续完善 `web/` Coding 入口（Web Terminal、iframe Preview、Workspace 编辑）。
 2. 保留并加固 Web Admin UI。
 3. WS 终端加 `access_token` 鉴权。
 4. 引入 Refresh Token；强制生产环境配置 `JWT_SECRET`/`ENCRYPTION_KEY`。
@@ -411,7 +405,7 @@ Desktop Client 或 Self-Hosted Server 使用 **Local Runtime Provider**，Agent/
 ### Phase 3 — BoxLite Runtime Provider
 1. 实现 BoxLiteRuntimeProvider / BoxLiteExecAdapter / BoxLiteFsAdapter / BoxLitePreviewAdapter。
 2. 验证交互式 PTY、workspace 持久化、preview 反代、snapshot/checkpoint 与 secret 注入能力。
-3. 通过配置切换 provider，保持 Desktop Client / Web 管理面不变。
+3. 通过配置切换 provider，保持 Web Console / Desktop Client 不变。
 
 ### Phase 4 — K8s Production Runtime Provider
 1. 实现 K8sRuntimeProvider 全套 adapter。
@@ -423,10 +417,9 @@ Desktop Client 或 Self-Hosted Server 使用 **Local Runtime Provider**，Agent/
 
 ## 13. 非目标
 
-- 浏览器内代码编辑/IDE。
 - 公共 SaaS 多租户计费。
 - 完整的 CI/CD pipeline（可由外部 GitHub Actions 触发平台 API）。
-- 原生移动端 Client（先聚焦 Desktop）。
+- 原生移动端 Client（先聚焦 Web；Desktop 为可选增强）。
 
 ---
 
@@ -438,3 +431,4 @@ Desktop Client 或 Self-Hosted Server 使用 **Local Runtime Provider**，Agent/
 - Agent 说明：`docs/agents.md`
 - Agent 镜像（boxlite 构建、绑定、Admin 注册）：`docs/Agent-Images.md`
 - Desktop Client：`desktop/README.md`、`desktop/DESIGN.md`、`desktop/AGENTS.md`
+- Web UI：`DESIGN.md`、`docs/Designs.md`
