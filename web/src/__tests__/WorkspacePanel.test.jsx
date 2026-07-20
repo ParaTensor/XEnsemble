@@ -100,4 +100,50 @@ describe('WorkspacePanel', () => {
       expect(screen.getByTestId('workspace-panel')).toBeInTheDocument();
     });
   });
+
+  it('shows changes panel tab and dirty file count', () => {
+    const tabs = [
+      { path: 'src/a.js', content: 'modified', originalContent: 'original', isBinary: false },
+      { path: 'src/b.js', content: 'same', originalContent: 'same', isBinary: false },
+    ];
+    render(<WorkspacePanel {...defaultProps} tabs={tabs} activePath="src/a.js" />);
+    expect(screen.getByText('1')).toBeInTheDocument();
+  });
+
+  it('shows dirty files in changes panel', () => {
+    const tabs = [
+      { path: 'src/a.js', content: 'modified', originalContent: 'original', isBinary: false },
+    ];
+    render(<WorkspacePanel {...defaultProps} tabs={tabs} activePath="src/a.js" />);
+    fireEvent.click(screen.getAllByText('变更')[0]);
+    expect(screen.getByText('src/a.js')).toBeInTheDocument();
+    expect(screen.getByText('M')).toBeInTheDocument();
+  });
+
+  it('shows empty state in changes panel when no dirty files', () => {
+    render(<WorkspacePanel {...defaultProps} />);
+    fireEvent.click(screen.getAllByText('变更')[0]);
+    expect(screen.getByText(/暂无未保存的变更/)).toBeInTheDocument();
+  });
+
+  it('calls onShowDiff and onSelectTab when clicking dirty file', () => {
+    const onSelectTab = vi.fn();
+    const onShowDiff = vi.fn();
+    const tabs = [
+      { path: 'src/a.js', content: 'modified', originalContent: 'original', isBinary: false },
+    ];
+    render(
+      <WorkspacePanel
+        {...defaultProps}
+        tabs={tabs}
+        activePath="src/a.js"
+        onSelectTab={onSelectTab}
+        onShowDiff={onShowDiff}
+      />
+    );
+    fireEvent.click(screen.getAllByText('变更')[0]);
+    fireEvent.click(screen.getByText('src/a.js'));
+    expect(onSelectTab).toHaveBeenCalledWith('src/a.js');
+    expect(onShowDiff).toHaveBeenCalledWith('src/a.js');
+  });
 });
