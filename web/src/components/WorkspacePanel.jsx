@@ -99,7 +99,10 @@ export default function WorkspacePanel({
 
   const activeTab = tabs.find((t) => t.path === activePath);
   const activePathRef = useRef(activePath);
-  useEffect(() => { activePathRef.current = activePath; }, [activePath]);
+  // 在 render 期间更新 ref（而非 useEffect），确保子组件 effect 运行时已是最新值。
+  // React effect 执行顺序：子组件 → 父组件，Monaco 的 setValue effect 在子组件中，
+  // 若用 useEffect 更新 ref，onChange 触发时 ref 仍是旧值，导致 selectTab 覆盖错误 tab。
+  activePathRef.current = activePath;
 
   const dirtyTabs = tabs.filter((t) => t.content !== t.originalContent && !t.isBinary);
   const dirtyCount = dirtyTabs.length;

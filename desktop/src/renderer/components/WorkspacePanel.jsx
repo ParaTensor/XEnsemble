@@ -99,7 +99,7 @@ export default function WorkspacePanel({
 
   const activeTab = tabs.find((t) => t.path === activePath);
   const activePathRef = useRef(activePath);
-  useEffect(() => { activePathRef.current = activePath; }, [activePath]);
+  activePathRef.current = activePath;
 
   const dirtyTabs = tabs.filter((t) => t.content !== t.originalContent && !t.isBinary);
   const dirtyCount = dirtyTabs.length;
