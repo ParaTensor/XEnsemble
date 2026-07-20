@@ -1639,7 +1639,7 @@ fastify.post('/api/v1/deployments/:deploymentId/preview-token', { preValidation:
 });
 
 // Workspace API — 经 runtime 解析 workspace 根路径后委托 FsAdapter
-fastify.get('/api/v1/workspace/files', { preValidation: [fastify.authenticate] }, async (request, reply) => {
+fastify.get('/api/v1/workspace/files', { preValidation: [fastify.authenticate, fastify.requireActive] }, async (request, reply) => {
     const projectId = request.query.project_id;
     if (!projectId) return reply.code(400).send({ error: 'project_id is required' });
 
@@ -1649,16 +1649,33 @@ fastify.get('/api/v1/workspace/files', { preValidation: [fastify.authenticate] }
     try {
         const relativePath = request.query.path || '';
         const includeHidden = request.query.include_hidden === '1' || request.query.include_hidden === 'true';
+        const depth = request.query.depth === 'single' ? 'single' : 'recursive';
         const ready = await ensureProjectRuntime(project);
         const ref = ready.runtime ? ready.runtime.runtimeRef : undefined;
-        return runtime.fs.fsList(ready.workspacePath, relativePath, { runtimeRef: ref, includeHidden });
+        return runtime.fs.fsList(ready.workspacePath, relativePath, { runtimeRef: ref, includeHidden, depth });
     } catch (err) {
+        if (err instanceof RuntimeError) return reply.code(err.statusCode).send({ error: err.message });
         request.log.error(err);
         return reply.code(500).send({ error: 'Failed to list workspace files' });
     }
 });
 
-fastify.get('/api/v1/workspace/file', { preValidation: [fastify.authenticate] }, async (request, reply) => {
+const TEXT_EXTENSIONS = new Set([
+    '.js', '.jsx', '.ts', '.tsx', '.json', '.md', '.css', '.html', '.txt',
+    '.yml', '.yaml', '.toml', '.sh', '.py', '.go', '.rs', '.xml', '.svg',
+    '.env', '.gitignore', '.editorconfig', '.csv', '.log', '.c', '.h', '.cpp',
+    '.hpp', '.java', '.rb', '.php', '.sql', '.graphql', '.prisma', '.vue',
+    '.svelte', '.scss', '.less', '.ini', '.cfg', '.conf',
+]);
+
+const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB
+
+function isTextFile(filePath) {
+    const ext = path.extname(filePath).toLowerCase();
+    return TEXT_EXTENSIONS.has(ext) || ext === '' || !ext.includes('.');
+}
+
+fastify.get('/api/v1/workspace/file', { preValidation: [fastify.authenticate, fastify.requireActive] }, async (request, reply) => {
     const projectId = request.query.project_id;
     const filePath = request.query.path;
     if (!projectId) return reply.code(400).send({ error: 'project_id is required' });
@@ -1670,11 +1687,166 @@ fastify.get('/api/v1/workspace/file', { preValidation: [fastify.authenticate] },
     try {
         const ready = await ensureProjectRuntime(project);
         const ref = ready.runtime ? ready.runtime.runtimeRef : undefined;
-        const content = await runtime.fs.fsRead(ready.workspacePath, filePath, { runtimeRef: ref });
-        return { content };
+        const isText = isTextFile(filePath);
+        const encoding = isText ? 'utf8' : 'buffer';
+        // 用 fsStat 取单文件大小（禁止用 fsList 列目录再 find，语义脆弱且性能差）
+        try {
+            const stat = await runtime.fs.fsStat(ready.workspacePath, filePath, { runtimeRef: ref });
+            if (stat.size > MAX_FILE_SIZE) {
+                return reply.code(413).send({ error: 'File too large' });
+            }
+        } catch (statErr) {
+            if (statErr instanceof RuntimeError && statErr.statusCode === 404) {
+                return reply.code(404).send({ error: 'File not found' });
+            }
+            throw statErr;
+        }
+        const content = await runtime.fs.fsRead(ready.workspacePath, filePath, { runtimeRef: ref, encoding });
+        const isBinary = !isText;
+        if (isBinary) {
+            return { content: Buffer.isBuffer(content) ? content.toString('base64') : content, isBinary: true };
+        }
+        return { content, isBinary: false };
     } catch (err) {
+        if (err instanceof RuntimeError) return reply.code(err.statusCode).send({ error: err.message });
         request.log.error(err);
         return reply.code(500).send({ error: 'Failed to read file' });
+    }
+});
+
+fastify.put('/api/v1/workspace/file', { preValidation: [fastify.authenticate, fastify.requireActive] }, async (request, reply) => {
+    const projectId = request.query.project_id;
+    const filePath = request.query.path;
+    if (!projectId) return reply.code(400).send({ error: 'project_id is required' });
+    if (!filePath) return reply.code(400).send({ error: 'Missing path' });
+
+    const project = await getProjectForUser(request.user.id, projectId);
+    if (!project) return reply.code(404).send({ error: 'Project not found' });
+
+    const { content } = request.body || {};
+    if (content === undefined || content === null) return reply.code(400).send({ error: 'content is required' });
+    if (typeof content === 'string' && Buffer.byteLength(content) > MAX_FILE_SIZE) {
+        return reply.code(413).send({ error: 'File too large' });
+    }
+
+    try {
+        const ready = await ensureProjectRuntime(project);
+        const ref = ready.runtime ? ready.runtime.runtimeRef : undefined;
+
+        const ifUnmodifiedSince = request.headers['if-unmodified-since'];
+        if (ifUnmodifiedSince) {
+            try {
+                const stat = await runtime.fs.fsStat(ready.workspacePath, filePath, { runtimeRef: ref });
+                const headerTime = new Date(ifUnmodifiedSince).getTime();
+                if (!isNaN(headerTime) && stat.mtime > headerTime) {
+                    return reply.code(409).send({ error: 'File was modified externally' });
+                }
+            } catch (err) {
+                if (err instanceof RuntimeError && err.statusCode === 404) {
+                    // file doesn't exist yet, allow write
+                } else if (err instanceof RuntimeError) {
+                    throw err;
+                }
+            }
+        }
+
+        const result = await runtime.fs.fsWrite(ready.workspacePath, filePath, content, { runtimeRef: ref });
+        request.log.info({ userId: request.user.id, projectId, path: filePath, action: 'write' }, 'workspace fs op');
+        return { ok: true, path: result.path, size: result.size };
+    } catch (err) {
+        if (err instanceof RuntimeError) return reply.code(err.statusCode).send({ error: err.message });
+        request.log.error(err);
+        return reply.code(500).send({ error: 'Failed to write file' });
+    }
+});
+
+fastify.delete('/api/v1/workspace/file', { preValidation: [fastify.authenticate, fastify.requireActive] }, async (request, reply) => {
+    const projectId = request.query.project_id;
+    const filePath = request.query.path;
+    if (!projectId) return reply.code(400).send({ error: 'project_id is required' });
+    if (!filePath) return reply.code(400).send({ error: 'Missing path' });
+
+    const project = await getProjectForUser(request.user.id, projectId);
+    if (!project) return reply.code(404).send({ error: 'Project not found' });
+
+    try {
+        const ready = await ensureProjectRuntime(project);
+        const ref = ready.runtime ? ready.runtime.runtimeRef : undefined;
+        await runtime.fs.fsDelete(ready.workspacePath, filePath, { runtimeRef: ref });
+        request.log.info({ userId: request.user.id, projectId, path: filePath, action: 'delete' }, 'workspace fs op');
+        return { ok: true, path: filePath };
+    } catch (err) {
+        if (err instanceof RuntimeError) return reply.code(err.statusCode).send({ error: err.message });
+        request.log.error(err);
+        return reply.code(500).send({ error: 'Failed to delete file' });
+    }
+});
+
+fastify.post('/api/v1/workspace/dir', { preValidation: [fastify.authenticate, fastify.requireActive] }, async (request, reply) => {
+    const projectId = request.query.project_id;
+    if (!projectId) return reply.code(400).send({ error: 'project_id is required' });
+
+    const project = await getProjectForUser(request.user.id, projectId);
+    if (!project) return reply.code(404).send({ error: 'Project not found' });
+
+    const { path: dirPath } = request.body || {};
+    if (!dirPath) return reply.code(400).send({ error: 'path is required' });
+
+    try {
+        const ready = await ensureProjectRuntime(project);
+        const ref = ready.runtime ? ready.runtime.runtimeRef : undefined;
+        await runtime.fs.mkdirp(ready.workspacePath, dirPath, { runtimeRef: ref });
+        request.log.info({ userId: request.user.id, projectId, path: dirPath, action: 'mkdir' }, 'workspace fs op');
+        return { ok: true, path: dirPath };
+    } catch (err) {
+        if (err instanceof RuntimeError) return reply.code(err.statusCode).send({ error: err.message });
+        request.log.error(err);
+        return reply.code(500).send({ error: 'Failed to create directory' });
+    }
+});
+
+fastify.delete('/api/v1/workspace/dir', { preValidation: [fastify.authenticate, fastify.requireActive] }, async (request, reply) => {
+    const projectId = request.query.project_id;
+    const dirPath = request.query.path;
+    if (!projectId) return reply.code(400).send({ error: 'project_id is required' });
+    if (!dirPath) return reply.code(400).send({ error: 'Missing path' });
+
+    const project = await getProjectForUser(request.user.id, projectId);
+    if (!project) return reply.code(404).send({ error: 'Project not found' });
+
+    try {
+        const ready = await ensureProjectRuntime(project);
+        const ref = ready.runtime ? ready.runtime.runtimeRef : undefined;
+        await runtime.fs.fsRmdir(ready.workspacePath, dirPath, { runtimeRef: ref });
+        request.log.info({ userId: request.user.id, projectId, path: dirPath, action: 'rmdir' }, 'workspace fs op');
+        return { ok: true, path: dirPath };
+    } catch (err) {
+        if (err instanceof RuntimeError) return reply.code(err.statusCode).send({ error: err.message });
+        request.log.error(err);
+        return reply.code(500).send({ error: 'Failed to delete directory' });
+    }
+});
+
+fastify.post('/api/v1/workspace/move', { preValidation: [fastify.authenticate, fastify.requireActive] }, async (request, reply) => {
+    const projectId = request.query.project_id;
+    if (!projectId) return reply.code(400).send({ error: 'project_id is required' });
+
+    const project = await getProjectForUser(request.user.id, projectId);
+    if (!project) return reply.code(404).send({ error: 'Project not found' });
+
+    const { from, to } = request.body || {};
+    if (!from || !to) return reply.code(400).send({ error: 'from and to are required' });
+
+    try {
+        const ready = await ensureProjectRuntime(project);
+        const ref = ready.runtime ? ready.runtime.runtimeRef : undefined;
+        await runtime.fs.fsMove(ready.workspacePath, from, to, { runtimeRef: ref });
+        request.log.info({ userId: request.user.id, projectId, from, to, action: 'move' }, 'workspace fs op');
+        return { ok: true, from, to };
+    } catch (err) {
+        if (err instanceof RuntimeError) return reply.code(err.statusCode).send({ error: err.message });
+        request.log.error(err);
+        return reply.code(500).send({ error: 'Failed to move' });
     }
 });
 

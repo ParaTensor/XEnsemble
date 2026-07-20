@@ -52,6 +52,9 @@ export default defineConfig({
         '@': path.resolve(__dirname, 'src/renderer')
       }
     },
+    optimizeDeps: {
+      include: ['monaco-editor'],
+    },
     server: {
       port: 5173
     }

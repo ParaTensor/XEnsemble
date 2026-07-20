@@ -2,8 +2,10 @@ const fs = require('fs');
 const path = require('path');
 const { FsAdapter, RuntimeError } = require('./interfaces');
 const { resolveSafePath } = require('../workspace');
-const { HIDDEN_WORKSPACE_DIRS } = require('../workspace/hiddenPaths');
+const { isHiddenWorkspacePath } = require('../workspace/hiddenPaths');
 const { buildSessionStateDirRef } = require('../session/stateDirRef');
+
+const FS_LIST_LIMIT = 1000;
 
 class LocalFsAdapter extends FsAdapter {
     /**
@@ -18,25 +20,54 @@ class LocalFsAdapter extends FsAdapter {
         if (!fs.existsSync(target)) return [];
         const root = path.resolve(rootDir);
         const results = [];
+        const depth = opts.depth || 'recursive';
+
+        const addEntry = (fullPath, stat) => {
+            const rel = path.relative(root, fullPath);
+            const entry = {
+                name: path.basename(fullPath),
+                path: rel.startsWith('..') ? path.basename(fullPath) : rel.replace(/\\/g, '/'),
+                type: stat.isDirectory() ? 'directory' : 'file',
+            };
+            if (entry.type === 'file') {
+                entry.size = stat.size;
+            }
+            results.push(entry);
+        };
+
+        if (depth === 'single') {
+            let entries;
+            try { entries = fs.readdirSync(target, { withFileTypes: true }); } catch (e) { return results; }
+            for (const dirent of entries) {
+                const fullPath = path.join(target, dirent.name);
+                const rel = path.relative(root, fullPath).replace(/\\/g, '/');
+                if (!opts.includeHidden && isHiddenWorkspacePath(rel)) continue;
+                if (dirent.isSymbolicLink()) continue;
+                let stat;
+                try { stat = fs.lstatSync(fullPath); } catch (e) { continue; }
+                addEntry(fullPath, stat);
+            }
+            return results;
+        }
+
         const walk = (dirPath) => {
             let entries;
             try { entries = fs.readdirSync(dirPath); } catch (e) { return; }
             for (const name of entries) {
-                if (!opts.includeHidden && HIDDEN_WORKSPACE_DIRS.has(name)) continue;
                 const fullPath = path.join(dirPath, name);
+                const rel = path.relative(root, fullPath).replace(/\\/g, '/');
+                if (!opts.includeHidden && isHiddenWorkspacePath(rel)) continue;
                 let stat;
                 try { stat = fs.lstatSync(fullPath); } catch (e) { continue; }
-                if (stat.isSymbolicLink()) continue; // do not follow symlinks in listing
-                const rel = path.relative(root, fullPath);
-                results.push({
-                    name,
-                    path: rel.startsWith('..') ? name : rel.replace(/\\/g, '/'),
-                    type: stat.isDirectory() ? 'directory' : 'file',
-                });
+                if (stat.isSymbolicLink()) continue;
+                addEntry(fullPath, stat);
                 if (stat.isDirectory()) walk(fullPath);
             }
         };
         walk(target);
+        if (results.length > FS_LIST_LIMIT) {
+            results.length = FS_LIST_LIMIT;
+        }
         return results;
     }
 
@@ -51,7 +82,16 @@ class LocalFsAdapter extends FsAdapter {
         if (!absolutePath) throw new RuntimeError('Access denied', 403);
         if (!fs.existsSync(absolutePath)) throw new RuntimeError('File not found', 404);
         if (fs.statSync(absolutePath).isDirectory()) throw new RuntimeError('Path is a directory', 400);
-        return fs.readFileSync(absolutePath, 'utf8');
+        const encoding = opts.encoding === 'buffer' ? undefined : 'utf8';
+        return fs.readFileSync(absolutePath, encoding);
+    }
+
+    async fsStat(rootDir, relativePath, opts = {}) {
+        const absolutePath = resolveSafePath(rootDir, relativePath);
+        if (!absolutePath) throw new RuntimeError('Access denied', 403);
+        if (!fs.existsSync(absolutePath)) throw new RuntimeError('File not found', 404);
+        const stat = fs.statSync(absolutePath);
+        return { type: stat.isDirectory() ? 'directory' : 'file', size: stat.size, mtime: stat.mtimeMs };
     }
 
     resolveStateDir(workspaceRoot, sessionId) {
@@ -77,6 +117,44 @@ class LocalFsAdapter extends FsAdapter {
             throw new RuntimeError('Access denied', 403);
         }
         fs.mkdirSync(target, { recursive: true });
+    }
+
+    async fsWrite(rootDir, relativePath, content, opts = {}) {
+        const target = resolveSafePath(rootDir, relativePath);
+        if (!target) throw new RuntimeError('Access denied', 403);
+        const parentDir = path.dirname(target);
+        if (!fs.existsSync(parentDir)) {
+            fs.mkdirSync(parentDir, { recursive: true });
+        }
+        fs.writeFileSync(target, content);
+        const stat = fs.statSync(target);
+        return { path: relativePath.replace(/\\/g, '/'), size: stat.size };
+    }
+
+    async fsDelete(rootDir, relativePath, opts = {}) {
+        const target = resolveSafePath(rootDir, relativePath);
+        if (!target) throw new RuntimeError('Access denied', 403);
+        if (!fs.existsSync(target)) throw new RuntimeError('File not found', 404);
+        if (fs.lstatSync(target).isDirectory()) throw new RuntimeError('Cannot delete directory via file endpoint', 400);
+        fs.unlinkSync(target);
+    }
+
+    async fsMove(rootDir, fromRel, toRel, opts = {}) {
+        const from = resolveSafePath(rootDir, fromRel);
+        if (!from) throw new RuntimeError('Access denied', 403);
+        const to = resolveSafePath(rootDir, toRel);
+        if (!to) throw new RuntimeError('Access denied', 403);
+        if (fs.existsSync(to)) throw new RuntimeError('Target path already exists', 409);
+        fs.renameSync(from, to);
+    }
+
+    async fsRmdir(rootDir, relativePath, opts = {}) {
+        if (!relativePath || relativePath === '.') {
+            throw new RuntimeError('Cannot delete workspace root', 400);
+        }
+        const target = resolveSafePath(rootDir, relativePath);
+        if (!target) throw new RuntimeError('Access denied', 403);
+        fs.rmSync(target, { recursive: opts.recursive !== false, force: true });
     }
 }
 

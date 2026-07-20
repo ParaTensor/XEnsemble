@@ -1,5 +1,5 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { ChevronDown, ChevronRight, FileText, Folder, FolderOpen } from 'lucide-react';
+import { useEffect, useMemo, useState, useCallback } from 'react';
+import { ChevronDown, ChevronRight, FileText, Folder, FolderOpen, Loader2 } from 'lucide-react';
 import { buildFileTree, collectAncestorFolderPaths } from '../lib/workspaceFileTree';
 
 function TreeNode({ node, depth, expanded, selectedPath, onToggle, onOpenFile }) {
@@ -24,6 +24,7 @@ function TreeNode({ node, depth, expanded, selectedPath, onToggle, onOpenFile })
   }
 
   const isExpanded = expanded.has(node.path);
+  const isLoading = node._loading;
   return (
     <div>
       <div
@@ -35,8 +36,15 @@ function TreeNode({ node, depth, expanded, selectedPath, onToggle, onOpenFile })
           onClick={() => onToggle(node.path)}
           className="shrink-0 p-1 text-zinc-400 hover:text-zinc-700"
           aria-expanded={isExpanded}
+          aria-label={`展开/折叠 ${node.name}`}
         >
-          {isExpanded ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
+          {isLoading ? (
+            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+          ) : isExpanded ? (
+            <ChevronDown className="h-3.5 w-3.5" />
+          ) : (
+            <ChevronRight className="h-3.5 w-3.5" />
+          )}
         </button>
         {isExpanded ? (
           <FolderOpen className="h-3.5 w-3.5 shrink-0 text-zinc-400" />
@@ -68,7 +76,132 @@ function TreeNode({ node, depth, expanded, selectedPath, onToggle, onOpenFile })
   );
 }
 
-export default function WorkspaceFileTree({ items, selectedPath, onOpenFile, showHidden = false }) {
+function LazyTree({ items, selectedPath, onOpenFile, projectId, onFetchDir }) {
+  const [expanded, setExpanded] = useState(() => new Set());
+  const [loadedDirs, setLoadedDirs] = useState(() => new Set());
+  const [loadingDirs, setLoadingDirs] = useState(() => new Set());
+  const [dirChildren, setDirChildren] = useState(() => ({}));
+  const [initialLoading, setInitialLoading] = useState(true);
+
+  useEffect(() => {
+    if (!projectId || !onFetchDir) return;
+    setInitialLoading(true);
+    onFetchDir(projectId, '.').then((files) => {
+      setDirChildren({ '.': files });
+      setLoadedDirs(new Set(['.']));
+      setInitialLoading(false);
+    }).catch(() => {
+      setInitialLoading(false);
+    });
+  }, [projectId, onFetchDir]);
+
+  const toggle = useCallback(async (path) => {
+    if (expanded.has(path)) {
+      setExpanded((prev) => {
+        const next = new Set(prev);
+        next.delete(path);
+        return next;
+      });
+      return;
+    }
+
+    if (!loadedDirs.has(path) && onFetchDir) {
+      setLoadingDirs((prev) => new Set(prev).add(path));
+      try {
+        const files = await onFetchDir(projectId, path);
+        setDirChildren((prev) => ({ ...prev, [path]: files }));
+        setLoadedDirs((prev) => new Set(prev).add(path));
+      } finally {
+        setLoadingDirs((prev) => {
+          const next = new Set(prev);
+          next.delete(path);
+          return next;
+        });
+      }
+    }
+
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      next.add(path);
+      return next;
+    });
+  }, [expanded, loadedDirs, onFetchDir, projectId]);
+
+  const buildTree = useCallback((dirPath, depth) => {
+    const items = dirChildren[dirPath] || [];
+    const nodes = [];
+    for (const item of items) {
+      if (item.type === 'directory') {
+        nodes.push({
+          ...item,
+          children: expanded.has(item.path) ? buildTree(item.path, depth + 1) : [],
+          _loading: loadingDirs.has(item.path),
+        });
+      } else {
+        nodes.push({ ...item, children: [] });
+      }
+    }
+    nodes.sort((a, b) => {
+      if (a.type !== b.type) return a.type === 'directory' ? -1 : 1;
+      return a.name.localeCompare(b.name);
+    });
+    return nodes;
+  }, [dirChildren, expanded, loadingDirs]);
+
+  useEffect(() => {
+    if (!selectedPath) return;
+    const ancestors = collectAncestorFolderPaths(selectedPath);
+    if (!ancestors.length) return;
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      for (const p of ancestors) next.add(p);
+      return next;
+    });
+  }, [selectedPath]);
+
+  if (initialLoading) {
+    return (
+      <div className="flex items-center justify-center py-4" data-testid="tree-loading">
+        <Loader2 className="animate-spin h-4 w-4 text-zinc-400" />
+      </div>
+    );
+  }
+
+  const tree = buildTree('.', 0);
+
+  if (!tree.length) {
+    return <div className="py-4 text-center text-sm text-zinc-400" data-testid="tree-empty">暂无文件</div>;
+  }
+
+  return (
+    <div className="flex flex-col gap-0.5">
+      {tree.map((node) => (
+        <TreeNode
+          key={node.path}
+          node={node}
+          depth={0}
+          expanded={expanded}
+          selectedPath={selectedPath}
+          onToggle={toggle}
+          onOpenFile={onOpenFile}
+        />
+      ))}
+    </div>
+  );
+}
+
+export default function WorkspaceFileTree({ items, selectedPath, onOpenFile, showHidden = false, lazy, projectId, onFetchDir }) {
+  if (lazy) {
+    return (
+      <LazyTree
+        selectedPath={selectedPath}
+        onOpenFile={onOpenFile}
+        projectId={projectId}
+        onFetchDir={onFetchDir}
+      />
+    );
+  }
+
   const tree = useMemo(() => buildFileTree(items, { showHidden }), [items, showHidden]);
   const [expanded, setExpanded] = useState(() => new Set());
 

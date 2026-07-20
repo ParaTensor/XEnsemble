@@ -3,6 +3,7 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import AgentConsole from '../components/AgentConsole';
 import WorkspaceFileTree from '../components/WorkspaceFileTree';
 import WorkspaceShell from '../components/WorkspaceShell';
+import WorkspacePanel from '../components/WorkspacePanel';
 import RepoImportDialog from '../components/git/RepoImportDialog';
 import GitStatusBar from '../components/git/GitStatusBar';
 import { apiFetch } from '../lib/api';
@@ -13,6 +14,7 @@ import {
 import SelectMenu from '../components/SelectMenu';
 import { useToast } from '../components/Toast';
 import { useTerminalTheme } from '../hooks/useTerminalTheme.jsx';
+import { useEditorTabs } from '../hooks/useEditorTabs';
 import {
   TerminalSquare,
   Play,
@@ -121,6 +123,7 @@ export default React.forwardRef(function Sessions({
   const [showHiddenFiles, setShowHiddenFiles] = useState(false);
   const [viewingFile, setViewingFile] = useState(null);
   const [fileContent, setFileContent] = useState('');
+  const editorTabs = useEditorTabs();
 
   const [showConfigModal, setShowConfigModal] = useState(false);
   const [configKeys, setConfigKeys] = useState({});
@@ -1340,20 +1343,23 @@ export default React.forwardRef(function Sessions({
                     )}
                   </div>
                   <div className={`min-h-0 flex-1 flex-col ${panelTab === 'files' ? 'flex' : 'hidden'}`}>
-                    <div className="min-h-0 flex-1 overflow-auto p-3">
-                      {workspaceFiles.length === 0 ? (
-                        <div className="flex h-full items-center justify-center text-sm text-[#9AA0A6]">
-                          No files yet.
-                        </div>
-                      ) : (
-                        <WorkspaceFileTree
-                          items={workspaceFiles}
-                          selectedPath={viewingFile?.path}
-                          onOpenFile={handleOpenFile}
-                          showHidden={showHiddenFiles}
-                        />
-                      )}
-                    </div>
+                    {activeSession?.projectId && (
+                      <WorkspacePanel
+                        projectId={activeSession.projectId}
+                        tabs={editorTabs.tabs}
+                        activePath={editorTabs.activePath}
+                        onSelectTab={editorTabs.selectTab}
+                        onCloseTab={editorTabs.closeTab}
+                        onSaveTab={(path) => editorTabs.saveTab(activeSession.projectId, path)}
+                        onOpenFile={(file) => editorTabs.openFile(activeSession.projectId, file)}
+                        onFetchDir={editorTabs.fetchDir}
+                        onCreateFile={(projectId, name) => editorTabs.handleCreateFile(projectId, name).then(() => editorTabs.openFile(projectId, { path: name, type: 'file' })).catch((e) => showToast('error', e.message))}
+                        onCreateDir={(projectId, name) => editorTabs.handleCreateDir(projectId, name).catch((e) => showToast('error', e.message))}
+                        onShowDiff={(path) => editorTabs.showDiff(activeSession.projectId, path).catch((e) => showToast('error', e.message))}
+                        diffView={editorTabs.diffView}
+                        onCloseDiff={editorTabs.closeDiff}
+                      />
+                    )}
                   </div>
                   <div className={`min-h-0 flex-1 flex-col ${panelTab === 'shell' ? 'flex' : 'hidden'}`}>
                     <WorkspaceShell projectId={activeSession.projectId} />

@@ -2,6 +2,7 @@ import { apiFetch } from '../lib/api.ts';
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import AgentConsole from '../components/AgentConsole';
 import WorkspaceFileTree from '../components/WorkspaceFileTree';
+import WorkspacePanel from '../components/WorkspacePanel';
 import GitStatusBar from '../components/github/GitStatusBar';
 import PRListPanel from '../components/github/PRListPanel';
 import MergeRequestListPanel from '../components/git/MergeRequestListPanel';
@@ -11,6 +12,7 @@ import { ConsoleDialogShell, ConsoleInlineDialog } from '../components/ConsoleDi
 import SecretFields from '../components/settings/SecretFields';
 import { useToast } from '../components/Toast';
 import { useTerminalTheme } from '../hooks/useTerminalTheme.jsx';
+import { useEditorTabs } from '../hooks/useEditorTabs';
 import { TerminalSquare, Play, Settings2, FolderOpen, FileText, X, RefreshCw, Plus, Trash2, Github, Eye, EyeOff } from 'lucide-react';
 import { getSecretLabel, isSecretPasswordField } from '../lib/secretLabels';
 import { formatQuotaExceeded } from '../lib/quotaLabels';
@@ -94,6 +96,7 @@ export default React.forwardRef(function SessionsPage({
   const [workspaceFiles, setWorkspaceFiles] = useState([]);
   const [viewingFile, setViewingFile] = useState(null);
   const [fileContent, setFileContent] = useState('');
+  const editorTabs = useEditorTabs();
   const [isLoadingFiles, setIsLoadingFiles] = useState(false);
   const [showHiddenFiles, setShowHiddenFiles] = useState(false);
   const [workspaceOpen, setWorkspaceOpen] = useState(false);
@@ -1164,14 +1167,21 @@ export default React.forwardRef(function SessionsPage({
               </div>
             </div>
             <div className={`flex-1 overflow-auto ${panelPadding} min-h-0`}>
-              {workspaceFiles.filter((f) => f.type === 'file').length === 0 ? (
-                <div className={`p-4 text-center text-xs ${textPlaceholder}`}>No files generated yet.</div>
-              ) : (
-                <WorkspaceFileTree
-                  items={workspaceFiles}
-                  selectedPath={viewingFile?.path}
-                  onOpenFile={handleOpenFile}
-                  showHidden={showHiddenFiles}
+              {activeSession?.projectId && (
+                <WorkspacePanel
+                  projectId={activeSession.projectId}
+                  tabs={editorTabs.tabs}
+                  activePath={editorTabs.activePath}
+                  onSelectTab={editorTabs.selectTab}
+                  onCloseTab={editorTabs.closeTab}
+                  onSaveTab={(path) => editorTabs.saveTab(activeSession.projectId, path)}
+                  onOpenFile={(file) => editorTabs.openFile(activeSession.projectId, file)}
+                  onFetchDir={editorTabs.fetchDir}
+                  onCreateFile={(projectId, name) => editorTabs.handleCreateFile(projectId, name).then(() => editorTabs.openFile(projectId, { path: name, type: 'file' })).catch((e) => showToast('error', e.message))}
+                  onCreateDir={(projectId, name) => editorTabs.handleCreateDir(projectId, name).catch((e) => showToast('error', e.message))}
+                  onShowDiff={(path) => editorTabs.showDiff(activeSession.projectId, path).catch((e) => showToast('error', e.message))}
+                  diffView={editorTabs.diffView}
+                  onCloseDiff={editorTabs.closeDiff}
                 />
               )}
             </div>

@@ -69,6 +69,11 @@ class ExecAdapter {
 class FsAdapter {
     async fsList(rootDir, relativePath, opts = {}) { throw new Error('FsAdapter.fsList not implemented'); }
     async fsRead(rootDir, relativePath, opts = {}) { throw new Error('FsAdapter.fsRead not implemented'); }
+    async fsStat(rootDir, relativePath, opts = {}) { throw new Error('FsAdapter.fsStat not implemented'); }
+    async fsWrite(rootDir, relativePath, content, opts = {}) { throw new Error('FsAdapter.fsWrite not implemented'); }
+    async fsDelete(rootDir, relativePath, opts = {}) { throw new Error('FsAdapter.fsDelete not implemented'); }
+    async fsMove(rootDir, fromRel, toRel, opts = {}) { throw new Error('FsAdapter.fsMove not implemented'); }
+    async fsRmdir(rootDir, relativePath, opts = {}) { throw new Error('FsAdapter.fsRmdir not implemented'); }
     /** @returns {{ stateDirRef: string, stateDirPath: string } | null} */
     resolveStateDir(workspaceRoot, sessionId) { throw new Error('FsAdapter.resolveStateDir not implemented'); }
     async exists(rootDir, relativePath, opts = {}) { throw new Error('FsAdapter.exists not implemented'); }
