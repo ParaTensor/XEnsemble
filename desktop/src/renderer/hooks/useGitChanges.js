@@ -1,9 +1,28 @@
-import { useCallback } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { useGitStatus } from './useGitStatus';
 import * as githubApi from '../lib/githubApi';
 
 export function useGitChanges(projectId) {
   const { status, loading, operation, commit, push, pull, fetchStatus } = useGitStatus(projectId);
+  const [optimistic, setOptimistic] = useState(null);
+
+  useEffect(() => {
+    if (optimistic && status) {
+      const stagedMatch = arraysEqual(
+        (optimistic.stagedFiles || []).map((f) => f.path).sort(),
+        (status.stagedFiles || []).map((f) => f.path).sort(),
+      );
+      const unstagedMatch = arraysEqual(
+        (optimistic.unstagedFiles || []).map((f) => f.path).sort(),
+        (status.unstagedFiles || []).map((f) => f.path).sort(),
+      );
+      if (stagedMatch && unstagedMatch) {
+        setOptimistic(null);
+      }
+    }
+  }, [status, optimistic]);
+
+  const merged = optimistic || status;
 
   const getFileDiff = useCallback(async (filePath) => {
     if (!projectId) return '';
@@ -27,26 +46,50 @@ export function useGitChanges(projectId) {
 
   const stage = useCallback(async (files) => {
     if (!projectId || !files?.length) return;
+    const fileSet = new Set(files);
+    setOptimistic((prev) => {
+      const base = prev || status;
+      if (!base) return null;
+      const moved = (base.unstagedFiles || []).filter((f) => fileSet.has(f.path));
+      return {
+        ...base,
+        stagedFiles: [...(base.stagedFiles || []), ...moved],
+        unstagedFiles: (base.unstagedFiles || []).filter((f) => !fileSet.has(f.path)),
+        staged: (base.stagedFiles || []).length + moved.length > 0,
+      };
+    });
     await githubApi.stageFiles(projectId, files);
-    await fetchStatus({ silent: true });
-  }, [projectId, fetchStatus]);
+    fetchStatus({ silent: true });
+  }, [projectId, fetchStatus, status]);
 
   const unstage = useCallback(async (files) => {
     if (!projectId || !files?.length) return;
+    const fileSet = new Set(files);
+    setOptimistic((prev) => {
+      const base = prev || status;
+      if (!base) return null;
+      const moved = (base.stagedFiles || []).filter((f) => fileSet.has(f.path));
+      return {
+        ...base,
+        unstagedFiles: [...(base.unstagedFiles || []), ...moved],
+        stagedFiles: (base.stagedFiles || []).filter((f) => !fileSet.has(f.path)),
+        staged: (base.stagedFiles || []).length - moved.length > 0,
+      };
+    });
     await githubApi.unstageFiles(projectId, files);
-    await fetchStatus({ silent: true });
-  }, [projectId, fetchStatus]);
+    fetchStatus({ silent: true });
+  }, [projectId, fetchStatus, status]);
 
   return {
-    branch: status?.branch,
-    sha: status?.sha,
-    dirty: status?.dirty,
-    staged: status?.staged,
-    files: status?.files || [],
-    stagedFiles: status?.stagedFiles || [],
-    unstagedFiles: status?.unstagedFiles || [],
-    ahead: status?.ahead || 0,
-    behind: status?.behind || 0,
+    branch: merged?.branch,
+    sha: merged?.sha,
+    dirty: merged?.dirty,
+    staged: merged?.staged,
+    files: merged?.files || [],
+    stagedFiles: merged?.stagedFiles || [],
+    unstagedFiles: merged?.unstagedFiles || [],
+    ahead: merged?.ahead || 0,
+    behind: merged?.behind || 0,
     loading,
     operation,
     commit,
@@ -58,4 +101,12 @@ export function useGitChanges(projectId) {
     stage,
     unstage,
   };
+}
+
+function arraysEqual(a, b) {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    if (a[i] !== b[i]) return false;
+  }
+  return true;
 }

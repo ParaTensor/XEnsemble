@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useToast } from '../components/Toast';
-import * as githubApi from '../lib/githubApi.js';
+import * as githubApi from '../lib/githubApi';
 
-const POLL_INTERVAL_MS = 2000;
+const POLL_INTERVAL_MS = 15000;
 
 export function useGitStatus(projectId) {
   const { showToast } = useToast();
@@ -37,7 +37,7 @@ export function useGitStatus(projectId) {
     try {
       const result = await githubApi.commitAll(projectId, message.trim());
       showToast('success', 'Changes committed.');
-      await fetchStatus({ silent: true });
+      fetchStatus({ silent: true });
       return result;
     } catch (err) {
       showToast('error', err.message);
@@ -53,7 +53,7 @@ export function useGitStatus(projectId) {
     try {
       const result = await githubApi.pushBranch(projectId, status?.branch);
       showToast('success', 'Branch pushed.');
-      await fetchStatus({ silent: true });
+      fetchStatus({ silent: true });
       return result;
     } catch (err) {
       showToast('error', err.message);
@@ -69,7 +69,7 @@ export function useGitStatus(projectId) {
     try {
       const result = await githubApi.pullLatest(projectId);
       showToast('success', 'Pulled latest changes.');
-      await fetchStatus({ silent: true });
+      fetchStatus({ silent: true });
       return result;
     } catch (err) {
       showToast('error', err.message);
