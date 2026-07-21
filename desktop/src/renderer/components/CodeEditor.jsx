@@ -1,5 +1,6 @@
 import { useCallback, useRef, useState, useEffect } from 'react';
-import Editor, { loader } from '@monaco-editor/react';
+import Editor from '@monaco-editor/react';
+import '@/lib/monacoSetup'; // Configure Monaco to load from local bundle, not CDN
 import { FileWarning, Loader2, Pencil, Save } from 'lucide-react';
 import { consoleButtonFocusClass } from '@/lib/consoleTheme';
 import { buttonClass } from '@/lib/buttonStyles';

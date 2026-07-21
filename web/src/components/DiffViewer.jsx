@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { Loader2, X } from 'lucide-react';
 import { DiffEditor } from '@monaco-editor/react';
 import { consoleButtonFocusClass } from '@/lib/consoleTheme';
+import '@/lib/monacoSetup'; // Configure Monaco to load from local bundle, not CDN
 
 const LANG_MAP = {
   js: 'javascript', jsx: 'javascript', ts: 'typescript', tsx: 'typescript',
