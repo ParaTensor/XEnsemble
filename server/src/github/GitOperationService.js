@@ -273,7 +273,9 @@ class GitOperationService {
             }
             files.push(entry);
             if (x !== ' ' && x !== '?') stagedFiles.push(entry);
-            if (y !== ' ' && y !== '?') unstagedFiles.push(entry);
+            // Untracked files (??) have y='?', they should appear in
+            // unstagedFiles because they can be staged with `git add`.
+            if (y !== ' ') unstagedFiles.push(entry);
         }
 
         return { branch, sha, dirty, staged, unstaged, untracked, ahead, behind, files, stagedFiles, unstagedFiles };

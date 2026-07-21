@@ -26,8 +26,14 @@ export default function DiffViewer({ original, modified, path, loading, onClose 
 
   // Reset diffReady when content changes so the loading overlay shows
   // until Monaco finishes computing the new diff decorations.
+  // Also set a fallback timeout: for trivial diffs (e.g. new files with
+  // empty original), Monaco may compute synchronously before onMount
+  // registers the onDidUpdateDiff listener, so the event fires and is
+  // missed.  The timeout ensures the overlay doesn't get stuck.
   useEffect(() => {
     setDiffReady(false);
+    const t = setTimeout(() => setDiffReady(true), 500);
+    return () => clearTimeout(t);
   }, [original, modified]);
 
   const handleMount = useCallback((editor) => {
