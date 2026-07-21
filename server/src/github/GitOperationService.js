@@ -193,6 +193,43 @@ class GitOperationService {
         const sha = shaOut.stdout.trim() || null;
 
         const lines = statusOut.stdout.split('\n').filter(Boolean);
+
+        // check-ignore 和 ahead/behind 互不依赖，并行执行减少延迟
+        const filePaths = lines
+            .filter((line) => line.length >= 3)
+            .map((line) => line.slice(3).trim());
+
+        const [ignoredResult, aheadBehindResult] = await Promise.all([
+            // check-ignore：检查哪些文件被 .gitignore 匹配
+            filePaths.length > 0
+                ? this._execGit(project, ['check-ignore', ...filePaths])
+                    .then((r) => new Set(r.stdout.split('\n').filter(Boolean)))
+                    .catch(() => new Set())
+                : Promise.resolve(new Set()),
+            // ahead/behind：检查本地与远程的 commit 差异
+            this._execGit(project, ['rev-list', '--left-right', '--count', 'HEAD...@{upstream}'])
+                .then((r) => {
+                    const [a, b] = r.stdout.trim().split('\t').map((n) => Number(n) || 0);
+                    return { ahead: a, behind: b };
+                })
+                .catch(async () => {
+                    if (branch) {
+                        try {
+                            const r = await this._execGit(project, ['rev-list', '--left-right', '--count', `HEAD...origin/${branch}`]);
+                            const [a, b] = r.stdout.trim().split('\t').map((n) => Number(n) || 0);
+                            return { ahead: a, behind: b };
+                        } catch {
+                            return { ahead: 0, behind: 0 };
+                        }
+                    }
+                    return { ahead: 0, behind: 0 };
+                }),
+        ]);
+
+        const ignoredSet = ignoredResult;
+        const ahead = aheadBehindResult.ahead;
+        const behind = aheadBehindResult.behind;
+
         let dirty = false;
         let staged = false;
         let unstaged = false;
@@ -208,6 +245,8 @@ class GitOperationService {
             const x = line[0];
             const y = line[1];
             const filePath = line.slice(3).trim();
+            // 跳过被 .gitignore 匹配的文件（包括已跟踪的）
+            if (ignoredSet.has(filePath)) continue;
             const entry = { path: filePath, status: x + y };
             if (x === '?' && y === '?') {
                 untracked = true;
@@ -233,27 +272,6 @@ class GitOperationService {
             files.push(entry);
             if (x !== ' ' && x !== '?') stagedFiles.push(entry);
             if (y !== ' ' && y !== '?') unstagedFiles.push(entry);
-        }
-
-        let ahead = 0;
-        let behind = 0;
-        try {
-            const ab = await this._execGit(project, ['rev-list', '--left-right', '--count', 'HEAD...@{upstream}']);
-            const [a, b] = ab.stdout.trim().split('\t').map((n) => Number(n) || 0);
-            ahead = a;
-            behind = b;
-        } catch {
-            // No upstream configured, try origin/<branch>
-            if (branch) {
-                try {
-                    const ab = await this._execGit(project, ['rev-list', '--left-right', '--count', `HEAD...origin/${branch}`]);
-                    const [a, b] = ab.stdout.trim().split('\t').map((n) => Number(n) || 0);
-                    ahead = a;
-                    behind = b;
-                } catch {
-                    // No remote tracking at all
-                }
-            }
         }
 
         return { branch, sha, dirty, staged, unstaged, untracked, ahead, behind, files, stagedFiles, unstagedFiles };
