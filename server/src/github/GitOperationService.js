@@ -41,7 +41,7 @@ class GitOperationService {
         const workspacePath = ready.workspacePath;
         const runtimeRef = ready.runtime ? ready.runtime.runtimeRef : undefined;
         const token = await this._resolveToken(project);
-        const credentials = token ? buildCredentialEnv(token) : null;
+        const credentials = token ? buildCredentialEnv(token, workspacePath) : null;
 
         try {
             const exec = this._execFn();

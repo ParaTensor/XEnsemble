@@ -33,10 +33,11 @@ function stripCredentialFromUrl(url) {
  * @param {string} token
  * @returns {string} absolute path to the helper script
  */
-function createAskpassScript(token) {
+function createAskpassScript(token, workspacePath) {
+    const dir = workspacePath || os.tmpdir();
     const scriptPath = path.join(
-        os.tmpdir(),
-        `git-askpass-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2)}.sh`,
+        dir,
+        `.git-askpass-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2)}.sh`,
     );
     const content = `#!/bin/sh\nprintf '%s\\n' "$GIT_ASKPASS_TOKEN"\n`;
     fs.writeFileSync(scriptPath, content, { mode: 0o700 });
@@ -65,8 +66,8 @@ function removeAskpassScript(scriptPath) {
  * @param {string} token
  * @returns {{ env: { GIT_ASKPASS: string, GIT_ASKPASS_TOKEN: string }, cleanup: () => void }}
  */
-function buildCredentialEnv(token) {
-    const scriptPath = createAskpassScript(token);
+function buildCredentialEnv(token, workspacePath) {
+    const scriptPath = createAskpassScript(token, workspacePath);
     return {
         env: {
             GIT_ASKPASS: scriptPath,
