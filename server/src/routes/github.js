@@ -381,8 +381,18 @@ function registerGitHubRoutes(fastify) {
         if (!project) return reply.code(404).send({ error: 'Project not found' });
         const message = String(request.body?.message || '').trim();
         if (!message) return reply.code(400).send({ error: 'message is required' });
+        const authorName = request.body?.author?.name || request.user.displayName || request.user.username || '';
+        const authorEmail = request.body?.author?.email || request.user.email || '';
+        if (!authorName || !authorEmail) {
+            return reply.code(400).send({
+                error: 'Git author info required',
+                code: 'AUTHOR_REQUIRED',
+                hint: '请提供 git 提交所需的用户名和邮箱',
+            });
+        }
         try {
-            const result = await gitOperationService.commitStaged(project, message);
+            const author = { name: authorName, email: authorEmail };
+            const result = await gitOperationService.commitStaged(project, message, author);
             return result;
         } catch (err) {
             request.log.error(err);

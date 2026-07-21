@@ -66,8 +66,12 @@ export default function WorkspacePanel({
   });
   const [commitMessage, setCommitMessage] = useState('');
   const [committing, setCommitting] = useState(false);
+  const [showAuthorDialog, setShowAuthorDialog] = useState(false);
+  const [authorName, setAuthorName] = useState(() => localStorage.getItem('xe_git_author_name') || '');
+  const [authorEmail, setAuthorEmail] = useState(() => localStorage.getItem('xe_git_author_email') || '');
   const newFileInputRef = useRef(null);
   const newFolderInputRef = useRef(null);
+  const authorNameRef = useRef(null);
 
   useEffect(() => {
     sessionStorage.setItem('xe_sidebar_open', String(sidebarOpen));
@@ -76,6 +80,12 @@ export default function WorkspacePanel({
   useEffect(() => {
     sessionStorage.setItem('xe_sidebar_tab', sidebarTab);
   }, [sidebarTab]);
+
+  useEffect(() => {
+    if (showAuthorDialog && authorNameRef.current) {
+      authorNameRef.current.focus();
+    }
+  }, [showAuthorDialog]);
 
   useEffect(() => {
     if (showNewFile && newFileInputRef.current) {
@@ -155,12 +165,34 @@ export default function WorkspacePanel({
     if (!commitMessage.trim()) return;
     setCommitting(true);
     try {
-      await gitChanges?.commit(commitMessage.trim());
+      const author = authorName && authorEmail ? { name: authorName, email: authorEmail } : undefined;
+      await gitChanges?.commit(commitMessage.trim(), author);
       setCommitMessage('');
+    } catch (err) {
+      if (err.code === 'AUTHOR_REQUIRED' || (err.message && err.message.includes('author'))) {
+        setShowAuthorDialog(true);
+        return;
+      }
     } finally {
       setCommitting(false);
     }
-  }, [commitMessage, gitChanges]);
+  }, [commitMessage, gitChanges, authorName, authorEmail]);
+
+  const handleAuthorConfirm = useCallback(async () => {
+    if (!authorName.trim() || !authorEmail.trim()) return;
+    localStorage.setItem('xe_git_author_name', authorName.trim());
+    localStorage.setItem('xe_git_author_email', authorEmail.trim());
+    setShowAuthorDialog(false);
+    setCommitting(true);
+    try {
+      const author = { name: authorName.trim(), email: authorEmail.trim() };
+      await gitChanges?.commit(commitMessage.trim(), author);
+      setCommitMessage('');
+    } catch (_) {
+    } finally {
+      setCommitting(false);
+    }
+  }, [commitMessage, gitChanges, authorName, authorEmail]);
 
   const renderGitFile = (f, stageAction) => {
     const label = GIT_STATUS_LABELS[f.status] || f.status;
@@ -465,6 +497,38 @@ export default function WorkspacePanel({
           </div>
         )}
       </div>
+
+      {showAuthorDialog && (
+        <ConsoleDialogShell onClose={() => setShowAuthorDialog(false)}>
+          <div className="p-4 w-80">
+            <h3 className="font-bold text-lg text-zinc-900 mb-3">Git 提交信息</h3>
+            <p className="text-xs text-zinc-500 mb-3">需要配置 git 用户名和邮箱才能提交</p>
+            <div className="flex flex-col gap-2">
+              <input
+                ref={authorNameRef}
+                type="text"
+                placeholder="用户名"
+                value={authorName}
+                onChange={(e) => setAuthorName(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') handleAuthorConfirm(); }}
+                className={consoleInputClass}
+              />
+              <input
+                type="email"
+                placeholder="邮箱"
+                value={authorEmail}
+                onChange={(e) => setAuthorEmail(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') handleAuthorConfirm(); }}
+                className={consoleInputClass}
+              />
+            </div>
+            <div className="flex justify-end gap-2 mt-4">
+              <button onClick={() => setShowAuthorDialog(false)} className={buttonClass('secondary', 'sm')}>取消</button>
+              <button onClick={handleAuthorConfirm} disabled={!authorName.trim() || !authorEmail.trim()} className={buttonClass('primary', 'sm')}>确认</button>
+            </div>
+          </div>
+        </ConsoleDialogShell>
+      )}
 
       {showNewFile && (
         <ConsoleDialogShell onClose={() => setShowNewFile(false)}>

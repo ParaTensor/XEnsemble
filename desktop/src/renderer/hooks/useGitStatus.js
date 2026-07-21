@@ -31,15 +31,18 @@ export function useGitStatus(projectId) {
     return () => clearInterval(id);
   }, [fetchStatus]);
 
-  const commit = useCallback(async (message) => {
+  const commit = useCallback(async (message, author) => {
     if (!projectId || !message?.trim()) return;
     setOperation('commit');
     try {
-      const result = await githubApi.commitAll(projectId, message.trim());
+      const result = await githubApi.commitAll(projectId, message.trim(), author);
       showToast('success', 'Changes committed.');
       fetchStatus({ silent: true });
       return result;
     } catch (err) {
+      if (err.code === 'AUTHOR_REQUIRED') {
+        throw err;
+      }
       showToast('error', err.message);
       throw err;
     } finally {

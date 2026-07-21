@@ -254,8 +254,15 @@ class GitOperationService {
         return { sha };
     }
 
-    async commitStaged(project, message) {
-        await this._execGit(project, ['commit', '-m', message]);
+    async commitStaged(project, message, author = {}) {
+        const args = ['commit', '-m', message];
+        if (author.name) {
+            args.unshift('-c', `user.name=${author.name}`);
+        }
+        if (author.email) {
+            args.unshift('-c', `user.email=${author.email}`);
+        }
+        await this._execGit(project, args);
         const sha = await this._revParse(project, 'HEAD');
         return { sha };
     }
