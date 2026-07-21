@@ -127,8 +127,23 @@ export default React.forwardRef(function Sessions({
   const [showHiddenFiles, setShowHiddenFiles] = useState(false);
   const [viewingFile, setViewingFile] = useState(null);
   const [fileContent, setFileContent] = useState('');
+
+  // Compute session liveness early so we can gate VM-triggering API calls
+  // (git status polling, file tree listing) on the session being actually
+  // running.  When the session is idle/pending, starting these polls would
+  // trigger ensureProjectRuntime on the server, which creates a box-base VM
+  // that is then torn down and recreated with an agent image when the
+  // session resumes — causing 30-60s of unnecessary double VM provisioning.
+  const activeSessionMeta = useMemo(
+    () => sessions.find((s) => s.id === activeSession?.sessionId) || null,
+    [sessions, activeSession?.sessionId],
+  );
+  const sessionAlive = activeSessionMeta?.alive === true;
+
   const editorTabs = useEditorTabs(activeSession?.projectId);
-  const gitChanges = useGitChanges(activeSession?.projectId);
+  // Only poll git status when the session is running so we don't trigger
+  // a premature box-base VM creation on the server.
+  const gitChanges = useGitChanges(sessionAlive ? activeSession?.projectId : null);
   const [gitDiffView, setGitDiffView] = useState(null);
 
   const [showConfigModal, setShowConfigModal] = useState(false);
@@ -566,7 +581,7 @@ export default React.forwardRef(function Sessions({
   }, [activeSession?.projectId, showHiddenFiles, showToast]);
 
   useEffect(() => {
-    if (!activeSession?.projectId || !panelOpen || panelTab !== 'files') return undefined;
+    if (!activeSession?.projectId || !panelOpen || panelTab !== 'files' || !sessionAlive) return undefined;
     fetchWorkspaceFiles();
     let timer;
     const scheduleNext = () => {
@@ -582,7 +597,7 @@ export default React.forwardRef(function Sessions({
     };
     scheduleNext();
     return () => clearTimeout(timer);
-  }, [activeSession?.projectId, fetchWorkspaceFiles, panelOpen, panelTab, showHiddenFiles]);
+  }, [activeSession?.projectId, fetchWorkspaceFiles, panelOpen, panelTab, showHiddenFiles, sessionAlive]);
 
   const handleOpenFile = useCallback(async (file) => {
     if (!activeSession?.projectId || file?.type !== 'file') return;
@@ -852,11 +867,8 @@ export default React.forwardRef(function Sessions({
     [projects, activeSession?.projectId],
   );
 
-  const activeSessionMeta = useMemo(
-    () => sessions.find((s) => s.id === activeSession?.sessionId) || null,
-    [sessions, activeSession?.sessionId],
-  );
-  const sessionAlive = activeSessionMeta?.alive === true;
+  // activeSessionMeta and sessionAlive are computed earlier (before useGitChanges)
+  // so we can gate VM-triggering API calls on session liveness.
   const sessionPending = activeSessionMeta?.status === 'pending';
   const sessionFailed = activeSessionMeta?.status === 'failed';
   const sessionWakeable = !sessionAlive && !sessionPending && !sessionFailed
@@ -1413,7 +1425,7 @@ export default React.forwardRef(function Sessions({
                     )}
                   </div>
                   <div className={`min-h-0 flex-1 flex-col ${panelTab === 'files' ? 'flex' : 'hidden'}`}>
-                    {activeSession?.projectId && (
+                    {activeSession?.projectId && sessionAlive && (
                       <WorkspacePanel
                         projectId={activeSession.projectId}
                         tabs={editorTabs.tabs}

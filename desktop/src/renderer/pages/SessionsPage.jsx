@@ -98,8 +98,22 @@ export default React.forwardRef(function SessionsPage({
   const [workspaceFiles, setWorkspaceFiles] = useState([]);
   const [viewingFile, setViewingFile] = useState(null);
   const [fileContent, setFileContent] = useState('');
+  // Compute session liveness early so we can gate VM-triggering API calls
+  // (git status polling, file tree listing) on the session being actually
+  // running.  When the session is idle/pending, starting these polls would
+  // trigger ensureProjectRuntime on the server, which creates a box-base VM
+  // that is then torn down and recreated with an agent image when the
+  // session resumes - causing 30-60s of unnecessary double VM provisioning.
+  const activeSessionMeta = useMemo(
+    () => sessions.find((s) => s.id === activeSession?.sessionId) || null,
+    [sessions, activeSession?.sessionId],
+  );
+  const sessionAlive = activeSessionMeta?.alive === true;
+
   const editorTabs = useEditorTabs(activeSession?.projectId);
-  const gitChanges = useGitChanges(activeSession?.projectId);
+  // Only poll git status when the session is running so we don't trigger
+  // a premature box-base VM creation on the server.
+  const gitChanges = useGitChanges(sessionAlive ? activeSession?.projectId : null);
   const [gitDiffView, setGitDiffView] = useState(null);
   const [isLoadingFiles, setIsLoadingFiles] = useState(false);
   const [showHiddenFiles, setShowHiddenFiles] = useState(false);
@@ -178,18 +192,18 @@ export default React.forwardRef(function SessionsPage({
       .finally(() => setIsLoadingFiles(false));
   }, [activeSession?.projectId, showHiddenFiles]);
 
-  // Poll workspace files occasionally when session is active
+  // Poll workspace files occasionally when session is active and running
   useEffect(() => {
-    if (activeSession) {
+    if (activeSession && sessionAlive) {
       fetchWorkspaceFiles();
       const interval = setInterval(fetchWorkspaceFiles, 10000);
       return () => clearInterval(interval);
-    } else {
+    } else if (!activeSession) {
       setWorkspaceFiles([]);
       setViewingFile(null);
       setWorkspaceOpen(false);
     }
-  }, [activeSession, fetchWorkspaceFiles]);
+  }, [activeSession, fetchWorkspaceFiles, sessionAlive]);
 
   const selectedAgent = agents.find(a => a.id === selectedAgentId);
   const activeProject = useMemo(
@@ -1220,7 +1234,7 @@ export default React.forwardRef(function SessionsPage({
               </div>
             </div>
             <div className={`flex-1 overflow-auto ${panelPadding} min-h-0`}>
-              {activeSession?.projectId && (
+              {activeSession?.projectId && sessionAlive && (
                 <WorkspacePanel
                   projectId={activeSession.projectId}
                   tabs={editorTabs.tabs}
