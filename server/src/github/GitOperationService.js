@@ -241,7 +241,17 @@ class GitOperationService {
             ahead = a;
             behind = b;
         } catch {
-            // No upstream or no commits yet.
+            // No upstream configured, try origin/<branch>
+            if (branch) {
+                try {
+                    const ab = await this._execGit(project, ['rev-list', '--left-right', '--count', `HEAD...origin/${branch}`]);
+                    const [a, b] = ab.stdout.trim().split('\t').map((n) => Number(n) || 0);
+                    ahead = a;
+                    behind = b;
+                } catch {
+                    // No remote tracking at all
+                }
+            }
         }
 
         return { branch, sha, dirty, staged, unstaged, untracked, ahead, behind, files, stagedFiles, unstagedFiles };
@@ -276,7 +286,7 @@ class GitOperationService {
     }
 
     async pushBranch(project, branchName, { force = false } = {}) {
-        const args = ['push', 'origin', branchName];
+        const args = ['push', '-u', 'origin', branchName];
         if (force) {
             args.push('--force');
         }
