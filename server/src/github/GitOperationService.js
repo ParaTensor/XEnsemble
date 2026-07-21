@@ -1,6 +1,7 @@
 const { getRuntime } = require('../runtime/registry');
 const { ensureProjectRuntime } = require('../runtime/RuntimeService');
 const { stripCredentialFromUrl, buildCredentialEnv } = require('./gitCredentialHelper');
+const workspace = require('../workspace');
 
 class GitError extends Error {
     constructor(message, code) {
@@ -41,7 +42,8 @@ class GitOperationService {
         const workspacePath = ready.workspacePath;
         const runtimeRef = ready.runtime ? ready.runtime.runtimeRef : undefined;
         const token = await this._resolveToken(project);
-        const credentials = token ? buildCredentialEnv(token, workspacePath) : null;
+        const hostPath = workspace.projectDir(project.userId, project.id);
+        const credentials = token ? buildCredentialEnv(token, hostPath, workspacePath) : null;
 
         try {
             const exec = this._execFn();

@@ -66,11 +66,15 @@ function removeAskpassScript(scriptPath) {
  * @param {string} token
  * @returns {{ env: { GIT_ASKPASS: string, GIT_ASKPASS_TOKEN: string }, cleanup: () => void }}
  */
-function buildCredentialEnv(token, workspacePath) {
-    const scriptPath = createAskpassScript(token, workspacePath);
+function buildCredentialEnv(token, hostPath, sandboxPath) {
+    const scriptPath = createAskpassScript(token, hostPath);
+    // sandboxPath 是沙箱内的工作目录路径，git 在沙箱内运行时通过这个路径访问脚本
+    const sandboxScriptPath = sandboxPath
+        ? path.join(sandboxPath, path.basename(scriptPath))
+        : scriptPath;
     return {
         env: {
-            GIT_ASKPASS: scriptPath,
+            GIT_ASKPASS: sandboxScriptPath,
             GIT_ASKPASS_TOKEN: token,
         },
         cleanup: () => removeAskpassScript(scriptPath),
