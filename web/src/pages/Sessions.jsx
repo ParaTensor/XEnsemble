@@ -7,6 +7,7 @@ import WorkspacePanel from '../components/WorkspacePanel';
 import RepoImportDialog from '../components/git/RepoImportDialog';
 import GitStatusBar from '../components/git/GitStatusBar';
 import { apiFetch } from '../lib/api';
+import * as githubApi from '../lib/githubApi';
 import {
   ConsoleDialogShell,
   ConsoleInlineDialog,
@@ -590,15 +591,11 @@ export default React.forwardRef(function Sessions({
     if (!activeSession?.projectId) return;
     setGitDiffView({ path: filePath, original: null, modified: null, loading: true });
     try {
-      const [headRes, currentRes] = await Promise.all([
-        apiFetch(`/api/v1/projects/${encodeURIComponent(activeSession.projectId)}/git/file-content?path=${encodeURIComponent(filePath)}&ref=HEAD`),
-        apiFetch(`/api/v1/workspace/file?project_id=${encodeURIComponent(activeSession.projectId)}&path=${encodeURIComponent(filePath)}`),
-      ]);
-      const [headData, currentData] = await Promise.all([headRes.json(), currentRes.json()]);
+      const data = await githubApi.getGitFileDiffView(activeSession.projectId, filePath);
       setGitDiffView({
         path: filePath,
-        original: headData.content || '',
-        modified: currentData.content || '',
+        original: data.original || '',
+        modified: data.modified || '',
         loading: false,
       });
     } catch (err) {

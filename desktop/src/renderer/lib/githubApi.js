@@ -64,6 +64,9 @@ export const getGitDiff = (projectId, { base, head } = {}) => {
 export const getGitFileDiff = (projectId, filePath) =>
   request(`/api/v1/projects/${encodeURIComponent(projectId)}/git/file-diff?path=${encodeURIComponent(filePath)}`);
 
+export const getGitFileDiffView = (projectId, filePath) =>
+  request(`/api/v1/projects/${encodeURIComponent(projectId)}/git/file-diff-view?path=${encodeURIComponent(filePath)}`);
+
 export const getGitFileContent = (projectId, filePath, ref = 'HEAD') =>
   request(`/api/v1/projects/${encodeURIComponent(projectId)}/git/file-content?path=${encodeURIComponent(filePath)}&ref=${encodeURIComponent(ref)}`);
 

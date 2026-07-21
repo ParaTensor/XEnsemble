@@ -23,6 +23,7 @@ async function defaultGetToken(project) {
 class GitOperationService {
     constructor(deps = {}) {
         this.exec = deps.exec ?? getRuntime().exec;
+        this.fs = deps.fs ?? getRuntime().fs;
         this.ensureProjectRuntime = deps.ensureProjectRuntime ?? ensureProjectRuntime;
         this.getToken = deps.getToken ?? defaultGetToken;
     }
@@ -334,6 +335,29 @@ class GitOperationService {
     async getFileContentAtRef(project, filePath, ref = 'HEAD') {
         const { stdout } = await this._execGit(project, ['show', `${ref}:${filePath}`]);
         return stdout;
+    }
+
+    /**
+     * 单次调用返回 HEAD 版本和工作区当前内容，供 DiffEditor 直接渲染。
+     * 服务端 Promise.all 并行执行 git show 与 fsRead，省去 /workspace/file 的 fsStat
+     * 串行 VM exec（~500ms-1s），并减少一次 HTTP 往返。
+     * 新增文件（HEAD 无记录）或已删除文件（工作区无文件）时对应一侧返回空串。
+     */
+    async getFileDiffView(project, filePath, ref = 'HEAD') {
+        const ready = await this.ensureProjectRuntime(project);
+        const workspacePath = ready.workspacePath;
+        const runtimeRef = ready.runtime ? ready.runtime.runtimeRef : undefined;
+        const fsAdapter = this.fs;
+
+        const [headResult, currentResult] = await Promise.allSettled([
+            this._execGit(project, ['show', `${ref}:${filePath}`]),
+            fsAdapter.fsRead(workspacePath, filePath, { runtimeRef, encoding: 'utf8' }),
+        ]);
+
+        const original = headResult.status === 'fulfilled' ? headResult.value.stdout : '';
+        const modified = currentResult.status === 'fulfilled' ? currentResult.value : '';
+
+        return { original, modified };
     }
 
     async mergeBranch(project, fromBranch, toBranch) {

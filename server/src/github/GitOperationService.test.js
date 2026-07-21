@@ -12,6 +12,7 @@ const {
     removeAskpassScript,
     buildCredentialEnv,
 } = require('./gitCredentialHelper');
+const LocalFsAdapter = require('../runtime/LocalFsAdapter');
 
 function hasGit() {
     return spawnSync('git', ['--version']).status === 0;
@@ -123,7 +124,7 @@ describe('GitOperationService (mock exec)', () => {
         const service = createService(exec);
 
         const result = await service.cloneRepo(
-            { id: 'p1' },
+            { id: 'p1', userId: 'u1' },
             {
                 repoUrl: 'https://TOKEN:x-oauth-basic@github.com/owner/repo.git',
                 branch: 'main',
@@ -195,7 +196,7 @@ describe('GitOperationService (mock exec)', () => {
         });
         const service = createService(exec);
 
-        const result = await service.createBranch({ id: 'p1' }, 'feature', 'main');
+        const result = await service.createBranch({ id: 'p1', userId: 'u1' }, 'feature', 'main');
         assert.deepStrictEqual(result, { branch: 'feature', sha: 'branch-sha' });
 
         const call = findCall(exec.calls, 'checkout', '-b', 'feature');
@@ -212,7 +213,7 @@ describe('GitOperationService (mock exec)', () => {
         });
         const service = createService(exec);
 
-        const result = await service.switchBranch({ id: 'p1' }, 'main');
+        const result = await service.switchBranch({ id: 'p1', userId: 'u1' }, 'main');
         assert.deepStrictEqual(result, { branch: 'main', sha: 'switch-sha' });
         assert.ok(findCall(exec.calls, 'checkout', 'main'));
     });
@@ -220,14 +221,14 @@ describe('GitOperationService (mock exec)', () => {
     it('deleteBranch deletes a branch', async () => {
         const exec = makeMockExec();
         const service = createService(exec);
-        await service.deleteBranch({ id: 'p1' }, 'old-feature');
+        await service.deleteBranch({ id: 'p1', userId: 'u1' }, 'old-feature');
         assert.ok(findCall(exec.calls, 'branch', '-D', 'old-feature'));
     });
 
     it('listBranches parses local branches', async () => {
         const exec = makeMockExec(() => 'main|abc111|*\nfeature|def222|\n');
         const service = createService(exec);
-        const branches = await service.listBranches({ id: 'p1' });
+        const branches = await service.listBranches({ id: 'p1', userId: 'u1' });
         assert.deepStrictEqual(branches, [
             { name: 'main', sha: 'abc111', current: true },
             { name: 'feature', sha: 'def222', current: false },
@@ -244,7 +245,7 @@ describe('GitOperationService (mock exec)', () => {
         const exec = makeMockExec((args) => responses.get(JSON.stringify(args)) ?? '');
         const service = createService(exec);
 
-        const status = await service.getStatus({ id: 'p1' });
+        const status = await service.getStatus({ id: 'p1', userId: 'u1' });
         assert.deepStrictEqual(status, {
             branch: 'dev',
             sha: 'status-sha',
@@ -265,7 +266,7 @@ describe('GitOperationService (mock exec)', () => {
             return '';
         });
         const service = createService(exec);
-        const result = await service.commitAll({ id: 'p1' }, 'WIP');
+        const result = await service.commitAll({ id: 'p1', userId: 'u1' }, 'WIP');
         assert.deepStrictEqual(result, { sha: 'commit-sha' });
         assert.ok(findCall(exec.calls, 'add', '-A'));
         const commitCall = findCall(exec.calls, 'commit', '-m');
@@ -281,7 +282,7 @@ describe('GitOperationService (mock exec)', () => {
             return '';
         });
         const service = createService(exec);
-        const result = await service.pushBranch({ id: 'p1' }, 'feature', { force: true });
+        const result = await service.pushBranch({ id: 'p1', userId: 'u1' }, 'feature', { force: true });
         assert.deepStrictEqual(result, { sha: 'push-sha' });
         const pushCall = findCall(exec.calls, 'push', 'origin', 'feature');
         assert.ok(pushCall);
@@ -292,11 +293,11 @@ describe('GitOperationService (mock exec)', () => {
     it('getDiff returns diff output', async () => {
         const exec = makeMockExec(() => 'diff-output');
         const service = createService(exec);
-        const diff = await service.getDiff({ id: 'p1' }, { base: 'HEAD~1' });
+        const diff = await service.getDiff({ id: 'p1', userId: 'u1' }, { base: 'HEAD~1' });
         assert.strictEqual(diff, 'diff-output');
         assert.deepStrictEqual(findCall(exec.calls, 'diff').args, ['diff', 'HEAD~1']);
 
-        const diff2 = await service.getDiff({ id: 'p1' }, { base: 'main', head: 'feature' });
+        const diff2 = await service.getDiff({ id: 'p1', userId: 'u1' }, { base: 'main', head: 'feature' });
         assert.deepStrictEqual(findCall(exec.calls, 'diff', 'main', 'feature').args, [
             'diff',
             'main',
@@ -309,7 +310,7 @@ describe('GitOperationService (mock exec)', () => {
         const record2 = 'sha2\x1Fsecond\x1FBob <bob@example.com>\x1F2024-01-02T00:00:00Z';
         const exec = makeMockExec(() => `${record1}\x1E${record2}\x1E`);
         const service = createService(exec);
-        const log = await service.getLog({ id: 'p1' }, { branch: 'main', limit: 5 });
+        const log = await service.getLog({ id: 'p1', userId: 'u1' }, { branch: 'main', limit: 5 });
         assert.strictEqual(log.length, 2);
         assert.deepStrictEqual(log[0], {
             sha: 'sha1',
@@ -321,6 +322,63 @@ describe('GitOperationService (mock exec)', () => {
         assert.ok(call);
         assert.strictEqual(call.args.includes('-n'), true);
         assert.strictEqual(call.args.includes('5'), true);
+    });
+
+    it('getFileDiffView returns HEAD and working tree content in parallel', async () => {
+        const exec = makeMockExec((args) => {
+            if (args[0] === 'show' && args[1] === 'HEAD:src/app.js') return 'HEAD content\n';
+            return '';
+        });
+        const fsCalls = [];
+        const mockFs = {
+            fsRead: async (root, rel, opts) => {
+                fsCalls.push({ root, rel, opts });
+                return 'working tree content\n';
+            },
+        };
+        const service = new GitOperationService({
+            exec,
+            fs: mockFs,
+            ensureProjectRuntime: async () => ({ workspacePath: '/workspace' }),
+            getToken: async () => undefined,
+        });
+
+        const result = await service.getFileDiffView({ id: 'p1', userId: 'u1' }, 'src/app.js');
+        assert.strictEqual(result.original, 'HEAD content\n');
+        assert.strictEqual(result.modified, 'working tree content\n');
+        assert.ok(findCall(exec.calls, 'show', 'HEAD:src/app.js'), 'should call git show HEAD:path');
+        assert.strictEqual(fsCalls.length, 1, 'should call fsRead once');
+        assert.strictEqual(fsCalls[0].rel, 'src/app.js');
+    });
+
+    it('getFileDiffView returns empty original for new (untracked) file', async () => {
+        const exec = async () => ({ exitCode: 1, stdout: '', stderr: 'fatal: path does not exist' });
+        const mockFs = { fsRead: async () => 'new file content' };
+        const service = new GitOperationService({
+            exec,
+            fs: mockFs,
+            ensureProjectRuntime: async () => ({ workspacePath: '/workspace' }),
+            getToken: async () => undefined,
+        });
+
+        const result = await service.getFileDiffView({ id: 'p1', userId: 'u1' }, 'new.txt');
+        assert.strictEqual(result.original, '');
+        assert.strictEqual(result.modified, 'new file content');
+    });
+
+    it('getFileDiffView returns empty modified for deleted file', async () => {
+        const exec = makeMockExec(() => 'HEAD content\n');
+        const mockFs = { fsRead: async () => { throw new Error('File not found'); } };
+        const service = new GitOperationService({
+            exec,
+            fs: mockFs,
+            ensureProjectRuntime: async () => ({ workspacePath: '/workspace' }),
+            getToken: async () => undefined,
+        });
+
+        const result = await service.getFileDiffView({ id: 'p1', userId: 'u1' }, 'deleted.txt');
+        assert.strictEqual(result.original, 'HEAD content\n');
+        assert.strictEqual(result.modified, '');
     });
 });
 
@@ -361,9 +419,10 @@ describe('GitOperationService (real git)', { skip: !hasGit() }, () => {
             ensureProjectRuntime: async () => ({ workspacePath }),
             getToken: async () => undefined,
             exec: makeLocalExec(),
+            fs: new LocalFsAdapter(),
         });
 
-        await service.cloneRepo({ id: 'p1' }, { repoUrl: origin, branch: 'main' });
+        await service.cloneRepo({ id: 'p1', userId: 'u1' }, { repoUrl: origin, branch: 'main' });
         git(['config', 'user.email', 'test@example.com'], workspacePath);
         git(['config', 'user.name', 'Tester'], workspacePath);
     });
@@ -375,44 +434,44 @@ describe('GitOperationService (real git)', { skip: !hasGit() }, () => {
     });
 
     it('clones a real repo into an existing workspace directory', async () => {
-        const status = await service.getStatus({ id: 'p1' });
+        const status = await service.getStatus({ id: 'p1', userId: 'u1' });
         assert.strictEqual(status.branch, 'main');
         assert.ok(status.sha);
         assert.strictEqual(status.dirty, false);
     });
 
     it('creates, switches and lists branches', async () => {
-        await service.createBranch({ id: 'p1' }, 'feature', 'main');
-        let branches = await service.listBranches({ id: 'p1' });
+        await service.createBranch({ id: 'p1', userId: 'u1' }, 'feature', 'main');
+        let branches = await service.listBranches({ id: 'p1', userId: 'u1' });
         let feature = branches.find((b) => b.name === 'feature');
         assert.ok(feature);
         assert.strictEqual(feature.current, true);
 
-        await service.switchBranch({ id: 'p1' }, 'main');
-        branches = await service.listBranches({ id: 'p1' });
+        await service.switchBranch({ id: 'p1', userId: 'u1' }, 'main');
+        branches = await service.listBranches({ id: 'p1', userId: 'u1' });
         assert.strictEqual(branches.find((b) => b.name === 'main').current, true);
     });
 
     it('commits and pushes changes', async () => {
-        await service.switchBranch({ id: 'p1' }, 'feature');
+        await service.switchBranch({ id: 'p1', userId: 'u1' }, 'feature');
         fs.writeFileSync(path.join(workspacePath, 'feature.txt'), 'new work');
 
-        let status = await service.getStatus({ id: 'p1' });
+        let status = await service.getStatus({ id: 'p1', userId: 'u1' });
         assert.strictEqual(status.dirty, true);
         assert.strictEqual(status.untracked, true);
 
-        const commit = await service.commitAll({ id: 'p1' }, 'add feature file');
+        const commit = await service.commitAll({ id: 'p1', userId: 'u1' }, 'add feature file');
         assert.ok(commit.sha);
 
-        status = await service.getStatus({ id: 'p1' });
+        status = await service.getStatus({ id: 'p1', userId: 'u1' });
         assert.strictEqual(status.dirty, false);
 
-        const push = await service.pushBranch({ id: 'p1' }, 'feature');
+        const push = await service.pushBranch({ id: 'p1', userId: 'u1' }, 'feature');
         assert.ok(push.sha);
     });
 
     it('returns log entries and diffs', async () => {
-        const log = await service.getLog({ id: 'p1' }, { branch: 'feature', limit: 10 });
+        const log = await service.getLog({ id: 'p1', userId: 'u1' }, { branch: 'feature', limit: 10 });
         assert.ok(log.length >= 2);
         assert.ok(log[0].sha);
         assert.ok(log[0].message);
@@ -420,7 +479,35 @@ describe('GitOperationService (real git)', { skip: !hasGit() }, () => {
         assert.ok(log[0].date);
 
         fs.writeFileSync(path.join(workspacePath, 'README.md'), 'changed');
-        const diff = await service.getDiff({ id: 'p1' });
+        const diff = await service.getDiff({ id: 'p1', userId: 'u1' });
         assert.ok(diff.includes('README.md'));
+    });
+
+    it('getFileDiffView returns HEAD and working tree content for modified file', async () => {
+        await service.switchBranch({ id: 'p1', userId: 'u1' }, 'main');
+        fs.writeFileSync(path.join(workspacePath, 'README.md'), 'modified content');
+
+        const view = await service.getFileDiffView({ id: 'p1', userId: 'u1' }, 'README.md');
+        assert.strictEqual(view.original, 'hello');
+        assert.strictEqual(view.modified, 'modified content');
+    });
+
+    it('getFileDiffView returns empty original for new (untracked) file', async () => {
+        fs.writeFileSync(path.join(workspacePath, 'brand_new.txt'), 'fresh');
+
+        const view = await service.getFileDiffView({ id: 'p1', userId: 'u1' }, 'brand_new.txt');
+        assert.strictEqual(view.original, '');
+        assert.strictEqual(view.modified, 'fresh');
+    });
+
+    it('getFileDiffView returns empty modified for deleted file', async () => {
+        fs.writeFileSync(path.join(workspacePath, 'doomed.txt'), 'will be deleted');
+        git(['add', 'doomed.txt'], workspacePath);
+        git(['commit', '-m', 'add doomed'], workspacePath);
+        fs.unlinkSync(path.join(workspacePath, 'doomed.txt'));
+
+        const view = await service.getFileDiffView({ id: 'p1', userId: 'u1' }, 'doomed.txt');
+        assert.strictEqual(view.original, 'will be deleted');
+        assert.strictEqual(view.modified, '');
     });
 });

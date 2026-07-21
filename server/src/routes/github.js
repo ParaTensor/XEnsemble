@@ -502,6 +502,22 @@ function registerGitHubRoutes(fastify) {
         }
     });
 
+    fastify.get('/api/v1/projects/:id/git/file-diff-view', {
+        preValidation: [fastify.authenticate, fastify.requireActive],
+    }, async (request, reply) => {
+        const project = await getProjectForUser(request.user.id, request.params.id);
+        if (!project) return reply.code(404).send({ error: 'Project not found' });
+        const filePath = request.query?.path;
+        if (!filePath) return reply.code(400).send({ error: 'path is required' });
+        try {
+            const { original, modified } = await gitOperationService.getFileDiffView(project, filePath);
+            return { original, modified };
+        } catch (err) {
+            request.log.error(err);
+            return reply.code(500).send({ error: err.message });
+        }
+    });
+
     fastify.post('/api/v1/projects/:id/git/pull', {
         preValidation: [fastify.authenticate, fastify.requireActive],
     }, async (request, reply) => {
