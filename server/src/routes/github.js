@@ -382,8 +382,44 @@ function registerGitHubRoutes(fastify) {
         const message = String(request.body?.message || '').trim();
         if (!message) return reply.code(400).send({ error: 'message is required' });
         try {
-            const result = await gitOperationService.commitAll(project, message);
+            const result = await gitOperationService.commitStaged(project, message);
             return result;
+        } catch (err) {
+            request.log.error(err);
+            return reply.code(500).send({ error: err.message });
+        }
+    });
+
+    fastify.post('/api/v1/projects/:id/git/stage', {
+        preValidation: [fastify.authenticate, fastify.requireActive],
+    }, async (request, reply) => {
+        const project = await getProjectForUser(request.user.id, request.params.id);
+        if (!project) return reply.code(404).send({ error: 'Project not found' });
+        const files = request.body?.files;
+        if (!Array.isArray(files) || files.length === 0) {
+            return reply.code(400).send({ error: 'files array is required' });
+        }
+        try {
+            await gitOperationService.stageFiles(project, files);
+            return { ok: true };
+        } catch (err) {
+            request.log.error(err);
+            return reply.code(500).send({ error: err.message });
+        }
+    });
+
+    fastify.post('/api/v1/projects/:id/git/unstage', {
+        preValidation: [fastify.authenticate, fastify.requireActive],
+    }, async (request, reply) => {
+        const project = await getProjectForUser(request.user.id, request.params.id);
+        if (!project) return reply.code(404).send({ error: 'Project not found' });
+        const files = request.body?.files;
+        if (!Array.isArray(files) || files.length === 0) {
+            return reply.code(400).send({ error: 'files array is required' });
+        }
+        try {
+            await gitOperationService.unstageFiles(project, files);
+            return { ok: true };
         } catch (err) {
             request.log.error(err);
             return reply.code(500).send({ error: err.message });

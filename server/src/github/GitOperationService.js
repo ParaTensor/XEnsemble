@@ -196,6 +196,8 @@ class GitOperationService {
         let unstaged = false;
         let untracked = false;
         const files = [];
+        const stagedFiles = [];
+        const unstagedFiles = [];
 
         for (const line of lines) {
             if (line.length < 2) {
@@ -227,6 +229,8 @@ class GitOperationService {
                 }
             }
             files.push(entry);
+            if (x !== ' ' && x !== '?') stagedFiles.push(entry);
+            if (y !== ' ' && y !== '?') unstagedFiles.push(entry);
         }
 
         let ahead = 0;
@@ -240,7 +244,7 @@ class GitOperationService {
             // No upstream or no commits yet.
         }
 
-        return { branch, sha, dirty, staged, unstaged, untracked, ahead, behind, files };
+        return { branch, sha, dirty, staged, unstaged, untracked, ahead, behind, files, stagedFiles, unstagedFiles };
     }
 
     async commitAll(project, message) {
@@ -248,6 +252,20 @@ class GitOperationService {
         await this._execGit(project, ['commit', '-m', message]);
         const sha = await this._revParse(project, 'HEAD');
         return { sha };
+    }
+
+    async commitStaged(project, message) {
+        await this._execGit(project, ['commit', '-m', message]);
+        const sha = await this._revParse(project, 'HEAD');
+        return { sha };
+    }
+
+    async stageFiles(project, filePaths) {
+        await this._execGit(project, ['add', ...filePaths]);
+    }
+
+    async unstageFiles(project, filePaths) {
+        await this._execGit(project, ['reset', 'HEAD', '--', ...filePaths]);
     }
 
     async pushBranch(project, branchName, { force = false } = {}) {

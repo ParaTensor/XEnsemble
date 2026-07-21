@@ -111,7 +111,8 @@ describe('WorkspacePanel', () => {
 
   it('shows git changes badge on activity bar', () => {
     const gitChanges = {
-      files: [{ path: 'src/a.js', status: ' M' }, { path: 'src/b.js', status: '??' }],
+      stagedFiles: [{ path: 'src/a.js', status: 'M ' }],
+      unstagedFiles: [{ path: 'src/b.js', status: ' M' }],
       dirty: true,
       branch: 'main',
       ahead: 0,
@@ -121,26 +122,25 @@ describe('WorkspacePanel', () => {
     expect(screen.getByText('2')).toBeInTheDocument();
   });
 
-  it('shows git files and branch in source control panel', async () => {
+  it('shows staged and unstaged files in source control panel', async () => {
     const gitChanges = {
-      files: [{ path: 'src/a.js', status: ' M' }],
+      stagedFiles: [{ path: 'src/a.js', status: 'M ' }],
+      unstagedFiles: [{ path: 'src/b.js', status: ' M' }],
       dirty: true,
       branch: 'main',
       ahead: 0,
       behind: 0,
     };
     render(<WorkspacePanel {...defaultProps} gitChanges={gitChanges} />);
-    // 点击活动栏的变更图标
     fireEvent.click(screen.getByTitle(/源代码管理/));
     await waitFor(() => {
-      expect(screen.getByText('main')).toBeInTheDocument();
       expect(screen.getByText('a.js')).toBeInTheDocument();
-      expect(screen.getByText('M')).toBeInTheDocument();
+      expect(screen.getByText('b.js')).toBeInTheDocument();
     });
   });
 
   it('shows empty state in source control when no git files', async () => {
-    const gitChanges = { files: [], dirty: false, branch: 'main', ahead: 0, behind: 0 };
+    const gitChanges = { stagedFiles: [], unstagedFiles: [], dirty: false, branch: 'main', ahead: 0, behind: 0 };
     render(<WorkspacePanel {...defaultProps} gitChanges={gitChanges} />);
     fireEvent.click(screen.getByTitle(/源代码管理/));
     await waitFor(() => {
@@ -151,7 +151,8 @@ describe('WorkspacePanel', () => {
   it('calls onGitFileClick when clicking git file', async () => {
     const onGitFileClick = vi.fn();
     const gitChanges = {
-      files: [{ path: 'src/a.js', status: ' M' }],
+      stagedFiles: [],
+      unstagedFiles: [{ path: 'src/a.js', status: ' M' }],
       dirty: true,
       branch: 'main',
       ahead: 0,

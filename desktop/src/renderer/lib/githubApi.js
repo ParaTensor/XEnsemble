@@ -54,6 +54,18 @@ export const commitAll = (projectId, message) =>
     body: JSON.stringify({ message }),
   });
 
+export const stageFiles = (projectId, files) =>
+  request(`/api/v1/projects/${encodeURIComponent(projectId)}/git/stage`, {
+    method: 'POST',
+    body: JSON.stringify({ files }),
+  });
+
+export const unstageFiles = (projectId, files) =>
+  request(`/api/v1/projects/${encodeURIComponent(projectId)}/git/unstage`, {
+    method: 'POST',
+    body: JSON.stringify({ files }),
+  });
+
 export const pushBranch = (projectId, branch) =>
   request(`/api/v1/projects/${encodeURIComponent(projectId)}/git/push`, {
     method: 'POST',

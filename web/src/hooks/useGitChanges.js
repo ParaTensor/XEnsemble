@@ -25,11 +25,26 @@ export function useGitChanges(projectId) {
     }
   }, [projectId]);
 
+  const stage = useCallback(async (files) => {
+    if (!projectId || !files?.length) return;
+    await githubApi.stageFiles(projectId, files);
+    await fetchStatus({ silent: true });
+  }, [projectId, fetchStatus]);
+
+  const unstage = useCallback(async (files) => {
+    if (!projectId || !files?.length) return;
+    await githubApi.unstageFiles(projectId, files);
+    await fetchStatus({ silent: true });
+  }, [projectId, fetchStatus]);
+
   return {
     branch: status?.branch,
     sha: status?.sha,
     dirty: status?.dirty,
+    staged: status?.staged,
     files: status?.files || [],
+    stagedFiles: status?.stagedFiles || [],
+    unstagedFiles: status?.unstagedFiles || [],
     ahead: status?.ahead || 0,
     behind: status?.behind || 0,
     loading,
@@ -40,5 +55,7 @@ export function useGitChanges(projectId) {
     fetchStatus,
     getFileDiff,
     getHeadContent,
+    stage,
+    unstage,
   };
 }

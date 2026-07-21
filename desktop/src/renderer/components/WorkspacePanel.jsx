@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
-import { FileText, Files, GitBranch, GitCommit, FolderPlus, Plus, PanelLeftClose, PanelLeft, ArrowUp, ArrowDown, Loader2, RefreshCw } from 'lucide-react';
+import { FileText, Files, GitBranch, GitCommit, FolderPlus, Plus, PanelLeftClose, PanelLeft, ArrowUp, ArrowDown, Loader2, RefreshCw, Minus } from 'lucide-react';
 import WorkspaceFileTree from './WorkspaceFileTree';
 import EditorTabs from './EditorTabs';
 import CodeEditor from './CodeEditorLazy';
@@ -126,9 +126,30 @@ export default function WorkspacePanel({
   const activePathRef = useRef(activePath);
   activePathRef.current = activePath;
 
-  const gitFiles = gitChanges?.files || [];
-  const gitHasChanges = gitFiles.length > 0;
+  const gitStagedFiles = gitChanges?.stagedFiles || [];
+  const gitUnstagedFiles = gitChanges?.unstagedFiles || [];
+  const gitHasChanges = gitStagedFiles.length + gitUnstagedFiles.length > 0;
   const branch = gitChanges?.branch || '';
+
+  const handleStageAll = useCallback(async () => {
+    const paths = gitUnstagedFiles.map((f) => f.path);
+    if (paths.length === 0) return;
+    await gitChanges?.stage(paths);
+  }, [gitUnstagedFiles, gitChanges]);
+
+  const handleUnstageAll = useCallback(async () => {
+    const paths = gitStagedFiles.map((f) => f.path);
+    if (paths.length === 0) return;
+    await gitChanges?.unstage(paths);
+  }, [gitStagedFiles, gitChanges]);
+
+  const handleStageFile = useCallback(async (path) => {
+    await gitChanges?.stage([path]);
+  }, [gitChanges]);
+
+  const handleUnstageFile = useCallback(async (path) => {
+    await gitChanges?.unstage([path]);
+  }, [gitChanges]);
 
   const handleCommit = useCallback(async () => {
     if (!commitMessage.trim()) return;
@@ -140,6 +161,44 @@ export default function WorkspacePanel({
       setCommitting(false);
     }
   }, [commitMessage, gitChanges]);
+
+  const renderGitFile = (f, stageAction) => {
+    const label = GIT_STATUS_LABELS[f.status] || f.status;
+    const colorCls = GIT_STATUS_COLORS[f.status] || 'text-zinc-400';
+    const desc = GIT_STATUS_DESC[f.status] || '';
+    const fileName = f.path.split('/').pop();
+    const dirPath = f.path.includes('/') ? f.path.slice(0, f.path.lastIndexOf('/')) : '';
+    return (
+      <div key={f.path} className="flex items-center group hover:bg-[#E8EAED]">
+        <button
+          onClick={() => onGitFileClick?.(f.path)}
+          className={`flex items-center gap-2 flex-1 min-w-0 px-3 py-1.5 text-left transition-colors ${consoleButtonFocusClass}`}
+        >
+          <span className={`w-4 text-center font-mono text-[11px] font-semibold ${colorCls} shrink-0`}>
+            {label}
+          </span>
+          <span className="truncate text-[#202124] text-xs">{fileName}</span>
+          {dirPath && (
+            <span className="truncate text-[#9AA0A6] text-[10px]">{dirPath}</span>
+          )}
+          <span className="ml-auto text-[#9AA0A6] text-[10px] shrink-0">{desc}</span>
+        </button>
+        {stageAction && (
+          <button
+            onClick={() => stageAction(f.path)}
+            title={stageAction === handleStageFile ? '暂存' : '取消暂存'}
+            className={`shrink-0 p-1 rounded text-zinc-400 hover:text-zinc-600 hover:bg-[#DADCE0] opacity-0 group-hover:opacity-100 transition-opacity ${consoleButtonFocusClass}`}
+          >
+            {stageAction === handleStageFile ? (
+              <Plus className="h-3 w-3" />
+            ) : (
+              <Minus className="h-3 w-3" />
+            )}
+          </button>
+        )}
+      </div>
+    );
+  };
 
   const activityBar = (
     <div className="w-12 shrink-0 border-r border-[#E8EAED] bg-[#F4F5F6] flex flex-col items-center py-2 gap-1">
@@ -155,7 +214,7 @@ export default function WorkspacePanel({
         <Files className="h-5 w-5" />
       </button>
       <button
-        title={`源代码管理${gitHasChanges ? ` (${gitFiles.length})` : ''}`}
+        title={`源代码管理${gitHasChanges ? ` (${gitStagedFiles.length + gitUnstagedFiles.length})` : ''}`}
         onClick={() => setSidebarTab(sidebarTab === 'changes' && sidebarOpen ? 'files' : 'changes')}
         className={`relative w-10 h-10 flex items-center justify-center rounded-md transition-colors ${
           sidebarTab === 'changes' && sidebarOpen
@@ -166,7 +225,7 @@ export default function WorkspacePanel({
         <GitBranch className="h-5 w-5" />
         {gitHasChanges && (
           <span className="absolute top-1 right-1 w-3.5 h-3.5 rounded-full bg-[#C06C5D] text-white text-[8px] flex items-center justify-center leading-none">
-            {gitFiles.length > 9 ? '9+' : gitFiles.length}
+            {gitStagedFiles.length + gitUnstagedFiles.length > 9 ? '9+' : gitStagedFiles.length + gitUnstagedFiles.length}
           </span>
         )}
       </button>
@@ -217,49 +276,57 @@ export default function WorkspacePanel({
             )}
           </div>
 
-          {/* 更改文件列表 */}
-          <div className="px-3 py-1.5 border-b border-[#E8EAED]">
-            <span className="text-[10px] font-semibold text-zinc-500 uppercase tracking-wider">
-              更改 ({gitFiles.length})
-            </span>
-          </div>
+          {/* 文件列表 */}
           <div className="flex-1 min-h-0 overflow-y-auto">
-            {gitFiles.length === 0 ? (
+            {!gitHasChanges ? (
               <div className="flex flex-col items-center justify-center py-8 gap-2 text-zinc-400">
                 <GitCommit className="h-6 w-6" />
                 <p className="text-[10px]">暂无已保存的更改</p>
               </div>
             ) : (
               <div className="flex flex-col">
-                {gitFiles.map((f) => {
-                  const label = GIT_STATUS_LABELS[f.status] || f.status;
-                  const colorCls = GIT_STATUS_COLORS[f.status] || 'text-zinc-400';
-                  const desc = GIT_STATUS_DESC[f.status] || '';
-                  const fileName = f.path.split('/').pop();
-                  const dirPath = f.path.includes('/') ? f.path.slice(0, f.path.lastIndexOf('/')) : '';
-                  return (
-                    <button
-                      key={f.path}
-                      onClick={() => onGitFileClick?.(f.path)}
-                      className={`flex items-center gap-2 px-3 py-1.5 text-left transition-colors hover:bg-[#E8EAED] ${consoleButtonFocusClass}`}
-                    >
-                      <span className={`w-4 text-center font-mono text-[11px] font-semibold ${colorCls} shrink-0`}>
-                        {label}
+                {/* 暂存的更改 */}
+                {gitStagedFiles.length > 0 && (
+                  <>
+                    <div className="flex items-center justify-between px-3 py-1.5 border-b border-[#E8EAED]">
+                      <span className="text-[10px] font-semibold text-zinc-500 uppercase tracking-wider">
+                        暂存的更改 ({gitStagedFiles.length})
                       </span>
-                      <span className="truncate text-[#202124] text-xs">{fileName}</span>
-                      {dirPath && (
-                        <span className="truncate text-[#9AA0A6] text-[10px]">{dirPath}</span>
-                      )}
-                      <span className="ml-auto text-[#9AA0A6] text-[10px] shrink-0">{desc}</span>
-                    </button>
-                  );
-                })}
+                      <button
+                        onClick={handleUnstageAll}
+                        title="全部取消暂存"
+                        className={`text-[10px] text-zinc-400 hover:text-zinc-600 ${consoleButtonFocusClass}`}
+                      >
+                        <Minus className="h-3 w-3" />
+                      </button>
+                    </div>
+                    {gitStagedFiles.map((f) => renderGitFile(f, handleUnstageFile))}
+                  </>
+                )}
+                {/* 未暂存的更改 */}
+                {gitUnstagedFiles.length > 0 && (
+                  <>
+                    <div className="flex items-center justify-between px-3 py-1.5 border-b border-[#E8EAED]">
+                      <span className="text-[10px] font-semibold text-zinc-500 uppercase tracking-wider">
+                        更改 ({gitUnstagedFiles.length})
+                      </span>
+                      <button
+                        onClick={handleStageAll}
+                        title="全部暂存"
+                        className={`text-[10px] text-zinc-400 hover:text-zinc-600 ${consoleButtonFocusClass}`}
+                      >
+                        <Plus className="h-3 w-3" />
+                      </button>
+                    </div>
+                    {gitUnstagedFiles.map((f) => renderGitFile(f, handleStageFile))}
+                  </>
+                )}
               </div>
             )}
           </div>
 
-          {/* 提交区域 */}
-          {gitHasChanges && (
+          {/* 提交区域：仅当有暂存文件时显示 */}
+          {gitStagedFiles.length > 0 && (
             <div className="flex flex-col gap-1.5 px-3 py-2 border-t border-[#E8EAED]">
               <textarea
                 placeholder="提交信息"
