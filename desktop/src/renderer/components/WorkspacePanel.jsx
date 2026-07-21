@@ -383,16 +383,32 @@ export default function WorkspacePanel({
                     <Loader2 className="h-3 w-3 animate-spin" />
                   ) : '提交'}
                 </button>
-                <button
-                  onClick={() => gitChanges?.push()}
-                  disabled={!gitChanges?.ahead || gitChanges?.operation === 'push'}
-                  className={`text-xs h-7 px-3 rounded ${buttonClass('secondary', 'sm')}`}
-                >
-                  {gitChanges?.operation === 'push' ? (
-                    <Loader2 className="h-3 w-3 animate-spin" />
-                  ) : '推送'}
-                </button>
+                {gitChanges?.ahead > 0 && (
+                  <button
+                    onClick={() => gitChanges?.push()}
+                    disabled={gitChanges?.operation === 'push'}
+                    className={`text-xs h-7 px-3 rounded ${buttonClass('secondary', 'sm')}`}
+                  >
+                    {gitChanges?.operation === 'push' ? (
+                      <Loader2 className="h-3 w-3 animate-spin" />
+                    ) : '推送'}
+                  </button>
+                )}
               </div>
+            </div>
+          )}
+          {/* 推送按钮：无暂存文件但有 ahead 时独立显示 */}
+          {gitStagedFiles.length === 0 && gitChanges?.ahead > 0 && (
+            <div className="flex flex-col gap-1.5 px-3 py-2 border-t border-[#E8EAED]">
+              <button
+                onClick={() => gitChanges?.push()}
+                disabled={gitChanges?.operation === 'push'}
+                className={`text-xs h-7 rounded ${buttonClass('primary', 'sm')}`}
+              >
+                {gitChanges?.operation === 'push' ? (
+                  <Loader2 className="h-3 w-3 animate-spin" />
+                ) : '推送'}
+              </button>
             </div>
           )}
         </div>
