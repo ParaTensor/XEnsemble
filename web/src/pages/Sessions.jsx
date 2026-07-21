@@ -116,7 +116,8 @@ export default React.forwardRef(function Sessions({
   const [panelWidth, setPanelWidth] = useState(() => {
     const saved = typeof window !== 'undefined' ? window.localStorage.getItem('xensemble.panel.width') : null;
     const w = saved ? parseInt(saved, 10) : NaN;
-    return Number.isFinite(w) && w >= 280 && w <= 640 ? w : 320;
+    const maxW = typeof window !== 'undefined' ? Math.max(480, window.innerWidth - 320) : 640;
+    return Number.isFinite(w) && w >= 200 && w <= maxW ? w : 320;
   });
   const resizingRef = useRef(null);
   const [workspaceFiles, setWorkspaceFiles] = useState([]);
@@ -152,7 +153,8 @@ export default React.forwardRef(function Sessions({
   const [customImages, setCustomImages] = useState([]);
 
   useEffect(() => {
-    if (panelWidth >= 280 && panelWidth <= 640) {
+    const maxW = typeof window !== 'undefined' ? Math.max(480, window.innerWidth - 320) : 640;
+    if (panelWidth >= 200 && panelWidth <= maxW) {
       window.localStorage.setItem('xensemble.panel.width', String(panelWidth));
     }
   }, [panelWidth]);
@@ -161,9 +163,10 @@ export default React.forwardRef(function Sessions({
     e.preventDefault();
     const startX = e.clientX;
     const startW = panelWidth;
+    const maxW = Math.max(480, window.innerWidth - 320);
     const onMove = (ev) => {
       const delta = startX - ev.clientX;
-      const next = Math.min(640, Math.max(280, startW + delta));
+      const next = Math.min(maxW, Math.max(200, startW + delta));
       setPanelWidth(next);
     };
     const onUp = () => {
