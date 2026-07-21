@@ -9,7 +9,9 @@ function registerAuthHooks(fastify) {
             const payload = auth.verifyAccessToken(token);
             if (!payload?.id) throw new Error('Invalid token');
 
-            const active = await assertActiveUser(token);
+            // Pass the already-verified payload to avoid a redundant second
+            // JWT verification inside assertActiveUser.
+            const active = await assertActiveUser(payload);
             if (active.error) {
                 if (active.status === 401) throw new Error(active.error);
                 return reply.code(active.status).send({ error: active.code });

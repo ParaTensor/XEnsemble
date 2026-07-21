@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useRef } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { useGitStatus } from './useGitStatus';
 import * as githubApi from '../lib/githubApi';
 
@@ -85,6 +85,8 @@ export function useGitChanges(projectId) {
     sha: merged?.sha,
     dirty: merged?.dirty,
     staged: merged?.staged,
+    unstaged: merged?.unstaged,
+    untracked: merged?.untracked,
     files: merged?.files || [],
     stagedFiles: merged?.stagedFiles || [],
     unstagedFiles: merged?.unstagedFiles || [],

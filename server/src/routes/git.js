@@ -56,12 +56,7 @@ function newId(prefix) {
     return `${prefix}_${crypto.randomBytes(8).toString('hex')}`;
 }
 
-async function getProjectForUser(userId, projectId) {
-    const rows = await db.select().from(schema.projects)
-        .where(eq(schema.projects.id, projectId));
-    if (rows.length === 0 || rows[0].userId !== userId) return null;
-    return rows[0];
-}
+const { getProjectForUser } = require('../projects/getProjectForUser');
 
 function registerGitRoutes(fastify) {
     const connectionService = new GitConnectionService();

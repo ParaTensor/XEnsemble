@@ -1,4 +1,4 @@
-import React, { createContext, useCallback, useContext, useRef, useState } from 'react';
+import { createContext, useCallback, useContext, useMemo, useRef, useState, memo } from 'react';
 import { createPortal } from 'react-dom';
 import { CheckCircle2, Loader2, ShieldAlert } from 'lucide-react';
 import { cn } from '../lib/utils';
@@ -8,7 +8,7 @@ const ToastContext = createContext(null);
 const TOAST_DURATION_MS = 4000;
 const TOAST_ERROR_DURATION_MS = 12000;
 
-function ToastItem({ message, type }) {
+const ToastItem = memo(function ToastItem({ message, type }) {
   const styles = {
     success: 'border-emerald-200 bg-emerald-50/95 text-emerald-900',
     error: 'border-red-200 bg-red-50/95 text-red-900',
@@ -44,7 +44,7 @@ function ToastItem({ message, type }) {
       <p className="min-w-0 flex-1 break-words leading-snug font-medium">{message}</p>
     </div>
   );
-}
+});
 
 export function ToastProvider({ children }) {
   const [toast, setToast] = useState(null);
@@ -72,8 +72,10 @@ export function ToastProvider({ children }) {
     }
   }, [clearDismissTimer, dismiss]);
 
+  const contextValue = useMemo(() => ({ showToast }), [showToast]);
+
   return (
-    <ToastContext.Provider value={{ showToast }}>
+    <ToastContext.Provider value={contextValue}>
       {children}
       {toast
         && createPortal(

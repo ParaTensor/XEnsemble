@@ -90,7 +90,7 @@ describe('gitCredentialHelper', () => {
         assert.ok(!fs.existsSync(scriptPath));
     });
 
-    it('buildCredentialEnv returns GIT_ASKPASS env and a cleanup function', () => {
+    it('buildCredentialEnv returns GIT_ASKPASS env and a reusable cleanup function', () => {
         const token = 'token_123';
         const { env, cleanup } = buildCredentialEnv(token);
         try {
@@ -99,9 +99,12 @@ describe('gitCredentialHelper', () => {
             assert.strictEqual(env.GIT_ASKPASS_TOKEN, token);
             assert.ok(fs.existsSync(env.GIT_ASKPASS));
         } finally {
+            // cleanup is a no-op for cached scripts; the script persists
+            // for reuse across calls and is cleaned up on process exit.
             cleanup();
         }
-        assert.ok(!fs.existsSync(env.GIT_ASKPASS));
+        // Cached script should still exist after cleanup (no-op).
+        assert.ok(fs.existsSync(env.GIT_ASKPASS));
     });
 });
 

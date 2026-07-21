@@ -8,6 +8,7 @@ const policy = require('../auth/PolicyService');
 const platformSettings = require('./PlatformSettings');
 const installedAgents = require('../agents/installedAgents');
 const { recordEvent } = require('../events/recordEvent');
+const { invalidateUserStatusCache } = require('../auth/assertActiveUser');
 
 const REFRESH_TOKEN_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
 
@@ -262,6 +263,10 @@ async function updateUser(userId, patch, actorId) {
 
     if (Object.keys(updates).length > 1) {
         await db.update(schema.users).set(updates).where(eq(schema.users.id, userId));
+        // Invalidate the cached user status so the next request picks up the change.
+        if (updates.status) {
+            invalidateUserStatusCache(userId);
+        }
     }
 
     return getUserDetail(userId);

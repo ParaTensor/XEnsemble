@@ -1,12 +1,9 @@
 import { useState } from 'react';
 import { ArrowDown, ArrowUp, GitBranch, GitPullRequest, Loader2, Pencil, Upload, Download } from 'lucide-react';
 import { cn } from '../../lib/utils';
-import { useGitStatus } from '../../hooks/useGitStatus';
 import CreatePRDialog from './CreatePRDialog';
 import {
   ConsoleInlineDialog,
-  ConsoleStructuredDialogHeader,
-  ConsoleStructuredDialogFooter,
 } from '../ConsoleDialog';
 import Input from '../Input';
 import Button from '../Button';
@@ -22,9 +19,24 @@ import {
 
 const GIT_PROVIDERS = new Set(['github', 'gitlab', 'gitea', 'local_git']);
 
-export default function GitStatusBar({ projectId, project }) {
+export default function GitStatusBar({ projectId, project, git }) {
   const isGitProject = Boolean(projectId && project?.repoProvider && GIT_PROVIDERS.has(project.repoProvider));
-  const { status, operation, commit, push, pull } = useGitStatus(isGitProject ? projectId : null);
+  // Use the shared git state passed from the parent (merged useGitStatus)
+  // instead of mounting a second useGitStatus instance (which would double
+  // the 15s polling timer and DB/git load).
+  const status = git ? {
+    branch: git.branch,
+    ahead: git.ahead,
+    behind: git.behind,
+    dirty: git.dirty,
+    staged: git.staged,
+    unstaged: git.unstaged,
+    untracked: git.untracked,
+  } : null;
+  const operation = git?.operation;
+  const commit = git?.commit;
+  const push = git?.push;
+  const pull = git?.pull;
   const [showCommitDialog, setShowCommitDialog] = useState(false);
   const [commitMessage, setCommitMessage] = useState('');
   const [committing, setCommitting] = useState(false);

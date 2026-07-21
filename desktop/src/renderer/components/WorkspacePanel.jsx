@@ -1,12 +1,22 @@
-import { useState, useCallback, useEffect, useRef } from 'react';
+import { useState, useCallback, useEffect, useRef, memo, lazy, Suspense } from 'react';
 import { FileText, Files, GitBranch, GitCommit, FolderPlus, Plus, PanelLeftClose, PanelLeft, ArrowUp, ArrowDown, Loader2, RefreshCw, Minus } from 'lucide-react';
 import WorkspaceFileTree from './WorkspaceFileTree';
 import EditorTabs from './EditorTabs';
 import CodeEditor from './CodeEditorLazy';
-import DiffViewer from './DiffViewer';
 import { ConsoleDialogShell } from './ConsoleDialog';
 import { consoleButtonFocusClass, consoleInputClass } from '@/lib/consoleTheme';
 import { buttonClass } from '@/lib/buttonStyles';
+
+// Lazy-load DiffViewer (Monaco diff module) only when a diff is actually viewed.
+const DiffViewer = lazy(() => import('./DiffViewer'));
+
+function DiffViewerFallback() {
+  return (
+    <div className="flex-1 flex items-center justify-center">
+      <Loader2 className="h-5 w-5 animate-spin text-zinc-400" />
+    </div>
+  );
+}
 
 const GIT_STATUS_LABELS = {
   'M ': 'M', ' M': 'M', 'MM': 'M',
@@ -32,7 +42,7 @@ const GIT_STATUS_DESC = {
   'R ': '重命名',
 };
 
-export default function WorkspacePanel({
+const WorkspacePanel = memo(function WorkspacePanel({
   projectId,
   tabs,
   activePath,
@@ -464,21 +474,25 @@ export default function WorkspacePanel({
       )}
       <div className="flex-1 min-w-0 flex flex-col min-h-0">
         {gitDiffView ? (
-          <DiffViewer
-            original={gitDiffView.original}
-            modified={gitDiffView.modified}
-            path={gitDiffView.path}
-            loading={gitDiffView.loading}
-            onClose={onCloseGitDiff}
-          />
+          <Suspense fallback={<DiffViewerFallback />}>
+            <DiffViewer
+              original={gitDiffView.original}
+              modified={gitDiffView.modified}
+              path={gitDiffView.path}
+              loading={gitDiffView.loading}
+              onClose={onCloseGitDiff}
+            />
+          </Suspense>
         ) : diffView ? (
-          <DiffViewer
-            original={diffView.original}
-            modified={diffView.modified}
-            path={diffView.path}
-            loading={diffView.loading}
-            onClose={onCloseDiff}
-          />
+          <Suspense fallback={<DiffViewerFallback />}>
+            <DiffViewer
+              original={diffView.original}
+              modified={diffView.modified}
+              path={diffView.path}
+              loading={diffView.loading}
+              onClose={onCloseDiff}
+            />
+          </Suspense>
         ) : tabs.length > 0 ? (
           <>
             <EditorTabs
@@ -583,4 +597,6 @@ export default function WorkspacePanel({
       )}
     </div>
   );
-}
+});
+
+export default WorkspacePanel;

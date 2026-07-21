@@ -9,6 +9,14 @@ export function useEditorTabs(projectId) {
   const fetchDirLock = useRef({});
   const lastProjectId = useRef(projectId);
 
+  // tabsRef keeps the latest tabs array without triggering re-renders,
+  // allowing callbacks (openFile, saveTab, showDiff) to have stable
+  // identity instead of depending on `tabs` (which changes on every keystroke).
+  const tabsRef = useRef(tabs);
+  tabsRef.current = tabs;
+  const activePathRef = useRef(activePath);
+  activePathRef.current = activePath;
+
   // projectId 变化时重置 state，防止跨项目 state 泄漏
   useEffect(() => {
     if (lastProjectId.current !== projectId) {
@@ -23,7 +31,7 @@ export function useEditorTabs(projectId) {
   const openFile = useCallback(async (projectId, file) => {
     if (!file || file.type !== 'file') return;
     const path = file.path;
-    const existing = tabs.find((t) => t.path === path);
+    const existing = tabsRef.current.find((t) => t.path === path);
     if (existing) {
       setActivePath(path);
       return;
@@ -43,20 +51,20 @@ export function useEditorTabs(projectId) {
     } catch (err) {
       throw err;
     }
-  }, [tabs, readFile]);
+  }, [readFile]);
 
   const closeTab = useCallback((path) => {
     setTabs((prev) => {
       const idx = prev.findIndex((t) => t.path === path);
       if (idx === -1) return prev;
       const next = prev.filter((t) => t.path !== path);
-      if (activePath === path) {
+      if (activePathRef.current === path) {
         const newActive = next[idx] || next[idx - 1] || null;
         setActivePath(newActive ? newActive.path : null);
       }
       return next;
     });
-  }, [activePath]);
+  }, []);
 
   const selectTab = useCallback((path, newContent) => {
     setActivePath(path);
@@ -68,17 +76,17 @@ export function useEditorTabs(projectId) {
   }, []);
 
   const saveTab = useCallback(async (projectId, path) => {
-    const tab = tabs.find((t) => t.path === path);
+    const tab = tabsRef.current.find((t) => t.path === path);
     if (!tab) return;
     await writeFile(projectId, path, tab.content, { loadedAt: tab.loadedAt });
     // 保存成功：更新 originalContent 和 loadedAt
     setTabs((prev) => prev.map((t) =>
       t.path === path ? { ...t, originalContent: t.content, loadedAt: Date.now() } : t
     ));
-  }, [tabs, writeFile]);
+  }, [writeFile]);
 
   const showDiff = useCallback(async (projectId, path) => {
-    const tab = tabs.find((t) => t.path === path);
+    const tab = tabsRef.current.find((t) => t.path === path);
     if (!tab || tab.isBinary) return;
     setDiffView({ path, original: null, modified: tab.content, loading: true });
     try {
@@ -88,7 +96,7 @@ export function useEditorTabs(projectId) {
       setDiffView(null);
       throw err;
     }
-  }, [tabs, readFile]);
+  }, [readFile]);
 
   const closeDiff = useCallback(() => {
     setDiffView(null);

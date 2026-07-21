@@ -1,10 +1,10 @@
-import { useState } from 'react';
+import { useState, memo } from 'react';
 import { FileDiff, X } from 'lucide-react';
 import { ConsoleDialogShell } from './ConsoleDialog';
 import { consoleButtonFocusClass } from '@/lib/consoleTheme';
 import { buttonClass } from '@/lib/buttonStyles';
 
-export default function EditorTabs({ tabs, activePath, onSelectTab, onCloseTab, onSaveTab, onShowDiff }) {
+const EditorTabs = memo(function EditorTabs({ tabs, activePath, onSelectTab, onCloseTab, onSaveTab, onShowDiff }) {
   const [closingTab, setClosingTab] = useState(null);
 
   const handleClose = (path) => {
@@ -116,4 +116,6 @@ export default function EditorTabs({ tabs, activePath, onSelectTab, onCloseTab, 
       )}
     </>
   );
-}
+});
+
+export default EditorTabs;

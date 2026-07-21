@@ -207,24 +207,25 @@ class GitOperationService {
                     .then((r) => new Set(r.stdout.split('\n').filter(Boolean)))
                     .catch(() => new Set())
                 : Promise.resolve(new Set()),
-            // ahead/behind：检查本地与远程的 commit 差异
-            this._execGit(project, ['rev-list', '--left-right', '--count', 'HEAD...@{upstream}'])
-                .then((r) => {
+            // ahead/behind：并行尝试 @{upstream} 和 origin/<branch>，取最先成功的
+            // 避免 @{upstream} 失败后串行 fallback 的 ~500ms-1s 延迟
+            (async () => {
+                const candidates = [
+                    this._execGit(project, ['rev-list', '--left-right', '--count', 'HEAD...@{upstream}']),
+                ];
+                if (branch) {
+                    candidates.push(
+                        this._execGit(project, ['rev-list', '--left-right', '--count', `HEAD...origin/${branch}`]),
+                    );
+                }
+                try {
+                    const r = await Promise.any(candidates);
                     const [a, b] = r.stdout.trim().split('\t').map((n) => Number(n) || 0);
                     return { ahead: a, behind: b };
-                })
-                .catch(async () => {
-                    if (branch) {
-                        try {
-                            const r = await this._execGit(project, ['rev-list', '--left-right', '--count', `HEAD...origin/${branch}`]);
-                            const [a, b] = r.stdout.trim().split('\t').map((n) => Number(n) || 0);
-                            return { ahead: a, behind: b };
-                        } catch {
-                            return { ahead: 0, behind: 0 };
-                        }
-                    }
+                } catch {
                     return { ahead: 0, behind: 0 };
-                }),
+                }
+            })(),
         ]);
 
         const ignoredSet = ignoredResult;

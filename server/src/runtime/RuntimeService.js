@@ -12,6 +12,35 @@ const workspace = require('../workspace');
 
 const PROVIDER = resolveRuntimeProvider();
 
+// Short-TTL cache for attach-only ensureProjectRuntime results.
+// Keyed by runtimeId; avoids a DB SELECT on every git/FS API call.
+const RUNTIME_CACHE_TTL_MS = 5_000;
+const runtimeCache = new Map();
+
+function getCachedRuntime(runtimeId) {
+    const cached = runtimeCache.get(runtimeId);
+    if (cached && cached.expiresAt > Date.now()) {
+        return cached.value;
+    }
+    if (cached) runtimeCache.delete(runtimeId);
+    return null;
+}
+
+function setCachedRuntime(runtimeId, value) {
+    runtimeCache.set(runtimeId, {
+        value,
+        expiresAt: Date.now() + RUNTIME_CACHE_TTL_MS,
+    });
+}
+
+function invalidateRuntimeCache(runtimeId) {
+    if (runtimeId) {
+        runtimeCache.delete(runtimeId);
+    } else {
+        runtimeCache.clear();
+    }
+}
+
 function parseRuntimeSpecs(raw) {
     if (!raw) return {};
     try {
@@ -51,6 +80,10 @@ async function ensureProjectRuntime(project, opts = {}) {
 
     // Passive callers only need the persisted runtime row; re-entering ensureReady races with session start.
     if (isAttachOnlyRuntimeCall(opts) && targetRuntimeId) {
+        // Check the short-TTL cache first to avoid a DB SELECT on every git/FS call.
+        const cached = getCachedRuntime(targetRuntimeId);
+        if (cached) return cached;
+
         const rows = await db.select().from(schema.runtimes)
             .where(and(
                 eq(schema.runtimes.id, targetRuntimeId),
@@ -59,15 +92,19 @@ async function ensureProjectRuntime(project, opts = {}) {
         const runtimeRow = rows[0];
         const workspacePath = runtimeRow?.endpoint || project.serverPath;
         if (runtimeRow?.status === 'ready' && runtimeRow.runtimeRef && workspacePath) {
-            return {
+            const result = {
                 runtime: runtimeRow,
                 workspacePath,
                 recoverable: false,
             };
+            setCachedRuntime(targetRuntimeId, result);
+            return result;
         }
     }
 
     return singleflight(runtimeFlightKey(project.id, targetRuntimeId, opts), async () => {
+        // Invalidate the cache since we're about to (re)provision.
+        if (targetRuntimeId) invalidateRuntimeCache(targetRuntimeId);
         const rt = getRuntime();
 
         let runtimeRow = null;
@@ -151,6 +188,11 @@ async function ensureProjectRuntime(project, opts = {}) {
         if (project.serverPath !== workspacePath) {
             await db.update(schema.projects).set({ serverPath: workspacePath })
                 .where(eq(schema.projects.id, project.id));
+            // Invalidate project cache so the next getProjectForUser sees the updated serverPath.
+            try {
+                const { invalidateProjectCache } = require('../projects/getProjectForUser');
+                invalidateProjectCache(project.id);
+            } catch { /* circular dep guard */ }
         }
 
         const attach = await rt.provider.attach(provision.runtimeRef);
@@ -266,4 +308,5 @@ module.exports = {
     ensureProjectRuntime,
     getOrCreateDefaultRuntime,
     formatRuntime,
+    invalidateRuntimeCache,
 };

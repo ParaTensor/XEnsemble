@@ -31,6 +31,7 @@ const schema = require('./db/schema');
 const { eq, and, ne, sql } = require('drizzle-orm');
 const auth = require('./auth/index');
 const { assertActiveUser } = require('./auth/assertActiveUser');
+const { getProjectForUser, invalidateProjectCache } = require('./projects/getProjectForUser');
 const { registerAuthHooks } = require('./auth/hooks');
 const policy = require('./auth/PolicyService');
 const { registerAuthRoutes } = require('./routes/auth');
@@ -72,12 +73,7 @@ function formatAgentRow(a) {
     };
 }
 
-async function getProjectForUser(userId, projectId) {
-    const rows = await db.select().from(schema.projects)
-        .where(eq(schema.projects.id, projectId));
-    if (rows.length === 0 || rows[0].userId !== userId) return null;
-    return rows[0];
-}
+// getProjectForUser is imported from ./projects/getProjectForUser (cached)
 
 function applyStateDirEnv(env, resumeSpec, stateDirPath) {
     if (!resumeSpec?.stateEnv || !stateDirPath) return env;
@@ -1107,51 +1103,69 @@ fastify.post('/api/v1/session/start', { preValidation: [fastify.authenticate] },
             return;
         }
 
-        // Update cwd and runtimeId now that the VM is ready
-        await db.update(schema.sessions).set({
-            cwd: workspacePath,
-            runtimeId,
-        }).where(eq(schema.sessions.id, sessionId));
+        // Update cwd and runtimeId now that the VM is ready.
+        // Defer the DB write to merge with stateDirRef below (reduces serial DB writes).
 
-        // Prepare agent state directory (L2 resume)
+        // Parallelize ensureSessionStateDir (VM exec) and ensureKimiConfig (VM exec).
+        // ensureKimiConfig is best-effort; ensureSessionStateDir is blocking when stateEnv is set.
         let sessionStateDir = null;
-        if (resumeSpec?.stateEnv) {
+        const stateDirPromise = (async () => {
+            if (!resumeSpec?.stateEnv) return null;
             try {
-                sessionStateDir = await ensureSessionStateDir(runtime.fs, {
+                return await ensureSessionStateDir(runtime.fs, {
                     workspaceRoot: workspacePath,
                     sessionId,
                     runtimeRef: ready.runtime ? ready.runtime.runtimeRef : undefined,
                 });
             } catch (err) {
                 fastify.log.error({ err, sessionId }, '[sessions] async provisioning: ensureSessionStateDir failed');
-                await markSessionFailed(sessionId, 'Failed to prepare agent state directory');
-                return;
+                throw err;
             }
-            if (!sessionStateDir) {
-                await markSessionFailed(sessionId, 'Failed to prepare agent state directory');
-                return;
+        })();
+
+        const kimiConfigPromise = (async () => {
+            try {
+                const { ensureKimiConfig } = require('./workspace/kimiConfigBootstrap');
+                await ensureKimiConfig({
+                    runtime,
+                    runtimeRef: ready.runtime ? ready.runtime.runtimeRef : undefined,
+                    userId: request.user.id,
+                    agentId: agentMeta.id,
+                    warn: (msg) => fastify.log.warn(msg),
+                });
+            } catch (err) {
+                fastify.log.warn({ err, sessionId }, '[sessions] kimi config bootstrap failed');
             }
+        })();
+
+        // Wait for stateDir (blocking) and kimiConfig (best-effort) in parallel.
+        try {
+            sessionStateDir = await stateDirPromise;
+        } catch (err) {
+            await markSessionFailed(sessionId, 'Failed to prepare agent state directory');
+            return;
+        }
+        if (resumeSpec?.stateEnv && !sessionStateDir) {
+            await markSessionFailed(sessionId, 'Failed to prepare agent state directory');
+            return;
+        }
+
+        if (sessionStateDir?.stateDirPath) {
             resolved.env = applyStateDirEnv(resolved.env, resumeSpec, sessionStateDir.stateDirPath);
         }
 
+        // Single DB update: merge cwd + runtimeId + stateDirRef (was 2 separate writes).
+        const sessionUpdate = {
+            cwd: workspacePath,
+            runtimeId,
+        };
         if (sessionStateDir?.stateDirRef) {
-            await db.update(schema.sessions).set({
-                stateDirRef: sessionStateDir.stateDirRef,
-            }).where(eq(schema.sessions.id, sessionId));
+            sessionUpdate.stateDirRef = sessionStateDir.stateDirRef;
         }
+        await db.update(schema.sessions).set(sessionUpdate).where(eq(schema.sessions.id, sessionId));
 
-        try {
-            const { ensureKimiConfig } = require('./workspace/kimiConfigBootstrap');
-            await ensureKimiConfig({
-                runtime,
-                runtimeRef: ready.runtime ? ready.runtime.runtimeRef : undefined,
-                userId: request.user.id,
-                agentId: agentMeta.id,
-                warn: (msg) => fastify.log.warn(msg),
-            });
-        } catch (err) {
-            fastify.log.warn({ err, sessionId }, '[sessions] kimi config bootstrap failed');
-        }
+        // Ensure kimiConfig finished (best-effort, already logged if failed).
+        await kimiConfigPromise;
 
         if (project && project.repoProvider === 'github') {
             resolved.env.XENSEMBLE_GIT_BRANCH = project.currentBranch || '';
@@ -1291,7 +1305,7 @@ fastify.register(async function terminalWsRoutes(app) {
                 return;
             }
 
-            const active = await assertActiveUser(accessToken);
+            const active = await assertActiveUser(payload);
             if (active.error) {
                 sendJson({ type: 'error', data: active.error });
                 ws.close();
@@ -1426,7 +1440,7 @@ fastify.register(async function workspaceTerminalWsRoutes(app) {
                 return;
             }
 
-            const active = await assertActiveUser(accessToken);
+            const active = await assertActiveUser(payload);
             if (active.error) {
                 sendJson({ type: 'error', data: active.error });
                 ws.close();
@@ -1689,19 +1703,21 @@ fastify.get('/api/v1/workspace/file', { preValidation: [fastify.authenticate, fa
         const ref = ready.runtime ? ready.runtime.runtimeRef : undefined;
         const isText = isTextFile(filePath);
         const encoding = isText ? 'utf8' : 'buffer';
-        // 用 fsStat 取单文件大小（禁止用 fsList 列目录再 find，语义脆弱且性能差）
+        // Skip fsStat (saves one VM exec ~500ms-1s): use fsRead's result length
+        // for the size check, and catch 404 for non-existent files.
+        let content;
         try {
-            const stat = await runtime.fs.fsStat(ready.workspacePath, filePath, { runtimeRef: ref });
-            if (stat.size > MAX_FILE_SIZE) {
-                return reply.code(413).send({ error: 'File too large' });
-            }
-        } catch (statErr) {
-            if (statErr instanceof RuntimeError && statErr.statusCode === 404) {
+            content = await runtime.fs.fsRead(ready.workspacePath, filePath, { runtimeRef: ref, encoding });
+        } catch (readErr) {
+            if (readErr instanceof RuntimeError && readErr.statusCode === 404) {
                 return reply.code(404).send({ error: 'File not found' });
             }
-            throw statErr;
+            throw readErr;
         }
-        const content = await runtime.fs.fsRead(ready.workspacePath, filePath, { runtimeRef: ref, encoding });
+        const byteLength = Buffer.isBuffer(content) ? content.length : Buffer.byteLength(content);
+        if (byteLength > MAX_FILE_SIZE) {
+            return reply.code(413).send({ error: 'File too large' });
+        }
         const isBinary = !isText;
         if (isBinary) {
             return { content: Buffer.isBuffer(content) ? content.toString('base64') : content, isBinary: true };

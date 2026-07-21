@@ -27,9 +27,31 @@ export function useGitStatus(projectId) {
 
   useEffect(() => {
     fetchStatus();
-    const id = setInterval(() => fetchStatus({ silent: true }), POLL_INTERVAL_MS);
-    return () => clearInterval(id);
+    let timer;
+    const scheduleNext = () => {
+      timer = setTimeout(() => {
+        // Skip polling when the tab is hidden (saves battery + server load).
+        if (typeof document !== 'undefined' && document.hidden) {
+          scheduleNext();
+          return;
+        }
+        fetchStatus({ silent: true });
+        scheduleNext();
+      }, POLL_INTERVAL_MS);
+    };
+    scheduleNext();
+    return () => clearTimeout(timer);
   }, [fetchStatus]);
+
+  // Fetch immediately when tab becomes visible again.
+  useEffect(() => {
+    if (typeof document === 'undefined') return;
+    const onVisible = () => {
+      if (!document.hidden && projectId) fetchStatus({ silent: true });
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => document.removeEventListener('visibilitychange', onVisible);
+  }, [projectId, fetchStatus]);
 
   const commit = useCallback(async (message, author) => {
     if (!projectId || !message?.trim()) return;

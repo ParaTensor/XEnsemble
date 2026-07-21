@@ -28,11 +28,7 @@ async function assertSessionOwner(userId, sessionId) {
     return { ok: true };
 }
 
-async function getProjectForUser(userId, projectId) {
-    const rows = await db.select().from(schema.projects).where(eq(schema.projects.id, projectId));
-    if (rows.length === 0 || rows[0].userId !== userId) return null;
-    return rows[0];
-}
+const { getProjectForUser } = require('../projects/getProjectForUser');
 
 async function wakeIdleSession({ requestUser, requestLog, sessionRecord }) {
     const resumeContext = await buildResumeSessionContext({

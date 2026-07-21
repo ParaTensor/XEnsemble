@@ -52,7 +52,13 @@ async function registerSessionLifecycle({
         if (project && project.workspaceMode === 'git') {
             const { GitOperationService } = require('../github/GitOperationService');
             const gitOps = new GitOperationService({ getToken: () => null });
-            gitOps.commitAll(project, `chore(xensemble): auto-checkpoint session ${sessionId}`)
+            // Check for dirty state first (1 VM exec) to skip the 3-exec commitAll
+            // when there's nothing to commit (the common case on clean exit).
+            gitOps._execGit(project, ['status', '--porcelain'])
+                .then((r) => {
+                    if (!r.stdout || !r.stdout.trim()) return null;
+                    return gitOps.commitAll(project, `chore(xensemble): auto-checkpoint session ${sessionId}`);
+                })
                 .catch(() => { /* best-effort: ignore if nothing to commit or workspace missing */ });
         }
     });
@@ -144,28 +150,38 @@ async function resumeSession({
         const workspacePath = runtimeReady.workspacePath;
         const runtimeRef = runtimeReady.runtime ? runtimeReady.runtime.runtimeRef : undefined;
 
-        try {
-            const { ensureAgentResume } = require('../workspace/agentResumeHook');
-            await ensureAgentResume(project, workspacePath, {
-                sessionId: session.id,
-                onWake: true,
-            });
-        } catch (err) {
-            if (fastifyLog?.warn) {
-                fastifyLog.warn(err, '[sessions] workspace resume hook failed');
-            } else if (requestLog?.warn) {
-                requestLog.warn(err, '[sessions] workspace resume hook failed');
-            }
-        }
-
+        // Parallelize ensureAgentResume (host bash, best-effort) and sessionStateDirExists (VM exec, blocking).
+        // Previously these were serial, adding ~500ms-1s to resume latency.
         const stateDirResolved = runtime.fs.resolveStateDir(workspacePath, session.id);
         const stateDirPath = stateDirResolved?.stateDirPath || null;
-        const stateExists = stateDirPath && session.stateDirRef && await sessionStateDirExists(runtime.fs, {
-            workspaceRoot: workspacePath,
-            sessionId: session.id,
-            runtimeRef,
-            stateDirRef: session.stateDirRef,
-        });
+
+        const [_, stateExists] = await Promise.all([
+            (async () => {
+                try {
+                    const { ensureAgentResume } = require('../workspace/agentResumeHook');
+                    await ensureAgentResume(project, workspacePath, {
+                        sessionId: session.id,
+                        onWake: true,
+                    });
+                } catch (err) {
+                    if (fastifyLog?.warn) {
+                        fastifyLog.warn(err, '[sessions] workspace resume hook failed');
+                    } else if (requestLog?.warn) {
+                        requestLog.warn(err, '[sessions] workspace resume hook failed');
+                    }
+                }
+            })(),
+            (async () => {
+                if (!stateDirPath || !session.stateDirRef) return false;
+                return sessionStateDirExists(runtime.fs, {
+                    workspaceRoot: workspacePath,
+                    sessionId: session.id,
+                    runtimeRef,
+                    stateDirRef: session.stateDirRef,
+                });
+            })(),
+        ]);
+
         if (!stateExists) {
             const error = new Error('session not resumable — please start a new session');
             error.statusCode = 409;
@@ -182,7 +198,33 @@ async function resumeSession({
             resolvedSpawnEnv.env.XENSEMBLE_REPO_URL = project.githubFullName || '';
         }
 
-        const authMode = await agentGatewayConfig.getAgentAuthMode(agentMeta.id);
+        // Parallelize getAgentAuthMode (DB query) and ensureKimiConfig (VM exec, best-effort).
+        // Previously serial, adding ~500ms to resume latency.
+        const [authMode] = await Promise.all([
+            agentGatewayConfig.getAgentAuthMode(agentMeta.id),
+            (async () => {
+                try {
+                    const { ensureKimiConfig } = require('../workspace/kimiConfigBootstrap');
+                    await ensureKimiConfig({
+                        runtime,
+                        runtimeRef: runtimeReady.runtime ? runtimeReady.runtime.runtimeRef : undefined,
+                        userId: requestUser.id,
+                        agentId: agentMeta.id,
+                        warn: (msg) => {
+                            if (fastifyLog?.warn) fastifyLog.warn(msg);
+                            else if (requestLog?.warn) requestLog.warn(msg);
+                        },
+                    });
+                } catch (err) {
+                    if (fastifyLog?.warn) {
+                        fastifyLog.warn(err, '[sessions] kimi config bootstrap failed');
+                    } else if (requestLog?.warn) {
+                        requestLog.warn(err, '[sessions] kimi config bootstrap failed');
+                    }
+                }
+            })(),
+        ]);
+
         let sessionToken = null;
         if (authMode === 'gateway') {
             const gwCfg = await agentGatewayConfig.getForAgent(agentMeta.id);
@@ -200,26 +242,6 @@ async function resumeSession({
             const error = new Error('Failed to resolve spawn environment');
             error.statusCode = 400;
             throw error;
-        }
-
-        try {
-            const { ensureKimiConfig } = require('../workspace/kimiConfigBootstrap');
-            await ensureKimiConfig({
-                runtime,
-                runtimeRef: runtimeReady.runtime ? runtimeReady.runtime.runtimeRef : undefined,
-                userId: requestUser.id,
-                agentId: agentMeta.id,
-                warn: (msg) => {
-                    if (fastifyLog?.warn) fastifyLog.warn(msg);
-                    else if (requestLog?.warn) requestLog.warn(msg);
-                },
-            });
-        } catch (err) {
-            if (fastifyLog?.warn) {
-                fastifyLog.warn(err, '[sessions] kimi config bootstrap failed');
-            } else if (requestLog?.warn) {
-                requestLog.warn(err, '[sessions] kimi config bootstrap failed');
-            }
         }
 
         await db.update(schema.sessions)
@@ -270,8 +292,10 @@ async function resumeSession({
             fastifyLog,
         });
 
+        // Single DB update with the final streamRef (merged from 2 writes).
         await db.update(schema.sessions)
             .set({
+                status: 'running',
                 streamRef: handle.streamRef || null,
                 stateDirRef: session.stateDirRef || null,
                 recoverable: true,

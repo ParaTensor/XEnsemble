@@ -114,6 +114,7 @@ export default React.forwardRef(function Sessions({
   const [_error, setError] = useState(null);
   const [panelOpen, setPanelOpen] = useState(false);
   const [panelTab, setPanelTab] = useState('files');
+  const [shellMounted, setShellMounted] = useState(false);
   const [panelWidth, setPanelWidth] = useState(() => {
     const saved = typeof window !== 'undefined' ? window.localStorage.getItem('xensemble.panel.width') : null;
     const w = saved ? parseInt(saved, 10) : NaN;
@@ -195,6 +196,7 @@ export default React.forwardRef(function Sessions({
     if (!activeSession?.projectId) {
       setPanelOpen(false);
       setPanelTab('files');
+      setShellMounted(false);
     }
     setViewingFile(null);
     setFileContent('');
@@ -566,8 +568,20 @@ export default React.forwardRef(function Sessions({
   useEffect(() => {
     if (!activeSession?.projectId || !panelOpen || panelTab !== 'files') return undefined;
     fetchWorkspaceFiles();
-    const interval = setInterval(fetchWorkspaceFiles, 10000);
-    return () => clearInterval(interval);
+    let timer;
+    const scheduleNext = () => {
+      timer = setTimeout(() => {
+        // Skip polling when the tab is hidden.
+        if (typeof document !== 'undefined' && document.hidden) {
+          scheduleNext();
+          return;
+        }
+        fetchWorkspaceFiles();
+        scheduleNext();
+      }, 10000);
+    };
+    scheduleNext();
+    return () => clearTimeout(timer);
   }, [activeSession?.projectId, fetchWorkspaceFiles, panelOpen, panelTab, showHiddenFiles]);
 
   const handleOpenFile = useCallback(async (file) => {
@@ -607,6 +621,34 @@ export default React.forwardRef(function Sessions({
   const handleCloseGitDiff = useCallback(() => {
     setGitDiffView(null);
   }, []);
+
+  // Stabilized callbacks for WorkspacePanel to prevent re-renders on every keystroke.
+  const handleSaveTab = useCallback((path) => {
+    if (!activeSession?.projectId) return;
+    return editorTabs.saveTab(activeSession.projectId, path);
+  }, [activeSession?.projectId, editorTabs.saveTab]);
+
+  const handleEditorOpenFile = useCallback((file) => {
+    if (!activeSession?.projectId) return;
+    return editorTabs.openFile(activeSession.projectId, file);
+  }, [activeSession?.projectId, editorTabs.openFile]);
+
+  const handleCreateFile = useCallback((projectId, name) => {
+    return editorTabs.handleCreateFile(projectId, name)
+      .then(() => editorTabs.openFile(projectId, { path: name, type: 'file' }))
+      .catch((e) => showToast('error', e.message));
+  }, [editorTabs.handleCreateFile, editorTabs.openFile, showToast]);
+
+  const handleCreateDir = useCallback((projectId, name) => {
+    return editorTabs.handleCreateDir(projectId, name)
+      .catch((e) => showToast('error', e.message));
+  }, [editorTabs.handleCreateDir, showToast]);
+
+  const handleShowDiff = useCallback((path) => {
+    if (!activeSession?.projectId) return;
+    return editorTabs.showDiff(activeSession.projectId, path)
+      .catch((e) => showToast('error', e.message));
+  }, [activeSession?.projectId, editorTabs.showDiff, showToast]);
 
   const handleSessionEnd = (sessionId) => {
     setSessions((prev) =>
@@ -1303,7 +1345,7 @@ export default React.forwardRef(function Sessions({
                      />
                    </div>
                 </div>
-                <GitStatusBar projectId={activeSession.projectId} project={activeProject} />
+                <GitStatusBar projectId={activeSession.projectId} project={activeProject} git={gitChanges} />
               </div>
               {panelOpen && (
                 <>
@@ -1328,7 +1370,7 @@ export default React.forwardRef(function Sessions({
                       </button>
                       <button
                         type="button"
-                        onClick={() => setPanelTab('shell')}
+                        onClick={() => { setPanelTab('shell'); setShellMounted(true); }}
                         className={`px-2.5 py-1.5 text-sm font-medium border-b-2 transition-colors ${
                           panelTab === 'shell'
                             ? 'border-[#202124] text-[#202124]'
@@ -1378,12 +1420,12 @@ export default React.forwardRef(function Sessions({
                         activePath={editorTabs.activePath}
                         onSelectTab={editorTabs.selectTab}
                         onCloseTab={editorTabs.closeTab}
-                        onSaveTab={(path) => editorTabs.saveTab(activeSession.projectId, path)}
-                        onOpenFile={(file) => editorTabs.openFile(activeSession.projectId, file)}
+                        onSaveTab={handleSaveTab}
+                        onOpenFile={handleEditorOpenFile}
                         onFetchDir={editorTabs.fetchDir}
-                        onCreateFile={(projectId, name) => editorTabs.handleCreateFile(projectId, name).then(() => editorTabs.openFile(projectId, { path: name, type: 'file' })).catch((e) => showToast('error', e.message))}
-                        onCreateDir={(projectId, name) => editorTabs.handleCreateDir(projectId, name).catch((e) => showToast('error', e.message))}
-                        onShowDiff={(path) => editorTabs.showDiff(activeSession.projectId, path).catch((e) => showToast('error', e.message))}
+                        onCreateFile={handleCreateFile}
+                        onCreateDir={handleCreateDir}
+                        onShowDiff={handleShowDiff}
                         diffView={editorTabs.diffView}
                         onCloseDiff={editorTabs.closeDiff}
                         gitChanges={gitChanges}
@@ -1394,7 +1436,7 @@ export default React.forwardRef(function Sessions({
                     )}
                   </div>
                   <div className={`min-h-0 flex-1 flex-col ${panelTab === 'shell' ? 'flex' : 'hidden'}`}>
-                    <WorkspaceShell projectId={activeSession.projectId} />
+                    {shellMounted && <WorkspaceShell projectId={activeSession.projectId} />}
                   </div>
                 </div>
                 </>

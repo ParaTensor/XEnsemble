@@ -11,6 +11,46 @@ const { getProvider, hasProvider } = require('./providers/registry');
 
 const STATE_TTL_MS = 5 * 60 * 1000;
 
+// Token cache: `${userId}:${providerName}` -> { token, connectionId, expiresAt }
+const TOKEN_CACHE_TTL_MS = 30_000;
+const tokenCache = new Map();
+
+// Throttle for fire-and-forget lastUsedAt writes: connectionId -> lastWriteTime
+const LAST_USED_THROTTLE_MS = 60_000;
+const lastUsedWriteThrottle = new Map();
+
+function tokenCacheKey(userId, providerName) {
+    return `${userId}:${providerName || '*'}`;
+}
+
+/**
+ * Fire-and-forget lastUsedAt update, throttled per connection to at most once
+ * per LAST_USED_THROTTLE_MS. This avoids DB write contention when multiple git
+ * subcommands run in parallel within getStatus().
+ */
+function scheduleLastUsedUpdate(connectionId) {
+    const now = Date.now();
+    const lastWrite = lastUsedWriteThrottle.get(connectionId) || 0;
+    if (now - lastWrite < LAST_USED_THROTTLE_MS) return;
+    lastUsedWriteThrottle.set(connectionId, now);
+    db.update(schema.gitConnections)
+        .set({ lastUsedAt: now })
+        .where(eq(schema.gitConnections.id, connectionId))
+        .catch(() => { /* fire-and-forget */ });
+}
+
+function invalidateTokenCache(userId, providerName) {
+    if (providerName) {
+        tokenCache.delete(tokenCacheKey(userId, providerName));
+    } else {
+        // Invalidate all providers for this user
+        const prefix = `${userId}:`;
+        for (const key of tokenCache.keys()) {
+            if (key.startsWith(prefix)) tokenCache.delete(key);
+        }
+    }
+}
+
 async function getProviderConfig(providerName) {
     const configKey = `GIT_PROVIDER_${providerName.toUpperCase()}_CONFIG`;
     const raw = await PlatformSettings.get(configKey);
@@ -118,6 +158,15 @@ class GitConnectionService {
     }
 
     async getDecryptedToken(userId, providerName) {
+        const cacheKey = tokenCacheKey(userId, providerName);
+
+        // Check cache first to avoid DB SELECT + AES decrypt on every git subcommand.
+        const cached = tokenCache.get(cacheKey);
+        if (cached && cached.expiresAt > Date.now()) {
+            scheduleLastUsedUpdate(cached.connectionId);
+            return cached.token;
+        }
+
         const where = [
             eq(schema.gitConnections.userId, userId),
             isNull(schema.gitConnections.revokedAt),
@@ -134,26 +183,42 @@ class GitConnectionService {
         const secrets = auth.decryptSecrets(row.accessTokenEnc);
 
         // Auto-refresh if token is expiring soon
+        let token = secrets.token ?? null;
         if (row.tokenExpiresAt && row.refreshTokenEnc) {
             const expiresIn = row.tokenExpiresAt - Date.now();
             if (expiresIn < 5 * 60 * 1000) {
                 try {
-                    const newToken = await this._refreshToken(row);
-                    return newToken;
+                    token = await this._refreshToken(row);
+                    // After refresh, cache the new token and return early.
+                    tokenCache.set(cacheKey, {
+                        token,
+                        connectionId: row.id,
+                        expiresAt: Date.now() + TOKEN_CACHE_TTL_MS,
+                    });
+                    scheduleLastUsedUpdate(row.id);
+                    return token;
                 } catch {
                     // Fall through to use existing token
                 }
             }
         }
 
-        await db.update(schema.gitConnections)
-            .set({ lastUsedAt: Date.now() })
-            .where(eq(schema.gitConnections.id, row.id));
+        // Cache the decrypted token so parallel git subcommands don't each hit the DB.
+        tokenCache.set(cacheKey, {
+            token,
+            connectionId: row.id,
+            expiresAt: Date.now() + TOKEN_CACHE_TTL_MS,
+        });
 
-        return secrets.token ?? null;
+        // Fire-and-forget, throttled per connection.
+        scheduleLastUsedUpdate(row.id);
+
+        return token;
     }
 
     async disconnect(userId, providerName) {
+        invalidateTokenCache(userId, providerName);
+
         const where = [
             eq(schema.gitConnections.userId, userId),
             isNull(schema.gitConnections.revokedAt),
@@ -196,6 +261,7 @@ class GitConnectionService {
     }
 
     async _finishConnection(userId, providerName, code) {
+        invalidateTokenCache(userId, providerName);
         const config = await getProviderConfig(providerName);
         if (!config) throw new Error(`${providerName} OAuth is not configured`);
 
@@ -283,6 +349,7 @@ class GitConnectionService {
     }
 
     async _refreshToken(connectionRow) {
+        invalidateTokenCache(connectionRow.userId, connectionRow.provider);
         const config = await getProviderConfig(connectionRow.provider);
         if (!config) throw new Error('provider config not found');
 

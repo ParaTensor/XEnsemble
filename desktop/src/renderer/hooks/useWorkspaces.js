@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { apiFetch } from '../lib/api.ts';
 import {
   readBootstrapConsoleState,
@@ -8,14 +8,23 @@ import {
 import {
   loadSidebarPrefs,
   pickSessionToRestore,
-  isArchivedSession,
 } from '../lib/sidebarPrefs.js';
+
+const PENDING_INTERVAL_MS = 2000;
+const NORMAL_INTERVAL_MS = 15000;
+const PENDING_MAX_DURATION_MS = 5 * 60 * 1000; // cap 2s mode at 5 minutes
+const DEBOUNCE_MS = 300;
 
 export function useWorkspaces(user) {
   const [agents, setAgents] = useState(() => readBootstrapConsoleState(null).agents);
   const [projects, setProjects] = useState(() => readBootstrapConsoleState(null).projects);
   const [sessions, setSessions] = useState(() => readBootstrapConsoleState(null).sessions);
   const [activeSession, setActiveSession] = useState(() => readBootstrapConsoleState(null).activeSession);
+
+  const hasPendingRef = useRef(false);
+  const pendingSinceRef = useRef(0);
+  const debounceTimerRef = useRef(null);
+  const fetchInFlightRef = useRef(false);
 
   const fetchAgents = useCallback(async () => {
     try {
@@ -62,23 +71,82 @@ export function useWorkspaces(user) {
     }
   }, []);
 
-  const fetchWorkspaces = useCallback(async () => {
-    await Promise.all([fetchAgents(), fetchProjects(), fetchSessions()]);
-  }, [fetchAgents, fetchProjects, fetchSessions]);
+  // Debounced fetch: coalesces burst calls (e.g. multiple state updates
+  // firing fetchWorkspaces within 300ms) into a single network round-trip.
+  const fetchWorkspaces = useCallback(() => {
+    // If a fetch is already in flight, skip (another will be scheduled by the timer).
+    if (fetchInFlightRef.current) return;
+    if (debounceTimerRef.current) {
+      clearTimeout(debounceTimerRef.current);
+    }
+    debounceTimerRef.current = setTimeout(async () => {
+      debounceTimerRef.current = null;
+      fetchInFlightRef.current = true;
+      try {
+        await Promise.all([fetchProjects(), fetchSessions()]);
+      } finally {
+        fetchInFlightRef.current = false;
+      }
+    }, DEBOUNCE_MS);
+  }, [fetchProjects, fetchSessions]);
+
+  // Fetch agents only on mount (not in the polling loop) since agent configs
+  // are essentially static. Callers can still call fetchAgents() explicitly.
+  useEffect(() => {
+    if (!user?.id) return;
+    fetchAgents();
+  }, [user?.id, fetchAgents]);
+
+  useEffect(() => {
+    hasPendingRef.current = sessions.some((s) => s.status === 'pending');
+    if (hasPendingRef.current && !pendingSinceRef.current) {
+      pendingSinceRef.current = Date.now();
+    } else if (!hasPendingRef.current) {
+      pendingSinceRef.current = 0;
+    }
+  }, [sessions]);
 
   useEffect(() => {
     if (!user?.id) return undefined;
-    fetchWorkspaces();
-    const poll = setInterval(fetchWorkspaces, 5000);
-    return () => clearInterval(poll);
-  }, [fetchWorkspaces, user?.id]);
+    let timer;
+    const scheduleNext = () => {
+      let interval = NORMAL_INTERVAL_MS;
+      if (hasPendingRef.current) {
+        // Cap 2s polling: if pending for too long, fall back to normal interval.
+        const pendingDuration = pendingSinceRef.current ? Date.now() - pendingSinceRef.current : 0;
+        interval = pendingDuration < PENDING_MAX_DURATION_MS ? PENDING_INTERVAL_MS : NORMAL_INTERVAL_MS;
+      }
+      timer = setTimeout(async () => {
+        // Skip polling when the tab is hidden (saves battery + server load).
+        if (typeof document !== 'undefined' && document.hidden) {
+          scheduleNext();
+          return;
+        }
+        await Promise.all([fetchProjects(), fetchSessions()]);
+        scheduleNext();
+      }, interval);
+    };
+    // Initial fetch (projects + sessions; agents fetched separately above).
+    Promise.all([fetchProjects(), fetchSessions()]);
+    scheduleNext();
+    return () => clearTimeout(timer);
+  }, [fetchProjects, fetchSessions, user?.id]);
+
+  // Also pause/resume when tab visibility changes: fetch immediately on return.
+  useEffect(() => {
+    if (typeof document === 'undefined') return;
+    const onVisibilityChange = () => {
+      if (!document.hidden && user?.id) {
+        Promise.all([fetchProjects(), fetchSessions()]);
+      }
+    };
+    document.addEventListener('visibilitychange', onVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', onVisibilityChange);
+  }, [fetchProjects, fetchSessions, user?.id]);
 
   useEffect(() => {
     if (sessions.length === 0) return;
     if (activeSession?.sessionId) {
-      // Keep the active session visible even after it stops/exits so the toolbar
-      // (restart/disconnect) remains available. Only clear it if the session has
-      // been removed entirely (e.g., deleted elsewhere).
       const exists = sessions.some((s) => s.id === activeSession.sessionId);
       if (!exists) {
         setActiveSession(null);
@@ -98,7 +166,7 @@ export function useWorkspaces(user) {
       projectId: candidate.projectId ?? null,
       projectName: projectName ?? null,
     });
-  }, [sessions, activeSession, agents, projects, user]);
+  }, [sessions]);
 
   useEffect(() => {
     const userId = getCacheUserId(user);
@@ -116,5 +184,6 @@ export function useWorkspaces(user) {
     activeSession,
     setActiveSession,
     fetchWorkspaces,
+    fetchAgents,
   };
 }

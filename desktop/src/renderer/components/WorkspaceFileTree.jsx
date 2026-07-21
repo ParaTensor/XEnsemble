@@ -1,8 +1,8 @@
-import { useEffect, useMemo, useState, useCallback } from 'react';
+import { useEffect, useMemo, useState, useCallback, memo } from 'react';
 import { ChevronDown, ChevronRight, FileText, Folder, FolderOpen, Loader2 } from 'lucide-react';
 import { buildFileTree, collectAncestorFolderPaths } from '../lib/workspaceFileTree';
 
-function TreeNode({ node, depth, expanded, selectedPath, onToggle, onOpenFile }) {
+const TreeNode = memo(function TreeNode({ node, depth, expanded, selectedPath, onToggle, onOpenFile }) {
   const indent = depth * 12;
 
   if (node.type === 'file') {
@@ -74,7 +74,7 @@ function TreeNode({ node, depth, expanded, selectedPath, onToggle, onOpenFile })
         ))}
     </div>
   );
-}
+});
 
 function LazyTree({ items, selectedPath, onOpenFile, projectId, onFetchDir }) {
   const [expanded, setExpanded] = useState(() => new Set());

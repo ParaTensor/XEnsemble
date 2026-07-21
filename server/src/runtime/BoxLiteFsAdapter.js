@@ -146,15 +146,12 @@ class BoxLiteFsAdapter extends FsAdapter {
         const cwd = rootDir || '/workspace';
         const target = rel.startsWith('/') ? rel : (cwd.replace(/\/$/, '') + '/' + rel);
         const parentDir = target.replace(/\/[^/]+$/, '');
-        if (parentDir && parentDir !== target) {
-            await this.client.execForResult(name, 'mkdir', ['-p', parentDir], {}, cwd);
-        }
-        // 安全约束：禁止用 heredoc 或字符串模板拼路径/内容（命令注入风险）。
-        // 用 sh -c 固定脚本 + 位置参数 $1/$2 传递 content(base64) 和 target，
+        // Merge mkdir -p and base64 -d into a single VM exec to save one HTTP+WS round-trip.
+        // 安全约束：用 sh -c 固定脚本 + 位置参数 $1/$2/$3 传递 content(base64)、target、parentDir，
         // 用户输入不经 shell 解析。base64 字符串只含 A-Za-z0-9+/=，无 shell 元字符。
         const b64 = Buffer.from(content).toString('base64');
-        const script = "printf '%s' \"$1\" | base64 -d > \"$2\"";
-        const r = await this.client.execForResult(name, 'sh', ['-c', script, 'sh', b64, target], {}, cwd);
+        const script = 'mkdir -p "$3" && printf \'%s\' "$1" | base64 -d > "$2"';
+        const r = await this.client.execForResult(name, 'sh', ['-c', script, 'sh', b64, target, parentDir], {}, cwd);
         if (r.exitCode !== 0) throw new RuntimeError('write failed', 500);
         const size = Buffer.byteLength(content);
         return { path: relativePath.replace(/\\/g, '/'), size };

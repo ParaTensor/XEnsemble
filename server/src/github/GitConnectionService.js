@@ -10,6 +10,35 @@ const { GitHubService, getOAuthBase } = require('./GitHubService');
 
 const STATE_TTL_MS = 5 * 60 * 1000;
 
+// Token cache: userId -> { token, connectionId, expiresAt }
+const TOKEN_CACHE_TTL_MS = 30_000;
+const tokenCache = new Map();
+
+// Throttle for fire-and-forget lastUsedAt writes: userId -> lastWriteTime
+const LAST_USED_THROTTLE_MS = 60_000;
+const lastUsedWriteThrottle = new Map();
+
+/**
+ * Fire-and-forget lastUsedAt update, throttled per user to at most once per
+ * LAST_USED_THROTTLE_MS. This avoids DB write contention when multiple git
+ * subcommands run in parallel within getStatus().
+ */
+function scheduleLastUsedUpdate(userId, connectionId) {
+    const now = Date.now();
+    const lastWrite = lastUsedWriteThrottle.get(userId) || 0;
+    if (now - lastWrite < LAST_USED_THROTTLE_MS) return;
+    lastUsedWriteThrottle.set(userId, now);
+    db.update(schema.githubConnections)
+        .set({ lastUsedAt: now })
+        .where(eq(schema.githubConnections.id, connectionId))
+        .catch(() => { /* fire-and-forget */ });
+}
+
+function invalidateTokenCache(userId) {
+    tokenCache.delete(userId);
+    lastUsedWriteThrottle.delete(userId);
+}
+
 class GitConnectionService {
     constructor(gitHubService = new GitHubService()) {
         this.gitHubService = gitHubService;
@@ -87,6 +116,13 @@ class GitConnectionService {
     }
 
     async getDecryptedToken(userId) {
+        // Check cache first to avoid DB SELECT + AES decrypt on every git subcommand.
+        const cached = tokenCache.get(userId);
+        if (cached && cached.expiresAt > Date.now()) {
+            scheduleLastUsedUpdate(userId, cached.connectionId);
+            return cached.token;
+        }
+
         const rows = await db
             .select()
             .from(schema.githubConnections)
@@ -101,16 +137,24 @@ class GitConnectionService {
 
         const row = rows[0];
         const secrets = auth.decryptSecrets(row.accessTokenEnc);
+        const token = secrets.token ?? null;
 
-        await db
-            .update(schema.githubConnections)
-            .set({ lastUsedAt: Date.now() })
-            .where(eq(schema.githubConnections.id, row.id));
+        // Cache the decrypted token so parallel git subcommands don't each hit the DB.
+        tokenCache.set(userId, {
+            token,
+            connectionId: row.id,
+            expiresAt: Date.now() + TOKEN_CACHE_TTL_MS,
+        });
 
-        return secrets.token ?? null;
+        // Fire-and-forget, throttled per user.
+        scheduleLastUsedUpdate(userId, row.id);
+
+        return token;
     }
 
     async disconnect(userId) {
+        invalidateTokenCache(userId);
+
         const rows = await db
             .select()
             .from(schema.githubConnections)
@@ -164,6 +208,7 @@ class GitConnectionService {
     }
 
     async _finishConnection(userId, code) {
+        invalidateTokenCache(userId);
         const token = await this.gitHubService.exchangeOAuthCode(code);
         const ghUser = await this.gitHubService.getAuthenticatedUser(token);
 

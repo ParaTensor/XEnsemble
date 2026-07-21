@@ -485,7 +485,7 @@ export default React.forwardRef(function SessionsPage({
     }
   };
 
-  const handleGitFileClick = async (filePath) => {
+  const handleGitFileClick = useCallback(async (filePath) => {
     if (!activeSession?.projectId) return;
     setGitDiffView({ path: filePath, original: null, modified: null, loading: true });
     try {
@@ -500,11 +500,39 @@ export default React.forwardRef(function SessionsPage({
       setGitDiffView(null);
       showToast('error', err.message);
     }
-  };
+  }, [activeSession?.projectId, showToast]);
 
-  const handleCloseGitDiff = () => {
+  const handleCloseGitDiff = useCallback(() => {
     setGitDiffView(null);
-  };
+  }, []);
+
+  // Stabilized callbacks for WorkspacePanel to prevent re-renders on every keystroke.
+  const handleSaveTab = useCallback((path) => {
+    if (!activeSession?.projectId) return;
+    return editorTabs.saveTab(activeSession.projectId, path);
+  }, [activeSession?.projectId, editorTabs.saveTab]);
+
+  const handleOpenFile = useCallback((file) => {
+    if (!activeSession?.projectId) return;
+    return editorTabs.openFile(activeSession.projectId, file);
+  }, [activeSession?.projectId, editorTabs.openFile]);
+
+  const handleCreateFile = useCallback((projectId, name) => {
+    return editorTabs.handleCreateFile(projectId, name)
+      .then(() => editorTabs.openFile(projectId, { path: name, type: 'file' }))
+      .catch((e) => showToast('error', e.message));
+  }, [editorTabs.handleCreateFile, editorTabs.openFile, showToast]);
+
+  const handleCreateDir = useCallback((projectId, name) => {
+    return editorTabs.handleCreateDir(projectId, name)
+      .catch((e) => showToast('error', e.message));
+  }, [editorTabs.handleCreateDir, showToast]);
+
+  const handleShowDiff = useCallback((path) => {
+    if (!activeSession?.projectId) return;
+    return editorTabs.showDiff(activeSession.projectId, path)
+      .catch((e) => showToast('error', e.message));
+  }, [activeSession?.projectId, editorTabs.showDiff, showToast]);
 
   const handleSessionEnd = (sessionId) => {
     setSessions((prev) =>
@@ -1139,7 +1167,7 @@ export default React.forwardRef(function SessionsPage({
                   onToggleWorkspace={() => setWorkspaceOpen((v) => !v)}
                 />
               </div>
-              <GitStatusBar projectId={activeSession.projectId} project={activeProject} />
+              <GitStatusBar projectId={activeSession.projectId} project={activeProject} git={gitChanges} />
             </>
           ) : launchingSession ? (
             <div className="flex-1" />
@@ -1199,12 +1227,12 @@ export default React.forwardRef(function SessionsPage({
                   activePath={editorTabs.activePath}
                   onSelectTab={editorTabs.selectTab}
                   onCloseTab={editorTabs.closeTab}
-                  onSaveTab={(path) => editorTabs.saveTab(activeSession.projectId, path)}
-                  onOpenFile={(file) => editorTabs.openFile(activeSession.projectId, file)}
+                  onSaveTab={handleSaveTab}
+                  onOpenFile={handleOpenFile}
                   onFetchDir={editorTabs.fetchDir}
-                  onCreateFile={(projectId, name) => editorTabs.handleCreateFile(projectId, name).then(() => editorTabs.openFile(projectId, { path: name, type: 'file' })).catch((e) => showToast('error', e.message))}
-                  onCreateDir={(projectId, name) => editorTabs.handleCreateDir(projectId, name).catch((e) => showToast('error', e.message))}
-                  onShowDiff={(path) => editorTabs.showDiff(activeSession.projectId, path).catch((e) => showToast('error', e.message))}
+                  onCreateFile={handleCreateFile}
+                  onCreateDir={handleCreateDir}
+                  onShowDiff={handleShowDiff}
                   diffView={editorTabs.diffView}
                   onCloseDiff={editorTabs.closeDiff}
                   gitChanges={gitChanges}
