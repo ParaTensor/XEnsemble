@@ -213,7 +213,11 @@ export default function WorkspaceShell({ projectId }) {
             if (disposed) return;
             const msg = parseMessage(event.data);
             if (msg.type === 'output') {
-              terminal.write(msg.data);
+              const viewport = hostRef.current?.querySelector('.xterm-viewport');
+              const atBottom = !viewport || viewport.scrollTop + viewport.clientHeight >= viewport.scrollHeight - 5;
+              terminal.write(msg.data, () => {
+                if (atBottom && !disposed) terminal.scrollToBottom();
+              });
               return;
             }
             if (msg.type === 'metrics') {

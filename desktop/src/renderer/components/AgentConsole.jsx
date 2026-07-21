@@ -208,7 +208,11 @@ export default function AgentConsole({
                 if (disposedRef.current) return;
                 const msg = parseWsMessage(event.data);
                 if (msg.type === 'output') {
-                    terminal.write(msg.data);
+                    const viewport = containerRef.current?.querySelector('.xterm-viewport');
+                    const atBottom = !viewport || viewport.scrollTop + viewport.clientHeight >= viewport.scrollHeight - 5;
+                    terminal.write(msg.data, () => {
+                        if (atBottom && !disposedRef.current) terminal.scrollToBottom();
+                    });
                 } else if (msg.type === 'metrics') {
                     setMetrics(msg.data);
                 } else if (msg.type === 'error') {

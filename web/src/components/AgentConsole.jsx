@@ -306,8 +306,12 @@ export default function AgentConsole({
             if (disposed) return;
             const msg = parseMessage(event.data);
             if (msg.type === 'output') {
+              // 检查用户是否在底部附近（避免上滑查看历史时被打断）
+              const viewport = hostRef.current?.querySelector('.xterm-viewport');
+              const atBottom = !viewport || viewport.scrollTop + viewport.clientHeight >= viewport.scrollHeight - 5;
               terminal.write(msg.data, () => {
                 if (!replayDone && !disposed) { replayDone = true; hideOverlay(); }
+                if (atBottom && !disposed) terminal.scrollToBottom();
               });
               return;
             }
