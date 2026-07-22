@@ -214,7 +214,6 @@ export default React.forwardRef(function Sessions({
     }
     setViewingFile(null);
     setFileContent('');
-    setWorkspaceFiles([]);
   }, [activeSession?.projectId]);
 
   useEffect(() => {
