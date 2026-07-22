@@ -17,18 +17,18 @@ const RESUME_LOCK_TIMEOUT_MS = Number(process.env.RESUME_LOCK_TIMEOUT_MS) || 300
 function withResumeLock(sessionId, fn) {
     const existing = inFlightResumes.get(sessionId);
     if (existing) return existing;
-    const pending = Promise.resolve().then(fn).finally(() => {
-        if (inFlightResumes.get(sessionId) === pending) {
-            inFlightResumes.delete(sessionId);
-        }
-    });
-    inFlightResumes.set(sessionId, pending);
     const timeout = setTimeout(() => {
         if (inFlightResumes.get(sessionId) === pending) {
             inFlightResumes.delete(sessionId);
         }
     }, RESUME_LOCK_TIMEOUT_MS);
-    pending.finally(() => clearTimeout(timeout));
+    const pending = Promise.resolve().then(fn).finally(() => {
+        clearTimeout(timeout);
+        if (inFlightResumes.get(sessionId) === pending) {
+            inFlightResumes.delete(sessionId);
+        }
+    });
+    inFlightResumes.set(sessionId, pending);
     return pending;
 }
 
@@ -191,9 +191,27 @@ async function resumeSession({
         ]);
 
         if (!stateExists) {
-            const error = new Error('session not resumable — please start a new session');
+            const error = new Error('session not resumable - please start a new session');
             error.statusCode = 409;
             throw error;
+        }
+
+        // Check if the state directory has conversation data (not just config files).
+        // If resumeCheckSubdir is set and the subdirectory is empty, skip resumeArgs
+        // and start fresh (e.g. claude-code --continue fails with "no conversation found"
+        // when the sessions/ subdirectory is empty).
+        let canResume = true;
+        if (resumeSpec.resumeCheckSubdir && stateDirPath) {
+            try {
+                const checkDir = `${stateDirPath}/${resumeSpec.resumeCheckSubdir}`;
+                const result = await runtime.exec.exec(
+                    'sh', ['-c', `test -n "$(ls -A '${checkDir}' 2>/dev/null)"`],
+                    {}, { runtimeRef, cwd: '/' }
+                );
+                canResume = result.exitCode === 0;
+            } catch {
+                canResume = true; // Conservative: allow resume if check fails
+            }
         }
 
         if (resolvedSpawnEnv?.env && stateDirPath) {
@@ -282,9 +300,11 @@ async function resumeSession({
             const stateArgs = stateDirPath
                 ? buildStateArgs(resumeSpec, stateDirPath)
                 : [];
+            // Skip resumeArgs if the state directory has no conversation data
+            const resumeArgs = canResume ? (resumeSpec.resumeArgs || []) : [];
             handle = await runtime.exec.spawn(
                 agentMeta.cmd,
-                [...stateArgs, ...agentMeta.args, ...(resumeSpec.resumeArgs || [])],
+                [...stateArgs, ...agentMeta.args, ...resumeArgs],
                 resolvedSpawnEnv.env,
                 {
                     name: agentMeta.name,

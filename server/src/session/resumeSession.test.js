@@ -111,6 +111,10 @@ test('resumeSession reuses state dir and continues transcript seqs', async () =>
     const markerPath = path.join(stateDirPath, 'resume-marker.txt');
 
     fs.mkdirSync(stateDirPath, { recursive: true });
+    // Create sessions/ subdirectory with a dummy file so that hasResumeData
+    // (resumeCheckSubdir: 'sessions' for claude-code) returns true.
+    fs.mkdirSync(path.join(stateDirPath, 'sessions'), { recursive: true });
+    fs.writeFileSync(path.join(stateDirPath, 'sessions', 'dummy.json'), '{}');
     fs.mkdirSync(projectDir, { recursive: true });
     fs.writeFileSync(scriptPath, `
         const fs = require('fs');
@@ -313,56 +317,58 @@ test('resumeSession rejects non-resumable sessions', async () => {
             createdAt: now,
         });
 
-        await assert.rejects(() => resumeSession({
-            db,
-            schema,
-            sessionManager,
-            runtime: { exec: { async spawn() { throw new Error('should not spawn'); } } },
-            project: {
-                id: projectId,
-                userId,
-                serverPath: projectDir,
-                repoProvider: 'none',
-                repoDefaultBranch: 'main',
-                currentBranch: '',
-                githubFullName: '',
-                workspaceMode: 'local',
-            },
-            session: {
-                id: sessionId,
-                runtimeId: null,
-                streamRef: null,
-                stateDirRef: null,
-                recoverable: false,
-                status: 'exited',
-                cwd: projectDir,
-            },
-            agentMeta: {
-                id: 'kimi-code',
-                name: 'Kimi Code',
-                cmd: process.execPath,
-                args: [],
-                env_required: [],
-            },
-            terminalThemeId: null,
-            resolvedSpawnEnv: { env: {}, spawn_env_preview: {} },
-            requestLog: { warn() {}, error() {} },
-            fastifyLog: { error() {} },
-            ensureProjectRuntime: async () => ({
-                runtime: { id: 'rt_fake', runtimeRef: 'rt_fake_ref' },
-                workspacePath: projectDir,
-            }),
-            issueSessionToken: () => null,
-            agentGatewayConfig: {
-                async getAgentAuthMode() { return 'byok'; },
-                async getForAgent() { return null; },
-            },
-            requestUser: { id: userId, role: 'user' },
-        }), (err) => {
+        try {
+            await resumeSession({
+                db,
+                schema,
+                sessionManager,
+                runtime: { exec: { async spawn() { throw new Error('should not spawn'); } } },
+                project: {
+                    id: projectId,
+                    userId,
+                    serverPath: projectDir,
+                    repoProvider: 'none',
+                    repoDefaultBranch: 'main',
+                    currentBranch: '',
+                    githubFullName: '',
+                    workspaceMode: 'local',
+                },
+                session: {
+                    id: sessionId,
+                    runtimeId: null,
+                    streamRef: null,
+                    stateDirRef: null,
+                    recoverable: false,
+                    status: 'exited',
+                    cwd: projectDir,
+                },
+                agentMeta: {
+                    id: 'kimi-code',
+                    name: 'Kimi Code',
+                    cmd: process.execPath,
+                    args: [],
+                    env_required: [],
+                },
+                terminalThemeId: null,
+                resolvedSpawnEnv: { env: {}, spawn_env_preview: {} },
+                requestLog: { warn() {}, error() {} },
+                fastifyLog: { error() {} },
+                ensureProjectRuntime: async () => ({
+                    runtime: { id: 'rt_fake', runtimeRef: 'rt_fake_ref' },
+                    workspacePath: projectDir,
+                }),
+                issueSessionToken: () => null,
+                agentGatewayConfig: {
+                    async getAgentAuthMode() { return 'byok'; },
+                    async getForAgent() { return null; },
+                },
+                requestUser: { id: userId, role: 'user' },
+            });
+            assert.fail('Should have rejected');
+        } catch (err) {
             assert.equal(err.statusCode, 409);
             assert.match(err.message, /session not resumable/i);
-            return true;
-        });
+        }
     } finally {
         sessionManager.deleteSession(sessionId);
         await new Promise((resolve) => setImmediate(resolve));

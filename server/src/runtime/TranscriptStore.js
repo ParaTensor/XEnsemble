@@ -155,6 +155,21 @@ class TranscriptStore {
         return state ? state.headSeq : 0;
     }
 
+    /**
+     * Synchronously flush pending writes to disk for the given stream.
+     * Useful for tests that need to read the transcript file immediately.
+     */
+    flushSync(streamRef) {
+        const state = this._state(streamRef);
+        if (state) {
+            if (state._flushTimer) {
+                clearTimeout(state._flushTimer);
+                state._flushTimer = null;
+            }
+            this._flushWrites(state);
+        }
+    }
+
     bytes(streamRef) {
         const state = this._state(streamRef);
         return state ? state.bytes : 0;

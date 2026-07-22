@@ -45,6 +45,7 @@ test('TranscriptStore resumes seqs from an existing transcript file', () => {
         const firstStore = new TranscriptStore({ workspaceRoot: root, db: null, schema: null });
         firstStore.append('local:pty:restart', { kind: 'out', data: 'one\n' });
         firstStore.append('local:pty:restart', { kind: 'out', data: 'two\n' });
+        firstStore.flushSync('local:pty:restart');
 
         const secondStore = new TranscriptStore({ workspaceRoot: root, db: null, schema: null });
         assert.equal(secondStore.head('local:pty:restart'), 2);

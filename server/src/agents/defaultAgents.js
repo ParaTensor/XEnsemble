@@ -24,6 +24,7 @@ const DEFAULT_AGENTS = [
             level: 'L2',
             stateEnv: 'CLAUDE_CONFIG_DIR',
             resumeArgs: ['--continue'],
+            resumeCheckSubdir: 'sessions',
         },
     },
     {

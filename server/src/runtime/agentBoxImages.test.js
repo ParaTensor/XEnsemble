@@ -51,22 +51,23 @@ test('listBuildableAgentImages includes npm-backed agents and skips unsupported 
     const byId = new Map(entries.map((entry) => [entry.agentId, entry]));
     assert.ok(byId.has('claude-code'));
     assert.ok(byId.has('droid'));
-    assert.equal(byId.has('cursor'), false);
+    assert.equal(byId.has('hermes'), false);
+    assert.equal(byId.has('amp'), false);
     assert.match(byId.get('claude-code').install, /npm install -g/);
     assert.match(resolveAgentBoxImageDefault('claude-code'), /agent-claude-code/);
 });
 
 test('resolveBoxImage rejects non-buildable agents on boxlite unless env override is set', async () => {
     await assert.rejects(
-        () => resolveBoxImage({ agentId: 'cursor' }),
+        () => resolveBoxImage({ agentId: 'hermes' }),
         /not supported on boxlite/i,
     );
 
-    const key = agentImageEnvKey('cursor');
+    const key = agentImageEnvKey('hermes');
     const prev = process.env[key];
-    process.env[key] = 'registry.example/cursor:custom';
+    process.env[key] = 'registry.example/hermes:custom';
     try {
-        assert.equal(await resolveBoxImage({ agentId: 'cursor' }), 'registry.example/cursor:custom');
+        assert.equal(await resolveBoxImage({ agentId: 'hermes' }), 'registry.example/hermes:custom');
     } finally {
         if (prev === undefined) delete process.env[key];
         else process.env[key] = prev;
