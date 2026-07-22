@@ -124,14 +124,24 @@ class BoxLiteExecAdapter extends ExecAdapter {
         const working = options.cwd || '/workspace';
         const rawCmd = String(cmd || 'sh');
         const rawArgs = Array.isArray(args) ? args : [];
-        // Source ~/.bashrc then exec the agent.  We use a non-interactive bash
-        // (no -i) to avoid job-control / terminal-process-group side effects that
-        // interfere with blink's PTY management.  Explicitly sourcing .bashrc
-        // preserves user customizations (PATH, env vars, model overrides, etc.).
-        const commandLine = `source /root/.bashrc 2>/dev/null; exec ${[rawCmd, ...rawArgs].map(quotePosixArg).join(' ')}`;
+        // For agent binaries (claude, kimi, etc.), wrap in bash -c to source
+        // ~/.bashrc so user customizations (PATH, env vars, model overrides)
+        // take effect.  For shells (bash, sh, zsh), start directly — the shell
+        // detects the PTY and sources .bashrc itself.  Wrapping shells in
+        // bash -c causes blink spawn failures.
+        const SHELL_CMDS = new Set(['bash', 'sh', 'zsh', 'dash', '/bin/bash', '/bin/sh', '/bin/zsh', '/bin/dash']);
+        let command, commandArgs;
+        if (SHELL_CMDS.has(rawCmd)) {
+            command = rawCmd;
+            commandArgs = rawArgs;
+        } else {
+            const commandLine = `source /root/.bashrc 2>/dev/null; exec ${[rawCmd, ...rawArgs].map(quotePosixArg).join(' ')}`;
+            command = 'bash';
+            commandArgs = ['-c', commandLine];
+        }
         const spec = {
-            command: 'bash',
-            args: ['-c', commandLine],
+            command,
+            args: commandArgs,
             env: {
                 LANG: 'C.UTF-8',
                 LC_ALL: 'C.UTF-8',
