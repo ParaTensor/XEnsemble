@@ -3,6 +3,13 @@ const BoxLiteClient = require('./BoxLiteClient');
 const { decodeExecutionFrameRaw } = BoxLiteClient;
 const { StringDecoder } = require('string_decoder');
 
+function quotePosixArg(input) {
+    const s = String(input ?? '');
+    if (s.length === 0) return "''";
+    if (!/[\s'"\\$`\n\r\t;&|<>(){}[\]*?!]/.test(s)) return s;
+    return `'${s.replace(/'/g, "'\\''")}'`;
+}
+
 class BoxLiteStreamHandle extends StreamHandle {
     constructor(ws, streamRef, options = {}) {
         super();
@@ -115,9 +122,16 @@ class BoxLiteExecAdapter extends ExecAdapter {
             throw new AgentSpawnError('BoxLite spawn requires runtimeRef (blink session name)');
         }
         const working = options.cwd || '/workspace';
+        const rawCmd = String(cmd || 'sh');
+        const rawArgs = Array.isArray(args) ? args : [];
+        // Wrap in interactive bash so ~/.bashrc is sourced (matches LocalExecAdapter
+        // behavior).  Without this, user modifications to .bashrc (PATH additions,
+        // custom env vars, model overrides, etc.) have no effect on the agent process
+        // because blink does a direct execve without a shell.
+        const commandLine = `exec ${[rawCmd, ...rawArgs].map(quotePosixArg).join(' ')}`;
         const spec = {
-            command: String(cmd || 'sh'),
-            args: Array.isArray(args) ? args : [],
+            command: 'bash',
+            args: ['-ic', commandLine],
             env: {
                 LANG: 'C.UTF-8',
                 LC_ALL: 'C.UTF-8',
