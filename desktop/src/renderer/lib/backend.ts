@@ -1,4 +1,4 @@
-const DEFAULT_BACKEND_URL = 'https://hk.xensemble.dev';
+const DEFAULT_BACKEND_URL = 'https://xensemble.dev';
 
 export function getBackendURL(): string {
   if (typeof window !== 'undefined' && (window as any).xensembleDesktopAPI) {

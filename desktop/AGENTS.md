@@ -92,5 +92,5 @@ src/
 ## Gotchas
 
 - `node --test` cannot directly import `.jsx`/`.tsx` files without a loader. Keep unit tests in plain `.js` when possible.
-- The renderer dev server runs at `http://localhost:5173/`; the app connects to the backend at `https://hk.xensemble.dev` by default or `http://localhost:3888` for local dev.
+- The renderer dev server runs at `http://localhost:5173/`; the app connects to the backend at `https://xensemble.dev` by default or `http://localhost:3888` for local dev.
 - Window sizing and native chrome are controlled in `src/main/app/window.ts`, not in renderer CSS.

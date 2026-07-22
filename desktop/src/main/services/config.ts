@@ -4,7 +4,7 @@ interface ConfigSchema {
   backendURL: string;
 }
 
-const DEFAULT_BACKEND_URL = 'https://hk.xensemble.dev';
+const DEFAULT_BACKEND_URL = 'https://xensemble.dev';
 
 const store = new Store<ConfigSchema>({
   defaults: {
@@ -12,9 +12,9 @@ const store = new Store<ConfigSchema>({
   }
 });
 
-// One-time migration: switch users from the old Cloudflare-proxied domain to
-// the Hong Kong relay, unless they have explicitly set a custom URL.
-const LEGACY_BACKEND_URL = 'https://xensemble.dev';
+// One-time migration: retire the Hong Kong relay and point Desktop back at
+// the Cloudflare-fronted production domain, unless a custom URL is set.
+const LEGACY_BACKEND_URL = 'https://hk.xensemble.dev';
 const stored = store.get('backendURL');
 if (stored === LEGACY_BACKEND_URL) {
   store.set('backendURL', DEFAULT_BACKEND_URL);
