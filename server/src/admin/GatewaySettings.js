@@ -29,10 +29,11 @@ function normalizeOptionalUrl(value) {
 }
 
 async function getConfig() {
-    const bind_addr = (await platformSettings.get('gateway_bind_addr')) || DEFAULTS.bind_addr;
-    const auto_start = (await platformSettings.get('gateway_auto_start'));
-    const public_url = normalizeOptionalUrl(await platformSettings.get('gateway_public_url'));
-    const upstream_url = normalizeOptionalUrl(await platformSettings.get('gateway_upstream_url'));
+    const all = await platformSettings.getAll();
+    const bind_addr = all.gateway_bind_addr || DEFAULTS.bind_addr;
+    const auto_start = all.gateway_auto_start !== undefined ? all.gateway_auto_start : DEFAULTS.auto_start;
+    const public_url = normalizeOptionalUrl(all.gateway_public_url);
+    const upstream_url = normalizeOptionalUrl(all.gateway_upstream_url);
     return {
         bind_addr: parseBindAddr(bind_addr).bind_addr,
         auto_start: auto_start !== false,

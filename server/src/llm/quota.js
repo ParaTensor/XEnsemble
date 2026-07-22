@@ -9,10 +9,25 @@ const TIER_QPS = {
 
 const WINDOW_MS = 60_000;
 const buckets = new Map();
+let _lastCleanup = 0;
 
 function bucketKey(userId) {
     const slot = Math.floor(Date.now() / WINDOW_MS);
     return `${userId}:${slot}`;
+}
+
+function cleanupExpiredBuckets() {
+    const now = Date.now();
+    if (now - _lastCleanup < WINDOW_MS) return;
+    _lastCleanup = now;
+    const currentSlot = Math.floor(now / WINDOW_MS);
+    for (const key of buckets.keys()) {
+        const parts = key.split(':');
+        const slot = Number(parts[parts.length - 1]);
+        if (Number.isFinite(slot) && slot < currentSlot) {
+            buckets.delete(key);
+        }
+    }
 }
 
 async function checkLlmRequestQuota(userId, role) {
@@ -32,6 +47,7 @@ async function checkLlmRequestQuota(userId, role) {
         };
     }
     buckets.set(key, current + 1);
+    cleanupExpiredBuckets();
     return { ok: true, limit };
 }
 

@@ -1,6 +1,6 @@
 const { eq } = require('drizzle-orm');
 
-const AGENT_EXIT_TIMEOUT_MS = 10000;
+const AGENT_EXIT_TIMEOUT_MS = 5000;
 
 async function waitForAgentExit(runtime, runtimeRef, agentId) {
     if (!runtime?.exec?.exec || !runtimeRef || !agentId) {
@@ -14,6 +14,7 @@ async function waitForAgentExit(runtime, runtimeRef, agentId) {
         if (agent?.cmd) agentCmd = agent.cmd;
     } catch (_) {}
 
+    const maxTries = 10;
     const script = [
         'for f in /proc/[0-9]*/cmdline; do',
         '  p=${f#/proc/}; p=${p%/cmdline}',
@@ -21,7 +22,7 @@ async function waitForAgentExit(runtime, runtimeRef, agentId) {
         '  cat "$f" 2>/dev/null | tr "\\0" " " | grep -q "$1" && kill -TERM "$p" 2>/dev/null',
         'done',
         'i=0',
-        'while [ $i -lt 20 ]; do',
+        `while [ $i -lt ${maxTries} ]; do`,
         '  found=0',
         '  for f in /proc/[0-9]*/cmdline; do',
         '    p=${f#/proc/}; p=${p%/cmdline}',
@@ -31,6 +32,11 @@ async function waitForAgentExit(runtime, runtimeRef, agentId) {
         '  [ "$found" = "0" ] && exit 0',
         '  sleep 0.5',
         '  i=$((i+1))',
+        'done',
+        'for f in /proc/[0-9]*/cmdline; do',
+        '  p=${f#/proc/}; p=${p%/cmdline}',
+        '  [ "$p" = "$$" ] && continue',
+        '  cat "$f" 2>/dev/null | tr "\\0" " " | grep -q "$1" && kill -KILL "$p" 2>/dev/null',
         'done',
     ].join('\n');
 

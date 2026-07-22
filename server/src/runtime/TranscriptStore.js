@@ -8,6 +8,8 @@ const schema = require('../db/schema');
 const VALID_KINDS = new Set(['out', 'in', 'resize', 'exit']);
 const META_UPDATE_INTERVAL_MS = Number(process.env.TRANSCRIPT_META_UPDATE_INTERVAL_MS) || 2000;
 const META_UPDATE_INTERVAL_SEQ = Number(process.env.TRANSCRIPT_META_UPDATE_INTERVAL_SEQ) || 50;
+const FLUSH_INTERVAL_MS = Number(process.env.TRANSCRIPT_FLUSH_INTERVAL_MS) || 100;
+const FLUSH_SIZE_BYTES = Number(process.env.TRANSCRIPT_FLUSH_SIZE_BYTES) || 65536;
 
 function safeRef(ref) {
     return String(ref || '').replace(/[^a-zA-Z0-9_-]/g, '_');
@@ -94,6 +96,9 @@ class TranscriptStore {
             exited: false,
             exitSeq: null,
             exitCode: null,
+            _writeQueue: [],
+            _flushTimer: null,
+            _pendingBytes: 0,
         };
         this.states.set(streamRef, state);
         return state;
@@ -133,7 +138,7 @@ class TranscriptStore {
             state.exitSeq = seq;
             state.exitCode = frame?.data?.code ?? null;
         }
-        this._writeFileLine(state, stored);
+        this._enqueueWrite(state, stored);
         this._maybeWriteSessionMeta(state, frame.kind === 'exit');
         return stored;
     }
@@ -194,6 +199,13 @@ class TranscriptStore {
 
     remove(streamRef) {
         const state = this.states.get(streamRef);
+        if (state?._flushTimer) {
+            clearTimeout(state._flushTimer);
+            state._flushTimer = null;
+        }
+        if (state && state._writeQueue.length > 0) {
+            this._flushWrites(state);
+        }
         const file = state?.file || this.transcriptPath(streamRef);
         if (file && fs.existsSync(file)) {
             try {
@@ -210,13 +222,52 @@ class TranscriptStore {
         this.states.delete(streamRef);
     }
 
-    _writeFileLine(state, frame) {
+    _enqueueWrite(state, frame) {
         if (!state.file) return;
+        state._writeQueue.push(frame);
+        state._pendingBytes += frame.bytes;
+        if (state._pendingBytes >= FLUSH_SIZE_BYTES) {
+            this._flushWrites(state);
+        } else if (!state._flushTimer) {
+            this._scheduleFlush(state);
+        }
+    }
+
+    _scheduleFlush(state) {
+        if (state._flushTimer) return;
+        state._flushTimer = setTimeout(() => {
+            state._flushTimer = null;
+            this._flushWrites(state);
+        }, FLUSH_INTERVAL_MS);
+    }
+
+    _flushWrites(state) {
+        if (!state.file || state._writeQueue.length === 0) return;
+        if (!this.states.has(state.streamRef)) return;
         this.ensureTranscriptDir();
+        const lines = state._writeQueue.map((frame) => `${JSON.stringify(frame)}\n`).join('');
+        const count = state._writeQueue.length;
+        state._writeQueue = [];
+        state._pendingBytes = 0;
         try {
-            fs.appendFileSync(state.file, `${JSON.stringify(frame)}\n`);
+            fs.appendFileSync(state.file, lines);
         } catch (_) {
-            // best-effort persistence; in-memory state remains authoritative until restart
+            // best-effort; retry on next flush
+            state._writeQueue = state._writeQueue.concat(
+                lines.split('\n').filter(Boolean).map((line) => JSON.parse(line))
+            );
+            state._pendingBytes = lines.length;
+            this._scheduleFlush(state);
+        }
+    }
+
+    _flushAllStates() {
+        for (const state of this.states.values()) {
+            if (state._flushTimer) {
+                clearTimeout(state._flushTimer);
+                state._flushTimer = null;
+            }
+            this._flushWrites(state);
         }
     }
 
@@ -262,6 +313,10 @@ class TranscriptStore {
 }
 
 const transcriptStore = new TranscriptStore();
+
+process.on('beforeExit', () => {
+    transcriptStore._flushAllStates();
+});
 
 module.exports = transcriptStore;
 module.exports.TranscriptStore = TranscriptStore;

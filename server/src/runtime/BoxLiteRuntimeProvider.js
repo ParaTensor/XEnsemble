@@ -105,10 +105,11 @@ class BoxLiteRuntimeProvider extends RuntimeProvider {
             const TRANSIENT_RE = /mkdir.*memory|memory dir|resource busy|temporarily|try again/i;
             const MAX_ATTEMPTS = 4;
             let lastErr = null;
+            let reused = false;
             for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt += 1) {
                 try {
                     await this.client.openSession(name, image, warm, openOptions);
-                    return;
+                    return { reused: false };
                 } catch (e) {
                     if (/already|exists/i.test(String(e))) {
                         if (needRecreate) {
@@ -117,26 +118,23 @@ class BoxLiteRuntimeProvider extends RuntimeProvider {
                                 502,
                             );
                         }
-                        return;
+                        return { reused: true };
                     }
                     if (/mkdir.*memory/i.test(String(e))) {
                         const info = await this.client.getSessionStatus(name);
-                        if (info && info.running) return;
+                        if (info && info.running) return { reused: true };
                     }
                     lastErr = e;
                     if (attempt < MAX_ATTEMPTS && TRANSIENT_RE.test(String(e))) {
                         await new Promise((r) => setTimeout(r, attempt * 500));
                         continue;
                     }
-                    // If all retries exhausted on a transient-like error that isn't
-                    // "resource busy" (i.e. disk/filesystem-level failure), try one
-                    // delete+recreate cycle — the VM's rootfs might be corrupted.
                     if (TRANSIENT_RE.test(String(e)) && !/resource busy/i.test(String(e))) {
                         try { await this.client.deleteSession(name); } catch (_) {}
                         await new Promise((r) => setTimeout(r, 1000));
                         try {
                             await this.client.openSession(name, image, warm, openOptions);
-                            return;
+                            return { reused: false };
                         } catch (e2) {
                             if (/already|exists/i.test(String(e2))) {
                                 throw new RuntimeError(
@@ -151,33 +149,35 @@ class BoxLiteRuntimeProvider extends RuntimeProvider {
                 }
             }
         };
-        await openSession();
+        const { reused } = await openSession();
 
-        // Clean up runtime writable caches so VM disk has room for agent state.
-        // The image build already purges these, but they re-accumulate across
-        // sessions. We only remove rebuildable caches — XDG/L2 state under
-        // /root/.config (agent resume data) is intentionally preserved.
-        const cleanCaches = async () => {
-            try {
+        if (!reused) {
+            const cleanCaches = async () => {
+                try {
+                    await this.client.execForResult(name, 'sh', ['-c',
+                        'for d in /root/.npm/_cacache /root/.cache /tmp; do rm -rf "$d"/* 2>/dev/null || true; done',
+                    ]);
+                } catch (_) {
+                    // Best-effort: if the cleanup fails the agent still runs.
+                }
+            };
+            await cleanCaches();
+        }
+
+        if (!reused) {
+            const probeCmd = resolveAgentProbeCommand(opts.agentId);
+            if (probeCmd && !(await probeAgentCommand(this.client, name, probeCmd, guestWorkspacePath))) {
+                await this.client.deleteSession(name);
+                await openSession();
                 await this.client.execForResult(name, 'sh', ['-c',
                     'for d in /root/.npm/_cacache /root/.cache /tmp; do rm -rf "$d"/* 2>/dev/null || true; done',
                 ]);
-            } catch (_) {
-                // Best-effort: if the cleanup fails the agent still runs.
-            }
-        };
-        await cleanCaches();
-
-        const probeCmd = resolveAgentProbeCommand(opts.agentId);
-        if (probeCmd && !(await probeAgentCommand(this.client, name, probeCmd, guestWorkspacePath))) {
-            await this.client.deleteSession(name);
-            await openSession();
-            await cleanCaches();
-            if (!(await probeAgentCommand(this.client, name, probeCmd, guestWorkspacePath))) {
-                throw new RuntimeError(
-                    `BoxLite ensureReady failed: agent command "${probeCmd}" is missing from sandbox image ${image}`,
-                    502,
-                );
+                if (!(await probeAgentCommand(this.client, name, probeCmd, guestWorkspacePath))) {
+                    throw new RuntimeError(
+                        `BoxLite ensureReady failed: agent command "${probeCmd}" is missing from sandbox image ${image}`,
+                        502,
+                    );
+                }
             }
         }
 
@@ -189,8 +189,10 @@ class BoxLiteRuntimeProvider extends RuntimeProvider {
                 // snapshot may not exist yet or first provision; continue
             }
         }
-        await this.ensureWorkspacePath(name, guestWorkspacePath);
-        if (opts.agentId) {
+        if (!reused) {
+            await this.ensureWorkspacePath(name, guestWorkspacePath);
+        }
+        if (opts.agentId && !reused) {
             const { ensureAgentBootstrap } = require('../workspace/agentBootstrap');
             await ensureAgentBootstrap(project, hostWorkspacePath);
         }

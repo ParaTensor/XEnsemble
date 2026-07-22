@@ -128,15 +128,15 @@ let status = {
     lastError: null,
 };
 
-async function resolveBindAddr() {
+async function resolveBindAddr(cachedConfig) {
     if (ENV_BIND) return ENV_BIND;
-    const config = await gatewaySettings.getConfig();
+    const config = cachedConfig || await gatewaySettings.getConfig();
     return config.bind_addr;
 }
 
 async function applyRuntimeConfig() {
     const config = await gatewaySettings.getConfig();
-    const bindAddr = await resolveBindAddr();
+    const bindAddr = await resolveBindAddr(config);
     status.bindAddr = bindAddr;
     status.baseUrl = baseUrlFromBind(bindAddr);
     status.autoStart = config.auto_start;

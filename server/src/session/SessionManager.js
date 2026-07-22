@@ -5,6 +5,7 @@ const titleService = require('./titleService');
 const TITLE_HISTORY_THRESHOLD = Number(process.env.SESSION_TITLE_HISTORY_THRESHOLD) || 200;
 const TITLE_DEBOUNCE_MS = Number(process.env.SESSION_TITLE_DEBOUNCE_MS) || 5000;
 const TITLE_EXIT_MIN_HISTORY = 30;
+const MAX_OUTPUT_LISTENERS = Number(process.env.SESSION_MAX_OUTPUT_LISTENERS) || 5;
 
 /**
  * SessionManager — 管理活跃 agent session 的 bridge handle 与转发缓存。
@@ -65,14 +66,14 @@ class SessionManager {
             if (session.history.length > 100000) {
                 session.history = session.history.slice(-100000);
             }
-            if (frame) {
-                for (const listener of session.outputListeners) {
-                    try { listener({ data, seq: frame.seq, rseq: frame.rseq, kind: 'out' }); } catch (_) { /* ignore */ }
-                }
-            } else {
-                for (const listener of session.outputListeners) {
-                    try { listener({ data, seq: null, rseq: rseq ?? null, kind: 'out' }); } catch (_) { /* ignore */ }
-                }
+            if (session.outputListeners.size > 0) {
+                const payload = { data, seq: frame?.seq ?? null, rseq: frame?.rseq ?? (rseq ?? null), kind: 'out' };
+                const listeners = [...session.outputListeners];
+                queueMicrotask(() => {
+                    for (const listener of listeners) {
+                        try { listener(payload); } catch (_) { /* ignore */ }
+                    }
+                });
             }
             this._scheduleTitleGeneration(sessionId);
         });
@@ -128,6 +129,7 @@ class SessionManager {
         const session = this.sessions.get(sessionId);
         if (!session) return () => {};
         if (session.status !== 'running') return () => {};
+        if (session.outputListeners.size >= MAX_OUTPUT_LISTENERS) return () => {};
         session.outputListeners.add(listener);
         return () => session.outputListeners.delete(listener);
     }

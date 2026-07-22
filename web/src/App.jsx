@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useCallback } from 'react';
 import { Routes, Route, useNavigate, useLocation, Navigate } from 'react-router-dom';
 import Login from './pages/Login';
 import Sessions from './pages/Sessions';
@@ -46,6 +46,21 @@ function AuthenticatedLayout({
 
   const offRouteClass = 'pointer-events-none invisible absolute inset-0 z-0 [&_*]:pointer-events-none';
 
+  const onSelectSession = useCallback((session) => {
+    setActiveSession({
+      sessionId: session.id,
+      agentId: session.agentId,
+      agentName: agents.find((a) => a.id === session.agentId)?.name || session.agentId,
+      projectId: session.projectId ?? null,
+      projectName: session.projectName ?? null,
+    });
+    if (location.pathname !== '/sessions') navigate('/sessions');
+  }, [setActiveSession, agents, navigate, location.pathname]);
+
+  const onArchiveSession = useCallback((sessionId) => {
+    if (activeSession?.sessionId === sessionId) setActiveSession(null);
+  }, [activeSession?.sessionId, setActiveSession]);
+
   return (
     <div className={`h-full flex ${bgCanvas}`}>
       <AppSidebar
@@ -54,24 +69,13 @@ function AuthenticatedLayout({
         sessions={sessions}
         activeSession={activeSession}
         fetchWorkspaces={fetchWorkspaces}
-        onSelectSession={(session) => {
-          setActiveSession({
-            sessionId: session.id,
-            agentId: session.agentId,
-            agentName: agents.find((a) => a.id === session.agentId)?.name || session.agentId,
-            projectId: session.projectId ?? null,
-            projectName: session.projectName ?? null,
-          });
-          if (location.pathname !== '/sessions') navigate('/sessions');
-        }}
+        onSelectSession={onSelectSession}
         onCreateWorkspace={() => sessionsRef.current?.openLaunchModal?.('workspace')}
         onImportFromGit={() => sessionsRef.current?.openImportDialog?.()}
         onNewAgent={() => sessionsRef.current?.openLaunchModal?.('session')}
         onRequestDeleteSession={(session, ws) => sessionsRef.current?.requestDeleteSession?.(session, ws)}
         onRequestDeleteWorkspace={(ws) => sessionsRef.current?.requestDeleteWorkspace?.(ws)}
-        onArchiveSession={(sessionId) => {
-          if (activeSession?.sessionId === sessionId) setActiveSession(null);
-        }}
+        onArchiveSession={onArchiveSession}
         user={user}
         onOpenSettings={() => setShowSettingsModal(true)}
         onLogout={logout}

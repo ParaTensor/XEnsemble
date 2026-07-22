@@ -247,10 +247,15 @@ function mergeSpawnEnvLayers({ platformSpawnEnv, themeSpawnEnv, secretEnv, cfg }
 }
 
 async function buildGatewaySpawnEnv(agentId, envRequired, { draftModel, draftProvider, draftEnvOverrides, sessionToken, forPreview = false } = {}) {
-    const cfg = await agentGatewayConfig.getForAgent(agentId);
+    const [cfg, platform] = await Promise.all([
+        agentGatewayConfig.getForAgent(agentId),
+        (async () => {
+            const secrets = await resolvePlatformSecrets({ sessionToken, forPreview });
+            return applyGatewaySynthesis(secrets);
+        })(),
+    ]);
     const model = (draftModel ?? cfg?.model ?? '').trim();
     const provider = (draftProvider ?? cfg?.provider ?? '').trim();
-    const platform = applyGatewaySynthesis(await resolvePlatformSecrets({ sessionToken, forPreview }));
 
     let env = pickEnvRequired(platform, envRequired);
     if (model) {
@@ -281,10 +286,17 @@ async function buildGatewaySpawnEnv(agentId, envRequired, { draftModel, draftPro
 }
 
 async function resolveSpawnEnv({ userId, agentId, envRequired, sessionToken, projectId, terminalThemeId, forPreview = false, warn } = {}) {
-    const mode = await resolveAgentAuthMode(agentId);
-    const cfg = await agentGatewayConfig.getForAgent(agentId);
-    const themeCtx = await resolveTerminalThemeContext({ userId, terminalThemeId, warn });
-    const platform = applyGatewaySynthesis(await resolvePlatformSecrets({ sessionToken, forPreview }));
+    const [cfg, themeCtx, platform] = await Promise.all([
+        agentGatewayConfig.getForAgent(agentId),
+        resolveTerminalThemeContext({ userId, terminalThemeId, warn }),
+        (async () => {
+            const secrets = await resolvePlatformSecrets({ sessionToken, forPreview });
+            return applyGatewaySynthesis(secrets);
+        })(),
+    ]);
+    const mode = (cfg?.llm_auth_mode === 'gateway' || cfg?.llm_auth_mode === 'byok')
+        ? cfg.llm_auth_mode
+        : 'byok';
 
     const finish = (secretEnv, missing = []) => {
         const env = mergeSpawnEnvLayers({
@@ -384,9 +396,11 @@ async function previewSpawnEnv({ userId, agentId, envRequired, terminalThemeId }
 }
 
 async function isAgentKeysReady(envRequired, userId, agentId) {
-    const mode = await resolveAgentAuthMode(agentId);
+    const cfg = await agentGatewayConfig.getForAgent(agentId);
+    const mode = (cfg?.llm_auth_mode === 'gateway' || cfg?.llm_auth_mode === 'byok')
+        ? cfg.llm_auth_mode
+        : 'byok';
     if (mode === 'gateway') {
-        const cfg = await agentGatewayConfig.getForAgent(agentId);
         if (!cfg?.model?.trim()) return false;
         return unigateway.getStatus().running;
     }
@@ -411,7 +425,10 @@ function describeGatewayEnvSource(key) {
 }
 
 async function previewGatewaySpawnEnv(agentId, { envRequired = [], cmd, args = [], draftModel, draftProvider, draftEnvOverrides, draftAuthMode } = {}) {
-    const savedMode = await resolveAgentAuthMode(agentId);
+    const cfg = await agentGatewayConfig.getForAgent(agentId);
+    const savedMode = (cfg?.llm_auth_mode === 'gateway' || cfg?.llm_auth_mode === 'byok')
+        ? cfg.llm_auth_mode
+        : 'byok';
     const mode = draftAuthMode === 'gateway' || draftAuthMode === 'byok' ? draftAuthMode : savedMode;
     const gateway = unigateway.getStatus();
 

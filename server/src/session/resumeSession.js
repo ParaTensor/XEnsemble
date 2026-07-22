@@ -12,6 +12,8 @@ async function resolveCustomImageRef(customImageId, userId) {
 
 const inFlightResumes = new Map();
 
+const RESUME_LOCK_TIMEOUT_MS = Number(process.env.RESUME_LOCK_TIMEOUT_MS) || 30000;
+
 function withResumeLock(sessionId, fn) {
     const existing = inFlightResumes.get(sessionId);
     if (existing) return existing;
@@ -21,6 +23,12 @@ function withResumeLock(sessionId, fn) {
         }
     });
     inFlightResumes.set(sessionId, pending);
+    const timeout = setTimeout(() => {
+        if (inFlightResumes.get(sessionId) === pending) {
+            inFlightResumes.delete(sessionId);
+        }
+    }, RESUME_LOCK_TIMEOUT_MS);
+    pending.finally(() => clearTimeout(timeout));
     return pending;
 }
 

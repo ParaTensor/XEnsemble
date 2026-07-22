@@ -198,6 +198,31 @@ async function subscribeTerminal(sessionId, send, options = {}) {
     sessionManager.addTerminalSubscriber(sessionId);
     subscribed = true;
 
+    let liveBatch = [];
+    let liveBatchScheduled = false;
+
+    const flushLiveBatch = () => {
+        if (liveBatch.length === 0) return;
+        const frames = liveBatch;
+        liveBatch = [];
+        liveBatchScheduled = false;
+        let batchedData = '';
+        let lastBatchSeq = null;
+        for (const frame of frames) {
+            if (cleaned) break;
+            if (frame.seq != null && frame.seq <= lastSentSeq) continue;
+            batchedData += frame.data;
+            if (frame.seq != null) {
+                lastSentSeq = frame.seq;
+                lastBatchSeq = frame.seq;
+            }
+        }
+        if (batchedData) {
+            maybeSend({ type: 'output', data: batchedData, seq: lastBatchSeq ?? undefined });
+        }
+        maybeFinalizeExit();
+    };
+
     const offOutput = sessionManager.subscribeOutput(sessionId, (frame) => {
         if (cleaned) return;
         if (replaying) {
@@ -207,11 +232,11 @@ async function subscribeTerminal(sessionId, send, options = {}) {
         if (frame.seq != null && frame.seq <= lastSentSeq) {
             return;
         }
-        maybeSend({ type: 'output', data: frame.data, seq: frame.seq ?? undefined });
-        if (frame.seq != null) {
-            lastSentSeq = frame.seq;
+        liveBatch.push(frame);
+        if (!liveBatchScheduled) {
+            liveBatchScheduled = true;
+            queueMicrotask(flushLiveBatch);
         }
-        maybeFinalizeExit();
     });
 
     const metricsInterval = setInterval(async () => {

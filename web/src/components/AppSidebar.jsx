@@ -560,7 +560,7 @@ export default function AppSidebar({
     );
   };
 
-  const workspaces = buildWorkspaces(projects, sessions, sidebarPrefs);
+  const workspaces = useMemo(() => buildWorkspaces(projects, sessions, sidebarPrefs), [projects, sessions, sidebarPrefs]);
 
   const filteredWorkspaces = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();

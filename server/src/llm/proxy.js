@@ -112,12 +112,16 @@ async function proxyLlmRequest(request, reply) {
         return reply.code(401).send({ error: 'Invalid or expired session token' });
     }
 
-    const authz = await assertSessionAuthorized(claims);
+    const [authz, quota, gateway] = await Promise.all([
+        assertSessionAuthorized(claims),
+        checkLlmRequestQuota(claims.uid, claims.role),
+        resolveGatewayTarget(request.log),
+    ]);
+
     if (!authz.ok) {
         return reply.code(authz.status).send({ error: authz.error });
     }
 
-    const quota = await checkLlmRequestQuota(claims.uid, claims.role);
     if (!quota.ok) {
         return reply.code(quota.status).send({
             error: quota.error,
@@ -127,7 +131,6 @@ async function proxyLlmRequest(request, reply) {
     }
 
     const path = stripLlmPrefix(request.url);
-    const gateway = await resolveGatewayTarget(request.log);
     if (gateway.error) {
         return reply.code(gateway.status).send({ error: gateway.error });
     }

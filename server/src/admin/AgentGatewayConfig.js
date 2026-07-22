@@ -5,13 +5,28 @@ const DEFAULT_AUTH_MODE = 'byok';
 
 const CONFIG_KEY = 'agent_gateway_config';
 
+const CACHE_TTL_MS = Number(process.env.AGENT_GATEWAY_CACHE_TTL_MS) || 5000;
+
+let _cache = null;
+let _cacheAt = 0;
+
 async function getAll() {
+    const now = Date.now();
+    if (_cache && (now - _cacheAt) < CACHE_TTL_MS) return _cache;
     const rows = await db.select().from(schema.platformSettings).where(eq(schema.platformSettings.key, CONFIG_KEY));
-    if (rows.length === 0) return {};
+    if (rows.length === 0) {
+        _cache = {};
+        _cacheAt = now;
+        return _cache;
+    }
     try {
-        return JSON.parse(rows[0].value);
+        _cache = JSON.parse(rows[0].value);
+        _cacheAt = now;
+        return _cache;
     } catch {
-        return {};
+        _cache = {};
+        _cacheAt = now;
+        return _cache;
     }
 }
 
@@ -73,6 +88,7 @@ async function setForAgent(agentId, { llm_auth_mode, provider, model, env_overri
     } else {
         await db.insert(schema.platformSettings).values({ key: CONFIG_KEY, value });
     }
+    _cache = null;
 
     const saved = all[agentId] || null;
     let sync = null;

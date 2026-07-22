@@ -104,7 +104,9 @@ fastify.register(require('@fastify/cors'), {
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'],
     credentials: true,
 });
-fastify.register(require('@fastify/websocket'));
+fastify.register(require('@fastify/websocket'), {
+    options: { maxPayload: 1024 * 1024 },
+});
 
 registerAuthHooks(fastify);
 registerAuthRoutes(fastify);
@@ -1292,11 +1294,19 @@ fastify.post('/api/v1/session/start', { preValidation: [fastify.authenticate] },
 // WebSocket Terminal（协议不变；与 /api/v1/terminal/* HTTP 通道共享 terminalBridge）
 fastify.register(async function terminalWsRoutes(app) {
     app.get('/ws/v1/terminal', { websocket: true }, async (connection, req) => {
+        const WS_BUFFERED_LIMIT = 1024 * 1024;
         const ws = connection.socket;
 
         const sendJson = (payload) => {
-            if (ws.readyState === WebSocket.OPEN) {
+            if (ws.readyState !== WebSocket.OPEN) return;
+            if (ws.bufferedAmount >= WS_BUFFERED_LIMIT) {
+                ws.close();
+                return;
+            }
+            try {
                 ws.send(JSON.stringify(payload));
+            } catch (_) {
+                ws.close();
             }
         };
 
@@ -1434,8 +1444,15 @@ fastify.register(async function workspaceTerminalWsRoutes(app) {
         const ws = connection.socket;
 
         const sendJson = (payload) => {
-            if (ws.readyState === WebSocket.OPEN) {
+            if (ws.readyState !== WebSocket.OPEN) return;
+            if (ws.bufferedAmount >= WS_BUFFERED_LIMIT) {
+                ws.close();
+                return;
+            }
+            try {
                 ws.send(JSON.stringify(payload));
+            } catch (_) {
+                ws.close();
             }
         };
 

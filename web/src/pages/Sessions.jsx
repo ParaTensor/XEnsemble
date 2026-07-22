@@ -122,7 +122,6 @@ export default React.forwardRef(function Sessions({
     return Number.isFinite(w) && w >= 200 && w <= maxW ? w : 320;
   });
   const resizingRef = useRef(null);
-  const [workspaceFiles, setWorkspaceFiles] = useState([]);
   const [isLoadingFiles, setIsLoadingFiles] = useState(false);
   const [showHiddenFiles, setShowHiddenFiles] = useState(false);
   const [viewingFile, setViewingFile] = useState(null);
@@ -572,32 +571,12 @@ export default React.forwardRef(function Sessions({
       if (!res.ok) {
         throw new Error(data.error || 'Failed to load workspace files');
       }
-      setWorkspaceFiles(Array.isArray(data) ? data : []);
     } catch (err) {
       if (notifyError) showToast('error', err.message);
     } finally {
       setIsLoadingFiles(false);
     }
   }, [activeSession?.projectId, showHiddenFiles, showToast]);
-
-  useEffect(() => {
-    if (!activeSession?.projectId || !panelOpen || panelTab !== 'files' || !sessionAlive) return undefined;
-    fetchWorkspaceFiles();
-    let timer;
-    const scheduleNext = () => {
-      timer = setTimeout(() => {
-        // Skip polling when the tab is hidden.
-        if (typeof document !== 'undefined' && document.hidden) {
-          scheduleNext();
-          return;
-        }
-        fetchWorkspaceFiles();
-        scheduleNext();
-      }, 10000);
-    };
-    scheduleNext();
-    return () => clearTimeout(timer);
-  }, [activeSession?.projectId, fetchWorkspaceFiles, panelOpen, panelTab, showHiddenFiles, sessionAlive]);
 
   const handleOpenFile = useCallback(async (file) => {
     if (!activeSession?.projectId || file?.type !== 'file') return;

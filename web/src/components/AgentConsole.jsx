@@ -302,13 +302,24 @@ export default function AgentConsole({
           };
 
           let replayDone = false;
+          let atBottom = true;
+          let scrollCheckPending = false;
+
+          const scheduleScrollCheck = () => {
+            if (scrollCheckPending) return;
+            scrollCheckPending = true;
+            requestAnimationFrame(() => {
+              scrollCheckPending = false;
+              const viewport = hostRef.current?.querySelector('.xterm-viewport');
+              atBottom = !viewport || viewport.scrollTop + viewport.clientHeight >= viewport.scrollHeight - 5;
+            });
+          };
+
           ws.onmessage = (event) => {
             if (disposed) return;
             const msg = parseMessage(event.data);
             if (msg.type === 'output') {
-              // 检查用户是否在底部附近（避免上滑查看历史时被打断）
-              const viewport = hostRef.current?.querySelector('.xterm-viewport');
-              const atBottom = !viewport || viewport.scrollTop + viewport.clientHeight >= viewport.scrollHeight - 5;
+              scheduleScrollCheck();
               terminal.write(msg.data, () => {
                 if (!replayDone && !disposed) { replayDone = true; hideOverlay(); }
                 if (atBottom && !disposed) terminal.scrollToBottom();
