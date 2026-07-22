@@ -52,8 +52,8 @@ const transcriptStore = require('./runtime/TranscriptStore');
 const unigateway = require('./gateway/unigatewayManager');
 const { registerGatewayAdminRoutes } = require('./gateway/adminProxy');
 const { deleteProjectForUser } = require('./projects/deleteProject');
-const { getAgentResume, getAgentResumeLevel } = require('./agents/agentResume');
-const { ensureSessionStateDir } = require('./session/stateDir');
+const { getAgentResume, getAgentResumeLevel, buildStateArgs } = require('./agents/agentResume');
+const { ensureSessionStateDir, prepareHomeRedirect } = require('./session/stateDir');
 const { resolveRuntimeProvider, DEFAULT_RUNTIME_PROVIDER } = require('./config/runtimeProvider');
 
 const runtime = getRuntime();
@@ -76,12 +76,17 @@ function formatAgentRow(a) {
 // getProjectForUser is imported from ./projects/getProjectForUser (cached)
 
 function applyStateDirEnv(env, resumeSpec, stateDirPath) {
-    if (!resumeSpec?.stateEnv || !stateDirPath) return env;
-    if (env[resumeSpec.stateEnv]?.trim()) return env;
-    return {
-        ...env,
-        [resumeSpec.stateEnv]: stateDirPath,
-    };
+    if (!resumeSpec || !stateDirPath) return env;
+    let result = env;
+    // Set state env var (e.g. CLAUDE_CONFIG_DIR, QWEN_HOME)
+    if (resumeSpec.stateEnv && !env[resumeSpec.stateEnv]?.trim()) {
+        result = { ...result, [resumeSpec.stateEnv]: stateDirPath };
+    }
+    // Redirect HOME for agents that store state under ~/.<name>/ (e.g. commandcode)
+    if (resumeSpec.redirectHome) {
+        result = { ...result, HOME: stateDirPath };
+    }
+    return result;
 }
 
 const allowedOrigins = process.env.ALLOWED_ORIGINS
@@ -1149,9 +1154,25 @@ fastify.post('/api/v1/session/start', { preValidation: [fastify.authenticate] },
             await markSessionFailed(sessionId, 'Failed to prepare agent state directory');
             return;
         }
+        if (resumeSpec?.stateArgs && !sessionStateDir) {
+            await markSessionFailed(sessionId, 'Failed to prepare agent state directory');
+            return;
+        }
+        if (resumeSpec?.redirectHome && !sessionStateDir) {
+            await markSessionFailed(sessionId, 'Failed to prepare agent state directory');
+            return;
+        }
 
         if (sessionStateDir?.stateDirPath) {
             resolved.env = applyStateDirEnv(resolved.env, resumeSpec, sessionStateDir.stateDirPath);
+            if (resumeSpec?.redirectHome && sessionStateDir.stateDirRef) {
+                const runtimeRef = ready.runtime ? ready.runtime.runtimeRef : undefined;
+                await prepareHomeRedirect(runtime.fs, {
+                    workspaceRoot: workspacePath,
+                    stateDirRef: sessionStateDir.stateDirRef,
+                    runtimeRef,
+                }).catch((err) => fastify.log.warn({ err, sessionId }, '[sessions] prepareHomeRedirect failed'));
+            }
         }
 
         // Single DB update: merge cwd + runtimeId + stateDirRef (was 2 separate writes).
@@ -1182,9 +1203,12 @@ fastify.post('/api/v1/session/start', { preValidation: [fastify.authenticate] },
             gid: process.env.RUNTIME_GID,
         };
         try {
+            const stateArgs = sessionStateDir?.stateDirPath
+                ? buildStateArgs(resumeSpec, sessionStateDir.stateDirPath)
+                : [];
             handle = await runtime.exec.spawn(
                 agentMeta.cmd,
-                agentMeta.args,
+                [...stateArgs, ...agentMeta.args],
                 resolved.env,
                 spawnOpts,
             );

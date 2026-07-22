@@ -1,6 +1,6 @@
 const { eq } = require('drizzle-orm');
-const { sessionStateDirExists } = require('./stateDir');
-const { getAgentResume, getAgentResumeLevel, isSessionRecoverable } = require('../agents/agentResume');
+const { sessionStateDirExists, prepareHomeRedirect } = require('./stateDir');
+const { getAgentResume, getAgentResumeLevel, isSessionRecoverable, buildStateArgs } = require('../agents/agentResume');
 
 const CRASH_UPTIME_MS = 30000;
 const CRASH_THRESHOLD = 3;
@@ -188,8 +188,24 @@ async function resumeSession({
             throw error;
         }
 
-        if (resolvedSpawnEnv?.env && resumeSpec.stateEnv && !resolvedSpawnEnv.env[resumeSpec.stateEnv]?.trim()) {
-            resolvedSpawnEnv.env[resumeSpec.stateEnv] = stateDirPath;
+        if (resolvedSpawnEnv?.env && stateDirPath) {
+            if (resumeSpec.stateEnv && !resolvedSpawnEnv.env[resumeSpec.stateEnv]?.trim()) {
+                resolvedSpawnEnv.env[resumeSpec.stateEnv] = stateDirPath;
+            }
+            if (resumeSpec.redirectHome) {
+                resolvedSpawnEnv.env.HOME = stateDirPath;
+                const stateDirRef = session.stateDirRef || stateDirResolved?.stateDirRef;
+                if (stateDirRef) {
+                    await prepareHomeRedirect(runtime.fs, {
+                        workspaceRoot: workspacePath,
+                        stateDirRef,
+                        runtimeRef,
+                    }).catch((err) => {
+                        if (fastifyLog?.warn) fastifyLog.warn({ err }, '[sessions] prepareHomeRedirect failed');
+                        else if (requestLog?.warn) requestLog.warn({ err }, '[sessions] prepareHomeRedirect failed');
+                    });
+                }
+            }
         }
 
         if (project && project.repoProvider === 'github' && resolvedSpawnEnv?.env) {
@@ -255,9 +271,12 @@ async function resumeSession({
 
         let handle;
         try {
+            const stateArgs = stateDirPath
+                ? buildStateArgs(resumeSpec, stateDirPath)
+                : [];
             handle = await runtime.exec.spawn(
                 agentMeta.cmd,
-                [...agentMeta.args, ...(resumeSpec.resumeArgs || [])],
+                [...stateArgs, ...agentMeta.args, ...(resumeSpec.resumeArgs || [])],
                 resolvedSpawnEnv.env,
                 {
                     name: agentMeta.name,

@@ -32,6 +32,11 @@ const DEFAULT_AGENTS = [
         cmd: 'agent',
         args: [],
         env_required: [],
+        resume: {
+            level: 'L2',
+            stateEnv: 'CURSOR_DATA_DIR',
+            resumeArgs: ['--continue'],
+        },
     },
     {
         id: 'opencode',
@@ -51,6 +56,11 @@ const DEFAULT_AGENTS = [
         cmd: 'amp',
         args: [],
         env_required: ['AMP_API_KEY'],
+        resume: {
+            level: 'L2',
+            stateEnv: 'XENSEMBLE_STATE_DIR',
+            resumeArgs: ['last'],
+        },
     },
     {
         id: 'cline',
@@ -65,6 +75,11 @@ const DEFAULT_AGENTS = [
         cmd: 'codebuddy',
         args: [],
         env_required: [],
+        resume: {
+            level: 'L2',
+            stateEnv: 'CODEBUDDY_CONFIG_DIR',
+            resumeArgs: ['--continue'],
+        },
     },
     {
         id: 'droid',
@@ -91,6 +106,11 @@ const DEFAULT_AGENTS = [
         cmd: 'qodercli',
         args: [],
         env_required: ['QODER_PERSONAL_ACCESS_TOKEN'],
+        resume: {
+            level: 'L2',
+            stateArgs: ['--config-dir'],
+            resumeArgs: ['--continue'],
+        },
     },
     {
         id: 'qwen-code',
@@ -98,6 +118,11 @@ const DEFAULT_AGENTS = [
         cmd: 'qwen',
         args: [],
         env_required: ['DASHSCOPE_API_KEY'],
+        resume: {
+            level: 'L2',
+            stateEnv: 'QWEN_HOME',
+            resumeArgs: ['--continue'],
+        },
     },
     {
         id: 'minimax-cli',
@@ -126,6 +151,11 @@ const DEFAULT_AGENTS = [
         cmd: 'commandcode',
         args: [],
         env_required: ['COHERE_API_KEY'],
+        resume: {
+            level: 'L2',
+            redirectHome: true,
+            resumeArgs: ['--continue'],
+        },
     },
     {
         id: 'hermes',
@@ -133,6 +163,11 @@ const DEFAULT_AGENTS = [
         cmd: 'hermes',
         args: ['chat', '--ignore-user-config', '--provider', 'openrouter'],
         env_required: ['OPENROUTER_API_KEY'],
+        resume: {
+            level: 'L2',
+            stateEnv: 'HERMES_HOME',
+            resumeArgs: ['--continue'],
+        },
     },
     {
         id: 'openclaw',
