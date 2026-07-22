@@ -183,7 +183,7 @@ describe('GitOperationService (mock exec)', () => {
         failingExec.calls = exec.calls;
 
         const service = createService(failingExec);
-        await service.cloneRepo({ id: 'p2' }, { repoUrl: 'https://github.com/owner/repo.git', branch: 'dev' });
+        await service.cloneRepo({ id: 'p2', userId: 'u1' }, { repoUrl: 'https://github.com/owner/repo.git', branch: 'dev' });
 
         const setUrlCall = findCall(exec.calls, 'remote', 'set-url', 'origin');
         assert.ok(setUrlCall);
@@ -258,6 +258,16 @@ describe('GitOperationService (mock exec)', () => {
             untracked: true,
             ahead: 2,
             behind: 3,
+            files: [
+                { path: 'staged.txt', status: 'M ', type: 'staged' },
+                { path: 'untracked.txt', status: '??', type: 'untracked' },
+            ],
+            stagedFiles: [
+                { path: 'staged.txt', status: 'M ', type: 'staged' },
+            ],
+            unstagedFiles: [
+                { path: 'untracked.txt', status: '??', type: 'untracked' },
+            ],
         });
     });
 
@@ -287,9 +297,9 @@ describe('GitOperationService (mock exec)', () => {
         const service = createService(exec);
         const result = await service.pushBranch({ id: 'p1', userId: 'u1' }, 'feature', { force: true });
         assert.deepStrictEqual(result, { sha: 'push-sha' });
-        const pushCall = findCall(exec.calls, 'push', 'origin', 'feature');
+        const pushCall = findCall(exec.calls, 'push', '-u', 'origin', 'feature');
         assert.ok(pushCall);
-        assert.strictEqual(pushCall.args[3], '--force');
+        assert.strictEqual(pushCall.args[4], '--force');
         assert.ok(pushCall.env.GIT_ASKPASS);
     });
 

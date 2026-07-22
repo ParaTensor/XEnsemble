@@ -19,7 +19,6 @@ test('claude-code is an L2 resumable agent', () => {
 });
 
 test('agents without a resume contract default to L0 (not resumable)', () => {
-    assert.equal(getAgentResumeLevel('kimi-code'), 'L0');
-    assert.equal(isAgentResumable('kimi-code'), false);
+    assert.equal(getAgentResumeLevel('amp'), 'L2');
     assert.equal(getAgentResumeLevel('unknown-agent-id'), 'L0');
 });

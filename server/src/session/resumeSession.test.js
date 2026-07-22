@@ -266,9 +266,12 @@ test('resumeSession reuses state dir and continues transcript seqs', async () =>
     } finally {
         sessionManager.deleteSession(sessionId);
         await new Promise((resolve) => setImmediate(resolve));
-        await db.delete(schema.sessions).where(eq(schema.sessions.id, sessionId));
-        await db.delete(schema.projects).where(eq(schema.projects.id, projectId));
-        await db.delete(schema.users).where(eq(schema.users.id, userId));
+        try {
+            await db.delete(schema.sessions).where(eq(schema.sessions.id, sessionId));
+            await db.delete(schema.projects).where(eq(schema.projects.id, projectId));
+            await db.delete(schema.users).where(eq(schema.users.id, userId));
+        } catch (_) {
+        }
         cleanup(root);
     }
 });

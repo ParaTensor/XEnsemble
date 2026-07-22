@@ -180,8 +180,10 @@ test('subscribeTerminal replay skips input and resize frames while advancing cur
         await new Promise((resolve) => setImmediate(resolve));
 
         const outputs = payloads.filter((p) => p.type === 'output');
-        assert.deepEqual(outputs.map((p) => p.data), ['out-1\n', 'out-2\n']);
-        assert.deepEqual(outputs.map((p) => p.seq), [1, 4]);
+        // out frames are batched: out-1 and out-2 (separated by in/resize which are
+        // skipped) become adjacent and are concatenated into a single output payload.
+        assert.deepEqual(outputs.map((p) => p.data), ['out-1\nout-2\n']);
+        assert.deepEqual(outputs.map((p) => p.seq), [4]);
         assert.ok(outputs.every((p) => typeof p.data !== 'object'));
         assert.equal(payloads.some((p) => p.type === 'output' && p.data?.cols), false);
 

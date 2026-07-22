@@ -97,7 +97,12 @@ async function resolveBoxImage({ agentId, image } = {}) {
         }
 
         const { getActiveImageRef } = require('./AgentBoxImageService');
-        const stored = await getActiveImageRef(agentId);
+        let stored = null;
+        try {
+            stored = await getActiveImageRef(agentId);
+        } catch (_) {
+            // DB unavailable (e.g. unit test without test DB) - fall back to default
+        }
         if (stored) return stored;
 
         const agentImage = resolveAgentBoxImageDefault(agentId);

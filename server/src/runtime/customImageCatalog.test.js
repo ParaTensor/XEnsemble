@@ -54,7 +54,7 @@ test('getComponentById returns component or null', () => {
 
 test('getInstallFragment returns install for valid components', () => {
   assert.ok(
-    getInstallFragment('lang:python', '3.12').includes('python3.12'),
+    getInstallFragment('lang:python', '3.12').includes('Python-3.12'),
     'should return python install script',
   );
   assert.equal(
@@ -136,7 +136,7 @@ test('selectionToInstallList maps selection to install fragments', () => {
   assert.equal(list[0].component_id, 'lang:python');
   assert.equal(list[0].version, '3.12');
   assert.equal(list[0].category, CATEGORY_LANGUAGE);
-  assert.ok(list[0].install.includes('python3.12'));
+  assert.ok(list[0].install.includes('Python-3.12'));
 
   assert.equal(list[1].component_id, 'agent:claude-code');
   assert.equal(list[1].category, CATEGORY_AGENT);

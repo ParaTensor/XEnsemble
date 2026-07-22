@@ -27,9 +27,17 @@ function randomDbName() {
 const TEMPLATE_DB_NAME = 'xensemble_test_template';
 let templateReady = false;
 
+function sslOption() {
+    return process.env.DATABASE_SSL === 'true' ? 'require' : undefined;
+}
+
+function adminClient(baseUrl) {
+    return postgres(adminUrlFrom(baseUrl), { max: 1, ssl: sslOption() });
+}
+
 async function ensureTemplateDatabase(baseUrl) {
     if (templateReady) return;
-    const admin = postgres(adminUrlFrom(baseUrl), { max: 1 });
+    const admin = adminClient(baseUrl);
     await admin.unsafe(`DROP DATABASE IF EXISTS "${TEMPLATE_DB_NAME}" WITH (FORCE)`);
     await admin.unsafe(`CREATE DATABASE "${TEMPLATE_DB_NAME}"`);
     await admin.end({ timeout: 0 });
@@ -56,7 +64,7 @@ async function setupTestDb(options = {}) {
     await ensureTemplateDatabase(baseUrl);
 
     const dbName = options.dbName || randomDbName();
-    const admin = postgres(adminUrlFrom(baseUrl), { max: 1 });
+    const admin = adminClient(baseUrl);
     await admin.unsafe(`CREATE DATABASE "${dbName}" TEMPLATE "${TEMPLATE_DB_NAME}"`);
     await admin.end({ timeout: 5 });
 
@@ -65,7 +73,7 @@ async function setupTestDb(options = {}) {
 
     async function cleanup() {
         await client.end({ timeout: 0 });
-        const dropAdmin = postgres(adminUrlFrom(baseUrl), { max: 1 });
+        const dropAdmin = adminClient(baseUrl);
         await dropAdmin.unsafe(`DROP DATABASE IF EXISTS "${dbName}" WITH (FORCE)`);
         await dropAdmin.end({ timeout: 0 });
         await closeConnection();

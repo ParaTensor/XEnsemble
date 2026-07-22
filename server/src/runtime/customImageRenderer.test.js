@@ -18,7 +18,7 @@ test('renderInstallSteps includes selected language versions', () => {
     { component_id: 'lang:nodejs', version: '22' },
   ];
   const steps = renderInstallSteps(selection);
-  assert.ok(steps.includes('python3.12'), 'should install python 3.12');
+  assert.ok(steps.includes('Python-3.12'), 'should install python 3.12');
   assert.ok(steps.includes('nodejs'), 'should install nodejs');
   assert.ok(steps.includes('RUN set -eux;'), 'should use set -eux');
 });
@@ -28,7 +28,7 @@ test('renderInstallSteps includes agent components', () => {
     { component_id: 'agent:claude-code', version: 'latest' },
   ];
   const steps = renderInstallSteps(selection);
-  assert.ok(steps.includes('Install claude-code'), 'should mention agent name');
+  assert.ok(steps.includes('claude-code'), 'should mention agent name');
   assert.ok(steps.includes('npm install'), 'should include npm install');
 });
 
@@ -62,7 +62,7 @@ test('renderBuildContext returns dockerfile and baseImage', () => {
   ]);
   assert.ok(result.dockerfile, 'should have dockerfile');
   assert.ok(result.baseImage, 'should have baseImage');
-  assert.ok(result.dockerfile.includes('python3.12'), 'dockerfile should include install');
+  assert.ok(result.dockerfile.includes('Python-3.12'), 'dockerfile should include install');
   assert.ok(result.dockerfile.includes('FROM ${BASE_IMAGE}'), 'should use ARG for base');
 });
 

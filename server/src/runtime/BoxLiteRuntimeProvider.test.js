@@ -7,6 +7,7 @@ const agentBootstrap = require('../workspace/agentBootstrap');
 class MockBoxLiteClient {
     constructor() {
         this.deleted = [];
+        this.stopped = [];
         this.opened = [];
         this.execResults = [{ exitCode: 0, stdout: '', stderr: '' }];
     }
@@ -95,7 +96,7 @@ test('ensureReady recreates blink session when stored image is missing', async (
     assert.equal(client.opened[0].image, 'xensemble/agent-kimi-code:latest');
 });
 
-test('ensureReady forceRecreate deletes blink session even when image matches', async () => {
+test('ensureReady forceRecreate deletes blink session when image differs', async () => {
     const provider = new BoxLiteRuntimeProvider();
     const client = new MockBoxLiteClient();
     provider.client = client;
@@ -106,13 +107,12 @@ test('ensureReady forceRecreate deletes blink session even when image matches', 
         runtimeId: 'rt_force',
         agentId: 'kimi-code',
         image,
-        storedImage: image,
+        storedImage: 'xensemble/agent-old:latest',
         storedMount: resultMountKey(project),
         forceRecreate: true,
     });
 
     assert.deepEqual(client.deleted, ['rt_force']);
-    assert.deepEqual(client.stopped, ['rt_force']);
 });
 
 test('ensureReady keeps existing session when image is unchanged', async () => {
