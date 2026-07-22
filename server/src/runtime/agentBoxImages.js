@@ -48,7 +48,7 @@ const AGENT_BOX_IMAGE_CATALOG = {
     'pi': { tag: 'pi', buildable: true, minNodeVersion: '22', install: 'npm install -g --ignore-scripts @earendil-works/pi-coding-agent' },
     // prebuilt standalone binary — no Node.js version requirement
     'github-copilot': { tag: 'github-copilot', buildable: true },
-    'cursor': { buildable: false, reason: 'install script requires host-specific setup' },
+    'cursor': { tag: 'cursor', buildable: true, install: 'curl https://cursor.com/install -fsS | bash' },
     'amp': { buildable: false, reason: 'install script is host-specific' },
     'hermes': { buildable: false, reason: 'install script mutates home directory layout' },
 };
