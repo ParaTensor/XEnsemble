@@ -22,7 +22,7 @@ async function probeAgentCommand(client, sessionName, cmd, workspacePath) {
     const result = await client.execForResult(
         sessionName,
         'sh',
-        ['-lc', `command -v ${JSON.stringify(cmd)} >/dev/null 2>&1`],
+        ['-lc', `PATH="$HOME/.local/bin:/usr/local/bin:$PATH" command -v ${JSON.stringify(cmd)} >/dev/null 2>&1`],
         {},
         workspacePath || '/',
     );
