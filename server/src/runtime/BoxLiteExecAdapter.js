@@ -124,14 +124,14 @@ class BoxLiteExecAdapter extends ExecAdapter {
         const working = options.cwd || '/workspace';
         const rawCmd = String(cmd || 'sh');
         const rawArgs = Array.isArray(args) ? args : [];
-        // Wrap in interactive bash so ~/.bashrc is sourced (matches LocalExecAdapter
-        // behavior).  Without this, user modifications to .bashrc (PATH additions,
-        // custom env vars, model overrides, etc.) have no effect on the agent process
-        // because blink does a direct execve without a shell.
-        const commandLine = `exec ${[rawCmd, ...rawArgs].map(quotePosixArg).join(' ')}`;
+        // Source ~/.bashrc then exec the agent.  We use a non-interactive bash
+        // (no -i) to avoid job-control / terminal-process-group side effects that
+        // interfere with blink's PTY management.  Explicitly sourcing .bashrc
+        // preserves user customizations (PATH, env vars, model overrides, etc.).
+        const commandLine = `source /root/.bashrc 2>/dev/null; exec ${[rawCmd, ...rawArgs].map(quotePosixArg).join(' ')}`;
         const spec = {
             command: 'bash',
-            args: ['-ic', commandLine],
+            args: ['-c', commandLine],
             env: {
                 LANG: 'C.UTF-8',
                 LC_ALL: 'C.UTF-8',
