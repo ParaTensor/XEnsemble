@@ -119,11 +119,6 @@ async function stopSession({
             const runtimeRef = live?.runtimeRef || live?.runtimeId || null;
             if (runtimeRef) {
                 await waitForAgentExit(runtime, runtimeRef, live.agentId);
-                // Give the agent process time to flush session state to disk
-                // after SIGTERM.  Without this, claude-code's sessions/ dir
-                // may be empty when resumeSession checks it, causing --continue
-                // to be skipped (loss of L2 conversation history).
-                await new Promise((r) => setTimeout(r, 2000));
             }
         }
         const rtRef = live?.runtimeRef || live?.runtimeId || live?.handle?.runtimeRef

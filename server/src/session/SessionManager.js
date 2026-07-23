@@ -21,6 +21,15 @@ class SessionManager {
 
     createSession(sessionId, handle, agentId, options = {}) {
         const prev = this.sessions.get(sessionId);
+        // Detach the old session's exit listener so its onExit callback
+        // (which closes over the NEW session object after replacement)
+        // does not fire the full exit path and kill the new session.
+        if (prev) {
+            prev.hibernating = true;
+            prev.status = 'exited';
+            prev.exitListeners = new Set();
+            prev.outputListeners = new Set();
+        }
         const transcriptRef = options.transcriptRef || handle?.transcriptRef || handle?.streamRef || null;
         const session = {
             id: sessionId,
