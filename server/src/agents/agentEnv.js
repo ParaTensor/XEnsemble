@@ -267,17 +267,7 @@ function mergeSpawnEnvLayers({ platformSpawnEnv, themeSpawnEnv, secretEnv, cfg }
         ...themeSpawnEnv,
         ...secretEnv,
     };
-    env = applyAgentEnvOverrides(env, cfg);
-    // Suppress mutually exclusive keys: if admin set ANTHROPIC_AUTH_TOKEN,
-    // remove ANTHROPIC_API_KEY so the agent uses AUTH_TOKEN instead.
-    if (cfg?.env_overrides) {
-        for (const [overrideKey, suppressKeys] of Object.entries(ENV_OVERRIDE_SUPPRESS)) {
-            if (cfg.env_overrides[overrideKey]?.trim()) {
-                for (const k of suppressKeys) delete env[k];
-            }
-        }
-    }
-    return env;
+    return applyAgentEnvOverrides(env, cfg);
 }
 
 async function buildGatewaySpawnEnv(agentId, envRequired, { draftModel, draftProvider, draftEnvOverrides, sessionToken, forPreview = false } = {}) {
@@ -311,18 +301,6 @@ async function buildGatewaySpawnEnv(agentId, envRequired, { draftModel, draftPro
         env = applyAgentEnvOverrides(env, { env_overrides: draftEnvOverrides });
     } else {
         env = applyAgentEnvOverrides(env, cfg);
-    }
-
-    // Suppress mutually exclusive keys (same logic as mergeSpawnEnvLayers)
-    const suppressCfg = (draftEnvOverrides && typeof draftEnvOverrides === 'object')
-        ? { env_overrides: draftEnvOverrides }
-        : cfg;
-    if (suppressCfg?.env_overrides) {
-        for (const [overrideKey, suppressKeys] of Object.entries(ENV_OVERRIDE_SUPPRESS)) {
-            if (suppressCfg.env_overrides[overrideKey]?.trim()) {
-                for (const k of suppressKeys) delete env[k];
-            }
-        }
     }
 
     if (KIMI_CODE_AGENT_IDS.has(agentId)) {
