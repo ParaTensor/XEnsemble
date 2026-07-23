@@ -199,14 +199,14 @@ fastify.get('/api/v1/agents', { preValidation: [fastify.authenticate] }, async (
         return a.name.localeCompare(b.name);
     });
     const gatewayConfigs = await agentGatewayConfig.getAll();
+    const { computeEffectiveRequired } = require('./agents/agentEnv');
     return filtered.map((a) => {
         const cfg = gatewayConfigs[a.id];
         const authMode = cfg?.llm_auth_mode === 'gateway' || cfg?.llm_auth_mode === 'byok'
             ? cfg.llm_auth_mode
             : 'byok';
         const fullRequired = JSON.parse(a.envRequired);
-        const overrideKeys = new Set(Object.keys(cfg?.env_overrides || {}));
-        const effectiveRequired = fullRequired.filter((k) => !overrideKeys.has(k));
+        const effectiveRequired = computeEffectiveRequired(fullRequired, cfg);
         return {
             ...formatAgentRow(a),
             env_required: effectiveRequired,

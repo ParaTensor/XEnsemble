@@ -5,7 +5,7 @@ const { db } = require('../db/index');
 const schema = require('../db/schema');
 const policy = require('../auth/PolicyService');
 const unigateway = require('../gateway/unigatewayManager');
-const { resolveSpawnEnv, findMissing } = require('../agents/agentEnv');
+const { resolveSpawnEnv, findMissing, computeEffectiveRequired } = require('../agents/agentEnv');
 const { readSetupStatus } = require('./agentBootstrap');
 const { readResumeStatus } = require('./agentResumeHook');
 const { getPreviewPort } = require('./previewPorts');
@@ -83,7 +83,10 @@ async function checkSecrets(user, agentId) {
         return checkFail('Agent not found', { agent_id: agentId });
     }
     const envRequired = JSON.parse(agentRows[0].envRequired || '[]');
-    if (envRequired.length === 0) {
+    const { getForAgent } = require('../admin/AgentGatewayConfig');
+    const cfg = await getForAgent(agentId);
+    const effectiveRequired = computeEffectiveRequired(envRequired, cfg);
+    if (effectiveRequired.length === 0) {
         return checkOk({ agent_id: agentId, required: [] });
     }
     try {
@@ -102,11 +105,11 @@ async function checkSecrets(user, agentId) {
         }
         const missing = resolved.missing?.length
             ? resolved.missing
-            : findMissing(resolved.env || {}, envRequired);
+            : findMissing(resolved.env || {}, effectiveRequired);
         if (missing.length > 0) {
             return checkFail('Missing required secrets', { agent_id: agentId, missing, mode: resolved.mode });
         }
-        return checkOk({ agent_id: agentId, required: envRequired, mode: resolved.mode });
+        return checkOk({ agent_id: agentId, required: effectiveRequired, mode: resolved.mode });
     } catch (err) {
         return checkFail(err.message || 'Failed to resolve agent secrets', { agent_id: agentId });
     }

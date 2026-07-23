@@ -37,6 +37,25 @@ const GATEWAY_MODEL_ENV_KEYS = [
 const KIMI_CODE_AGENT_IDS = new Set(['kimi-code']);
 const KIMI_CODE_DEFAULT_MAX_CONTEXT = String(256 * 1024);
 
+// When an env_overrides key is present (non-empty), these env_required keys
+// are suppressed because the agent will use the override instead.
+// E.g. claude-code: if ANTHROPIC_AUTH_TOKEN is set, ANTHROPIC_API_KEY is
+// unnecessary and would take priority over AUTH_TOKEN if left in env.
+const ENV_OVERRIDE_SUPPRESS = {
+    ANTHROPIC_AUTH_TOKEN: ['ANTHROPIC_API_KEY'],
+};
+
+function computeEffectiveRequired(envRequired, cfg) {
+    const overrideKeys = new Set(Object.keys(cfg?.env_overrides || {}));
+    const suppressed = new Set();
+    for (const [overrideKey, reqKeys] of Object.entries(ENV_OVERRIDE_SUPPRESS)) {
+        if (cfg?.env_overrides?.[overrideKey]?.trim()) {
+            for (const k of reqKeys) suppressed.add(k);
+        }
+    }
+    return envRequired.filter((k) => !overrideKeys.has(k) && !suppressed.has(k));
+}
+
 const GATEWAY_API_KEY_KEYS = [
     'ANTHROPIC_API_KEY',
     'ANTHROPIC_AUTH_TOKEN',
@@ -248,7 +267,17 @@ function mergeSpawnEnvLayers({ platformSpawnEnv, themeSpawnEnv, secretEnv, cfg }
         ...themeSpawnEnv,
         ...secretEnv,
     };
-    return applyAgentEnvOverrides(env, cfg);
+    env = applyAgentEnvOverrides(env, cfg);
+    // Suppress mutually exclusive keys: if admin set ANTHROPIC_AUTH_TOKEN,
+    // remove ANTHROPIC_API_KEY so the agent uses AUTH_TOKEN instead.
+    if (cfg?.env_overrides) {
+        for (const [overrideKey, suppressKeys] of Object.entries(ENV_OVERRIDE_SUPPRESS)) {
+            if (cfg.env_overrides[overrideKey]?.trim()) {
+                for (const k of suppressKeys) delete env[k];
+            }
+        }
+    }
+    return env;
 }
 
 async function buildGatewaySpawnEnv(agentId, envRequired, { draftModel, draftProvider, draftEnvOverrides, sessionToken, forPreview = false } = {}) {
@@ -262,15 +291,16 @@ async function buildGatewaySpawnEnv(agentId, envRequired, { draftModel, draftPro
     const model = (draftModel ?? cfg?.model ?? '').trim();
     const provider = (draftProvider ?? cfg?.provider ?? '').trim();
 
-    let env = pickEnvRequired(platform, envRequired);
+    const effectiveRequired = computeEffectiveRequired(envRequired, cfg);
+    let env = pickEnvRequired(platform, effectiveRequired);
     if (model) {
         env = { ...env };
         const target = composeGatewayModelTarget(provider, model);
         for (const key of GATEWAY_MODEL_ENV_KEYS) env[key] = target;
         if (agentId === 'hermes') env.HERMES_MODEL = target;
     }
-    env = applySpawnDefaults({ ...platform, ...env }, envRequired);
-    env = applyGatewayAgentEnv(agentId, env, platform, envRequired);
+    env = applySpawnDefaults({ ...platform, ...env }, effectiveRequired);
+    env = applyGatewayAgentEnv(agentId, env, platform, effectiveRequired);
 
     const defaults = {
         OPENROUTER_API_KEY: env.OPENROUTER_API_KEY || platform.OPENROUTER_API_KEY || '',
@@ -281,6 +311,18 @@ async function buildGatewaySpawnEnv(agentId, envRequired, { draftModel, draftPro
         env = applyAgentEnvOverrides(env, { env_overrides: draftEnvOverrides });
     } else {
         env = applyAgentEnvOverrides(env, cfg);
+    }
+
+    // Suppress mutually exclusive keys (same logic as mergeSpawnEnvLayers)
+    const suppressCfg = (draftEnvOverrides && typeof draftEnvOverrides === 'object')
+        ? { env_overrides: draftEnvOverrides }
+        : cfg;
+    if (suppressCfg?.env_overrides) {
+        for (const [overrideKey, suppressKeys] of Object.entries(ENV_OVERRIDE_SUPPRESS)) {
+            if (suppressCfg.env_overrides[overrideKey]?.trim()) {
+                for (const k of suppressKeys) delete env[k];
+            }
+        }
     }
 
     if (KIMI_CODE_AGENT_IDS.has(agentId)) {
@@ -303,8 +345,7 @@ async function resolveSpawnEnv({ userId, agentId, envRequired, sessionToken, pro
         ? cfg.llm_auth_mode
         : 'byok';
 
-    const overrideKeys = new Set(Object.keys(cfg?.env_overrides || {}));
-    const effectiveRequired = envRequired.filter((k) => !overrideKeys.has(k));
+    const effectiveRequired = computeEffectiveRequired(envRequired, cfg);
 
     const finish = (secretEnv, missing = []) => {
         const env = mergeSpawnEnvLayers({
@@ -412,8 +453,7 @@ async function isAgentKeysReady(envRequired, userId, agentId) {
         if (!cfg?.model?.trim()) return false;
         return unigateway.getStatus().running;
     }
-    const overrideKeys = new Set(Object.keys(cfg?.env_overrides || {}));
-    const effectiveRequired = envRequired.filter((k) => !overrideKeys.has(k));
+    const effectiveRequired = computeEffectiveRequired(envRequired, cfg);
     if (effectiveRequired.length === 0) return true;
     const user = await getUserSecrets(userId);
     return findMissing(pickEnvRequired(user, effectiveRequired), effectiveRequired).length === 0;
@@ -522,6 +562,7 @@ module.exports = {
     resolveTerminalThemeContext,
     mergeSpawnEnvLayers,
     applyAgentEnvOverrides,
+    computeEffectiveRequired,
     isAgentKeysReady,
     findMissing,
     previewGatewaySpawnEnv,
