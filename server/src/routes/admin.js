@@ -327,6 +327,7 @@ function registerAdminRoutes(fastify) {
                 last_lifecycle: agentLifecycleState.get(row.id),
             };
         }));
+        agents.sort((a, b) => a.name.localeCompare(b.name));
         return agents;
     });
 

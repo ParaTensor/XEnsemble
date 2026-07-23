@@ -181,7 +181,7 @@ function AgentActionsMenu({
       {open && (
         <div
           role="menu"
-          className={`absolute right-0 top-full mt-1 w-52 rounded-lg border border-zinc-200 bg-white py-1 shadow-lg shadow-zinc-200/50 ${consoleMenuDropdownZClass}`}
+          className={`absolute right-0 bottom-full mb-1 w-52 rounded-lg border border-zinc-200 bg-white py-1 shadow-lg shadow-zinc-200/50 ${consoleMenuDropdownZClass}`}
         >
           <button type="button" role="menuitem" onClick={run(onViewDetails)} className={itemClass()}>
             <Info className="w-4 h-4 shrink-0" />
