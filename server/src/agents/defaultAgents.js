@@ -19,7 +19,7 @@ const DEFAULT_AGENTS = [
         name: 'Claude Code',
         cmd: 'claude',
         args: [],
-        env_required: [],
+        env_required: ['ANTHROPIC_API_KEY'],
         resume: {
             level: 'L2',
             stateEnv: 'CLAUDE_CONFIG_DIR',
