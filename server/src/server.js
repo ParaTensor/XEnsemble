@@ -204,8 +204,12 @@ fastify.get('/api/v1/agents', { preValidation: [fastify.authenticate] }, async (
         const authMode = cfg?.llm_auth_mode === 'gateway' || cfg?.llm_auth_mode === 'byok'
             ? cfg.llm_auth_mode
             : 'byok';
+        const fullRequired = JSON.parse(a.envRequired);
+        const overrideKeys = new Set(Object.keys(cfg?.env_overrides || {}));
+        const effectiveRequired = fullRequired.filter((k) => !overrideKeys.has(k));
         return {
             ...formatAgentRow(a),
+            env_required: effectiveRequired,
             llm_auth_mode: authMode,
             gateway_model: cfg?.model || null,
         };
