@@ -129,6 +129,7 @@ function AgentActionsMenu({
   onConfigure,
 }) {
   const [open, setOpen] = useState(false);
+  const [dropUp, setDropUp] = useState(false);
   const rootRef = useRef(null);
   const installLoading = loadingAction === `${agent.id}:install`;
   const updateLoading = loadingAction === `${agent.id}:update`;
@@ -153,6 +154,16 @@ function AgentActionsMenu({
     };
   }, [open]);
 
+  // When opening, check if there's enough space below; if not, drop up.
+  const handleToggle = () => {
+    if (!open && rootRef.current) {
+      const rect = rootRef.current.getBoundingClientRect();
+      const spaceBelow = window.innerHeight - rect.bottom;
+      setDropUp(spaceBelow < 260);
+    }
+    setOpen((v) => !v);
+  };
+
   const run = (fn) => () => {
     setOpen(false);
     fn();
@@ -170,7 +181,7 @@ function AgentActionsMenu({
     <div ref={rootRef} className="relative flex justify-end">
       <button
         type="button"
-        onClick={() => setOpen((v) => !v)}
+        onClick={() => handleToggle()}
         aria-expanded={open}
         aria-haspopup="menu"
         aria-label={`Actions for ${agent.name}`}
@@ -181,7 +192,7 @@ function AgentActionsMenu({
       {open && (
         <div
           role="menu"
-          className={`absolute right-0 bottom-full mb-1 w-52 rounded-lg border border-zinc-200 bg-white py-1 shadow-lg shadow-zinc-200/50 ${consoleMenuDropdownZClass}`}
+          className={`absolute right-0 ${dropUp ? 'bottom-full mb-1' : 'top-full mt-1'} w-52 rounded-lg border border-zinc-200 bg-white py-1 shadow-lg shadow-zinc-200/50 ${consoleMenuDropdownZClass}`}
         >
           <button type="button" role="menuitem" onClick={run(onViewDetails)} className={itemClass()}>
             <Info className="w-4 h-4 shrink-0" />
