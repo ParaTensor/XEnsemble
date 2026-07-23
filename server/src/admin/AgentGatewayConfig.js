@@ -67,8 +67,10 @@ async function setForAgent(agentId, { llm_auth_mode, provider, model, env_overri
         const cleaned = {};
         if (env_overrides && typeof env_overrides === 'object') {
             for (const [key, raw] of Object.entries(env_overrides)) {
+                const k = (key || '').trim();
+                if (!k) continue;
                 const trimmed = raw != null ? String(raw).trim() : '';
-                if (trimmed) cleaned[key] = trimmed;
+                cleaned[k] = trimmed;
             }
         }
         if (Object.keys(cleaned).length > 0) next.env_overrides = cleaned;

@@ -207,6 +207,7 @@ function applyAgentEnvOverrides(env, cfg) {
     for (const [key, raw] of Object.entries(cfg.env_overrides)) {
         const trimmed = raw != null ? String(raw).trim() : '';
         if (trimmed) out[key] = trimmed;
+        else delete out[key];
     }
     return out;
 }
@@ -302,6 +303,9 @@ async function resolveSpawnEnv({ userId, agentId, envRequired, sessionToken, pro
         ? cfg.llm_auth_mode
         : 'byok';
 
+    const overrideKeys = new Set(Object.keys(cfg?.env_overrides || {}));
+    const effectiveRequired = envRequired.filter((k) => !overrideKeys.has(k));
+
     const finish = (secretEnv, missing = []) => {
         const env = mergeSpawnEnvLayers({
             platformSpawnEnv: themeCtx.platformSpawnEnv,
@@ -327,9 +331,9 @@ async function resolveSpawnEnv({ userId, agentId, envRequired, sessionToken, pro
                 error: 'Session LLM token is required for gateway mode.',
             };
         }
-        let env = pickEnvRequired(platform, envRequired);
-        if (envRequired.length > 0 && !platform.LLM_ROUTER_URL?.trim()) {
-            const missing = findMissing(env, envRequired);
+        let env = pickEnvRequired(platform, effectiveRequired);
+        if (effectiveRequired.length > 0 && !platform.LLM_ROUTER_URL?.trim()) {
+            const missing = findMissing(env, effectiveRequired);
             if (missing.length > 0) {
                 return {
                     mode,
@@ -339,7 +343,7 @@ async function resolveSpawnEnv({ userId, agentId, envRequired, sessionToken, pro
                 };
             }
         }
-        const missing = findMissing(env, envRequired);
+        const missing = findMissing(env, effectiveRequired);
         if (missing.length > 0 && !forPreview) {
             return {
                 mode,
@@ -348,7 +352,7 @@ async function resolveSpawnEnv({ userId, agentId, envRequired, sessionToken, pro
                 error: `Missing platform API key: ${missing[0]}. Ask an admin to configure gateway keys under Agents → Keys.`,
             };
         }
-        env = await applyAgentGatewayModel(agentId, applySpawnDefaults({ ...platform, ...env }, envRequired));
+        env = await applyAgentGatewayModel(agentId, applySpawnDefaults({ ...platform, ...env }, effectiveRequired));
         if (KIMI_CODE_AGENT_IDS.has(agentId) && !env.KIMI_MODEL_NAME?.trim()) {
             return {
                 mode,
@@ -357,13 +361,13 @@ async function resolveSpawnEnv({ userId, agentId, envRequired, sessionToken, pro
                 error: 'A model must be selected for Kimi Code in gateway mode. Configure it under Agents → Keys.',
             };
         }
-        env = applyGatewayAgentEnv(agentId, env, platform, envRequired);
+        env = applyGatewayAgentEnv(agentId, env, platform, effectiveRequired);
         return finish(env, missing);
     }
 
     const user = await getUserSecrets(userId);
-    const env = applySpawnDefaults(pickEnvRequired(user, envRequired), envRequired);
-    const missing = findMissing(env, envRequired);
+    const env = applySpawnDefaults(pickEnvRequired(user, effectiveRequired), effectiveRequired);
+    const missing = findMissing(env, effectiveRequired);
     if (missing.length > 0) {
         return {
             mode,
@@ -408,9 +412,11 @@ async function isAgentKeysReady(envRequired, userId, agentId) {
         if (!cfg?.model?.trim()) return false;
         return unigateway.getStatus().running;
     }
-    if (envRequired.length === 0) return true;
+    const overrideKeys = new Set(Object.keys(cfg?.env_overrides || {}));
+    const effectiveRequired = envRequired.filter((k) => !overrideKeys.has(k));
+    if (effectiveRequired.length === 0) return true;
     const user = await getUserSecrets(userId);
-    return findMissing(pickEnvRequired(user, envRequired), envRequired).length === 0;
+    return findMissing(pickEnvRequired(user, effectiveRequired), effectiveRequired).length === 0;
 }
 
 function maskEnvValue(key, value) {

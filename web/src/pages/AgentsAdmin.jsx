@@ -439,8 +439,8 @@ export default function AgentsAdmin() {
     const out = {};
     for (const { key, value } of spawnDraft.envVars) {
       const k = (key || '').trim();
-      const v = (value || '').trim();
-      if (k && v) out[k] = v;
+      if (!k) continue;
+      out[k] = (value || '').trim();
     }
     return out;
   };
@@ -869,7 +869,7 @@ export default function AgentsAdmin() {
                 <div className="space-y-3 border-t border-zinc-100 pt-4">
                   <p className={`${consoleSectionLabelClass}`}>Environment variables</p>
                   <p className="text-xs text-zinc-400">
-                    Injected at session start in both BYOK and Gateway modes. Highest priority, overrides all other env sources.
+                    Injected at session start in both BYOK and Gateway modes. Highest priority, overrides all other env sources. Leave value empty to clear a key (e.g. ANTHROPIC_API_KEY) so lower-priority sources won't inject it.
                   </p>
                   {spawnDraft.envVars.map((pair, idx) => (
                     <div key={idx} className="flex gap-2 items-center">
