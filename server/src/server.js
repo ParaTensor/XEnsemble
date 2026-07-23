@@ -1183,6 +1183,21 @@ fastify.post('/api/v1/session/start', { preValidation: [fastify.authenticate] },
 
         if (sessionStateDir?.stateDirPath) {
             resolved.env = applyStateDirEnv(resolved.env, resumeSpec, sessionStateDir.stateDirPath);
+            // Pre-approve custom API key for claude-code to skip the "Detected
+            // a custom API key" confirmation prompt that blocks --continue.
+            if (agentMeta.id === 'claude-code' && resolved.env.ANTHROPIC_API_KEY) {
+                try {
+                    const { ensureClaudeApiKeyApproved } = require('./workspace/claudeConfigBootstrap');
+                    await ensureClaudeApiKeyApproved({
+                        runtime,
+                        runtimeRef: ready.runtime ? ready.runtime.runtimeRef : undefined,
+                        stateDirPath: sessionStateDir.stateDirPath,
+                        apiKey: resolved.env.ANTHROPIC_API_KEY,
+                    });
+                } catch (err) {
+                    fastify.log.warn({ err, sessionId }, '[sessions] claude api key approval failed');
+                }
+            }
             if (resumeSpec?.redirectHome && sessionStateDir.stateDirRef) {
                 const runtimeRef = ready.runtime ? ready.runtime.runtimeRef : undefined;
                 await prepareHomeRedirect(runtime.fs, {
