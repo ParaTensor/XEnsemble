@@ -1,22 +1,41 @@
-import { apiFetch } from '../lib/api.ts';
-import * as githubApi from '../lib/githubApi';
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import { useNavigate, useLocation } from 'react-router-dom';
 import AgentConsole from '../components/AgentConsole';
 import WorkspaceFileTree from '../components/WorkspaceFileTree';
+import WorkspaceShell from '../components/WorkspaceShell';
 import WorkspacePanel from '../components/WorkspacePanel';
-import GitStatusBar from '../components/github/GitStatusBar';
-import PRListPanel from '../components/github/PRListPanel';
-import MergeRequestListPanel from '../components/git/MergeRequestListPanel';
 import RepoImportDialog from '../components/git/RepoImportDialog';
+import GitStatusBar from '../components/git/GitStatusBar';
+import { apiFetch } from '../lib/api';
+import * as githubApi from '../lib/githubApi';
+import {
+  ConsoleDialogShell,
+  ConsoleInlineDialog,
+} from '../components/ConsoleDialog';
 import SelectMenu from '../components/SelectMenu';
-import { ConsoleDialogShell, ConsoleInlineDialog } from '../components/ConsoleDialog';
-import SecretFields from '../components/settings/SecretFields';
 import { useToast } from '../components/Toast';
 import { useTerminalTheme } from '../hooks/useTerminalTheme.jsx';
 import { useEditorTabs } from '../hooks/useEditorTabs';
 import { useGitChanges } from '../hooks/useGitChanges';
-import { TerminalSquare, Play, Settings2, FolderOpen, FileText, X, RefreshCw, Plus, Trash2, Github, Eye, EyeOff } from 'lucide-react';
-import { getSecretLabel, isSecretPasswordField } from '../lib/secretLabels';
+import {
+  TerminalSquare,
+  Play,
+  Settings2,
+  X,
+  RefreshCw,
+  Plus,
+  Bot,
+  PanelRightOpen,
+  PanelRightClose,
+  FileText,
+  Eye,
+  EyeOff,
+  Square,
+  Unplug,
+  Loader2,
+  Trash2,
+} from 'lucide-react';
+import { getSecretLabel, getSecretPlaceholder, isSecretPasswordField } from '../lib/secretLabels';
 import { formatQuotaExceeded } from '../lib/quotaLabels';
 import {
   archiveSession,
@@ -26,27 +45,24 @@ import {
   replaceRecentSessionId,
   sortAgentsByRecentUsage,
   rememberRecentAgent,
-  getRecentAgentIds,
 } from '../lib/sidebarPrefs';
 import {
   consoleDialogPanelClass,
   consoleStructuredDialogHeaderClass,
   consoleStructuredDialogFooterClass,
+  consoleStructuredDialogBodyClass,
+  consoleIconButtonClass,
   consoleInputClass,
   bgCanvas,
   textPrimary,
   textSecondary,
+  textTertiary,
   textPlaceholder,
   borderHairline,
-  accentBlue,
-  panelPadding,
   transitionBase,
   hoverBgSecondary,
-  hoverBgCanvas,
+  hoverBgTertiary,
   hoverTextPrimary,
-  textTertiary,
-  accentRed,
-  accentRedBg,
 } from '../lib/consoleTheme.js';
 
 const DEFAULT_AGENT_ID = 'kimi-code';
@@ -60,9 +76,6 @@ function pickDefaultAgentId(agents, preferredId) {
 const SLUG_WORDS = [
   'small', 'heavy', 'many', 'quiet', 'swift', 'bright', 'calm', 'bold', 'brave', 'clear',
   'dark', 'fast', 'fresh', 'grand', 'keen', 'light', 'neat', 'proud', 'sharp', 'warm',
-  'flies', 'colts', 'items', 'signs', 'hounds', 'clouds', 'doors', 'fields', 'flames', 'gates',
-  'hints', 'ideas', 'kites', 'lanes', 'maps', 'nodes', 'paths', 'roads', 'stars', 'trees',
-  'film', 'play', 'argue', 'invent', 'travel', 'cheer', 'results', 'forest', 'river', 'stone',
 ];
 
 function defaultWorkspaceName() {
@@ -70,9 +83,8 @@ function defaultWorkspaceName() {
   return `${pick()}-${pick()}`;
 }
 
-export default React.forwardRef(function SessionsPage({
-  token,
-  user,
+export default React.forwardRef(function Sessions({
+  /* token, user kept for API compat */
   agents,
   projects,
   setProjects,
@@ -83,6 +95,12 @@ export default React.forwardRef(function SessionsPage({
   fetchWorkspaces,
   className,
 }, ref) {
+  const navigate = useNavigate();
+  const location = useLocation();
+  const goToSessions = useCallback(() => {
+    if (location.pathname !== '/sessions') navigate('/sessions');
+  }, [location.pathname, navigate]);
+
   const [selectedAgentId, setSelectedAgentId] = useState('');
   const [newProjectName, setNewProjectName] = useState('');
   const [launchModalMode, setLaunchModalMode] = useState('workspace');
@@ -92,18 +110,29 @@ export default React.forwardRef(function SessionsPage({
   const [startSessionAfterCreate, setStartSessionAfterCreate] = useState(true);
   const [isLoading, setIsLoading] = useState(false);
   const [launchingSession, setLaunchingSession] = useState(false);
-  const [error, setError] = useState(null);
-
-  // Workspace File Explorer states
-  const [workspaceFiles, setWorkspaceFiles] = useState([]);
+  // eslint-disable-next-line no-unused-vars
+  const [_error, setError] = useState(null);
+  const [panelOpen, setPanelOpen] = useState(false);
+  const [panelTab, setPanelTab] = useState('files');
+  const [shellMounted, setShellMounted] = useState(false);
+  const [panelWidth, setPanelWidth] = useState(() => {
+    const saved = typeof window !== 'undefined' ? window.localStorage.getItem('xensemble.panel.width') : null;
+    const w = saved ? parseInt(saved, 10) : NaN;
+    const maxW = typeof window !== 'undefined' ? Math.max(480, window.innerWidth - 320) : 640;
+    return Number.isFinite(w) && w >= 200 && w <= maxW ? w : 320;
+  });
+  const resizingRef = useRef(null);
+  const [isLoadingFiles, setIsLoadingFiles] = useState(false);
+  const [showHiddenFiles, setShowHiddenFiles] = useState(false);
   const [viewingFile, setViewingFile] = useState(null);
   const [fileContent, setFileContent] = useState('');
+
   // Compute session liveness early so we can gate VM-triggering API calls
   // (git status polling, file tree listing) on the session being actually
   // running.  When the session is idle/pending, starting these polls would
   // trigger ensureProjectRuntime on the server, which creates a box-base VM
   // that is then torn down and recreated with an agent image when the
-  // session resumes - causing 30-60s of unnecessary double VM provisioning.
+  // session resumes — causing 30-60s of unnecessary double VM provisioning.
   const activeSessionMeta = useMemo(
     () => sessions.find((s) => s.id === activeSession?.sessionId) || null,
     [sessions, activeSession?.sessionId],
@@ -115,108 +144,100 @@ export default React.forwardRef(function SessionsPage({
   // a premature box-base VM creation on the server.
   const gitChanges = useGitChanges(sessionAlive ? activeSession?.projectId : null);
   const [gitDiffView, setGitDiffView] = useState(null);
-  const [isLoadingFiles, setIsLoadingFiles] = useState(false);
-  const [showHiddenFiles, setShowHiddenFiles] = useState(false);
-  const [workspaceOpen, setWorkspaceOpen] = useState(false);
 
-  // Modals state
   const [showConfigModal, setShowConfigModal] = useState(false);
-  const [showNewInstanceModal, setShowNewInstanceModal] = useState(false);
-  const [showErrorModal, setShowErrorModal] = useState(false);
-  const [configKeys, setConfigKeys] = useState({});
+  const [configEnvVars, setConfigEnvVars] = useState([{ key: '', value: '' }]);
   const [savedConfigKeys, setSavedConfigKeys] = useState({});
   const [configSaving, setConfigSaving] = useState(false);
   const [configLoading, setConfigLoading] = useState(false);
   const [configError, setConfigError] = useState(null);
   const { showToast } = useToast();
   const { themeId, preset } = useTerminalTheme();
-  const [deletingSessionId, setDeletingSessionId] = useState(null);
+  // eslint-disable-next-line no-unused-vars
+  const [_deletingSessionId, setDeletingSessionId] = useState(null);
   const [restartingSession, setRestartingSession] = useState(false);
+  const [reconnectVersion, setReconnectVersion] = useState(0);
   const [stoppingSession, setStoppingSession] = useState(false);
   const [deleteConfirmSession, setDeleteConfirmSession] = useState(null);
-  const [deletingWorkspaceId, setDeletingWorkspaceId] = useState(null);
   const [deleteConfirmWorkspace, setDeleteConfirmWorkspace] = useState(null);
-  const [showImportDialog, setShowImportDialog] = useState(false);
+  const [deletingWorkspaceId, setDeletingWorkspaceId] = useState(null);
 
-  React.useImperativeHandle(ref, () => ({
-    openLaunchModal,
-    requestDeleteSession,
-    requestDeleteWorkspace,
-    openImportDialog: () => setShowImportDialog(true),
-  }));
+  const [showNewInstanceModal, setShowNewInstanceModal] = useState(false);
+  const [showImportDialog, setShowImportDialog] = useState(false);
+  const [createNewWorkspaceInline, setCreateNewWorkspaceInline] = useState(false);
+  const [customImageId, setCustomImageId] = useState('');
+  const [customImages, setCustomImages] = useState([]);
+
+  useEffect(() => {
+    const maxW = typeof window !== 'undefined' ? Math.max(480, window.innerWidth - 320) : 640;
+    if (panelWidth >= 200 && panelWidth <= maxW) {
+      window.localStorage.setItem('xensemble.panel.width', String(panelWidth));
+    }
+  }, [panelWidth]);
+
+  const startPanelResize = useCallback((e) => {
+    e.preventDefault();
+    const startX = e.clientX;
+    const startW = panelWidth;
+    const maxW = Math.max(480, window.innerWidth - 320);
+    const onMove = (ev) => {
+      const delta = startX - ev.clientX;
+      const next = Math.min(maxW, Math.max(200, startW + delta));
+      setPanelWidth(next);
+    };
+    const onUp = () => {
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    };
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+  }, [panelWidth]);
 
   const getAgentLabel = useCallback(
     (agentId) => agents.find((a) => a.id === agentId)?.name || agentId,
     [agents],
   );
 
-  const applyActiveSession = useCallback((session) => {
-    if (!session) return;
-    const projectName = session.projectName || projects.find((p) => p.id === session.projectId)?.name;
-    setActiveSession({
-      sessionId: session.id,
-      agentId: session.agentId,
-      agentName: getAgentLabel(session.agentId),
-      projectId: session.projectId,
-      projectName,
-    });
-  }, [getAgentLabel, projects, setActiveSession]);
-
   useEffect(() => {
     if (activeSession) setLaunchingSession(false);
   }, [activeSession]);
 
   useEffect(() => {
-    if (!activeSession?.agentId || agents.length === 0) return;
-    const name = agents.find((a) => a.id === activeSession.agentId)?.name;
-    if (name && name !== activeSession.agentName) {
-      setActiveSession((prev) => (prev ? { ...prev, agentName: name } : prev));
+    if (!activeSession?.projectId) {
+      setPanelOpen(false);
+      setPanelTab('files');
+      setShellMounted(false);
     }
-  }, [agents, activeSession?.agentId, activeSession?.agentName, setActiveSession]);
+    setViewingFile(null);
+    setFileContent('');
+  }, [activeSession?.projectId]);
 
   useEffect(() => {
     if (agents.length === 0) return;
     setSelectedAgentId((prev) => pickDefaultAgentId(agents, prev));
   }, [agents]);
 
-  const fetchWorkspaceFiles = useCallback(() => {
-    if (!activeSession?.projectId) return;
-    setIsLoadingFiles(true);
-    const qs = new URLSearchParams({ project_id: activeSession.projectId });
-    if (showHiddenFiles) qs.set('include_hidden', '1');
-    apiFetch(`/api/v1/workspace/files?${qs}`)
-      .then(res => res.json())
-      .then(data => {
-        if (Array.isArray(data)) setWorkspaceFiles(data);
-      })
-      .finally(() => setIsLoadingFiles(false));
-  }, [activeSession?.projectId, showHiddenFiles]);
+  const fetchCustomImages = useCallback(() => {
+    return apiFetch('/api/v1/custom-images').then((res) => res.json()).then((data) => {
+      const list = data.images || (Array.isArray(data) ? data : []);
+      setCustomImages(list.filter((img) => img.status === 'ready'));
+    }).catch(() => {
+      setCustomImages([]);
+    });
+  }, []);
 
-  // Poll workspace files occasionally when session is active and running
   useEffect(() => {
-    if (activeSession && sessionAlive) {
-      fetchWorkspaceFiles();
-      const interval = setInterval(fetchWorkspaceFiles, 10000);
-      return () => clearInterval(interval);
-    } else if (!activeSession) {
-      setWorkspaceFiles([]);
-      setViewingFile(null);
-      setWorkspaceOpen(false);
-    }
-  }, [activeSession, fetchWorkspaceFiles, sessionAlive]);
+    fetchCustomImages();
+  }, [fetchCustomImages]);
 
   const selectedAgent = agents.find(a => a.id === selectedAgentId);
-  const activeProject = useMemo(
-    () => projects.find((p) => p.id === activeSession?.projectId) || null,
-    [projects, activeSession?.projectId],
-  );
 
   const openConfigModal = async () => {
     const required = selectedAgent?.env_required || [];
-    const initialKeys = {};
-    required.forEach((k) => { initialKeys[k] = ''; });
-    setConfigKeys(initialKeys);
-    setSavedConfigKeys({});
     setConfigError(null);
     setError(null);
     setShowConfigModal(true);
@@ -225,28 +246,32 @@ export default React.forwardRef(function SessionsPage({
       const res = await apiFetch('/api/v1/secrets');
       const data = await res.json();
       if (res.ok) {
+        const allKeys = Object.keys(data);
+        const envVars = allKeys.length > 0
+          ? allKeys.map((key) => ({ key, value: data[key] === '***' ? '' : (data[key] || '') }))
+          : required.map((key) => ({ key, value: '' }));
+        setConfigEnvVars(envVars);
         const saved = {};
-        const loaded = {};
-        required.forEach((k) => {
-          if (data[k]) saved[k] = true;
-          if (data[k] && !isSecretPasswordField(k)) loaded[k] = data[k];
-          else loaded[k] = '';
-        });
+        allKeys.forEach((k) => { if (data[k]) saved[k] = true; });
         setSavedConfigKeys(saved);
-        setConfigKeys(loaded);
+      } else {
+        setConfigEnvVars(required.map((key) => ({ key, value: '' })));
       }
     } catch {
-      setConfigError('Could not load saved keys. You can still enter them below.');
+      setConfigEnvVars(required.map((key) => ({ key, value: '' })));
+      setConfigError('Could not load saved keys.');
     } finally {
       setConfigLoading(false);
     }
   };
 
   const configRequiredKeys = selectedAgent?.env_required || [];
+  // eslint-disable-next-line no-unused-vars
   const configMissingKeys = useMemo(
-    () => configRequiredKeys.filter((k) => !savedConfigKeys[k] && !configKeys[k]?.trim()),
-    [configRequiredKeys, savedConfigKeys, configKeys],
+    () => configRequiredKeys.filter((k) => !savedConfigKeys[k]),
+    [configRequiredKeys, savedConfigKeys],
   );
+
   const ensureAgentSecrets = async (agent) => {
     const required = agent?.env_required || [];
     if (required.length === 0 || agent?.llm_auth_mode === 'gateway') return true;
@@ -275,6 +300,9 @@ export default React.forwardRef(function SessionsPage({
       });
       const data = await res.json();
       if (!res.ok) {
+        if (res.status === 401 || data.error === 'Unauthorized') {
+          throw new Error('登录已过期，请重新登录。');
+        }
         if (data.error === 'quota_exceeded') {
           throw new Error(formatQuotaExceeded(data.dimension || 'max_projects', data.current, data.limit));
         }
@@ -311,13 +339,18 @@ export default React.forwardRef(function SessionsPage({
           agent_id: selectedAgentId,
           project_id: projectId,
           terminal_theme_id: themeId,
+          custom_image_id: customImageId || undefined,
         })
       });
       const data = await response.json();
       if (!response.ok) {
-        const msg = data.error || data.message || 'Failed to start session';
+        const msg = data.detail || data.error || data.message || 'Failed to start session';
+        if (response.status === 401 || msg === 'Unauthorized') {
+          setLaunchModalError('登录已过期，请重新登录。');
+          return false;
+        }
         if (data.error === 'agent_not_granted') {
-          setLaunchModalError('You do not have permission to use this agent. Contact an administrator.');
+          setLaunchModalError('You do not have permission to use this agent.');
           return false;
         }
         if (data.error === 'quota_exceeded') {
@@ -325,13 +358,10 @@ export default React.forwardRef(function SessionsPage({
           fetchWorkspaces();
           return false;
         }
-        if (/Missing required env|Secrets Vault/i.test(msg)) {
-          setLaunchModalError(msg);
-          openConfigModal();
-          return false;
-        }
         throw new Error(msg);
       }
+
+      const isPending = response.status === 202 || data.status === 'pending';
 
       rememberRecentSession({
         id: data.session_id,
@@ -348,8 +378,7 @@ export default React.forwardRef(function SessionsPage({
         projectId,
         projectName: projectName || projectId,
       });
-      // Optimistically add the new session so useWorkspaces doesn't clear
-      // activeSession while the sessions list is still stale.
+      goToSessions();
       setSessions((prev) => {
         if (prev.some((s) => s.id === data.session_id)) return prev;
         const now = Date.now();
@@ -360,11 +389,9 @@ export default React.forwardRef(function SessionsPage({
             projectId,
             agentId: selectedAgentId,
             status: data.status || 'running',
-            memoryStatus: data.status || 'running',
-            alive: true,
+            alive: !isPending,
             projectName: projectName || projectId,
             createdAt: now,
-            updatedAt: now,
           },
         ];
       });
@@ -380,16 +407,49 @@ export default React.forwardRef(function SessionsPage({
     }
   };
 
-  const openLaunchModal = (mode = 'workspace', workspace = null) => {
+  const resolveDefaultWorkspace = useCallback(() => {
+    if (activeSession?.projectId) {
+      const ws = projects.find((p) => p.id === activeSession.projectId);
+      if (ws) return ws;
+    }
+    const prefs = loadSidebarPrefs();
+    for (const sessionId of prefs.recentSessionIds || []) {
+      const snap = prefs.recentSessionSnapshots?.[sessionId];
+      if (snap?.projectId) {
+        const ws = projects.find((p) => p.id === snap.projectId);
+        if (ws) return ws;
+      }
+    }
+    if (projects.length === 0) return null;
+    return [...projects].sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0))[0];
+  }, [activeSession?.projectId, projects]);
+
+  const openLaunchModal = (mode = 'session', workspace = null) => {
     setLaunchModalError(null);
-    setLaunchModalMode(mode);
-    setStartSessionAfterCreate(true);
-    if (mode === 'session' && workspace) {
-      setLaunchWorkspaceId(workspace.id);
-      setNewProjectName(workspace.name);
-    } else {
+    setCreateNewWorkspaceInline(false);
+    setCustomImageId('');
+    fetchCustomImages();
+    if (mode === 'workspace') {
+      setLaunchModalMode('workspace');
+      setStartSessionAfterCreate(false);
       setLaunchWorkspaceId('');
       setNewProjectName('');
+    } else if (projects.length === 0) {
+      setLaunchModalMode('quickstart');
+      setStartSessionAfterCreate(true);
+      setLaunchWorkspaceId('');
+      setNewProjectName('');
+    } else {
+      setLaunchModalMode('session');
+      setStartSessionAfterCreate(true);
+      const ws = workspace || resolveDefaultWorkspace();
+      if (ws) {
+        setLaunchWorkspaceId(ws.id);
+        setNewProjectName(ws.name);
+      } else {
+        setLaunchWorkspaceId('');
+        setNewProjectName('');
+      }
     }
     const prefs = loadSidebarPrefs();
     const sorted = sortAgentsByRecentUsage(agents, prefs);
@@ -404,7 +464,29 @@ export default React.forwardRef(function SessionsPage({
     setLaunchingSession(true);
     let started = false;
     try {
+      if (launchModalMode === 'quickstart') {
+        const name = newProjectName.trim() || defaultWorkspaceName();
+        const created = await handleCreateProject(name);
+        if (!created) return;
+        setProjects((prev) => {
+          if (prev.some((p) => p.id === created.id)) return prev;
+          return [...prev, { id: created.id, name: created.name, createdAt: Date.now() }];
+        });
+        started = await handleStartSession(created.id, created.name, { closeLaunchModal: true });
+        return;
+      }
       if (launchModalMode === 'session') {
+        if (createNewWorkspaceInline) {
+          const name = newProjectName.trim() || defaultWorkspaceName();
+          const created = await handleCreateProject(name);
+          if (!created) return;
+          setProjects((prev) => {
+            if (prev.some((p) => p.id === created.id)) return prev;
+            return [...prev, { id: created.id, name: created.name, createdAt: Date.now() }];
+          });
+          started = await handleStartSession(created.id, created.name, { closeLaunchModal: true });
+          return;
+        }
         if (!launchWorkspaceId) {
           setLaunchModalError('Select a workspace first.');
           return;
@@ -416,33 +498,31 @@ export default React.forwardRef(function SessionsPage({
       const name = newProjectName.trim() || defaultWorkspaceName();
       const created = await handleCreateProject(name);
       if (!created) return;
+      setProjects((prev) => {
+        if (prev.some((p) => p.id === created.id)) return prev;
+        return [...prev, { id: created.id, name: created.name, createdAt: Date.now() }];
+      });
       if (startSessionAfterCreate) {
         started = await handleStartSession(created.id, created.name, { closeLaunchModal: true });
+        if (!started) fetchWorkspaces();
       } else {
         fetchWorkspaces();
         setShowNewInstanceModal(false);
       }
     } finally {
-      // On success keep the workspace dark until activeSession commits (cleared
-      // by the effect below). Clearing here would leave a 1-frame gap where both
-      // launchingSession and activeSession are false, flashing the white empty state.
       if (!started) setLaunchingSession(false);
     }
   };
 
+  // eslint-disable-next-line no-unused-vars
   const handleSaveConfig = async (e) => {
     e.preventDefault();
     setConfigError(null);
-    const required = selectedAgent?.env_required || [];
     const payload = {};
-    required.forEach((k) => {
-      const value = configKeys[k]?.trim();
-      if (value) payload[k] = value;
-    });
-    const missing = required.filter((k) => !payload[k] && !savedConfigKeys[k]);
-    if (missing.length > 0) {
-      setConfigError(`Missing: ${missing.map(getSecretLabel).join(', ')}`);
-      return;
+    for (const { key, value } of configEnvVars) {
+      const k = (key || '').trim();
+      const v = (value || '').trim();
+      if (k && v) payload[k] = v;
     }
     if (Object.keys(payload).length === 0) {
       setShowConfigModal(false);
@@ -459,19 +539,10 @@ export default React.forwardRef(function SessionsPage({
       if (!res.ok) throw new Error(data.error || 'Failed to save keys');
       setSavedConfigKeys((prev) => {
         const next = { ...prev };
-        required.forEach((k) => {
-          if (payload[k] || prev[k]) next[k] = true;
-        });
+        Object.keys(payload).forEach((k) => { next[k] = true; });
         return next;
       });
-      setConfigKeys((prev) => {
-        const next = { ...prev };
-        required.forEach((k) => {
-          if (isSecretPasswordField(k)) next[k] = '';
-        });
-        return next;
-      });
-      showToast('success', 'API keys saved.');
+      showToast('success', 'Environment variables saved.');
       setShowConfigModal(false);
       setLaunchModalError(null);
     } catch (err) {
@@ -481,23 +552,40 @@ export default React.forwardRef(function SessionsPage({
     }
   };
 
-  const handleOpenFile = async (file) => {
-    if (file.type !== 'file') return;
+  const fetchWorkspaceFiles = useCallback(async ({ notifyError = false } = {}) => {
+    if (!activeSession?.projectId) return;
+    setIsLoadingFiles(true);
+    try {
+      const qs = new URLSearchParams({ project_id: activeSession.projectId });
+      if (showHiddenFiles) qs.set('include_hidden', '1');
+      const res = await apiFetch(`/api/v1/workspace/files?${qs}`);
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || 'Failed to load workspace files');
+      }
+    } catch (err) {
+      if (notifyError) showToast('error', err.message);
+    } finally {
+      setIsLoadingFiles(false);
+    }
+  }, [activeSession?.projectId, showHiddenFiles, showToast]);
+
+  const handleOpenFile = useCallback(async (file) => {
+    if (!activeSession?.projectId || file?.type !== 'file') return;
     try {
       const res = await apiFetch(
         `/api/v1/workspace/file?project_id=${encodeURIComponent(activeSession.projectId)}&path=${encodeURIComponent(file.path)}`
       );
       const data = await res.json();
-      if (res.ok) {
-        setViewingFile(file);
-        setFileContent(data.content);
-      } else {
-        alert('Could not read file: ' + data.error);
+      if (!res.ok) {
+        throw new Error(data.error || 'Failed to read file');
       }
-    } catch (e) {
-      alert('Failed to fetch file content');
+      setViewingFile(file);
+      setFileContent(data.content || '');
+    } catch (err) {
+      showToast('error', err.message);
     }
-  };
+  }, [activeSession?.projectId, showToast]);
 
   const handleGitFileClick = useCallback(async (filePath) => {
     if (!activeSession?.projectId) return;
@@ -526,7 +614,7 @@ export default React.forwardRef(function SessionsPage({
     return editorTabs.saveTab(activeSession.projectId, path);
   }, [activeSession?.projectId, editorTabs.saveTab]);
 
-  const handleOpenFile = useCallback((file) => {
+  const handleEditorOpenFile = useCallback((file) => {
     if (!activeSession?.projectId) return;
     return editorTabs.openFile(activeSession.projectId, file);
   }, [activeSession?.projectId, editorTabs.openFile]);
@@ -557,19 +645,25 @@ export default React.forwardRef(function SessionsPage({
     fetchWorkspaces();
   };
 
+  const handleSessionIdle = (sessionId) => {
+    setSessions((prev) =>
+      prev.map((s) =>
+        s.id === sessionId ? { ...s, alive: false, memoryStatus: 'idle', status: 'idle' } : s
+      )
+    );
+    fetchWorkspaces();
+  };
+
   const handleRestartSession = async () => {
     if (!activeSession) return;
-
-    const agentId =
-      activeSession.agentId ||
-      sessions.find((s) => s.id === activeSession.sessionId)?.agentId;
+    const agentId = activeSession.agentId || sessions.find((s) => s.id === activeSession.sessionId)?.agentId;
     if (!agentId || !activeSession.projectId) {
       showToast('error', 'Cannot start: missing agent or workspace.');
       return;
     }
-
     const agent = agents.find((a) => a.id === agentId);
     const oldSessionId = activeSession.sessionId;
+    const sessionMeta = sessions.find((s) => s.id === oldSessionId);
 
     setRestartingSession(true);
     try {
@@ -579,13 +673,31 @@ export default React.forwardRef(function SessionsPage({
         return;
       }
 
-      const deleteRes = await apiFetch(`/api/v1/sessions/${encodeURIComponent(oldSessionId)}`, {
-        method: 'DELETE',
-      });
-      if (!deleteRes.ok) {
-        const deleteData = await deleteRes.json().catch(() => ({}));
-        throw new Error(deleteData.error || 'Failed to release previous session');
+      if (sessionMeta?.recoverable) {
+        if (sessionAlive) {
+          const stopRes = await apiFetch(`/api/v1/sessions/${encodeURIComponent(oldSessionId)}/stop`, { method: 'POST' });
+          const stopData = await stopRes.json();
+          if (!stopRes.ok) throw new Error(stopData.error || 'Failed to pause session');
+          handleSessionIdle(oldSessionId);
+        }
+        const response = await apiFetch(`/api/v1/sessions/${encodeURIComponent(oldSessionId)}/resume`, {
+          method: 'POST',
+          body: JSON.stringify({ terminal_theme_id: themeId }),
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || data.detail || 'Failed to resume session');
+        setSessions((prev) => prev.map((s) => (
+          s.id === oldSessionId ? { ...s, alive: true, status: 'running', memoryStatus: 'running' } : s
+        )));
+        setReconnectVersion((v) => v + 1);
+        fetchWorkspaces();
+        showToast('success', sessionAlive ? 'Session restarted.' : 'Session resumed.');
+        return;
       }
+
+      const deleteRes = await apiFetch(`/api/v1/sessions/${encodeURIComponent(oldSessionId)}`, { method: 'DELETE' });
+      if (!deleteRes.ok) throw new Error('Failed to release previous session');
+      archiveSession(oldSessionId);
 
       const response = await apiFetch('/api/v1/session/start', {
         method: 'POST',
@@ -593,33 +705,14 @@ export default React.forwardRef(function SessionsPage({
           agent_id: agentId,
           project_id: activeSession.projectId,
           terminal_theme_id: themeId,
+          custom_image_id: sessionMeta?.customImageId || undefined,
         }),
       });
       const data = await response.json();
-      if (!response.ok) {
-        const msg = data.error || data.message || 'Failed to start session';
-        if (data.error === 'agent_not_granted') {
-          showToast('error', 'You do not have permission to use this agent.');
-          return;
-        }
-        if (data.error === 'quota_exceeded') {
-          showToast('error', formatQuotaExceeded(data.dimension, data.current, data.limit));
-          fetchWorkspaces();
-          return;
-        }
-        if (/Missing required env|Secrets Vault/i.test(msg)) {
-          showToast('error', msg);
-          openConfigModal();
-          return;
-        }
-        throw new Error(msg);
-      }
+      if (!response.ok) throw new Error(data.error || 'Failed to start session');
 
       replaceRecentSessionId(oldSessionId, data.session_id, {
-        agentId,
-        projectId: activeSession.projectId,
-        projectName: activeSession.projectName,
-        createdAt: Date.now(),
+        agentId, projectId: activeSession.projectId, projectName: activeSession.projectName, createdAt: Date.now(),
       });
       rememberRecentAgent(agentId);
       setActiveSession({
@@ -629,25 +722,12 @@ export default React.forwardRef(function SessionsPage({
         projectId: activeSession.projectId,
         projectName: activeSession.projectName,
       });
-      // Optimistically add the restarted session so useWorkspaces doesn't clear
-      // activeSession while the sessions list is still stale.
+      goToSessions();
       setSessions((prev) => {
-        if (prev.some((s) => s.id === data.session_id)) return prev;
+        const withoutOld = prev.filter((s) => s.id !== oldSessionId);
+        if (withoutOld.some((s) => s.id === data.session_id)) return withoutOld;
         const now = Date.now();
-        return [
-          ...prev,
-          {
-            id: data.session_id,
-            projectId: activeSession.projectId,
-            agentId,
-            status: data.status || 'running',
-            memoryStatus: data.status || 'running',
-            alive: true,
-            projectName: activeSession.projectName,
-            createdAt: now,
-            updatedAt: now,
-          },
-        ];
+        return [...withoutOld, { id: data.session_id, projectId: activeSession.projectId, agentId, status: 'running', alive: true, projectName: activeSession.projectName, createdAt: now }];
       });
       fetchWorkspaces();
       showToast('success', 'Session started.');
@@ -660,25 +740,15 @@ export default React.forwardRef(function SessionsPage({
 
   const handleStopSession = async () => {
     if (!activeSession?.sessionId) return;
-
     setStoppingSession(true);
     try {
-      const res = await apiFetch(`/api/v1/sessions/${encodeURIComponent(activeSession.sessionId)}`, {
-        method: 'DELETE',
-      });
+      const res = await apiFetch(`/api/v1/sessions/${encodeURIComponent(activeSession.sessionId)}/stop`, { method: 'POST' });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Failed to stop session');
-      rememberRecentSession({
-        id: activeSession.sessionId,
-        agentId: activeSession.agentId,
-        projectId: activeSession.projectId,
-        projectName: activeSession.projectName,
-        createdAt: sessions.find((s) => s.id === activeSession.sessionId)?.createdAt,
-      });
-
-      handleSessionEnd(activeSession.sessionId);
+      if (!res.ok) throw new Error(data.error || 'Failed to pause session');
+      rememberRecentSession({ id: activeSession.sessionId, agentId: activeSession.agentId, projectId: activeSession.projectId, projectName: activeSession.projectName, createdAt: Date.now() });
+      handleSessionIdle(activeSession.sessionId);
       fetchWorkspaces();
-      showToast('success', 'Session stopped.');
+      showToast('success', 'Session paused.');
     } catch (err) {
       showToast('error', err.message);
     } finally {
@@ -689,21 +759,15 @@ export default React.forwardRef(function SessionsPage({
   const handleDeleteSession = async (sessionId) => {
     setDeletingSessionId(sessionId);
     try {
-      const res = await apiFetch(`/api/v1/sessions/${encodeURIComponent(sessionId)}`, {
-        method: 'DELETE',
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Failed to delete session');
-      // Server keeps exited rows; archive locally so workspace tree hides them after refetch.
+      const res = await apiFetch(`/api/v1/sessions/${encodeURIComponent(sessionId)}`, { method: 'DELETE' });
+      if (!res.ok) throw new Error('Failed to delete session');
       archiveSession(sessionId);
       setSessions((prev) => prev.filter((s) => s.id !== sessionId));
-
       if (activeSession?.sessionId === sessionId) setActiveSession(null);
       setDeleteConfirmSession(null);
       fetchWorkspaces();
     } catch (err) {
       setError(err.message);
-      setShowErrorModal(true);
     } finally {
       setDeletingSessionId(null);
     }
@@ -714,7 +778,7 @@ export default React.forwardRef(function SessionsPage({
       sessionId: session.id,
       isLive: session.alive === true,
       agentLabel: getAgentLabel(session.agentId),
-      workspaceName: ws.name,
+      workspaceName: ws?.name || 'Unassigned',
     });
   };
 
@@ -724,42 +788,29 @@ export default React.forwardRef(function SessionsPage({
       if (workspaceId === '_orphan') {
         const orphanSessions = sessions.filter((s) => !s.projectId);
         for (const s of orphanSessions) {
-          const res = await apiFetch(`/api/v1/sessions/${encodeURIComponent(s.id)}`, {
-            method: 'DELETE',
-          });
-          const data = await res.json();
-          if (!res.ok) throw new Error(data.error || 'Failed to delete session');
+          await apiFetch(`/api/v1/sessions/${encodeURIComponent(s.id)}`, { method: 'DELETE' });
         }
         if (activeSession && !activeSession.projectId) setActiveSession(null);
       } else {
-        const res = await apiFetch(`/api/v1/projects/${encodeURIComponent(workspaceId)}`, {
-          method: 'DELETE',
-        });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error || 'Failed to delete workspace');
+        await apiFetch(`/api/v1/projects/${encodeURIComponent(workspaceId)}`, { method: 'DELETE' });
         if (activeSession?.projectId === workspaceId) setActiveSession(null);
       }
       purgeWorkspaceSidebarPrefs(workspaceId, sessions);
-      setSessions((prev) => prev.filter((s) => (
-        workspaceId === '_orphan' ? Boolean(s.projectId) : s.projectId !== workspaceId
-      )));
+      setSessions((prev) => prev.filter((s) => (workspaceId === '_orphan' ? Boolean(s.projectId) : s.projectId !== workspaceId)));
       if (workspaceId !== '_orphan') {
         setProjects((prev) => prev.filter((p) => p.id !== workspaceId));
       }
-
       setDeleteConfirmWorkspace(null);
       fetchWorkspaces();
       showToast('success', workspaceId === '_orphan' ? 'Unassigned sessions cleared.' : 'Workspace deleted.');
     } catch (err) {
-      setError(err.message);
-      setShowErrorModal(true);
       showToast('error', err.message);
     } finally {
       setDeletingWorkspaceId(null);
     }
   };
 
-  const requestDeleteWorkspace = (ws, anchorRect) => {
+  const requestDeleteWorkspace = (ws) => {
     const liveCount = ws.sessions.filter((s) => s.alive === true).length;
     setDeleteConfirmWorkspace({
       workspaceId: ws.id,
@@ -767,506 +818,659 @@ export default React.forwardRef(function SessionsPage({
       sessionCount: ws.sessions.length,
       liveCount,
       isOrphan: ws.id === '_orphan',
-      anchorRect,
     });
   };
+
+  React.useImperativeHandle(ref, () => ({
+    openLaunchModal,
+    openImportDialog: () => setShowImportDialog(true),
+    requestDeleteSession,
+    requestDeleteWorkspace,
+  }), [openLaunchModal, requestDeleteSession, requestDeleteWorkspace]);
 
   const agentSelectOptions = useMemo(
     () => sortAgentsByRecentUsage(agents, loadSidebarPrefs()).map((agent) => ({ value: agent.id, label: agent.name })),
     [agents],
   );
-  const recentAgentIds = useMemo(
-    () => getRecentAgentIds(agents, loadSidebarPrefs()),
-    [agents],
+
+  const activeProject = useMemo(
+    () => projects.find((p) => p.id === activeSession?.projectId) || null,
+    [projects, activeSession?.projectId],
   );
+
+  // activeSessionMeta and sessionAlive are computed earlier (before useGitChanges)
+  // so we can gate VM-triggering API calls on session liveness.
+  const sessionPending = activeSessionMeta?.status === 'pending';
+  const sessionFailed = activeSessionMeta?.status === 'failed';
+  const sessionWakeable = !sessionAlive && !sessionPending && !sessionFailed
+    && activeSessionMeta?.recoverable === true
+    && activeSessionMeta?.status === 'idle';
+  const sessionControlPending = restartingSession || stoppingSession;
+
+  const handleSessionConnected = useCallback((sessionId) => {
+    setSessions((prev) => prev.map((s) => (
+      s.id === sessionId ? { ...s, alive: true, status: 'running', memoryStatus: 'running' } : s
+    )));
+    fetchWorkspaces();
+  }, [fetchWorkspaces, setSessions]);
 
   return (
     <div className={className || 'h-full w-full'}>
-      {/* Dialog Modals */}
-      {viewingFile && (
-        <ConsoleDialogShell
-          onClose={() => setViewingFile(null)}
-          panelClassName={`${consoleDialogPanelClass} w-[min(900px,calc(100vw-2rem))] h-[min(80vh,calc(100vh-2rem))]`}
+      {/* Launch modal */}
+      {showNewInstanceModal && (
+        <ConsoleInlineDialog
+          onClose={() => { setShowNewInstanceModal(false); setLaunchModalError(null); setCreateNewWorkspaceInline(false); }}
+          panelClassName={`${consoleDialogPanelClass} w-full max-w-sm shadow-sm`}
         >
-          <div className={`flex items-center justify-between ${borderHairline} border-b bg-[#FAFBFC] px-4 py-3 shrink-0`}>
-            <div className="flex min-w-0 items-center gap-2">
-              <FileText className={`w-4 h-4 shrink-0 ${textPlaceholder}`} />
-              <span className={`truncate text-sm font-semibold ${textPrimary}`}>{viewingFile.name}</span>
-              <span className={`truncate text-xs font-mono ${textPlaceholder}`}>{viewingFile.path}</span>
-            </div>
+          <div className={`${consoleStructuredDialogHeaderClass} flex items-center gap-2.5`}>
+            {launchModalMode === 'workspace' ? (
+              <Plus className={`w-4 h-4 shrink-0 ${textPlaceholder}`} />
+            ) : (
+              <Bot className={`w-4 h-4 shrink-0 ${textPlaceholder}`} />
+            )}
+            <h3 className={`font-semibold text-sm ${textPrimary}`}>
+              {launchModalMode === 'workspace'
+                ? 'New Workspace'
+                : launchModalMode === 'quickstart'
+                  ? 'New Agent'
+                  : 'New Agent'}
+            </h3>
+          </div>
+          <div className="p-4 space-y-3">
+            {launchModalError && (
+              <p className="text-sm text-[#C06C5D] bg-[#FDECEA] border border-[#FADBD8] rounded-md px-3 py-2">{launchModalError}</p>
+            )}
+            {launchModalMode === 'workspace' && (
+              <div>
+                <label className={`block text-xs font-semibold uppercase tracking-wider ${textPlaceholder} mb-1`}>Workspace name</label>
+                <input type="text" value={newProjectName} onChange={e => setNewProjectName(e.target.value)} placeholder="my-workspace" className={consoleInputClass} autoFocus />
+              </div>
+            )}
+            {(launchModalMode === 'quickstart' || launchModalMode === 'session') && (
+              <div>
+                <div className="flex items-center justify-between gap-2 mb-1">
+                  <label className={`text-xs font-semibold uppercase tracking-wider ${textPlaceholder}`}>Workspace</label>
+                  {launchModalMode === 'session' && !createNewWorkspaceInline && projects.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setCreateNewWorkspaceInline(true);
+                        setNewProjectName('');
+                        setLaunchWorkspaceId('');
+                      }}
+                      className={`text-xs font-medium ${textPlaceholder} hover:text-[#202124] ${transitionBase}`}
+                    >
+                      New workspace
+                    </button>
+                  )}
+                </div>
+                {launchModalMode === 'quickstart' || createNewWorkspaceInline ? (
+                  <input
+                    type="text"
+                    value={newProjectName}
+                    onChange={e => setNewProjectName(e.target.value)}
+                    placeholder={launchModalMode === 'quickstart' ? 'Optional — auto-generated if empty' : 'my-workspace'}
+                    className={consoleInputClass}
+                    autoFocus
+                  />
+                ) : (
+                  <SelectMenu
+                    value={launchWorkspaceId}
+                    onChange={setLaunchWorkspaceId}
+                    options={projects.map((p) => ({ value: p.id, label: p.name }))}
+                    placeholder="Select workspace"
+                  />
+                )}
+              </div>
+            )}
+            {launchModalMode !== 'workspace' && customImages.length > 0 && (
+              <div>
+                <label className={`text-xs font-semibold uppercase tracking-wider ${textPlaceholder} mb-1 block`}>Image type</label>
+                <SelectMenu
+                  value={customImageId ? 'custom' : ''}
+                  onChange={(v) => {
+                    if (v === 'custom') {
+                      setCustomImageId(customImages[0]?.id || '');
+                      const img = customImages[0];
+                      if (img) {
+                        const agentComp = (img.components || []).find((c) => (c.component_id || '').startsWith('agent:'));
+                        const agentId = agentComp ? agentComp.component_id.replace('agent:', '') : '';
+                        if (agentId && agents.find((a) => a.id === agentId)) {
+                          setSelectedAgentId(agentId);
+                        }
+                      }
+                    } else {
+                      setCustomImageId('');
+                      setSelectedAgentId('');
+                    }
+                  }}
+                  options={[
+                    { value: '', label: 'Built-in' },
+                    { value: 'custom', label: 'Custom (your images)' },
+                  ]}
+                  placeholder="Built-in"
+                />
+              </div>
+            )}
+            {launchModalMode !== 'workspace' && customImageId && (
+              <div>
+                <label className={`text-xs font-semibold uppercase tracking-wider ${textPlaceholder} mb-1 block`}>Custom image</label>
+                <SelectMenu
+                  value={customImageId}
+                  onChange={(v) => {
+                    setCustomImageId(v);
+                    const img = customImages.find((c) => c.id === v);
+                    if (img) {
+                      const agentComp = (img.components || []).find((c) => (c.component_id || '').startsWith('agent:'));
+                      const agentId = agentComp ? agentComp.component_id.replace('agent:', '') : '';
+                      if (agentId && agents.find((a) => a.id === agentId)) {
+                        setSelectedAgentId(agentId);
+                      }
+                    }
+                  }}
+                  options={customImages.map((img) => ({ value: img.id, label: img.name }))}
+                  placeholder="Select image"
+                />
+              </div>
+            )}
+            {launchModalMode !== 'workspace' && (
+              <div>
+                <div className="flex items-center justify-between gap-2 mb-1">
+                  <label className={`text-xs font-semibold uppercase tracking-wider ${textPlaceholder}`}>Agent</label>
+                  {selectedAgent?.llm_auth_mode === 'byok' && selectedAgent?.env_required?.length > 0 && (
+                    <button type="button" onClick={() => openConfigModal()} className={`text-xs font-medium ${textPlaceholder} hover:text-[#202124]`}>
+                      <Settings2 className="w-3.5 h-3.5 inline" /> Configure Keys
+                    </button>
+                  )}
+                </div>
+                <SelectMenu
+                  value={selectedAgentId}
+                  onChange={setSelectedAgentId}
+                  options={
+                    customImageId
+                      ? agentSelectOptions.filter((opt) => {
+                          const img = customImages.find((c) => c.id === customImageId);
+                          if (!img) return true;
+                          const agentComp = (img.components || []).find((c) => (c.component_id || '').startsWith('agent:'));
+                          return !agentComp || opt.value === agentComp.component_id.replace('agent:', '');
+                        })
+                      : agentSelectOptions
+                  }
+                  placeholder="Select agent"
+                />
+              </div>
+            )}
+          </div>
+          <div className={consoleStructuredDialogFooterClass}>
+            <button type="button" onClick={() => { setShowNewInstanceModal(false); setCreateNewWorkspaceInline(false); }} className={`h-9 px-3 ${bgCanvas} border ${borderHairline} ${textPrimary} rounded-md text-sm font-medium ${hoverBgSecondary} ${transitionBase}`}>Cancel</button>
             <button
               type="button"
-              onClick={() => setViewingFile(null)}
-              className={`shrink-0 rounded-md p-1.5 ${textPlaceholder} ${hoverBgTertiary} ${hoverTextPrimary} ${transitionBase}`}
-              aria-label="Close"
+              disabled={
+                isLoading
+                || projectCreating
+                || (launchModalMode !== 'workspace' && !selectedAgentId)
+                || (launchModalMode === 'session' && !createNewWorkspaceInline && !launchWorkspaceId)
+              }
+              onClick={handleLaunchFromModal}
+              className={`h-9 px-3 flex items-center justify-center gap-2 bg-[#202124] text-white rounded-md text-sm font-medium hover:bg-[#3C4043] disabled:opacity-50 ${transitionBase}`}
             >
-              <X className="w-4 h-4" />
+              {isLoading || projectCreating
+                ? 'Starting...'
+                : launchModalMode === 'workspace'
+                  ? 'Create workspace'
+                  : 'Start agent'}
             </button>
           </div>
-          <div className={`min-h-0 flex-1 overflow-auto p-4 bg-[#FAFBFC] text-sm font-mono ${textTertiary} whitespace-pre`}>
-            {fileContent}
+        </ConsoleInlineDialog>
+      )}
+
+      {/* Simple delete confirm */}
+      {deleteConfirmSession && (
+        <ConsoleInlineDialog onClose={() => setDeleteConfirmSession(null)} panelClassName={`${consoleDialogPanelClass} w-full max-w-md`}>
+          <div className={`${consoleStructuredDialogHeaderClass}`}>Confirm</div>
+          <div className="p-5 text-sm">Remove this session?</div>
+          <div className={consoleStructuredDialogFooterClass}>
+            <button onClick={() => setDeleteConfirmSession(null)} className="h-9 px-4 border rounded-md">Cancel</button>
+            <button onClick={() => handleDeleteSession(deleteConfirmSession.sessionId)} className="h-9 px-4 bg-[#C06C5D] text-white rounded-md">Remove</button>
           </div>
-        </ConsoleDialogShell>
+        </ConsoleInlineDialog>
       )}
 
       {deleteConfirmWorkspace && (
         <ConsoleInlineDialog
           onClose={() => setDeleteConfirmWorkspace(null)}
-          panelClassName={`${consoleDialogPanelClass} w-72 max-w-[calc(100vw-1.5rem)] shadow-lg`}
-        >
-            <div className={`${consoleStructuredDialogHeaderClass} flex items-center gap-3`}>
-              <Trash2 className={`w-5 h-5 shrink-0 ${textPlaceholder}`} />
-              <h3 className={`font-semibold text-sm ${textPrimary}`}>
-                {deleteConfirmWorkspace.isOrphan ? 'Clear unassigned sessions' : 'Delete workspace'}
-              </h3>
-            </div>
-            <div className={`p-5 text-sm ${textSecondary}`}>
-              {deleteConfirmWorkspace.isOrphan ? (
-                <>
-                  Remove all sessions in <span className={`font-medium ${textPrimary}`}>Unassigned</span>?
-                  {deleteConfirmWorkspace.sessionCount > 0 && (
-                    <span>
-                      {' '}
-                      This will remove {deleteConfirmWorkspace.sessionCount} session
-                      {deleteConfirmWorkspace.sessionCount === 1 ? '' : 's'}
-                      {deleteConfirmWorkspace.liveCount > 0 && (
-                        <> (including {deleteConfirmWorkspace.liveCount} running)</>
-                      )}
-                      .
-                    </span>
-                  )}
-                  <p className={`mt-2 text-xs ${textPlaceholder}`}>Unassigned is not a workspace — it groups sessions without a project. Clearing it removes those sessions from history.</p>
-                </>
-              ) : (
-                <>
-                  Permanently delete <span className={`font-medium ${textPrimary}`}>{deleteConfirmWorkspace.workspaceName}</span>?
-                  {deleteConfirmWorkspace.sessionCount > 0 && (
-                    <span>
-                      {' '}
-                      This will remove {deleteConfirmWorkspace.sessionCount} session
-                      {deleteConfirmWorkspace.sessionCount === 1 ? '' : 's'}
-                      {deleteConfirmWorkspace.liveCount > 0 && (
-                        <> (including {deleteConfirmWorkspace.liveCount} running)</>
-                      )}
-                      .
-                    </span>
-                  )}
-                  <p className={`mt-2 text-xs ${textPlaceholder}`}>All workspace files on the server will be deleted. This frees your workspace quota.</p>
-                </>
-              )}
-            </div>
-            <div className={consoleStructuredDialogFooterClass}>
-              <button
-                type="button"
-                onClick={() => setDeleteConfirmWorkspace(null)}
-                className={`h-9 px-4 ${bgCanvas} border ${borderHairline} ${textPrimary} rounded-md text-sm font-medium ${hoverBgSecondary} ${transitionBase}`}
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                disabled={deletingWorkspaceId === deleteConfirmWorkspace.workspaceId}
-                onClick={() => handleDeleteWorkspace(deleteConfirmWorkspace.workspaceId)}
-                className={`h-9 px-4 bg-[#C06C5D] text-white rounded-md text-sm font-medium hover:bg-[#A35A4D] disabled:opacity-50 ${transitionBase}`}
-              >
-                {deletingWorkspaceId === deleteConfirmWorkspace.workspaceId
-                  ? 'Removing…'
-                  : deleteConfirmWorkspace.isOrphan
-                    ? 'Clear all'
-                    : 'Delete workspace'}
-              </button>
-            </div>
-        </ConsoleInlineDialog>
-      )}
-
-      {deleteConfirmSession && (
-        <ConsoleInlineDialog
-          onClose={() => setDeleteConfirmSession(null)}
           panelClassName={`${consoleDialogPanelClass} w-full max-w-md shadow-sm`}
         >
-            <div className={`${consoleStructuredDialogHeaderClass} flex items-center gap-3`}>
-              <Trash2 className={`w-5 h-5 shrink-0 ${textPlaceholder}`} />
-              <h3 className={`font-semibold text-sm ${textPrimary}`}>
-                {deleteConfirmSession.isLive ? 'Stop session' : 'Remove from history'}
-              </h3>
-            </div>
-            <div className={`p-5 text-sm ${textSecondary}`}>
-              {deleteConfirmSession.isLive ? (
-                <>
-                  Stop <span className={`font-medium ${textPrimary}`}>{deleteConfirmSession.agentLabel}</span> in{' '}
-                  <span className={`font-medium ${textPrimary}`}>{deleteConfirmSession.workspaceName}</span> and remove this session?
-                </>
-              ) : (
-                <>
-                  Remove <span className={`font-medium ${textPrimary}`}>{deleteConfirmSession.agentLabel}</span> from history in{' '}
-                  <span className={`font-medium ${textPrimary}`}>{deleteConfirmSession.workspaceName}</span>?
-                </>
-              )}
-              <p className={`mt-2 text-xs ${textPlaceholder}`}>Workspace files on the server will be kept.</p>
-            </div>
-            <div className={consoleStructuredDialogFooterClass}>
-              <button
-                type="button"
-                onClick={() => setDeleteConfirmSession(null)}
-                className={`h-9 px-4 ${bgCanvas} border ${borderHairline} ${textPrimary} rounded-md text-sm font-medium ${hoverBgSecondary} ${transitionBase}`}
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                disabled={deletingSessionId === deleteConfirmSession.sessionId}
-                onClick={() => handleDeleteSession(deleteConfirmSession.sessionId)}
-                className={`h-9 px-4 bg-[#C06C5D] text-white rounded-md text-sm font-medium hover:bg-[#A35A4D] disabled:opacity-50 ${transitionBase}`}
-              >
-                {deletingSessionId === deleteConfirmSession.sessionId ? 'Removing…' : deleteConfirmSession.isLive ? 'Stop & remove' : 'Remove'}
-              </button>
-            </div>
-        </ConsoleInlineDialog>
-      )}
-
-      {showErrorModal && (
-        <ConsoleInlineDialog
-          onClose={() => setShowErrorModal(false)}
-          panelClassName={`${consoleDialogPanelClass} w-full max-w-md shadow-sm`}
-        >
-            <div className={`${consoleStructuredDialogHeaderClass} flex items-center gap-3 bg-[#FDECEA] ${accentRed}`}>
-              <X className="w-5 h-5 shrink-0" />
-              <h3 className="font-semibold text-sm">Action Failed</h3>
-            </div>
-            <div className={`p-5 text-sm ${textSecondary} break-words`}>
-              {error}
-            </div>
-            <div className={consoleStructuredDialogFooterClass}>
-              {selectedAgent?.llm_auth_mode === 'byok' && /Missing required|Secrets Vault/i.test(error || '') && selectedAgent?.env_required?.length > 0 && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowErrorModal(false);
-                    openConfigModal();
-                  }}
-                  className={`h-9 px-4 flex items-center gap-2 border ${borderHairline} rounded-md text-sm font-medium ${textPrimary} ${bgCanvas} ${hoverBgSecondary} ${transitionBase} mr-auto`}
-                >
-                  <Settings2 className="w-4 h-4" /> Configure Keys
-                </button>
-              )}
-              <button 
-                type="button"
-                onClick={() => setShowErrorModal(false)}
-                className={`h-9 px-4 bg-[#202124] text-white rounded-md text-sm font-medium hover:bg-[#3C4043] ${transitionBase}`}
-              >
-                Close
-              </button>
-            </div>
-        </ConsoleInlineDialog>
-      )}
-
-      {showNewInstanceModal && (
-        <ConsoleInlineDialog
-          onClose={() => {
-            setShowNewInstanceModal(false);
-            setLaunchModalError(null);
-          }}
-          overlayClassName="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
-          panelClassName={`${consoleDialogPanelClass} w-full max-w-sm shadow-sm`}
-        >
-            <div className={`${consoleStructuredDialogHeaderClass} flex items-center gap-2.5`}>
-              <Plus className={`w-4 h-4 shrink-0 ${textPlaceholder}`} />
-              <h3 className={`font-semibold text-sm ${textPrimary}`}>
-                {launchModalMode === 'session' ? 'New Session' : 'New Workspace'}
-              </h3>
-            </div>
-            <div className={`p-4 space-y-3`}>
-              {launchModalError && (
-                <p className="text-sm text-[#C06C5D] bg-[#FDECEA] border border-[#FADBD8] rounded-md px-3 py-2">{launchModalError}</p>
-              )}
-              {launchModalMode === 'workspace' ? (
-                <div>
-                  <label className={`block text-xs font-semibold uppercase tracking-wider ${textPlaceholder} mb-1`}>Workspace name</label>
-                  <input
-                    type="text"
-                    value={newProjectName}
-                    onChange={e => setNewProjectName(e.target.value)}
-                    placeholder="my-workspace"
-                    className={consoleInputClass}
-                    autoFocus
-                  />
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setShowNewInstanceModal(false);
-                      setLaunchModalError(null);
-                      setShowImportDialog(true);
-                    }}
-                    className={`mt-3 h-9 w-full rounded-md border ${borderHairline} bg-[#F4F5F6] px-3 text-sm font-medium ${textPrimary} hover:bg-[#E8EAED] flex items-center justify-center gap-1.5 ${transitionBase}`}
-                  >
-                    <Github className="w-3.5 h-3.5" /> Import from GitHub
-                  </button>
-                </div>
-              ) : (
-                <div>
-                  <label className={`block text-xs font-semibold uppercase tracking-wider ${textPlaceholder} mb-1`}>Workspace</label>
-                  <SelectMenu
-                    value={launchWorkspaceId}
-                    onChange={setLaunchWorkspaceId}
-                    placeholder="Select workspace"
-                    options={projects.map((p) => ({ value: p.id, label: p.name }))}
-                  />
-                  <p className={`text-xs ${textPlaceholder} mt-2`}>Runs another agent in the same workspace for parallel development.</p>
-                </div>
-              )}
-              <div>
-                <div className="flex items-center justify-between gap-2 mb-1">
-                  <label className={`text-xs font-semibold uppercase tracking-wider ${textPlaceholder}`}>Agent</label>
-                  {selectedAgent?.llm_auth_mode === 'byok' && selectedAgent?.env_required?.length > 0 && (
-                    <button
-                      type="button"
-                      onClick={() => openConfigModal()}
-                      className={`text-xs font-medium ${textPlaceholder} ${hoverTextPrimary} flex items-center gap-1 shrink-0 ${transitionBase}`}
-                    >
-                      <Settings2 className="w-3.5 h-3.5" /> Configure Keys
-                    </button>
-                  )}
-                </div>
-                {agents.length === 0 ? (
-                  <div className={`flex items-center justify-between gap-2 text-sm ${textPlaceholder}`}>
-                    <span>No agents available.</span>
-                    <button
-                      type="button"
-                      onClick={fetchWorkspaces}
-                      title="Refresh agents"
-                      className={`p-1 rounded-md ${hoverBgCanvas} ${hoverTextPrimary} ${transitionBase}`}
-                    >
-                      <RefreshCw className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-                ) : (
-                  <SelectMenu
-                    value={selectedAgentId}
-                    onChange={setSelectedAgentId}
-                    placeholder="Select agent"
-                    options={agentSelectOptions}
-                    searchable
-                    searchPlaceholder="Search agents…"
-                    recentValues={recentAgentIds}
-                  />
+          <div className={`${consoleStructuredDialogHeaderClass} flex items-center gap-3`}>
+            <Trash2 className={`w-5 h-5 shrink-0 ${textPlaceholder}`} />
+            <h3 className={`font-semibold text-sm ${textPrimary}`}>
+              {deleteConfirmWorkspace.isOrphan ? 'Clear unassigned sessions' : 'Delete workspace'}
+            </h3>
+          </div>
+          <div className={`p-5 text-sm ${textSecondary}`}>
+            {deleteConfirmWorkspace.isOrphan ? (
+              <>
+                Remove all sessions in <span className={`font-medium ${textPrimary}`}>Unassigned</span>?
+                {deleteConfirmWorkspace.sessionCount > 0 && (
+                  <span>
+                    {' '}
+                    This will remove {deleteConfirmWorkspace.sessionCount} session
+                    {deleteConfirmWorkspace.sessionCount === 1 ? '' : 's'}
+                    {deleteConfirmWorkspace.liveCount > 0 && (
+                      <> (including {deleteConfirmWorkspace.liveCount} running)</>
+                    )}
+                    .
+                  </span>
                 )}
-                {launchModalMode === 'workspace' && agents.length > 0 && (
-                  <label className="flex items-center gap-2 text-xs text-[#5F6368] pt-1">
-                    <input
-                      type="checkbox"
-                      checked={startSessionAfterCreate}
-                      onChange={(e) => setStartSessionAfterCreate(e.target.checked)}
-                      className="rounded border-[#DADCE0] text-[#202124] focus:ring-[#5B8DB8]"
-                    />
-                    Start a terminal session in this workspace
-                  </label>
+                <p className={`mt-2 text-xs ${textPlaceholder}`}>Unassigned is not a workspace — it groups sessions without a project. Clearing it removes those sessions from history.</p>
+              </>
+            ) : (
+              <>
+                Permanently delete <span className={`font-medium ${textPrimary}`}>{deleteConfirmWorkspace.workspaceName}</span>?
+                {deleteConfirmWorkspace.sessionCount > 0 && (
+                  <span>
+                    {' '}
+                    This will remove {deleteConfirmWorkspace.sessionCount} session
+                    {deleteConfirmWorkspace.sessionCount === 1 ? '' : 's'}
+                    {deleteConfirmWorkspace.liveCount > 0 && (
+                      <> (including {deleteConfirmWorkspace.liveCount} running)</>
+                    )}
+                    .
+                  </span>
                 )}
-              </div>
-            </div>
-            <div className={consoleStructuredDialogFooterClass}>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowNewInstanceModal(false);
-                    setLaunchModalError(null);
-                  }}
-                  className={`h-9 px-3 ${bgCanvas} border ${borderHairline} ${textPrimary} rounded-md text-sm font-medium ${hoverBgSecondary} ${transitionBase}`}
-                >
-                  Cancel
-                </button>
-              <button
-                type="button"
-                disabled={
-                  !selectedAgentId
-                  || isLoading
-                  || (launchModalMode === 'workspace' && projectCreating)
-                  || (launchModalMode === 'session' && !launchWorkspaceId)
-                }
-                onClick={handleLaunchFromModal}
-                className={`h-9 px-3 flex items-center justify-center gap-2 bg-[#202124] text-white rounded-md text-sm font-medium hover:bg-[#3C4043] disabled:opacity-50 ${transitionBase}`}
-              >
-                {launchModalMode === 'session' || (launchModalMode === 'workspace' && startSessionAfterCreate) ? (
-                  <Play className="w-4 h-4" />
-                ) : null}
-                {isLoading || projectCreating ? 'Starting...' : launchModalMode === 'session' ? 'Start session' : 'Create'}
-              </button>
-            </div>
+                <p className={`mt-2 text-xs ${textPlaceholder}`}>All workspace files on the server will be deleted. This frees your workspace quota.</p>
+              </>
+            )}
+          </div>
+          <div className={consoleStructuredDialogFooterClass}>
+            <button
+              type="button"
+              onClick={() => setDeleteConfirmWorkspace(null)}
+              className={`h-9 px-4 ${bgCanvas} border ${borderHairline} ${textPrimary} rounded-md text-sm font-medium ${hoverBgSecondary} ${transitionBase}`}
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              disabled={deletingWorkspaceId === deleteConfirmWorkspace.workspaceId}
+              onClick={() => handleDeleteWorkspace(deleteConfirmWorkspace.workspaceId)}
+              className={`h-9 px-4 flex items-center justify-center gap-2 bg-[#C06C5D] text-white rounded-md text-sm font-medium hover:bg-[#A35A4D] disabled:opacity-50 ${transitionBase}`}
+            >
+              {deletingWorkspaceId === deleteConfirmWorkspace.workspaceId
+                ? <><Loader2 className="w-4 h-4 animate-spin" /> Removing…</>
+                : deleteConfirmWorkspace.isOrphan
+                  ? 'Clear all'
+                  : 'Delete workspace'}
+            </button>
+          </div>
         </ConsoleInlineDialog>
       )}
 
+      {/* Configure environment variables (BYOK) */}
       {showConfigModal && (
         <ConsoleInlineDialog
-          onClose={() => {
-            setShowConfigModal(false);
-            setConfigError(null);
-            setLaunchModalError(null);
-          }}
+          onClose={() => { setShowConfigModal(false); setConfigError(null); }}
           panelClassName={`${consoleDialogPanelClass} w-full max-w-md shadow-sm`}
         >
-            <form onSubmit={handleSaveConfig}>
-              <div className={`${consoleStructuredDialogHeaderClass} flex items-center gap-3`}>
-                <Settings2 className={`w-5 h-5 shrink-0 ${textPlaceholder}`} />
-                <h3 className={`font-semibold text-sm ${textPrimary}`}>Configure {selectedAgent?.name}</h3>
-              </div>
-              <div className="p-5 space-y-4">
-                {configLoading ? (
-                  <p className={`text-sm ${textPlaceholder}`}>Loading...</p>
-                ) : configRequiredKeys.length === 0 ? (
-                  <p className={`text-sm ${textPlaceholder}`}>No API keys required.</p>
-                ) : (
-                  <>
-                    <SecretFields
-                      keys={configRequiredKeys}
-                      secrets={configKeys}
-                      savedHints={savedConfigKeys}
-                      missingKeys={configMissingKeys}
-                      mono
-                      onChange={(key, value) => setConfigKeys((prev) => ({ ...prev, [key]: value }))}
-                    />
-                  </>
-                )}
-                {configError && (
-                  <p className="text-sm text-[#C06C5D] bg-[#FDECEA] border border-[#FADBD8] rounded-md px-3 py-2">{configError}</p>
-                )}
-              </div>
-              <div className={consoleStructuredDialogFooterClass}>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowConfigModal(false);
-                    setConfigError(null);
-                    setLaunchModalError(null);
-                  }}
-                  className={`h-9 px-4 ${bgCanvas} border ${borderHairline} ${textPrimary} rounded-md text-sm font-medium ${hoverBgSecondary} ${transitionBase}`}
-                >
-                  {showNewInstanceModal ? 'Back' : 'Cancel'}
-                </button>
-                {configRequiredKeys.length > 0 && (
+          <div className={`${consoleStructuredDialogHeaderClass} flex items-center gap-2.5`}>
+            <Settings2 className={`w-4 h-4 shrink-0 ${textPlaceholder}`} />
+            <h3 className={`font-semibold text-sm ${textPrimary}`}>
+              Environment variables{selectedAgent ? ` - ${selectedAgent.name}` : ''}
+            </h3>
+          </div>
+          <form onSubmit={handleSaveConfig}>
+            <div className="p-4 space-y-3">
+              {configError && (
+                <p className="text-sm text-[#C06C5D] bg-[#FDECEA] border border-[#FADBD8] rounded-md px-3 py-2">{configError}</p>
+              )}
+              {configLoading ? (
+                <p className={`text-sm ${textPlaceholder} flex items-center gap-2`}>
+                  <Loader2 className="w-4 h-4 animate-spin" /> Loading…
+                </p>
+              ) : (
+                <>
+                  <p className={`text-xs ${textPlaceholder}`}>
+                    Add environment variables for this agent. Admin-configured variables are used by default; your values here override them.
+                  </p>
+                  {configEnvVars.map((pair, idx) => (
+                    <div key={idx} className="space-y-1">
+                      <div className="flex gap-2 items-center">
+                        <input
+                          value={pair.key}
+                          onChange={(e) => setConfigEnvVars((prev) => prev.map((p, i) => i === idx ? { ...p, key: e.target.value } : p))}
+                          className={consoleInputClass}
+                          placeholder="ENV_VAR_NAME"
+                          autoFocus={idx === 0}
+                          autoComplete="off"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setConfigEnvVars((prev) => prev.filter((_, i) => i !== idx))}
+                          className={`flex-shrink-0 ${textPlaceholder} hover:text-[#C06C5D] ${transitionBase}`}
+                          title="Remove"
+                        >
+                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                            <line x1="18" y1="6" x2="6" y2="18" />
+                            <line x1="6" y1="6" x2="18" y2="18" />
+                          </svg>
+                        </button>
+                      </div>
+                      <input
+                        type={isSecretPasswordField(pair.key) ? 'password' : 'text'}
+                        value={pair.value}
+                        onChange={(e) => setConfigEnvVars((prev) => prev.map((p, i) => i === idx ? { ...p, value: e.target.value } : p))}
+                        className={consoleInputClass}
+                        placeholder="value"
+                        autoComplete="off"
+                      />
+                    </div>
+                  ))}
                   <button
-                    type="submit"
-                    disabled={configSaving || configMissingKeys.length > 0}
-                    className={`h-9 px-4 bg-[#202124] text-white rounded-md text-sm font-medium hover:bg-[#3C4043] disabled:opacity-50 ${transitionBase}`}
+                    type="button"
+                    onClick={() => setConfigEnvVars((prev) => [...prev, { key: '', value: '' }])}
+                    className={`text-sm ${textPlaceholder} hover:${textPrimary} ${transitionBase}`}
                   >
-                    {configSaving ? 'Saving...' : 'Save Keys'}
+                    + Add env var
                   </button>
-                )}
-              </div>
-            </form>
+                </>
+              )}
+            </div>
+            <div className={consoleStructuredDialogFooterClass}>
+              <button
+                type="button"
+                onClick={() => { setShowConfigModal(false); setConfigError(null); }}
+                className={`h-9 px-3 ${bgCanvas} border ${borderHairline} ${textPrimary} rounded-md text-sm font-medium ${hoverBgSecondary} ${transitionBase}`}
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={configSaving || configLoading}
+                className={`h-9 px-3 flex items-center justify-center gap-2 bg-[#202124] text-white rounded-md text-sm font-medium hover:bg-[#3C4043] disabled:opacity-50 ${transitionBase}`}
+              >
+                {configSaving ? <><Loader2 className="w-4 h-4 animate-spin" /> Saving…</> : 'Save'}
+              </button>
+            </div>
+          </form>
         </ConsoleInlineDialog>
       )}
 
-      {/* Main area: terminal or empty state */}
-      <div className="flex min-h-0 flex-1 w-full flex-row items-stretch">
-        <div
-          className={`flex min-h-0 min-w-0 flex-1 flex-col ${activeSession || launchingSession ? '' : 'bg-white'}`}
-          style={(activeSession || launchingSession) ? { backgroundColor: preset.xterm.background } : undefined}
-        >
+      {/* Main area */}
+      <div className="flex min-h-0 flex-1 w-full flex-row items-stretch bg-white">
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col bg-white">
+          <div className="h-12 border-b border-[#E8EAED] flex items-center justify-between px-5 shrink-0 bg-white">
+            <div className="flex items-center gap-3 min-w-0">
+              {activeSession ? (
+                <>
+                  <div className="flex items-center gap-2 min-w-0">
+                    <h1 className="truncate text-[15px] font-semibold text-[#202124]">
+                      {activeSession.projectName || activeSession.agentName || 'Session'}
+                    </h1>
+                    <span className="inline-flex shrink-0 items-center rounded-md bg-[#F4F5F6] px-2 py-0.5 text-[11px] font-medium text-[#5F6368]">
+                      {activeSession.agentName}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <span
+                      className={`w-1.5 h-1.5 rounded-full ${sessionAlive ? 'bg-[#4A7C59]' : sessionPending ? 'bg-[#E8B339]' : sessionFailed ? 'bg-[#C06C5D]' : 'bg-[#9AA0A6]'}`}
+                    />
+                    <span className="text-[11px] text-[#9AA0A6]">
+                      {sessionAlive ? 'Running' : sessionPending ? 'Preparing…' : sessionFailed ? 'Failed' : sessionWakeable ? 'Idle' : 'Stopped'}
+                    </span>
+                  </div>
+                </>
+              ) : (
+                <h1 className="text-[15px] font-semibold text-[#202124]">Sessions</h1>
+              )}
+            </div>
+            <div className="flex items-center gap-0.5 shrink-0">
+              {activeSession && (
+                <>
+                  <div className="mx-0.5 h-5 w-px bg-[#E8EAED]" />
+                  {!sessionPending && !sessionFailed && (
+                    <>
+                      {sessionAlive ? (
+                        <button
+                          type="button"
+                          onClick={handleStopSession}
+                          disabled={sessionControlPending}
+                          className={`${consoleIconButtonClass} disabled:opacity-50 disabled:cursor-not-allowed`}
+                          title={stoppingSession ? 'Pausing…' : 'Pause session (keep history)'}
+                          aria-label={stoppingSession ? 'Pausing session' : 'Pause session'}
+                        >
+                          {stoppingSession ? (
+                            <Loader2 className="w-4 h-4 animate-spin" strokeWidth={1.75} />
+                          ) : (
+                            <Square className="w-4 h-4" strokeWidth={1.75} />
+                          )}
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={handleRestartSession}
+                          disabled={sessionControlPending}
+                          className={`${consoleIconButtonClass} disabled:opacity-50 disabled:cursor-not-allowed`}
+                          title={restartingSession ? 'Starting…' : 'Start session'}
+                          aria-label={restartingSession ? 'Starting session' : 'Start session'}
+                        >
+                          {restartingSession ? (
+                            <Loader2 className="w-4 h-4 animate-spin" strokeWidth={1.75} />
+                          ) : (
+                            <Play className="w-4 h-4" strokeWidth={1.75} />
+                          )}
+                        </button>
+                      )}
+                      {sessionAlive && (
+                        <button
+                          type="button"
+                          onClick={handleRestartSession}
+                          disabled={sessionControlPending}
+                          className={`${consoleIconButtonClass} disabled:opacity-50 disabled:cursor-not-allowed`}
+                          title={restartingSession ? 'Restarting…' : 'Restart session'}
+                          aria-label={restartingSession ? 'Restarting session' : 'Restart session'}
+                        >
+                          {restartingSession ? (
+                            <Loader2 className="w-4 h-4 animate-spin" strokeWidth={1.75} />
+                          ) : (
+                            <RefreshCw className="w-4 h-4" strokeWidth={1.75} />
+                          )}
+                        </button>
+                      )}
+                    </>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => setActiveSession(null)}
+                    className={consoleIconButtonClass}
+                    title="Disconnect view"
+                    aria-label="Disconnect view"
+                  >
+                    <Unplug className="w-4 h-4" strokeWidth={1.75} />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPanelOpen((prev) => !prev)}
+                    className={`${consoleIconButtonClass} ${panelOpen ? 'bg-[#F4F5F6] text-[#202124]' : ''}`}
+                    title={panelOpen ? 'Close workspace panel' : 'Open workspace panel'}
+                    aria-label={panelOpen ? 'Close workspace panel' : 'Open workspace panel'}
+                  >
+                    {panelOpen ? <PanelRightClose className="w-4 h-4" strokeWidth={1.75} /> : <PanelRightOpen className="w-4 h-4" strokeWidth={1.75} />}
+                  </button>
+                </>
+              )}
+            </div>
+          </div>
           {activeSession ? (
-            <>
-              <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
-                <AgentConsole
-                  key={activeSession.sessionId}
-                  sessionId={activeSession.sessionId}
-                  agentName={activeSession.agentName}
-                  projectId={activeSession.projectId}
-                  project={activeProject}
-                  token={token}
-                  sessionLive={sessions.find((s) => s.id === activeSession.sessionId)?.alive === true}
-                  onSessionEnd={handleSessionEnd}
-                  onStart={handleRestartSession}
-                  onStop={handleStopSession}
-                  sessionControlPending={restartingSession || stoppingSession}
-                  onDisconnect={() => setActiveSession(null)}
-                  workspaceOpen={workspaceOpen}
-                  onToggleWorkspace={() => setWorkspaceOpen((v) => !v)}
-                />
+            sessionPending ? (
+              <div className="flex min-h-0 flex-1 flex-col items-center justify-center bg-white p-8 text-center">
+                <Loader2 className="w-8 h-8 text-[#9AA0A6] animate-spin mb-4" strokeWidth={1.5} />
+                <h3 className="text-lg font-semibold text-[#202124] mb-1.5">Preparing your environment…</h3>
+                <p className="text-sm text-[#9AA0A6] max-w-sm">
+                  Pulling image and starting virtual machine. This usually takes less than a minute.
+                </p>
               </div>
-              <GitStatusBar projectId={activeSession.projectId} project={activeProject} git={gitChanges} />
-            </>
+            ) : sessionFailed ? (
+              <div className="flex min-h-0 flex-1 flex-col items-center justify-center bg-white p-8 text-center">
+                <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-[#FDECEA] mb-5">
+                  <X className="w-7 h-7 text-[#C06C5D]" strokeWidth={1.5} />
+                </div>
+                <h3 className="text-lg font-semibold text-[#202124] mb-1.5">Session failed to start</h3>
+                <p className="text-sm text-[#9AA0A6] max-w-md mb-5">
+                  {activeSessionMeta?.provisioningError || 'An unexpected error occurred during provisioning.'}
+                </p>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => handleDeleteSession(activeSession.sessionId)}
+                    className="h-9 px-4 flex items-center gap-2 bg-[#C06C5D] text-white rounded-md text-sm font-medium hover:bg-[#A85544] disabled:opacity-50 transition-colors"
+                  >
+                    <Trash2 className="w-4 h-4" strokeWidth={1.75} />
+                    Delete session
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setActiveSession(null)}
+                    className="h-9 px-4 flex items-center gap-2 bg-white border border-[#E8EAED] text-[#202124] rounded-md text-sm font-medium hover:bg-[#F4F5F6] transition-colors"
+                  >
+                    Dismiss
+                  </button>
+                </div>
+              </div>
+            ) : (
+            <div className="flex min-h-0 min-w-0 flex-1 flex-row overflow-hidden">
+              <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+                <div className="flex min-h-0 flex-1 flex-col p-4">
+                  <div
+                     className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-[#E8EAED] shadow-sm"
+                     style={{ backgroundColor: preset.xterm.background }}
+                   >
+                      <AgentConsole
+                        key={activeSession.sessionId}
+                        sessionId={activeSession.sessionId}
+                        reconnectVersion={reconnectVersion}
+                       agentName={activeSession.agentName}
+                       projectId={activeSession.projectId}
+                       onSessionEnd={handleSessionEnd}
+                       onSessionConnected={handleSessionConnected}
+                       sessionLive={sessionAlive}
+                       sessionWakeable={sessionWakeable}
+                     />
+                   </div>
+                </div>
+                <GitStatusBar projectId={activeSession.projectId} project={activeProject} git={gitChanges} />
+              </div>
+              {panelOpen && (
+                <>
+                <div
+                  onMouseDown={startPanelResize}
+                  className="w-1 shrink-0 cursor-col-resize bg-[#E8EAED] hover:bg-[#202124] transition-colors"
+                  title="Drag to resize"
+                />
+                <div className="flex min-h-0 shrink-0 flex-col border-l border-[#E8EAED] bg-white" style={{ width: panelWidth }}>
+                  <div className="flex h-12 items-center justify-between border-b border-[#E8EAED] px-3 shrink-0">
+                    <div className="flex items-center gap-1">
+                      <button
+                        type="button"
+                        onClick={() => setPanelTab('files')}
+                        className={`px-2.5 py-1.5 text-sm font-medium border-b-2 transition-colors ${
+                          panelTab === 'files'
+                            ? 'border-[#202124] text-[#202124]'
+                            : 'border-transparent text-[#5F6368] hover:text-[#202124]'
+                        }`}
+                      >
+                        Files
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => { setPanelTab('shell'); setShellMounted(true); }}
+                        className={`px-2.5 py-1.5 text-sm font-medium border-b-2 transition-colors ${
+                          panelTab === 'shell'
+                            ? 'border-[#202124] text-[#202124]'
+                            : 'border-transparent text-[#5F6368] hover:text-[#202124]'
+                        }`}
+                      >
+                        Shell
+                      </button>
+                    </div>
+                    {panelTab === 'files' && (
+                      <div className="flex items-center gap-0.5">
+                        <button
+                          type="button"
+                          onClick={() => setShowHiddenFiles((v) => !v)}
+                          className={`p-2 rounded-lg transition-colors ${
+                            showHiddenFiles
+                              ? 'text-[#202124] bg-[#F4F5F6]'
+                              : 'text-[#5F6368] hover:bg-[#F4F5F6]'
+                          }`}
+                          title={showHiddenFiles ? 'Hide hidden files' : 'Show hidden files'}
+                          aria-label={showHiddenFiles ? 'Hide hidden files' : 'Show hidden files'}
+                          aria-pressed={showHiddenFiles}
+                        >
+                          {showHiddenFiles ? (
+                            <EyeOff className="w-4 h-4" strokeWidth={1.75} />
+                          ) : (
+                            <Eye className="w-4 h-4" strokeWidth={1.75} />
+                          )}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => fetchWorkspaceFiles({ notifyError: true })}
+                          className="p-2 text-[#5F6368] hover:bg-[#F4F5F6] rounded-lg transition-colors"
+                          title="Refresh files"
+                          aria-label="Refresh files"
+                        >
+                          <RefreshCw className={`w-4 h-4 ${isLoadingFiles ? 'animate-spin' : ''}`} strokeWidth={1.75} />
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                  <div className={`min-h-0 flex-1 flex-col ${panelTab === 'files' ? 'flex' : 'hidden'}`}>
+                    {activeSession?.projectId && sessionAlive && (
+                      <WorkspacePanel
+                        projectId={activeSession.projectId}
+                        tabs={editorTabs.tabs}
+                        activePath={editorTabs.activePath}
+                        onSelectTab={editorTabs.selectTab}
+                        onCloseTab={editorTabs.closeTab}
+                        onSaveTab={handleSaveTab}
+                        onOpenFile={handleEditorOpenFile}
+                        onFetchDir={editorTabs.fetchDir}
+                        onCreateFile={handleCreateFile}
+                        onCreateDir={handleCreateDir}
+                        onShowDiff={handleShowDiff}
+                        diffView={editorTabs.diffView}
+                        onCloseDiff={editorTabs.closeDiff}
+                        gitChanges={gitChanges}
+                        onGitFileClick={handleGitFileClick}
+                        gitDiffView={gitDiffView}
+                        onCloseGitDiff={handleCloseGitDiff}
+                      />
+                    )}
+                  </div>
+                  <div className={`min-h-0 flex-1 flex-col ${panelTab === 'shell' ? 'flex' : 'hidden'}`}>
+                    {shellMounted && <WorkspaceShell projectId={activeSession.projectId} />}
+                  </div>
+                </div>
+                </>
+              )}
+            </div>
+            )
           ) : launchingSession ? (
-            <div className="flex-1" />
+            <div className="flex-1 bg-white" />
           ) : (
-            <div className="flex h-full flex-col items-center justify-center p-8 text-center text-[#5F6368]">
-              <TerminalSquare className="w-12 h-12 mb-4 text-[#9AA0A6]" strokeWidth={1} />
-              <h3 className="text-base font-medium text-[#202124] mb-1">No Active Session</h3>
-              <p className="text-sm">Select a session from the sidebar, or create a new workspace.</p>
+            <div className="flex h-full flex-col items-center justify-center bg-white p-8 text-center">
+              <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-[#F4F5F6] mb-5">
+                <TerminalSquare className="w-7 h-7 text-[#9AA0A6]" strokeWidth={1.25} />
+              </div>
+              <h3 className="text-lg font-semibold text-[#202124] mb-1.5">No active session</h3>
+              <p className="text-sm text-[#9AA0A6] max-w-sm">
+                {projects.length === 0
+                  ? 'Create a workspace, then use New Agent in the sidebar to get started.'
+                  : 'Select a session from the sidebar, or use New Agent to start one in a workspace.'}
+              </p>
             </div>
           )}
         </div>
-
-        {/* Right Panel: Files */}
-        {activeSession && workspaceOpen && (
-          <div className={`flex w-72 shrink-0 flex-col min-h-0 overflow-hidden bg-[#F4F5F6] border-l border-[#E8EAED]`}>
-            <div className={`flex items-center justify-between border-b border-[#E8EAED] px-3 py-2 shrink-0`}>
-              <div className="flex items-center gap-2 min-w-0">
-                <FolderOpen className={`w-4 h-4 ${textPlaceholder} shrink-0`} />
-                <h2 className={`text-sm font-semibold ${textPrimary} uppercase tracking-wider truncate`} title={activeSession.projectName}>
-                  Files
-                </h2>
-              </div>
-              <div className="flex items-center gap-0.5">
-                <button
-                  type="button"
-                  onClick={() => setShowHiddenFiles((v) => !v)}
-                  className={`p-1.5 rounded-md ${transitionBase} ${
-                    showHiddenFiles
-                      ? `${textPrimary} bg-white`
-                      : `${accentBlue} ${hoverBgCanvas}`
-                  }`}
-                  title={showHiddenFiles ? 'Hide hidden files' : 'Show hidden files'}
-                  aria-label={showHiddenFiles ? 'Hide hidden files' : 'Show hidden files'}
-                  aria-pressed={showHiddenFiles}
-                >
-                  {showHiddenFiles ? (
-                    <EyeOff className="w-3.5 h-3.5" />
-                  ) : (
-                    <Eye className="w-3.5 h-3.5" />
-                  )}
-                </button>
-                <button
-                  type="button"
-                  onClick={fetchWorkspaceFiles}
-                  title="Refresh files"
-                  className={`p-1.5 ${accentBlue} rounded-md ${hoverBgCanvas} ${transitionBase}`}
-                >
-                  <RefreshCw className={`w-3.5 h-3.5 ${isLoadingFiles ? 'animate-spin' : ''}`} />
-                </button>
-              </div>
-            </div>
-            <div className={`flex-1 overflow-auto ${panelPadding} min-h-0`}>
-              {activeSession?.projectId && sessionAlive && (
-                <WorkspacePanel
-                  projectId={activeSession.projectId}
-                  tabs={editorTabs.tabs}
-                  activePath={editorTabs.activePath}
-                  onSelectTab={editorTabs.selectTab}
-                  onCloseTab={editorTabs.closeTab}
-                  onSaveTab={handleSaveTab}
-                  onOpenFile={handleOpenFile}
-                  onFetchDir={editorTabs.fetchDir}
-                  onCreateFile={handleCreateFile}
-                  onCreateDir={handleCreateDir}
-                  onShowDiff={handleShowDiff}
-                  diffView={editorTabs.diffView}
-                  onCloseDiff={editorTabs.closeDiff}
-                  gitChanges={gitChanges}
-                  onGitFileClick={handleGitFileClick}
-                  gitDiffView={gitDiffView}
-                  onCloseGitDiff={handleCloseGitDiff}
-                />
-              )}
-            </div>
-            {activeSession.projectId && (
-              <div className="h-1/2 min-h-0 shrink-0 border-t border-[#E8EAED]">
-                {activeProject?.repoProvider && activeProject.repoProvider !== 'github' ? (
-                  <MergeRequestListPanel projectId={activeSession.projectId} provider={activeProject.repoProvider} />
-                ) : (
-                  <PRListPanel projectId={activeSession.projectId} />
-                )}
-              </div>
-            )}
-          </div>
-        )}
       </div>
 
       {showImportDialog && (
@@ -1278,6 +1482,38 @@ export default React.forwardRef(function SessionsPage({
           }}
           fetchWorkspaces={fetchWorkspaces}
         />
+      )}
+
+      {viewingFile && (
+        <ConsoleDialogShell
+          onClose={() => {
+            setViewingFile(null);
+            setFileContent('');
+          }}
+          panelClassName={`${consoleDialogPanelClass} w-[min(900px,calc(100vw-2rem))] h-[min(80vh,calc(100vh-2rem))]`}
+        >
+          <div className={`flex items-center justify-between ${borderHairline} border-b bg-[#FAFBFC] px-4 py-3 shrink-0`}>
+            <div className="flex min-w-0 items-center gap-2">
+              <FileText className={`w-4 h-4 shrink-0 ${textPlaceholder}`} />
+              <span className={`truncate text-sm font-semibold ${textPrimary}`}>{viewingFile.name}</span>
+              <span className={`truncate text-xs font-mono ${textPlaceholder}`}>{viewingFile.path}</span>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                setViewingFile(null);
+                setFileContent('');
+              }}
+              className={`shrink-0 rounded-md p-1.5 ${textPlaceholder} ${hoverBgTertiary} ${hoverTextPrimary} ${transitionBase}`}
+              aria-label="Close"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+          <div className={`${consoleStructuredDialogBodyClass} bg-[#FAFBFC] text-sm font-mono ${textTertiary} whitespace-pre`}>
+            {fileContent}
+          </div>
+        </ConsoleDialogShell>
       )}
     </div>
   );

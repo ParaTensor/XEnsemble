@@ -238,6 +238,10 @@ function resolveTerminalSpawnEnv(themeId) {
 }
 
 function mergeSpawnEnvLayers({ platformSpawnEnv, themeSpawnEnv, secretEnv, cfg }) {
+    // Priority (lowest to highest), per desktop/docs/terminal-theme-server-requirements.md §5:
+    //   1. platform/theme spawn env
+    //   2. agent env_required secrets (BYOK / gateway vault)
+    //   3. admin env_overrides (highest -- admin can force settings like COLORFGBG)
     let env = {
         ...platformSpawnEnv,
         ...themeSpawnEnv,

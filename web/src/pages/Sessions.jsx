@@ -146,7 +146,7 @@ export default React.forwardRef(function Sessions({
   const [gitDiffView, setGitDiffView] = useState(null);
 
   const [showConfigModal, setShowConfigModal] = useState(false);
-  const [configKeys, setConfigKeys] = useState({});
+  const [configEnvVars, setConfigEnvVars] = useState([{ key: '', value: '' }]);
   const [savedConfigKeys, setSavedConfigKeys] = useState({});
   const [configSaving, setConfigSaving] = useState(false);
   const [configLoading, setConfigLoading] = useState(false);
@@ -238,10 +238,6 @@ export default React.forwardRef(function Sessions({
 
   const openConfigModal = async () => {
     const required = selectedAgent?.env_required || [];
-    const initialKeys = {};
-    required.forEach((k) => { initialKeys[k] = ''; });
-    setConfigKeys(initialKeys);
-    setSavedConfigKeys({});
     setConfigError(null);
     setError(null);
     setShowConfigModal(true);
@@ -250,17 +246,19 @@ export default React.forwardRef(function Sessions({
       const res = await apiFetch('/api/v1/secrets');
       const data = await res.json();
       if (res.ok) {
+        const allKeys = Object.keys(data);
+        const envVars = allKeys.length > 0
+          ? allKeys.map((key) => ({ key, value: data[key] === '***' ? '' : (data[key] || '') }))
+          : required.map((key) => ({ key, value: '' }));
+        setConfigEnvVars(envVars);
         const saved = {};
-        const loaded = {};
-        required.forEach((k) => {
-          if (data[k]) saved[k] = true;
-          if (data[k] && data[k] !== '***') loaded[k] = data[k];
-          else loaded[k] = '';
-        });
+        allKeys.forEach((k) => { if (data[k]) saved[k] = true; });
         setSavedConfigKeys(saved);
-        setConfigKeys(loaded);
+      } else {
+        setConfigEnvVars(required.map((key) => ({ key, value: '' })));
       }
     } catch {
+      setConfigEnvVars(required.map((key) => ({ key, value: '' })));
       setConfigError('Could not load saved keys.');
     } finally {
       setConfigLoading(false);
@@ -270,8 +268,8 @@ export default React.forwardRef(function Sessions({
   const configRequiredKeys = selectedAgent?.env_required || [];
   // eslint-disable-next-line no-unused-vars
   const configMissingKeys = useMemo(
-    () => configRequiredKeys.filter((k) => !savedConfigKeys[k] && !configKeys[k]?.trim()),
-    [configRequiredKeys, savedConfigKeys, configKeys],
+    () => configRequiredKeys.filter((k) => !savedConfigKeys[k]),
+    [configRequiredKeys, savedConfigKeys],
   );
 
   const ensureAgentSecrets = async (agent) => {
@@ -520,16 +518,11 @@ export default React.forwardRef(function Sessions({
   const handleSaveConfig = async (e) => {
     e.preventDefault();
     setConfigError(null);
-    const required = selectedAgent?.env_required || [];
     const payload = {};
-    required.forEach((k) => {
-      const value = configKeys[k]?.trim();
-      if (value) payload[k] = value;
-    });
-    const missing = required.filter((k) => !payload[k] && !savedConfigKeys[k]);
-    if (missing.length > 0) {
-      setConfigError(`Missing: ${missing.map(getSecretLabel).join(', ')}`);
-      return;
+    for (const { key, value } of configEnvVars) {
+      const k = (key || '').trim();
+      const v = (value || '').trim();
+      if (k && v) payload[k] = v;
     }
     if (Object.keys(payload).length === 0) {
       setShowConfigModal(false);
@@ -546,10 +539,10 @@ export default React.forwardRef(function Sessions({
       if (!res.ok) throw new Error(data.error || 'Failed to save keys');
       setSavedConfigKeys((prev) => {
         const next = { ...prev };
-        required.forEach((k) => { if (payload[k] || prev[k]) next[k] = true; });
+        Object.keys(payload).forEach((k) => { next[k] = true; });
         return next;
       });
-      showToast('success', 'API keys saved.');
+      showToast('success', 'Environment variables saved.');
       setShowConfigModal(false);
       setLaunchModalError(null);
     } catch (err) {
@@ -1113,7 +1106,7 @@ export default React.forwardRef(function Sessions({
         </ConsoleInlineDialog>
       )}
 
-      {/* Configure API keys (BYOK) */}
+      {/* Configure environment variables (BYOK) */}
       {showConfigModal && (
         <ConsoleInlineDialog
           onClose={() => { setShowConfigModal(false); setConfigError(null); }}
@@ -1122,7 +1115,7 @@ export default React.forwardRef(function Sessions({
           <div className={`${consoleStructuredDialogHeaderClass} flex items-center gap-2.5`}>
             <Settings2 className={`w-4 h-4 shrink-0 ${textPlaceholder}`} />
             <h3 className={`font-semibold text-sm ${textPrimary}`}>
-              Configure API keys{selectedAgent ? ` — ${selectedAgent.name}` : ''}
+              Environment variables{selectedAgent ? ` - ${selectedAgent.name}` : ''}
             </h3>
           </div>
           <form onSubmit={handleSaveConfig}>
@@ -1132,25 +1125,54 @@ export default React.forwardRef(function Sessions({
               )}
               {configLoading ? (
                 <p className={`text-sm ${textPlaceholder} flex items-center gap-2`}>
-                  <Loader2 className="w-4 h-4 animate-spin" /> Loading saved keys…
+                  <Loader2 className="w-4 h-4 animate-spin" /> Loading…
                 </p>
               ) : (
-                configRequiredKeys.map((key, idx) => (
-                  <div key={key}>
-                    <label className={`block text-xs font-semibold uppercase tracking-wider ${textPlaceholder} mb-1`}>
-                      {getSecretLabel(key)}
-                    </label>
-                    <input
-                      type={isSecretPasswordField(key) ? 'password' : 'text'}
-                      value={configKeys[key] || ''}
-                      onChange={(e) => setConfigKeys((prev) => ({ ...prev, [key]: e.target.value }))}
-                      placeholder={getSecretPlaceholder(key, { saved: !!savedConfigKeys[key] })}
-                      className={consoleInputClass}
-                      autoFocus={idx === 0}
-                      autoComplete="off"
-                    />
-                  </div>
-                ))
+                <>
+                  <p className={`text-xs ${textPlaceholder}`}>
+                    Add environment variables for this agent. Admin-configured variables are used by default; your values here override them.
+                  </p>
+                  {configEnvVars.map((pair, idx) => (
+                    <div key={idx} className="space-y-1">
+                      <div className="flex gap-2 items-center">
+                        <input
+                          value={pair.key}
+                          onChange={(e) => setConfigEnvVars((prev) => prev.map((p, i) => i === idx ? { ...p, key: e.target.value } : p))}
+                          className={consoleInputClass}
+                          placeholder="ENV_VAR_NAME"
+                          autoFocus={idx === 0}
+                          autoComplete="off"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setConfigEnvVars((prev) => prev.filter((_, i) => i !== idx))}
+                          className={`flex-shrink-0 ${textPlaceholder} hover:text-[#C06C5D] ${transitionBase}`}
+                          title="Remove"
+                        >
+                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                            <line x1="18" y1="6" x2="6" y2="18" />
+                            <line x1="6" y1="6" x2="18" y2="18" />
+                          </svg>
+                        </button>
+                      </div>
+                      <input
+                        type={isSecretPasswordField(pair.key) ? 'password' : 'text'}
+                        value={pair.value}
+                        onChange={(e) => setConfigEnvVars((prev) => prev.map((p, i) => i === idx ? { ...p, value: e.target.value } : p))}
+                        className={consoleInputClass}
+                        placeholder="value"
+                        autoComplete="off"
+                      />
+                    </div>
+                  ))}
+                  <button
+                    type="button"
+                    onClick={() => setConfigEnvVars((prev) => [...prev, { key: '', value: '' }])}
+                    className={`text-sm ${textPlaceholder} hover:${textPrimary} ${transitionBase}`}
+                  >
+                    + Add env var
+                  </button>
+                </>
               )}
             </div>
             <div className={consoleStructuredDialogFooterClass}>
@@ -1166,7 +1188,7 @@ export default React.forwardRef(function Sessions({
                 disabled={configSaving || configLoading}
                 className={`h-9 px-3 flex items-center justify-center gap-2 bg-[#202124] text-white rounded-md text-sm font-medium hover:bg-[#3C4043] disabled:opacity-50 ${transitionBase}`}
               >
-                {configSaving ? <><Loader2 className="w-4 h-4 animate-spin" /> Saving…</> : 'Save keys'}
+                {configSaving ? <><Loader2 className="w-4 h-4 animate-spin" /> Saving…</> : 'Save'}
               </button>
             </div>
           </form>
