@@ -1,35 +1,6 @@
 const { eq } = require('drizzle-orm');
 
 const AGENT_EXIT_TIMEOUT_MS = 5000;
-const VM_GRACE_PERIOD_MS = Number(process.env.VM_GRACE_PERIOD_MS) || 5 * 60 * 1000;
-
-const gracePeriodTimers = new Map();
-
-function cancelGracePeriod(runtimeRef) {
-    if (!runtimeRef) return;
-    const timer = gracePeriodTimers.get(runtimeRef);
-    if (timer) {
-        clearTimeout(timer);
-        gracePeriodTimers.delete(runtimeRef);
-    }
-}
-
-function scheduleGracePeriodHibernate(runtimeRef, runtime, sessionManager) {
-    if (!runtimeRef) return;
-    cancelGracePeriod(runtimeRef);
-    const timer = setTimeout(async () => {
-        gracePeriodTimers.delete(runtimeRef);
-        const active = sessionManager.listSessions().some(
-            (s) => s.runtimeRef === runtimeRef && s.status === 'running' && s.handle
-        );
-        if (active) return;
-        try {
-            await runtime.provider.hibernate(runtimeRef);
-        } catch (_) {}
-    }, VM_GRACE_PERIOD_MS);
-    if (typeof timer.unref === 'function') timer.unref();
-    gracePeriodTimers.set(runtimeRef, timer);
-}
 
 async function waitForAgentExit(runtime, runtimeRef, agentId) {
     if (!runtime?.exec?.exec || !runtimeRef || !agentId) {
@@ -153,11 +124,7 @@ async function stopSession({
         const rtRef = live?.runtimeRef || live?.runtimeId || live?.handle?.runtimeRef
             || session.runtimeRef || session.runtimeId || session.streamRef || null;
         if (runtime?.provider?.supportsHibernate?.() && rtRef) {
-            if (requireRuntimeHibernate) {
-                await runtime.provider.hibernate(rtRef);
-            } else {
-                scheduleGracePeriodHibernate(rtRef, runtime, sessionManager);
-            }
+            await runtime.provider.hibernate(rtRef);
         }
     } catch (err) {
         if (fastifyLog?.warn) fastifyLog.warn(err, '[sessions] failed to stop session runtime');
@@ -262,6 +229,5 @@ module.exports = {
     shouldHibernateSession,
     stopSession,
     hibernateSession,
-    cancelGracePeriod,
     createIdleHibernateMonitor,
 };

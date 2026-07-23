@@ -1,7 +1,6 @@
 const { eq } = require('drizzle-orm');
 const { sessionStateDirExists, prepareHomeRedirect } = require('./stateDir');
 const { getAgentResume, getAgentResumeLevel, isSessionRecoverable, buildStateArgs } = require('../agents/agentResume');
-const { cancelGracePeriod } = require('./idleHibernate');
 
 const CRASH_UPTIME_MS = 30000;
 const CRASH_THRESHOLD = 3;
@@ -155,8 +154,6 @@ async function resumeSession({
             agentId: session.agentId || agentMeta.id,
             ...(session.customImageId ? { image: await resolveCustomImageRef(session.customImageId, requestUser.id) } : {}),
         });
-
-        cancelGracePeriod(runtimeReady.runtime?.runtimeRef);
 
         const workspacePath = runtimeReady.workspacePath;
         const runtimeRef = runtimeReady.runtime ? runtimeReady.runtime.runtimeRef : undefined;

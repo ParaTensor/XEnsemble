@@ -47,7 +47,7 @@ const { registerCustomImageRoutes } = require('./routes/customImages');
 const { LocalGitService } = require('./git/LocalGitService');
 const { applyTerminalMessage, subscribeTerminal } = require('./session/terminalBridge');
 const { resumeSession, registerSessionLifecycle } = require('./session/resumeSession');
-const { createIdleHibernateMonitor, stopSession, cancelGracePeriod } = require('./session/idleHibernate');
+const { createIdleHibernateMonitor, stopSession } = require('./session/idleHibernate');
 const { buildResumeSessionContext } = require('./session/resumeSessionContext');
 const transcriptStore = require('./runtime/TranscriptStore');
 const unigateway = require('./gateway/unigatewayManager');
@@ -1120,7 +1120,6 @@ fastify.post('/api/v1/session/start', { preValidation: [fastify.authenticate] },
             });
             workspacePath = ready.workspacePath;
             runtimeId = ready.runtime.id;
-            cancelGracePeriod(ready.runtime?.runtimeRef);
         } catch (err) {
             fastify.log.error({ err, sessionId }, '[sessions] async provisioning: ensureProjectRuntime failed');
             await markSessionFailed(sessionId, err instanceof RuntimeError ? err.message : (err.message || 'Failed to prepare project runtime'));
