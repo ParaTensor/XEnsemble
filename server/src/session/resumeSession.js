@@ -226,24 +226,15 @@ async function resumeSession({
         // when the sessions/ subdirectory is empty).
         let canResume = true;
         if (resumeSpec.resumeCheckSubdir && stateDirPath) {
-            const checkDir = `${stateDirPath}/${resumeSpec.resumeCheckSubdir}`;
-            const checkHasFiles = async () => {
+            try {
+                const checkDir = `${stateDirPath}/${resumeSpec.resumeCheckSubdir}`;
                 const result = await runtime.exec.exec(
                     'sh', ['-c', `test -n "$(ls -A '${checkDir}' 2>/dev/null)"`],
                     {}, { runtimeRef, cwd: '/' }
                 );
-                return result.exitCode === 0;
-            };
-            try {
-                canResume = await checkHasFiles();
-                if (!canResume) {
-                    // VM filesystem may not be fully synced after hibernate/wake.
-                    // Wait briefly and retry before concluding no conversation data.
-                    await new Promise((r) => setTimeout(r, 500));
-                    canResume = await checkHasFiles();
-                }
+                canResume = result.exitCode === 0;
             } catch {
-                canResume = true;
+                canResume = true; // Conservative: allow resume if check fails
             }
         }
 
