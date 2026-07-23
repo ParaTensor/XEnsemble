@@ -1,6 +1,7 @@
 const { eq } = require('drizzle-orm');
 const { sessionStateDirExists, prepareHomeRedirect } = require('./stateDir');
 const { getAgentResume, getAgentResumeLevel, isSessionRecoverable, buildStateArgs } = require('../agents/agentResume');
+const { cancelGracePeriod } = require('./idleHibernate');
 
 const CRASH_UPTIME_MS = 30000;
 const CRASH_THRESHOLD = 3;
@@ -155,8 +156,34 @@ async function resumeSession({
             ...(session.customImageId ? { image: await resolveCustomImageRef(session.customImageId, requestUser.id) } : {}),
         });
 
+        cancelGracePeriod(runtimeReady.runtime?.runtimeRef);
+
         const workspacePath = runtimeReady.workspacePath;
         const runtimeRef = runtimeReady.runtime ? runtimeReady.runtime.runtimeRef : undefined;
+
+        // Start authMode and kimiConfig early — they don't depend on stateDir state.
+        const authModePromise = agentGatewayConfig.getAgentAuthMode(agentMeta.id);
+        const kimiConfigPromise = (async () => {
+            try {
+                const { ensureKimiConfig } = require('../workspace/kimiConfigBootstrap');
+                await ensureKimiConfig({
+                    runtime,
+                    runtimeRef,
+                    userId: requestUser.id,
+                    agentId: agentMeta.id,
+                    warn: (msg) => {
+                        if (fastifyLog?.warn) fastifyLog.warn(msg);
+                        else if (requestLog?.warn) requestLog.warn(msg);
+                    },
+                });
+            } catch (err) {
+                if (fastifyLog?.warn) {
+                    fastifyLog.warn(err, '[sessions] kimi config bootstrap failed');
+                } else if (requestLog?.warn) {
+                    requestLog.warn(err, '[sessions] kimi config bootstrap failed');
+                }
+            }
+        })();
 
         // Parallelize ensureAgentResume (host bash, best-effort) and sessionStateDirExists (VM exec, blocking).
         // Previously these were serial, adding ~500ms-1s to resume latency.
@@ -240,32 +267,7 @@ async function resumeSession({
             resolvedSpawnEnv.env.XENSEMBLE_REPO_URL = project.githubFullName || '';
         }
 
-        // Parallelize getAgentAuthMode (DB query) and ensureKimiConfig (VM exec, best-effort).
-        // Previously serial, adding ~500ms to resume latency.
-        const [authMode] = await Promise.all([
-            agentGatewayConfig.getAgentAuthMode(agentMeta.id),
-            (async () => {
-                try {
-                    const { ensureKimiConfig } = require('../workspace/kimiConfigBootstrap');
-                    await ensureKimiConfig({
-                        runtime,
-                        runtimeRef: runtimeReady.runtime ? runtimeReady.runtime.runtimeRef : undefined,
-                        userId: requestUser.id,
-                        agentId: agentMeta.id,
-                        warn: (msg) => {
-                            if (fastifyLog?.warn) fastifyLog.warn(msg);
-                            else if (requestLog?.warn) requestLog.warn(msg);
-                        },
-                    });
-                } catch (err) {
-                    if (fastifyLog?.warn) {
-                        fastifyLog.warn(err, '[sessions] kimi config bootstrap failed');
-                    } else if (requestLog?.warn) {
-                        requestLog.warn(err, '[sessions] kimi config bootstrap failed');
-                    }
-                }
-            })(),
-        ]);
+        const [authMode] = await Promise.all([authModePromise, kimiConfigPromise]);
 
         let sessionToken = null;
         if (authMode === 'gateway') {

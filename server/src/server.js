@@ -31,6 +31,7 @@ const schema = require('./db/schema');
 const { eq, and, ne, sql } = require('drizzle-orm');
 const auth = require('./auth/index');
 const { assertActiveUser } = require('./auth/assertActiveUser');
+const { addSseClient, broadcastSse } = require('./session/sseManager');
 const { getProjectForUser, invalidateProjectCache } = require('./projects/getProjectForUser');
 const { registerAuthHooks } = require('./auth/hooks');
 const policy = require('./auth/PolicyService');
@@ -46,7 +47,7 @@ const { registerCustomImageRoutes } = require('./routes/customImages');
 const { LocalGitService } = require('./git/LocalGitService');
 const { applyTerminalMessage, subscribeTerminal } = require('./session/terminalBridge');
 const { resumeSession, registerSessionLifecycle } = require('./session/resumeSession');
-const { createIdleHibernateMonitor, stopSession } = require('./session/idleHibernate');
+const { createIdleHibernateMonitor, stopSession, cancelGracePeriod } = require('./session/idleHibernate');
 const { buildResumeSessionContext } = require('./session/resumeSessionContext');
 const transcriptStore = require('./runtime/TranscriptStore');
 const unigateway = require('./gateway/unigatewayManager');
@@ -61,6 +62,7 @@ const runtime = getRuntime();
 async function markSessionFailed(sessionId, errMsg, log) {
     await db.update(schema.sessions).set({ status: 'failed', provisioningError: errMsg }).where(eq(schema.sessions.id, sessionId));
     if (log) log({ sessionId }, `[sessions] provisioning failed: ${errMsg}`);
+    try { broadcastSse({ type: 'session_status', sessionId, status: 'failed' }); } catch (_) {}
 }
 
 function formatAgentRow(a) {
@@ -205,6 +207,20 @@ fastify.get('/api/v1/agents', { preValidation: [fastify.authenticate] }, async (
             gateway_model: cfg?.model || null,
         };
     });
+});
+
+fastify.get('/api/v1/events', { preValidation: [fastify.authenticate] }, async (request, reply) => {
+    reply.raw.writeHead(200, {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache',
+        'Connection': 'keep-alive',
+    });
+    reply.raw.write(': ok\n\n');
+    addSseClient(reply.raw);
+    const heartbeat = setInterval(() => {
+        try { reply.raw.write(': heartbeat\n\n'); } catch (_) { clearInterval(heartbeat); }
+    }, 30000);
+    request.raw.on('close', () => clearInterval(heartbeat));
 });
 
 fastify.post('/api/v1/agents', { preValidation: [fastify.authenticate, fastify.requireAdmin] }, async (request, reply) => {
@@ -1104,6 +1120,7 @@ fastify.post('/api/v1/session/start', { preValidation: [fastify.authenticate] },
             });
             workspacePath = ready.workspacePath;
             runtimeId = ready.runtime.id;
+            cancelGracePeriod(ready.runtime?.runtimeRef);
         } catch (err) {
             fastify.log.error({ err, sessionId }, '[sessions] async provisioning: ensureProjectRuntime failed');
             await markSessionFailed(sessionId, err instanceof RuntimeError ? err.message : (err.message || 'Failed to prepare project runtime'));
@@ -1285,6 +1302,7 @@ fastify.post('/api/v1/session/start', { preValidation: [fastify.authenticate] },
             status: 'running',
             streamRef: streamRef || null,
         }).where(eq(schema.sessions.id, sessionId));
+        broadcastSse({ type: 'session_status', sessionId, status: 'running' });
     })().catch((err) => {
         fastify.log.error({ err, sessionId }, '[sessions] async provisioning uncaught error');
         markSessionFailed(sessionId, err.message || 'Unexpected error during session provisioning').catch(() => {});

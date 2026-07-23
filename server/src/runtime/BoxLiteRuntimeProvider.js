@@ -152,7 +152,9 @@ class BoxLiteRuntimeProvider extends RuntimeProvider {
         const { reused } = await openSession();
 
         if (!reused) {
-            const cleanCaches = async () => {
+            const probeCmd = resolveAgentProbeCommand(opts.agentId);
+
+            const cleanCaches = (async () => {
                 try {
                     await this.client.execForResult(name, 'sh', ['-c',
                         'for d in /root/.npm/_cacache /root/.cache /tmp; do rm -rf "$d"/* 2>/dev/null || true; done',
@@ -160,17 +162,43 @@ class BoxLiteRuntimeProvider extends RuntimeProvider {
                 } catch (_) {
                     // Best-effort: if the cleanup fails the agent still runs.
                 }
-            };
-            await cleanCaches();
-        }
+            })();
 
-        if (!reused) {
-            const probeCmd = resolveAgentProbeCommand(opts.agentId);
-            if (probeCmd && !(await probeAgentCommand(this.client, name, probeCmd, guestWorkspacePath))) {
+            const probePromise = probeCmd
+                ? probeAgentCommand(this.client, name, probeCmd, guestWorkspacePath).catch(() => false)
+                : Promise.resolve(true);
+
+            let initError = null;
+            const initPromise = Promise.all([
+                this.ensureWorkspacePath(name, guestWorkspacePath),
+                opts.agentId
+                    ? (async () => {
+                        const { ensureAgentBootstrap } = require('../workspace/agentBootstrap');
+                        await ensureAgentBootstrap(project, hostWorkspacePath);
+                    })()
+                    : Promise.resolve(),
+            ]).catch((e) => { initError = e; });
+
+            const [probeOk] = await Promise.all([probePromise, cleanCaches, initPromise]);
+
+            if (probeCmd && !probeOk) {
                 await this.client.deleteSession(name);
                 await openSession();
-                await this.client.execForResult(name, 'sh', ['-c',
-                    'for d in /root/.npm/_cacache /root/.cache /tmp; do rm -rf "$d"/* 2>/dev/null || true; done',
+                await Promise.all([
+                    (async () => {
+                        try {
+                            await this.client.execForResult(name, 'sh', ['-c',
+                                'for d in /root/.npm/_cacache /root/.cache /tmp; do rm -rf "$d"/* 2>/dev/null || true; done',
+                            ]);
+                        } catch (_) {}
+                    })(),
+                    this.ensureWorkspacePath(name, guestWorkspacePath),
+                    opts.agentId
+                        ? (async () => {
+                            const { ensureAgentBootstrap } = require('../workspace/agentBootstrap');
+                            await ensureAgentBootstrap(project, hostWorkspacePath);
+                        })()
+                        : Promise.resolve(),
                 ]);
                 if (!(await probeAgentCommand(this.client, name, probeCmd, guestWorkspacePath))) {
                     throw new RuntimeError(
@@ -178,6 +206,8 @@ class BoxLiteRuntimeProvider extends RuntimeProvider {
                         502,
                     );
                 }
+            } else if (initError) {
+                throw initError;
             }
         }
 
@@ -188,13 +218,6 @@ class BoxLiteRuntimeProvider extends RuntimeProvider {
             } catch (_) {
                 // snapshot may not exist yet or first provision; continue
             }
-        }
-        if (!reused) {
-            await this.ensureWorkspacePath(name, guestWorkspacePath);
-        }
-        if (opts.agentId && !reused) {
-            const { ensureAgentBootstrap } = require('../workspace/agentBootstrap');
-            await ensureAgentBootstrap(project, hostWorkspacePath);
         }
         return { runtimeRef: name, workspacePath: guestWorkspacePath, image, mountKey };
     }

@@ -3,6 +3,11 @@ const schema = require('../db/schema');
 const { eq } = require('drizzle-orm');
 const { DEFAULT_QUOTA } = require('../auth/PolicyService');
 
+const CACHE_TTL_MS = 5000;
+
+let _cache = null;
+let _cacheAt = 0;
+
 const DEFAULTS = {
     llm_auth_mode: 'byok',
     registration_mode: 'open',
@@ -36,10 +41,13 @@ async function set(key, value) {
     } else {
         await db.insert(schema.platformSettings).values({ key, value: serialized });
     }
+    _cache = null;
     return value;
 }
 
 async function getAll() {
+    const now = Date.now();
+    if (_cache && (now - _cacheAt) < CACHE_TTL_MS) return _cache;
     const rows = await db.select().from(schema.platformSettings);
     const out = { ...DEFAULTS };
     for (const row of rows) {
@@ -49,6 +57,8 @@ async function getAll() {
             out[row.key] = row.value;
         }
     }
+    _cache = out;
+    _cacheAt = now;
     return out;
 }
 
@@ -105,6 +115,7 @@ async function seedDefaults(dbConn = db) {
             value: JSON.stringify(value),
         }).onConflictDoNothing();
     }
+    _cache = null;
 }
 
 module.exports = {

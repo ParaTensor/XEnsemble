@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { apiFetch } from '../lib/api';
+import { apiFetch, getAccessToken } from '../lib/api';
 import {
   readBootstrapConsoleState,
   saveConsoleCache,
@@ -15,6 +15,13 @@ const NORMAL_INTERVAL_MS = 15000;
 const PENDING_MAX_DURATION_MS = 5 * 60 * 1000; // cap 2s mode at 5 minutes
 const DEBOUNCE_MS = 300;
 
+function getSseUrl() {
+  const base = import.meta.env.VITE_API_BASE_URL
+    || (typeof window !== 'undefined' ? window.location.origin : '');
+  const token = getAccessToken();
+  return `${base}/api/v1/events?access_token=${encodeURIComponent(token || '')}`;
+}
+
 export function useWorkspaces(user) {
   const [agents, setAgents] = useState(() => readBootstrapConsoleState(null).agents);
   const [projects, setProjects] = useState(() => readBootstrapConsoleState(null).projects);
@@ -22,6 +29,7 @@ export function useWorkspaces(user) {
   const [activeSession, setActiveSession] = useState(() => readBootstrapConsoleState(null).activeSession);
 
   const hasPendingRef = useRef(false);
+  const [hasPending, setHasPending] = useState(false);
   const pendingSinceRef = useRef(0);
   const debounceTimerRef = useRef(null);
   const fetchInFlightRef = useRef(false);
@@ -98,10 +106,12 @@ export function useWorkspaces(user) {
   }, [user?.id, fetchAgents]);
 
   useEffect(() => {
-    hasPendingRef.current = sessions.some((s) => s.status === 'pending');
-    if (hasPendingRef.current && !pendingSinceRef.current) {
+    const pending = sessions.some((s) => s.status === 'pending');
+    hasPendingRef.current = pending;
+    setHasPending(pending);
+    if (pending && !pendingSinceRef.current) {
       pendingSinceRef.current = Date.now();
-    } else if (!hasPendingRef.current) {
+    } else if (!pending) {
       pendingSinceRef.current = 0;
     }
   }, [sessions]);
@@ -143,6 +153,26 @@ export function useWorkspaces(user) {
     document.addEventListener('visibilitychange', onVisibilityChange);
     return () => document.removeEventListener('visibilitychange', onVisibilityChange);
   }, [fetchProjects, fetchSessions, user?.id]);
+
+  useEffect(() => {
+    if (typeof EventSource === 'undefined' || !hasPending) return;
+    const es = new EventSource(getSseUrl());
+    const onMessage = (e) => {
+      try {
+        const data = JSON.parse(e.data);
+        if (data.type === 'session_status') {
+          fetchSessions();
+        }
+      } catch {
+        // ignore invalid data
+      }
+    };
+    es.addEventListener('message', onMessage);
+    return () => {
+      es.removeEventListener('message', onMessage);
+      es.close();
+    };
+  }, [hasPending, fetchSessions]);
 
   useEffect(() => {
     if (sessions.length === 0) return;
