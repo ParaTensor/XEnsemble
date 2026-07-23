@@ -180,6 +180,40 @@ class GitOperationService {
             .filter(Boolean);
     }
 
+    async getStatusLight(project) {
+        const statusOut = await this._execGit(project, ['status', '--porcelain=v1']).catch(() => ({ stdout: '' }));
+        const lines = statusOut.stdout.split('\n').filter(Boolean);
+        const files = [];
+        let dirty = false;
+        const stagedFiles = [];
+        const unstagedFiles = [];
+        for (const line of lines) {
+            if (line.length < 2) continue;
+            const x = line[0];
+            const y = line[1];
+            const filePath = line.slice(3).trim();
+            const entry = { path: filePath, status: x + y };
+            if (x === '?' && y === '?') {
+                dirty = true;
+                entry.type = 'untracked';
+            } else {
+                if (x !== ' ') dirty = true;
+                if (y !== ' ') dirty = true;
+                if (x !== ' ' && y !== ' ') {
+                    entry.type = 'both';
+                } else if (x !== ' ') {
+                    entry.type = 'staged';
+                } else {
+                    entry.type = 'modified';
+                }
+            }
+            files.push(entry);
+            if (x !== ' ' && x !== '?') stagedFiles.push(entry);
+            if (y !== ' ') unstagedFiles.push(entry);
+        }
+        return { files, stagedFiles, unstagedFiles, dirty };
+    }
+
     async getStatus(project) {
         const [branchOut, shaOut, statusOut] = await Promise.all([
             this._execGit(project, ['rev-parse', '--abbrev-ref', 'HEAD']).catch(() => ({ stdout: 'HEAD' })),

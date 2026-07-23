@@ -361,7 +361,10 @@ function registerGitHubRoutes(fastify) {
         const project = await getProjectForUser(request.user.id, request.params.id);
         if (!project) return reply.code(404).send({ error: 'Project not found' });
         try {
-            const status = await gitOperationService.getStatus(project);
+            const mode = request.query.mode === 'light' ? 'light' : 'full';
+            const status = mode === 'light'
+                ? await gitOperationService.getStatusLight(project)
+                : await gitOperationService.getStatus(project);
             return status;
         } catch (err) {
             request.log.error(err);
@@ -388,7 +391,8 @@ function registerGitHubRoutes(fastify) {
         try {
             const author = { name: authorName, email: authorEmail };
             const result = await gitOperationService.commitStaged(project, message, author);
-            return result;
+            const status = await gitOperationService.getStatusLight(project).catch(() => null);
+            return { ...result, status };
         } catch (err) {
             request.log.error(err);
             return reply.code(500).send({ error: err.message });
@@ -440,7 +444,8 @@ function registerGitHubRoutes(fastify) {
         if (!branchName) return reply.code(400).send({ error: 'No current branch to push' });
         try {
             const result = await gitOperationService.pushBranch(project, branchName);
-            return result;
+            const status = await gitOperationService.getStatus(project).catch(() => null);
+            return { ...result, status };
         } catch (err) {
             request.log.error(err);
             return reply.code(500).send({ error: err.message });

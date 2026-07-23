@@ -7,6 +7,9 @@ const path = require('path');
 const fs = require('fs');
 const WebSocket = require('ws');
 
+const FS_LIST_CACHE_TTL_MS = 3000;
+const fsListCache = new Map();
+
 const { sendPublicError, sanitizePublicError } = require('./http/publicError');
 const { getRuntime } = require('./runtime/registry');
 const { AgentSpawnError, RuntimeError } = require('./runtime/interfaces');
@@ -1377,9 +1380,6 @@ fastify.register(async function terminalWsRoutes(app) {
                 ws.close();
                 return;
             }
-            const userRows = await db.select().from(schema.users)
-                .where(eq(schema.users.id, payload.id));
-            const wsUser = userRows[0] || { id: payload.id, role: 'user', status: 'active' };
 
             if (!sessionId) {
                 sendJson({ type: 'error', data: 'sessionId is required' });
@@ -1387,8 +1387,12 @@ fastify.register(async function terminalWsRoutes(app) {
                 return;
             }
 
-            const sessionRows = await db.select().from(schema.sessions)
-                .where(and(eq(schema.sessions.id, sessionId), eq(schema.sessions.userId, payload.id)));
+            const [userRows, sessionRows] = await Promise.all([
+                db.select().from(schema.users).where(eq(schema.users.id, payload.id)),
+                db.select().from(schema.sessions).where(and(eq(schema.sessions.id, sessionId), eq(schema.sessions.userId, payload.id))),
+            ]);
+            const wsUser = userRows[0] || { id: payload.id, role: 'user', status: 'active' };
+
             if (sessionRows.length === 0) {
                 sendJson({ type: 'error', data: 'Session not found or not active' });
                 ws.close();
@@ -1740,7 +1744,12 @@ fastify.get('/api/v1/workspace/files', { preValidation: [fastify.authenticate, f
         const depth = request.query.depth === 'single' ? 'single' : 'recursive';
         const ready = await ensureProjectRuntime(project);
         const ref = ready.runtime ? ready.runtime.runtimeRef : undefined;
-        return runtime.fs.fsList(ready.workspacePath, relativePath, { runtimeRef: ref, includeHidden, depth });
+        const cacheKey = `${ref}:${relativePath}:${depth}`;
+        const cached = fsListCache.get(cacheKey);
+        if (cached && cached.expiresAt > Date.now()) return cached.data;
+        const files = await runtime.fs.fsList(ready.workspacePath, relativePath, { runtimeRef: ref, includeHidden, depth });
+        fsListCache.set(cacheKey, { data: files, expiresAt: Date.now() + FS_LIST_CACHE_TTL_MS });
+        return files;
     } catch (err) {
         if (err instanceof RuntimeError) return reply.code(err.statusCode).send({ error: err.message });
         request.log.error(err);
@@ -1841,6 +1850,7 @@ fastify.put('/api/v1/workspace/file', { preValidation: [fastify.authenticate, fa
         }
 
         const result = await runtime.fs.fsWrite(ready.workspacePath, filePath, content, { runtimeRef: ref });
+        fsListCache.clear();
         request.log.info({ userId: request.user.id, projectId, path: filePath, action: 'write' }, 'workspace fs op');
         return { ok: true, path: result.path, size: result.size };
     } catch (err) {
@@ -1863,6 +1873,7 @@ fastify.delete('/api/v1/workspace/file', { preValidation: [fastify.authenticate,
         const ready = await ensureProjectRuntime(project);
         const ref = ready.runtime ? ready.runtime.runtimeRef : undefined;
         await runtime.fs.fsDelete(ready.workspacePath, filePath, { runtimeRef: ref });
+        fsListCache.clear();
         request.log.info({ userId: request.user.id, projectId, path: filePath, action: 'delete' }, 'workspace fs op');
         return { ok: true, path: filePath };
     } catch (err) {
@@ -1886,6 +1897,7 @@ fastify.post('/api/v1/workspace/dir', { preValidation: [fastify.authenticate, fa
         const ready = await ensureProjectRuntime(project);
         const ref = ready.runtime ? ready.runtime.runtimeRef : undefined;
         await runtime.fs.mkdirp(ready.workspacePath, dirPath, { runtimeRef: ref });
+        fsListCache.clear();
         request.log.info({ userId: request.user.id, projectId, path: dirPath, action: 'mkdir' }, 'workspace fs op');
         return { ok: true, path: dirPath };
     } catch (err) {
@@ -1908,6 +1920,7 @@ fastify.delete('/api/v1/workspace/dir', { preValidation: [fastify.authenticate, 
         const ready = await ensureProjectRuntime(project);
         const ref = ready.runtime ? ready.runtime.runtimeRef : undefined;
         await runtime.fs.fsRmdir(ready.workspacePath, dirPath, { runtimeRef: ref });
+        fsListCache.clear();
         request.log.info({ userId: request.user.id, projectId, path: dirPath, action: 'rmdir' }, 'workspace fs op');
         return { ok: true, path: dirPath };
     } catch (err) {
@@ -1931,6 +1944,7 @@ fastify.post('/api/v1/workspace/move', { preValidation: [fastify.authenticate, f
         const ready = await ensureProjectRuntime(project);
         const ref = ready.runtime ? ready.runtime.runtimeRef : undefined;
         await runtime.fs.fsMove(ready.workspacePath, from, to, { runtimeRef: ref });
+        fsListCache.clear();
         request.log.info({ userId: request.user.id, projectId, from, to, action: 'move' }, 'workspace fs op');
         return { ok: true, from, to };
     } catch (err) {

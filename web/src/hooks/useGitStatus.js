@@ -1,21 +1,24 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState, useRef } from 'react';
 import { useToast } from '../components/Toast';
 import * as githubApi from '../lib/githubApi';
 
 const POLL_INTERVAL_MS = 15000;
+const FULL_POLL_INTERVAL_MS = 60000;
 
 export function useGitStatus(projectId) {
   const { showToast } = useToast();
   const [status, setStatus] = useState(null);
   const [loading, setLoading] = useState(false);
   const [operation, setOperation] = useState(null);
+  const lastFullAtRef = useRef(0);
 
-  const fetchStatus = useCallback(async ({ silent = false } = {}) => {
+  const fetchStatusFull = useCallback(async ({ silent = false } = {}) => {
     if (!projectId) return null;
     if (!silent) setLoading(true);
     try {
       const data = await githubApi.getGitStatus(projectId);
       setStatus(data);
+      lastFullAtRef.current = Date.now();
       return data;
     } catch (err) {
       if (!silent) showToast('error', err.message);
@@ -25,33 +28,58 @@ export function useGitStatus(projectId) {
     }
   }, [projectId, showToast]);
 
+  const fetchStatusLight = useCallback(async () => {
+    if (!projectId) return;
+    try {
+      const data = await githubApi.getGitStatusLight(projectId);
+      setStatus((prev) => prev ? { ...prev, ...data } : data);
+    } catch {
+      // ignore light poll errors silently
+    }
+  }, [projectId]);
+
   useEffect(() => {
-    fetchStatus();
+    fetchStatusFull();
+    lastFullAtRef.current = Date.now();
     let timer;
     const scheduleNext = () => {
+      const now = Date.now();
+      const needFull = (now - lastFullAtRef.current) >= FULL_POLL_INTERVAL_MS;
+      const interval = needFull ? 0 : POLL_INTERVAL_MS;
       timer = setTimeout(() => {
-        // Skip polling when the tab is hidden (saves battery + server load).
         if (typeof document !== 'undefined' && document.hidden) {
           scheduleNext();
           return;
         }
-        fetchStatus({ silent: true });
+        if (needFull || (Date.now() - lastFullAtRef.current) >= FULL_POLL_INTERVAL_MS) {
+          fetchStatusFull({ silent: true });
+          lastFullAtRef.current = Date.now();
+        } else {
+          fetchStatusLight();
+        }
         scheduleNext();
-      }, POLL_INTERVAL_MS);
+      }, interval);
     };
     scheduleNext();
     return () => clearTimeout(timer);
-  }, [fetchStatus]);
+  }, [fetchStatusFull, fetchStatusLight]);
 
-  // Fetch immediately when tab becomes visible again.
   useEffect(() => {
     if (typeof document === 'undefined') return;
     const onVisible = () => {
-      if (!document.hidden && projectId) fetchStatus({ silent: true });
+      if (!document.hidden && projectId) {
+        const now = Date.now();
+        if ((now - lastFullAtRef.current) >= FULL_POLL_INTERVAL_MS) {
+          fetchStatusFull({ silent: true });
+          lastFullAtRef.current = now;
+        } else {
+          fetchStatusLight();
+        }
+      }
     };
     document.addEventListener('visibilitychange', onVisible);
     return () => document.removeEventListener('visibilitychange', onVisible);
-  }, [projectId, fetchStatus]);
+  }, [projectId, fetchStatusFull, fetchStatusLight]);
 
   const commit = useCallback(async (message, author) => {
     if (!projectId || !message?.trim()) return;
@@ -59,7 +87,11 @@ export function useGitStatus(projectId) {
     try {
       const result = await githubApi.commitAll(projectId, message.trim(), author);
       showToast('success', 'Changes committed.');
-      fetchStatus({ silent: true });
+      if (result.status) {
+        setStatus((prev) => prev ? { ...prev, ...result.status } : null);
+      } else {
+        fetchStatusFull({ silent: true });
+      }
       return result;
     } catch (err) {
       if (err.code === 'AUTHOR_REQUIRED') {
@@ -70,7 +102,7 @@ export function useGitStatus(projectId) {
     } finally {
       setOperation(null);
     }
-  }, [projectId, showToast, fetchStatus]);
+  }, [projectId, showToast, fetchStatusFull]);
 
   const push = useCallback(async () => {
     if (!projectId) return;
@@ -78,7 +110,11 @@ export function useGitStatus(projectId) {
     try {
       const result = await githubApi.pushBranch(projectId, status?.branch);
       showToast('success', 'Branch pushed.');
-      fetchStatus({ silent: true });
+      if (result.status) {
+        setStatus(result.status);
+      } else {
+        fetchStatusFull({ silent: true });
+      }
       return result;
     } catch (err) {
       showToast('error', err.message);
@@ -86,7 +122,7 @@ export function useGitStatus(projectId) {
     } finally {
       setOperation(null);
     }
-  }, [projectId, status?.branch, showToast, fetchStatus]);
+  }, [projectId, status?.branch, showToast, fetchStatusFull]);
 
   const pull = useCallback(async () => {
     if (!projectId) return;
@@ -94,7 +130,7 @@ export function useGitStatus(projectId) {
     try {
       const result = await githubApi.pullLatest(projectId);
       showToast('success', 'Pulled latest changes.');
-      fetchStatus({ silent: true });
+      fetchStatusFull({ silent: true });
       return result;
     } catch (err) {
       showToast('error', err.message);
@@ -102,7 +138,7 @@ export function useGitStatus(projectId) {
     } finally {
       setOperation(null);
     }
-  }, [projectId, showToast, fetchStatus]);
+  }, [projectId, showToast, fetchStatusFull]);
 
   return {
     status,
@@ -111,6 +147,6 @@ export function useGitStatus(projectId) {
     commit,
     push,
     pull,
-    fetchStatus,
+    fetchStatus: fetchStatusFull,
   };
 }

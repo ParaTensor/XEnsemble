@@ -10,6 +10,7 @@ const META_UPDATE_INTERVAL_MS = Number(process.env.TRANSCRIPT_META_UPDATE_INTERV
 const META_UPDATE_INTERVAL_SEQ = Number(process.env.TRANSCRIPT_META_UPDATE_INTERVAL_SEQ) || 50;
 const FLUSH_INTERVAL_MS = Number(process.env.TRANSCRIPT_FLUSH_INTERVAL_MS) || 100;
 const FLUSH_SIZE_BYTES = Number(process.env.TRANSCRIPT_FLUSH_SIZE_BYTES) || 65536;
+const MAX_FRAMES = Number(process.env.TRANSCRIPT_MAX_FRAMES) || 50000;
 
 function safeRef(ref) {
     return String(ref || '').replace(/[^a-zA-Z0-9_-]/g, '_');
@@ -77,6 +78,10 @@ class TranscriptStore {
                         // ignore malformed legacy lines
                     }
                 }
+                if (frames.length > MAX_FRAMES) {
+                    const trimmed = frames.length - MAX_FRAMES;
+                    frames.splice(0, trimmed);
+                }
             } catch (_) {
                 // treat unreadable files as empty
             }
@@ -133,6 +138,9 @@ class TranscriptStore {
         state.frames.push(stored);
         state.headSeq = seq;
         state.bytes += stored.bytes;
+        if (state.frames.length > MAX_FRAMES) {
+            state.frames.splice(0, state.frames.length - MAX_FRAMES);
+        }
         if (frame.kind === 'exit') {
             state.exited = true;
             state.exitSeq = seq;
@@ -189,18 +197,13 @@ class TranscriptStore {
         const state = this._state(streamRef);
         if (!state) return 0;
 
-        let lastExitIndex = -1;
-        for (let i = state.frames.length - 1; i >= 0; i -= 1) {
-            if (state.frames[i].kind === 'exit') {
-                lastExitIndex = i;
-                break;
-            }
-        }
+        if (!state.exited || state.exitSeq == null) return 0;
 
         let cursor = 0;
         let sawOut = false;
-        for (let i = lastExitIndex + 1; i < state.frames.length; i += 1) {
+        for (let i = 0; i < state.frames.length; i += 1) {
             const frame = state.frames[i];
+            if (frame.seq <= (state.exitSeq || 0)) continue;
             if (frame.kind !== 'out') continue;
             if (!Number.isInteger(frame.rseq) || frame.rseq < 0) {
                 return null;

@@ -103,7 +103,6 @@ async function subscribeTerminal(sessionId, send, options = {}) {
         }
         offExit();
         offOutput();
-        clearInterval(metricsInterval);
     };
 
     const REPLAY_CHUNK_SIZE = 512 * 1024;
@@ -238,14 +237,6 @@ async function subscribeTerminal(sessionId, send, options = {}) {
             queueMicrotask(flushLiveBatch);
         }
     });
-
-    const metricsInterval = setInterval(async () => {
-        if (!sessionManager.isAlive(sessionId)) return;
-        try {
-            const stats = await handle.getMetrics();
-            send({ type: 'metrics', data: stats });
-        } catch (_) { /* ignore metrics errors */ }
-    }, 3000);
 
     const offExit = sessionManager.onExit(sessionId, (exitCode, exitSeq) => {
         pendingExit = {
