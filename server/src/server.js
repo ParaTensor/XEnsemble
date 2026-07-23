@@ -1519,6 +1519,11 @@ fastify.register(async function workspaceTerminalWsRoutes(app) {
                 return;
             }
 
+            // Send an initial empty output to keep the WebSocket alive through
+            // proxies (e.g. Cloudflare) that close idle connections before the
+            // shell process has time to start and produce output.
+            sendJson({ type: 'output', data: '' });
+
             let ready;
             try {
                 ready = await ensureProjectRuntime(project);
