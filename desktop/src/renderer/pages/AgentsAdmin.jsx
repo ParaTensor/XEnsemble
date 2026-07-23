@@ -1,27 +1,35 @@
-import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { Plus, Download, KeyRound, Pencil, Trash2, RefreshCw } from 'lucide-react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { Plus, Download, KeyRound, Pencil, Trash2, RefreshCw, Info, MoreHorizontal } from 'lucide-react';
 
 import Button from '../components/Button';
 import Input from '../components/Input';
 import SelectMenu from '../components/SelectMenu';
 import PageHeader from '../components/PageHeader';
-import { ConsoleDialogShell } from '../components/ConsoleDialog';
+import {
+  ConsoleDialogShell,
+  ConsoleStructuredDialogBody,
+  ConsoleStructuredDialogFooter,
+  ConsoleStructuredDialogHeader,
+} from '../components/ConsoleDialog';
 import { useToast } from '../components/Toast';
 import {
+  consoleCardClass,
   consoleDialogAdminFormPanelClass,
-  consolePageStackClass,
+  consoleIconButtonClass,
+  consoleMenuDropdownZClass,
+  consoleStructuredDialogPanelClass,
+  consoleAdminPageClass,
   consoleSectionLabelClass,
   consoleTableBodyCellClass,
   consoleTableHeadCellClass,
   consoleTableShellClass,
-} from '../lib/consoleTheme';
+} from '../lib/consoleTokens';
 import { loadAdminAgentsCache, saveAdminAgentsCache } from '../lib/adminAgentsCache';
 import { getSecretLabel, isSecretPasswordField } from '../lib/secretLabels';
-import { apiFetch } from '../lib/api.ts';
+import { apiFetch } from '../lib/api';
 
 const EMPTY_SPAWN_DRAFT = {
-  OPENROUTER_API_KEY: '',
-  OPENROUTER_BASE_URL: '',
+  envVars: [{ key: '', value: '' }],
   launch_command: '',
 };
 
@@ -44,6 +52,189 @@ const ACTION_LOADING_HINT = {
 function formatLifecycleTime(ts) {
   if (!ts) return '';
   return new Date(ts).toLocaleString();
+}
+
+function DetailField({ label, children, className, mono = false }) {
+  return (
+    <div className={className ?? 'min-w-0'}>
+      <p className={consoleSectionLabelClass}>{label}</p>
+      <p className={`mt-0.5 text-sm ${mono ? 'break-all font-mono text-zinc-600' : 'text-zinc-700'}`}>
+        {children}
+      </p>
+    </div>
+  );
+}
+
+function getAuthSummary(agent) {
+  const isGateway = agent.llm_auth_mode === 'gateway';
+  if (isGateway) {
+    return {
+      mode: 'Gateway',
+      hint: agent.keys_ready ? 'Ready' : 'Needs model',
+      hintClass: agent.keys_ready ? 'text-emerald-600' : 'text-amber-600',
+    };
+  }
+  return {
+    mode: 'BYOK',
+    hint: 'User keys',
+    hintClass: 'text-zinc-500',
+  };
+}
+
+function LifecycleInfoDot({ lifecycle }) {
+  if (!lifecycle) return null;
+  const label = lifecycle.ok
+    ? `${lifecycle.action} OK`
+    : `${lifecycle.action} failed`;
+  const when = formatLifecycleTime(lifecycle.finished_at);
+
+  return (
+    <span className="relative inline-flex group/lifecycle">
+      <button
+        type="button"
+        tabIndex={-1}
+        className={`ml-1.5 inline-flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-full border ${
+          lifecycle.ok
+            ? 'border-zinc-300 bg-zinc-50 text-zinc-400 hover:border-zinc-400 hover:text-zinc-600'
+            : 'border-red-200 bg-red-50 text-red-500 hover:border-red-300'
+        }`}
+        aria-label={`${label}, ${when}`}
+      >
+        <span className="h-1 w-1 rounded-full bg-current" />
+      </button>
+      <span
+        role="tooltip"
+        className="pointer-events-none absolute bottom-full left-1/2 z-20 mb-1.5 hidden w-max max-w-xs -translate-x-1/2 rounded-md border border-zinc-200 bg-white px-2.5 py-1.5 text-xs shadow-sm group-hover/lifecycle:block"
+      >
+        <span className={`block font-medium ${lifecycle.ok ? 'text-zinc-700' : 'text-red-600'}`}>
+          {label}
+        </span>
+        {!lifecycle.ok && lifecycle.message ? (
+          <span className="mt-0.5 block text-zinc-500">{lifecycle.message}</span>
+        ) : null}
+        <span className="mt-0.5 block text-zinc-400">{when}</span>
+      </span>
+    </span>
+  );
+}
+
+function AgentActionsMenu({
+  agent,
+  loadingAction,
+  onViewDetails,
+  onEdit,
+  onInstall,
+  onCheckUpdate,
+  onUninstall,
+  onConfigure,
+}) {
+  const [open, setOpen] = useState(false);
+  const rootRef = useRef(null);
+  const installLoading = loadingAction === `${agent.id}:install`;
+  const updateLoading = loadingAction === `${agent.id}:update`;
+  const uninstallLoading = loadingAction === `${agent.id}:uninstall`;
+  const busy = Boolean(loadingAction?.startsWith(`${agent.id}:`));
+
+  useEffect(() => {
+    if (!open) return undefined;
+    const onPointerDown = (e) => {
+      if (rootRef.current && !rootRef.current.contains(e.target)) {
+        setOpen(false);
+      }
+    };
+    const onKeyDown = (e) => {
+      if (e.key === 'Escape') setOpen(false);
+    };
+    document.addEventListener('pointerdown', onPointerDown);
+    document.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.removeEventListener('pointerdown', onPointerDown);
+      document.removeEventListener('keydown', onKeyDown);
+    };
+  }, [open]);
+
+  const run = (fn) => () => {
+    setOpen(false);
+    fn();
+  };
+
+  const itemClass = (danger = false) => (
+    `w-full flex items-center gap-2 px-3 py-2 text-sm disabled:opacity-40 disabled:pointer-events-none ${
+      danger
+        ? 'text-red-600 hover:bg-red-50 hover:text-red-700'
+        : 'text-zinc-600 hover:bg-zinc-50 hover:text-zinc-900'
+    }`
+  );
+
+  return (
+    <div ref={rootRef} className="relative flex justify-end">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+        aria-haspopup="menu"
+        aria-label={`Actions for ${agent.name}`}
+        className={`${consoleIconButtonClass} ${open ? 'bg-zinc-100 text-zinc-900' : ''}`}
+      >
+        <MoreHorizontal className="w-4 h-4" />
+      </button>
+      {open && (
+        <div
+          role="menu"
+          className={`absolute right-0 top-full mt-1 w-52 rounded-lg border border-zinc-200 bg-white py-1 shadow-lg shadow-zinc-200/50 ${consoleMenuDropdownZClass}`}
+        >
+          <button type="button" role="menuitem" onClick={run(onViewDetails)} className={itemClass()}>
+            <Info className="w-4 h-4 shrink-0" />
+            View details
+          </button>
+          <button type="button" role="menuitem" onClick={run(onEdit)} className={itemClass()} disabled={busy}>
+            <Pencil className="w-4 h-4 shrink-0" />
+            Edit executable
+          </button>
+          <button type="button" role="menuitem" onClick={run(onConfigure)} className={itemClass()} disabled={busy}>
+            <KeyRound className="w-4 h-4 shrink-0" />
+            Configure
+          </button>
+          <div className="my-1 border-t border-zinc-100" role="separator" />
+          {!agent.installed ? (
+            <button
+              type="button"
+              role="menuitem"
+              onClick={run(onInstall)}
+              className={itemClass()}
+              disabled={installLoading}
+            >
+              <Download className="w-4 h-4 shrink-0" />
+              {installLoading ? 'Installing…' : 'Install on server'}
+            </button>
+          ) : (
+            <>
+              <button
+                type="button"
+                role="menuitem"
+                onClick={run(onCheckUpdate)}
+                className={itemClass()}
+                disabled={updateLoading}
+              >
+                <RefreshCw className={`w-4 h-4 shrink-0 ${updateLoading ? 'animate-spin' : ''}`} />
+                {updateLoading ? 'Updating…' : 'Check and update'}
+              </button>
+              <button
+                type="button"
+                role="menuitem"
+                onClick={run(onUninstall)}
+                className={itemClass(true)}
+                disabled={uninstallLoading}
+              >
+                <Trash2 className="w-4 h-4 shrink-0" />
+                {uninstallLoading ? 'Removing…' : 'Uninstall'}
+              </button>
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  );
 }
 
 function patchAgentLifecycle(agents, agentId, lastLifecycle) {
@@ -77,6 +268,7 @@ function getGatewaySpawnFieldDefs(agent) {
 }
 
 export default function AgentsAdmin() {
+  
   const { showToast } = useToast();
   const [agents, setAgents] = useState(() => loadAdminAgentsCache());
   const [gatewayProviders, setGatewayProviders] = useState([]);
@@ -92,9 +284,9 @@ export default function AgentsAdmin() {
   const spawnHydratedRef = useRef(false);
   const [actionLoading, setActionLoading] = useState(null);
   const [editAgent, setEditAgent] = useState(null);
+  const [detailsAgent, setDetailsAgent] = useState(null);
   const [editDraft, setEditDraft] = useState({ cmd: '', args: '' });
   const [savingExecutable, setSavingExecutable] = useState(false);
-  const [savingNewAgent, setSavingNewAgent] = useState(false);
   const [newAgent, setNewAgent] = useState({
     id: '',
     name: '',
@@ -102,6 +294,8 @@ export default function AgentsAdmin() {
     args: '[]',
     env_required: '[]',
   });
+
+  
 
   const fetchAgents = useCallback(({ silent = false } = {}) => {
     if (silent) setRefreshing(true);
@@ -141,14 +335,13 @@ export default function AgentsAdmin() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (savingNewAgent) return;
-    setSavingNewAgent(true);
     try {
       const parsedArgs = JSON.parse(newAgent.args);
       const parsedEnv = JSON.parse(newAgent.env_required);
 
       const res = await apiFetch('/api/v1/agents', {
         method: 'POST',
+        
         body: JSON.stringify({
           ...newAgent,
           args: parsedArgs,
@@ -164,17 +357,17 @@ export default function AgentsAdmin() {
       fetchAgents({ silent: true });
     } catch (err) {
       showToast('error', err.message || 'Invalid JSON in Args or Env Required');
-    } finally {
-      setSavingNewAgent(false);
     }
   };
 
   const openKeysDialog = (agent) => {
     spawnHydratedRef.current = false;
     const overrides = agent.gateway_config?.env_overrides || {};
+    const envVars = Object.keys(overrides).length > 0
+      ? Object.entries(overrides).map(([key, value]) => ({ key, value }))
+      : [{ key: '', value: '' }];
     setSpawnDraft({
-      OPENROUTER_API_KEY: overrides.OPENROUTER_API_KEY || '',
-      OPENROUTER_BASE_URL: overrides.OPENROUTER_BASE_URL || '',
+      envVars,
       launch_command: [agent.cmd, ...(agent.args || [])].filter(Boolean).join(' '),
     });
     setKeysAgent(agent);
@@ -194,12 +387,11 @@ export default function AgentsAdmin() {
     spawnHydratedRef.current = false;
   };
 
-  const fetchGatewayPreview = useCallback(async (agentId, model, llmAuthMode, provider) => {
+  const fetchGatewayPreview = useCallback(async (agentId, model, llmAuthMode) => {
     setGatewayPreviewLoading(true);
     try {
       const params = new URLSearchParams();
       if (model?.trim()) params.set('model', model.trim());
-      if (provider?.trim()) params.set('provider', provider.trim());
       if (llmAuthMode) params.set('llm_auth_mode', llmAuthMode);
       const qs = params.toString();
       const res = await apiFetch(`/api/v1/admin/agents/${agentId}/gateway-spawn-preview${qs ? `?${qs}` : ''}`);
@@ -217,41 +409,27 @@ export default function AgentsAdmin() {
       setGatewayPreview(null);
       return undefined;
     }
-    fetchGatewayPreview(keysAgent.id, authDraft.model, authDraft.llm_auth_mode, authDraft.provider);
+    fetchGatewayPreview(keysAgent.id, authDraft.model, authDraft.llm_auth_mode);
     return undefined;
-  }, [keysAgent, authDraft.llm_auth_mode, authDraft.model, authDraft.provider, fetchGatewayPreview]);
+  }, [keysAgent, authDraft.llm_auth_mode, authDraft.model, fetchGatewayPreview]);
 
-  const gatewaySpawnFields = useMemo(
-    () => getGatewaySpawnFieldDefs(keysAgent),
-    [keysAgent],
-  );
+  const gatewaySpawnFields = useMemo(() => [], []);
 
   useEffect(() => {
     if (!gatewayPreview || spawnHydratedRef.current) return;
     spawnHydratedRef.current = true;
     setSpawnDraft((prev) => ({
-      OPENROUTER_API_KEY: prev.OPENROUTER_API_KEY
-        || gatewayPreview.fields?.find((f) => f.key === 'OPENROUTER_API_KEY')?.value
-        || gatewayPreview.defaults?.OPENROUTER_API_KEY
-        || '',
-      OPENROUTER_BASE_URL: prev.OPENROUTER_BASE_URL
-        || gatewayPreview.fields?.find((f) => f.key === 'OPENROUTER_BASE_URL')?.value
-        || gatewayPreview.defaults?.OPENROUTER_BASE_URL
-        || '',
+      ...prev,
       launch_command: prev.launch_command || gatewayPreview.launch?.command_line || '',
     }));
   }, [gatewayPreview]);
 
   const buildEnvOverridesPayload = () => {
-    const defaults = gatewayPreview?.defaults || {};
     const out = {};
-    const apiKey = spawnDraft.OPENROUTER_API_KEY.trim();
-    const baseUrl = spawnDraft.OPENROUTER_BASE_URL.trim();
-    if (apiKey && apiKey !== (defaults.OPENROUTER_API_KEY || '').trim()) {
-      out.OPENROUTER_API_KEY = apiKey;
-    }
-    if (baseUrl && baseUrl !== (defaults.OPENROUTER_BASE_URL || '').trim()) {
-      out.OPENROUTER_BASE_URL = baseUrl;
+    for (const { key, value } of spawnDraft.envVars) {
+      const k = (key || '').trim();
+      const v = (value || '').trim();
+      if (k && v) out[k] = v;
     }
     return out;
   };
@@ -273,11 +451,12 @@ export default function AgentsAdmin() {
     try {
       const res = await apiFetch(`/api/v1/admin/gateway/agent-configs/${keysAgent.id}`, {
         method: 'PUT',
+        
         body: JSON.stringify({
           llm_auth_mode: mode,
           provider: mode === 'gateway' ? (authDraft.provider || undefined) : undefined,
           model: mode === 'gateway' ? authDraft.model.trim() : undefined,
-          env_overrides: mode === 'gateway' ? buildEnvOverridesPayload() : undefined,
+          env_overrides: buildEnvOverridesPayload(),
         }),
       });
       const data = await res.json();
@@ -291,6 +470,7 @@ export default function AgentsAdmin() {
         if (launchLine !== currentLine) {
           const execRes = await apiFetch(`/api/v1/agents/${keysAgent.id}`, {
             method: 'PUT',
+            
             body: JSON.stringify({ cmd, args }),
           });
           const execData = await execRes.json();
@@ -338,6 +518,7 @@ export default function AgentsAdmin() {
     try {
       const res = await apiFetch(`/api/v1/agents/${editAgent.id}`, {
         method: 'PUT',
+        
         body: JSON.stringify({ cmd, args }),
       });
       const data = await res.json();
@@ -361,6 +542,7 @@ export default function AgentsAdmin() {
     try {
       const res = await apiFetch(`/api/v1/admin/agents/${agentId}/${action}`, {
         method,
+        
         ...(method !== 'GET' ? { body: '{}' } : {}),
       });
       const data = await res.json();
@@ -423,6 +605,7 @@ export default function AgentsAdmin() {
       showToast('loading', `Updating ${agent.name}…`);
       const updateRes = await apiFetch(`/api/v1/admin/agents/${agent.id}/update`, {
         method: 'POST',
+        
         body: '{}',
       });
       const updated = await updateRes.json();
@@ -449,8 +632,6 @@ export default function AgentsAdmin() {
     }
   };
 
-  const isActionLoading = (agentId, action) => actionLoading === `${agentId}:${action}`;
-
   const canSaveKeys = keysAgent && (
     authDraft.llm_auth_mode === 'gateway'
       ? Boolean(authDraft.model?.trim())
@@ -475,7 +656,7 @@ export default function AgentsAdmin() {
   }, [gatewayProviders, authDraft.provider]);
 
   return (
-    <div className={`h-full w-full overflow-auto p-6 ${consolePageStackClass}`}>
+    <div className={consoleAdminPageClass}>
       <PageHeader
         title="Agents"
         description={
@@ -553,8 +734,8 @@ export default function AgentsAdmin() {
                   <Button type="button" variant="secondary" size="md" onClick={() => setDialogOpen(false)}>
                     Cancel
                   </Button>
-                  <Button type="submit" size="md" disabled={savingNewAgent}>
-                    {savingNewAgent ? 'Registering…' : 'Save'}
+                  <Button type="submit" size="md">
+                    Save
                   </Button>
                 </div>
               </form>
@@ -654,47 +835,82 @@ export default function AgentsAdmin() {
                         disabled={modelOptions.length === 0}
                       />
                     </div>
-                    <div className="space-y-4 border-t border-zinc-100 pt-4">
-                      <p className={`${consoleSectionLabelClass}`}>Injected at session start</p>
-                      {gatewayPreviewLoading && !gatewayPreview ? (
-                        <p className="text-sm text-zinc-500">Loading defaults…</p>
-                      ) : null}
-                      {!gatewayPreviewLoading && gatewayPreview && !gatewayPreview.gateway_running && (
-                        <p className="text-sm text-amber-700">
-                          UniGateway is not running. Start it under Settings → Gateway.
-                        </p>
-                      )}
-                      {(gatewaySpawnFields).map((field) => (
-                        <div key={field.key}>
-                          <label className={`block mb-1 ${consoleSectionLabelClass}`}>
-                            {field.label || getSecretLabel(field.key)}
-                          </label>
-                          <Input
-                            type={field.password || isSecretPasswordField(field.key) ? 'password' : 'text'}
-                            value={spawnDraft[field.key] || ''}
-                            onChange={(ev) => setSpawnDraft((d) => ({ ...d, [field.key]: ev.target.value }))}
-                            className="h-9 py-1.5 font-mono"
-                            placeholder={field.key === 'OPENROUTER_BASE_URL' ? 'http://127.0.0.1:8741/v1' : 'From Router API Key'}
-                          />
-                          <p className="mt-1 text-xs text-zinc-400">{field.source}</p>
-                        </div>
-                      ))}
-                      <div>
-                        <label className={`block mb-1 ${consoleSectionLabelClass}`}>Launch command</label>
-                        <Input
-                          value={spawnDraft.launch_command}
-                          onChange={(ev) => setSpawnDraft((d) => ({ ...d, launch_command: ev.target.value }))}
-                          className="h-9 py-1.5 font-mono"
-                          placeholder="hermes chat --ignore-user-config --provider openrouter"
-                        />
-                        <p className="mt-1 text-xs text-zinc-400">Command and arguments used when launching this agent.</p>
-                      </div>
+                    {gatewayPreviewLoading && !gatewayPreview && (
+                      <p className="text-sm text-zinc-500">Loading defaults…</p>
+                    )}
+                    {!gatewayPreviewLoading && gatewayPreview && !gatewayPreview.gateway_running && (
+                      <p className="text-sm text-amber-700">
+                        UniGateway is not running. Start it under Settings → Gateway.
+                      </p>
+                    )}
+                    <div>
+                      <label className={`block mb-1 ${consoleSectionLabelClass}`}>Launch command</label>
+                      <Input
+                        value={spawnDraft.launch_command}
+                        onChange={(ev) => setSpawnDraft((d) => ({ ...d, launch_command: ev.target.value }))}
+                        className="h-9 py-1.5 font-mono"
+                        placeholder="hermes chat --ignore-user-config --provider openrouter"
+                      />
+                      <p className="mt-1 text-xs text-zinc-400">Command and arguments used when launching this agent.</p>
                     </div>
                   </>
                 )}
+                <div className="space-y-3 border-t border-zinc-100 pt-4">
+                  <p className={`${consoleSectionLabelClass}`}>Environment variables</p>
+                  <p className="text-xs text-zinc-400">
+                    Injected at session start in both BYOK and Gateway modes. Highest priority, overrides all other env sources.
+                  </p>
+                  {spawnDraft.envVars.map((pair, idx) => (
+                    <div key={idx} className="flex gap-2 items-center">
+                      <Input
+                        value={pair.key}
+                        onChange={(ev) => setSpawnDraft((d) => ({
+                          ...d,
+                          envVars: d.envVars.map((p, i) => i === idx ? { ...p, key: ev.target.value } : p),
+                        }))}
+                        className="h-9 py-1.5 font-mono text-xs flex-1 min-w-0 w-1/2"
+                        placeholder="ENV_VAR_NAME"
+                      />
+                      <Input
+                        type={isSecretPasswordField(pair.key) ? 'password' : 'text'}
+                        value={pair.value}
+                        onChange={(ev) => setSpawnDraft((d) => ({
+                          ...d,
+                          envVars: d.envVars.map((p, i) => i === idx ? { ...p, value: ev.target.value } : p),
+                        }))}
+                        className="h-9 py-1.5 font-mono text-xs flex-1 min-w-0 w-1/2"
+                        placeholder="value"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setSpawnDraft((d) => ({
+                          ...d,
+                          envVars: d.envVars.filter((_, i) => i !== idx),
+                        }))}
+                        className="flex-shrink-0 text-zinc-400 hover:text-red-500"
+                        title="Remove"
+                      >
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                          <line x1="18" y1="6" x2="6" y2="18" />
+                          <line x1="6" y1="6" x2="18" y2="18" />
+                        </svg>
+                      </button>
+                    </div>
+                  ))}
+                  <button
+                    type="button"
+                    onClick={() => setSpawnDraft((d) => ({
+                      ...d,
+                      envVars: [...d.envVars, { key: '', value: '' }],
+                    }))}
+                    className="text-sm text-zinc-500 hover:text-zinc-700"
+                  >
+                    + Add env var
+                  </button>
+                </div>
                 {authDraft.llm_auth_mode === 'byok' && (
                   <p className="text-sm text-zinc-500">
-                    Users configure their own API keys under Settings → BYOK before launching this agent.
+                    Users configure their own API keys in the Sessions page before launching this agent.
                   </p>
                 )}
                 <div className="flex justify-end gap-2 pt-2">
@@ -709,165 +925,174 @@ export default function AgentsAdmin() {
         </ConsoleDialogShell>
       )}
 
+      {detailsAgent && (() => {
+        const auth = getAuthSummary(detailsAgent);
+        const model = detailsAgent.llm_auth_mode === 'gateway' && detailsAgent.gateway_config?.model
+          ? detailsAgent.gateway_config.model
+          : '—';
+        const executable = [detailsAgent.cmd, ...(detailsAgent.args || [])].filter(Boolean).join(' ') || '—';
+        const path = detailsAgent.executable_path_display || detailsAgent.executable_path || '—';
+
+        return (
+          <ConsoleDialogShell
+            onClose={() => setDetailsAgent(null)}
+            panelClassName={consoleStructuredDialogPanelClass}
+          >
+            <ConsoleStructuredDialogHeader>
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <h3 className="font-bold text-lg text-zinc-900">{detailsAgent.name}</h3>
+                  <p className="mt-0.5 truncate font-mono text-xs text-zinc-500">{detailsAgent.id}</p>
+                </div>
+                <span
+                  className={`inline-flex shrink-0 rounded border px-2 py-0.5 text-xs font-medium ${statusBadge(detailsAgent.installed)}`}
+                >
+                  {detailsAgent.installed ? 'Installed' : 'Not installed'}
+                </span>
+              </div>
+            </ConsoleStructuredDialogHeader>
+            <ConsoleStructuredDialogBody>
+              <div className={`${consoleCardClass} space-y-3 bg-zinc-50/70 p-4`}>
+                <div>
+                  <p className={consoleSectionLabelClass}>Auth</p>
+                  <p className="mt-1 text-sm font-medium text-zinc-900">
+                    {auth.mode}
+                    <span className={`ml-1 text-sm ${auth.hintClass}`}>({auth.hint})</span>
+                  </p>
+                </div>
+                <div>
+                  <p className={consoleSectionLabelClass}>Session readiness</p>
+                  <p className={`mt-1 text-base font-semibold ${auth.hintClass}`}>{auth.hint}</p>
+                </div>
+              </div>
+
+              <div className={`${consoleCardClass} space-y-3 bg-zinc-50/70 p-4`}>
+                <p className={consoleSectionLabelClass}>Runtime</p>
+                <div className="grid grid-cols-1 gap-4">
+                  <DetailField label="Version" mono>
+                    {detailsAgent.local_version ? `v${detailsAgent.local_version}` : '—'}
+                  </DetailField>
+                  <DetailField label="Model" mono>
+                    {model}
+                  </DetailField>
+                  <DetailField label="Path" className="min-w-0" mono>
+                    {path}
+                  </DetailField>
+                  <DetailField label="Executable" className="min-w-0" mono>
+                    {executable}
+                  </DetailField>
+                </div>
+              </div>
+
+              {detailsAgent.last_lifecycle ? (
+                <div className={`${consoleCardClass} space-y-2 bg-zinc-50/70 p-4`}>
+                  <p className={consoleSectionLabelClass}>Last operation</p>
+                  <p className={`text-sm font-medium ${detailsAgent.last_lifecycle.ok ? 'text-zinc-700' : 'text-red-600'}`}>
+                    {detailsAgent.last_lifecycle.ok
+                      ? `${detailsAgent.last_lifecycle.action} OK`
+                      : `${detailsAgent.last_lifecycle.action} failed`}
+                  </p>
+                  {!detailsAgent.last_lifecycle.ok && detailsAgent.last_lifecycle.message ? (
+                    <p className="text-sm text-zinc-500">{detailsAgent.last_lifecycle.message}</p>
+                  ) : null}
+                  <p className="text-xs text-zinc-400">
+                    {formatLifecycleTime(detailsAgent.last_lifecycle.finished_at)}
+                  </p>
+                </div>
+              ) : null}
+            </ConsoleStructuredDialogBody>
+            <ConsoleStructuredDialogFooter>
+              <Button type="button" variant="secondary" size="sm" onClick={() => setDetailsAgent(null)}>
+                Close
+              </Button>
+            </ConsoleStructuredDialogFooter>
+          </ConsoleDialogShell>
+        );
+      })()}
+
       <div className={consoleTableShellClass}>
         <div className="overflow-x-auto">
-          <table className="w-full text-left text-sm whitespace-nowrap">
+          <table className="w-full text-left text-sm">
             <thead className="border-b border-zinc-200 bg-white">
               <tr>
-                <th className={`${consoleTableHeadCellClass}`}>Name</th>
-                <th className={`${consoleTableHeadCellClass}`}>Status</th>
-                <th className={`${consoleTableHeadCellClass}`}>Version</th>
-                <th className={`${consoleTableHeadCellClass}`}>Path</th>
-                <th className={`${consoleTableHeadCellClass}`}>Executable</th>
-                <th className={`${consoleTableHeadCellClass}`}>Auth / Ready</th>
-                <th className={`${consoleTableHeadCellClass}`}>Model</th>
-                <th className={`${consoleTableHeadCellClass}`}>Actions</th>
+                <th className={consoleTableHeadCellClass}>Name</th>
+                <th className={consoleTableHeadCellClass}>Status</th>
+                <th className={consoleTableHeadCellClass}>Version</th>
+                <th className={consoleTableHeadCellClass}>Executable</th>
+                <th className={consoleTableHeadCellClass}>Auth</th>
+                <th className={`${consoleTableHeadCellClass} w-12 text-right`}>Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-zinc-100">
               {loading && agents.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className={`${consoleTableBodyCellClass} text-zinc-500`}>
+                  <td colSpan={6} className={`${consoleTableBodyCellClass} text-zinc-500`}>
                     Loading...
                   </td>
                 </tr>
               ) : agents.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className={`${consoleTableBodyCellClass} text-zinc-500`}>
+                  <td colSpan={6} className={`${consoleTableBodyCellClass} text-zinc-500`}>
                     No agents registered yet.
                   </td>
                 </tr>
               ) : agents.map((agent) => {
-                const isGateway = agent.llm_auth_mode === 'gateway';
-                const executable = [agent.cmd, ...agent.args].filter(Boolean).join(' ');
+                const authSummary = getAuthSummary(agent);
+                const executable = [agent.cmd, ...(agent.args || [])].filter(Boolean).join(' ');
                 return (
                   <tr key={agent.id} className="hover:bg-zinc-50/50">
-                    <td className={consoleTableBodyCellClass}>
+                    <td className={`${consoleTableBodyCellClass} min-w-0`}>
                       <div className="truncate text-zinc-900" title={`${agent.name} (${agent.id})`}>
                         <span className="font-medium">{agent.name}</span>
                         <span className="ml-1 font-mono text-xs text-zinc-400">({agent.id})</span>
                       </div>
                     </td>
                     <td className={consoleTableBodyCellClass}>
-                      <div className="space-y-1">
+                      <div className="flex items-center">
                         <span className={`inline-flex rounded border px-1.5 py-0.5 text-xs font-medium ${statusBadge(agent.installed)}`}>
                           {agent.installed ? 'Installed' : 'Not installed'}
                         </span>
-                        {agent.last_lifecycle && (
-                          <p
-                            className={`max-w-[12rem] truncate text-xs ${
-                              agent.last_lifecycle.ok ? 'text-zinc-500' : 'text-red-600'
-                            }`}
-                            title={`${agent.last_lifecycle.message} (${formatLifecycleTime(agent.last_lifecycle.finished_at)})`}
-                          >
-                            {agent.last_lifecycle.ok
-                              ? `${agent.last_lifecycle.action} OK · ${formatLifecycleTime(agent.last_lifecycle.finished_at)}`
-                              : `${agent.last_lifecycle.action} failed · ${agent.last_lifecycle.message}`}
-                          </p>
-                        )}
+                        <LifecycleInfoDot lifecycle={agent.last_lifecycle} />
                       </div>
                     </td>
                     <td className={consoleTableBodyCellClass}>
-                      {agent.local_version ? (
-                        <span className="font-mono text-xs text-zinc-500">v{agent.local_version}</span>
-                      ) : (
-                        <span className="text-xs text-zinc-400">—</span>
-                      )}
+                      <span className="font-mono text-xs text-zinc-600">
+                        {agent.local_version ? `v${agent.local_version}` : '—'}
+                      </span>
                     </td>
-                    <td className={consoleTableBodyCellClass}>
-                      {agent.executable_path ? (
-                        <span
-                          className="block max-w-[12rem] truncate font-mono text-xs text-zinc-500"
-                          title={agent.executable_path}
-                        >
-                          {agent.executable_path_display || agent.executable_path}
-                        </span>
-                      ) : (
-                        <span className="text-xs text-zinc-400">—</span>
-                      )}
-                    </td>
-                    <td className={consoleTableBodyCellClass}>
-                      <span className="inline-flex max-w-[14rem] truncate rounded bg-zinc-100 px-1.5 py-0.5 font-mono text-xs text-zinc-700" title={executable}>
+                    <td className={`${consoleTableBodyCellClass} min-w-0 max-w-[16rem]`}>
+                      <span className="block truncate font-mono text-xs text-zinc-600" title={executable}>
                         {executable}
                       </span>
                     </td>
                     <td className={consoleTableBodyCellClass}>
                       <span className="text-xs text-zinc-700">
-                        <span className="font-medium capitalize">{isGateway ? 'Gateway' : 'BYOK'}</span>
+                        <span className="font-medium">{authSummary.mode}</span>
                         <span
-                          className={`ml-1 ${
-                            isGateway
-                              ? (agent.keys_ready ? 'text-emerald-600' : 'text-amber-600')
-                              : 'text-zinc-500'
-                          }`}
+                          className={`ml-1 ${authSummary.hintClass}`}
                           title={
-                            isGateway
-                              ? (agent.keys_ready ? 'Gateway model configured' : 'Select a model under Configure.')
+                            agent.llm_auth_mode === 'gateway'
+                              ? (agent.keys_ready
+                                ? 'Gateway model configured; agent can launch.'
+                                : 'Select a model under Configure.')
                               : 'Users supply API keys before launching.'
                           }
                         >
-                          ({isGateway ? (agent.keys_ready ? 'Ready' : 'Needs model') : 'User keys'})
+                          ({authSummary.hint})
                         </span>
                       </span>
                     </td>
-                    <td className={consoleTableBodyCellClass}>
-                      {isGateway && agent.gateway_config?.model ? (
-                        <span className="font-mono text-xs text-zinc-700">{agent.gateway_config.model}</span>
-                      ) : (
-                        <span className="text-xs text-zinc-400">—</span>
-                      )}
-                    </td>
-                    <td className={consoleTableBodyCellClass}>
-                      <div className="flex items-center gap-1">
-                        <button
-                          type="button"
-                          onClick={() => openEditDialog(agent)}
-                          className="p-1.5 rounded-md text-zinc-500 hover:bg-zinc-100 hover:text-zinc-900"
-                          title="Edit executable"
-                        >
-                          <Pencil className="w-3.5 h-3.5" />
-                        </button>
-                        {!agent.installed ? (
-                          <button
-                            type="button"
-                            disabled={isActionLoading(agent.id, 'install')}
-                            onClick={() => handleInstall(agent)}
-                            className="p-1.5 rounded-md text-zinc-500 hover:bg-zinc-100 hover:text-zinc-900 disabled:opacity-40 disabled:pointer-events-none"
-                            title="Install on server"
-                          >
-                            <Download className="w-3.5 h-3.5" />
-                          </button>
-                        ) : (
-                          <>
-                            <button
-                              type="button"
-                              disabled={isActionLoading(agent.id, 'update')}
-                              onClick={() => handleCheckAndUpdate(agent)}
-                              className="p-1.5 rounded-md text-zinc-500 hover:bg-zinc-100 hover:text-zinc-900 disabled:opacity-40 disabled:pointer-events-none"
-                              title="Check and update"
-                            >
-                              <RefreshCw className={`w-3.5 h-3.5 ${isActionLoading(agent.id, 'update') ? 'animate-spin' : ''}`} />
-                            </button>
-                            <button
-                              type="button"
-                              disabled={isActionLoading(agent.id, 'uninstall')}
-                              onClick={() => handleUninstall(agent)}
-                              className="p-1.5 rounded-md text-red-500 hover:bg-red-50 hover:text-red-700 disabled:opacity-40 disabled:pointer-events-none"
-                              title="Uninstall from server"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
-                          </>
-                        )}
-                        <button
-                          type="button"
-                          onClick={() => openKeysDialog(agent)}
-                          className="p-1.5 rounded-md text-zinc-500 hover:bg-zinc-100 hover:text-zinc-900"
-                          title="Configure LLM auth"
-                        >
-                          <KeyRound className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
+                    <td className={`${consoleTableBodyCellClass} w-12`}>
+                      <AgentActionsMenu
+                        agent={agent}
+                        loadingAction={actionLoading}
+                        onViewDetails={() => setDetailsAgent(agent)}
+                        onEdit={() => openEditDialog(agent)}
+                        onInstall={() => handleInstall(agent)}
+                        onCheckUpdate={() => handleCheckAndUpdate(agent)}
+                        onUninstall={() => handleUninstall(agent)}
+                        onConfigure={() => openKeysDialog(agent)}
+                      />
                     </td>
                   </tr>
                 );

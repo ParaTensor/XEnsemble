@@ -29,8 +29,7 @@ import { getSecretLabel, isSecretPasswordField } from '../lib/secretLabels';
 import { apiFetch } from '../lib/api';
 
 const EMPTY_SPAWN_DRAFT = {
-  OPENROUTER_API_KEY: '',
-  OPENROUTER_BASE_URL: '',
+  envVars: [{ key: '', value: '' }],
   launch_command: '',
 };
 
@@ -364,9 +363,11 @@ export default function AgentsAdmin() {
   const openKeysDialog = (agent) => {
     spawnHydratedRef.current = false;
     const overrides = agent.gateway_config?.env_overrides || {};
+    const envVars = Object.keys(overrides).length > 0
+      ? Object.entries(overrides).map(([key, value]) => ({ key, value }))
+      : [{ key: '', value: '' }];
     setSpawnDraft({
-      OPENROUTER_API_KEY: overrides.OPENROUTER_API_KEY || '',
-      OPENROUTER_BASE_URL: overrides.OPENROUTER_BASE_URL || '',
+      envVars,
       launch_command: [agent.cmd, ...(agent.args || [])].filter(Boolean).join(' '),
     });
     setKeysAgent(agent);
@@ -412,37 +413,23 @@ export default function AgentsAdmin() {
     return undefined;
   }, [keysAgent, authDraft.llm_auth_mode, authDraft.model, fetchGatewayPreview]);
 
-  const gatewaySpawnFields = useMemo(
-    () => getGatewaySpawnFieldDefs(keysAgent),
-    [keysAgent],
-  );
+  const gatewaySpawnFields = useMemo(() => [], []);
 
   useEffect(() => {
     if (!gatewayPreview || spawnHydratedRef.current) return;
     spawnHydratedRef.current = true;
     setSpawnDraft((prev) => ({
-      OPENROUTER_API_KEY: prev.OPENROUTER_API_KEY
-        || gatewayPreview.fields?.find((f) => f.key === 'OPENROUTER_API_KEY')?.value
-        || gatewayPreview.defaults?.OPENROUTER_API_KEY
-        || '',
-      OPENROUTER_BASE_URL: prev.OPENROUTER_BASE_URL
-        || gatewayPreview.fields?.find((f) => f.key === 'OPENROUTER_BASE_URL')?.value
-        || gatewayPreview.defaults?.OPENROUTER_BASE_URL
-        || '',
+      ...prev,
       launch_command: prev.launch_command || gatewayPreview.launch?.command_line || '',
     }));
   }, [gatewayPreview]);
 
   const buildEnvOverridesPayload = () => {
-    const defaults = gatewayPreview?.defaults || {};
     const out = {};
-    const apiKey = spawnDraft.OPENROUTER_API_KEY.trim();
-    const baseUrl = spawnDraft.OPENROUTER_BASE_URL.trim();
-    if (apiKey && apiKey !== (defaults.OPENROUTER_API_KEY || '').trim()) {
-      out.OPENROUTER_API_KEY = apiKey;
-    }
-    if (baseUrl && baseUrl !== (defaults.OPENROUTER_BASE_URL || '').trim()) {
-      out.OPENROUTER_BASE_URL = baseUrl;
+    for (const { key, value } of spawnDraft.envVars) {
+      const k = (key || '').trim();
+      const v = (value || '').trim();
+      if (k && v) out[k] = v;
     }
     return out;
   };
@@ -469,7 +456,7 @@ export default function AgentsAdmin() {
           llm_auth_mode: mode,
           provider: mode === 'gateway' ? (authDraft.provider || undefined) : undefined,
           model: mode === 'gateway' ? authDraft.model.trim() : undefined,
-          env_overrides: mode === 'gateway' ? buildEnvOverridesPayload() : undefined,
+          env_overrides: buildEnvOverridesPayload(),
         }),
       });
       const data = await res.json();
@@ -848,47 +835,82 @@ export default function AgentsAdmin() {
                         disabled={modelOptions.length === 0}
                       />
                     </div>
-                    <div className="space-y-4 border-t border-zinc-100 pt-4">
-                      <p className={`${consoleSectionLabelClass}`}>Injected at session start</p>
-                      {gatewayPreviewLoading && !gatewayPreview ? (
-                        <p className="text-sm text-zinc-500">Loading defaults…</p>
-                      ) : null}
-                      {!gatewayPreviewLoading && gatewayPreview && !gatewayPreview.gateway_running && (
-                        <p className="text-sm text-amber-700">
-                          UniGateway is not running. Start it under Settings → Gateway.
-                        </p>
-                      )}
-                      {(gatewaySpawnFields).map((field) => (
-                        <div key={field.key}>
-                          <label className={`block mb-1 ${consoleSectionLabelClass}`}>
-                            {field.label || getSecretLabel(field.key)}
-                          </label>
-                          <Input
-                            type={field.password || isSecretPasswordField(field.key) ? 'password' : 'text'}
-                            value={spawnDraft[field.key] || ''}
-                            onChange={(ev) => setSpawnDraft((d) => ({ ...d, [field.key]: ev.target.value }))}
-                            className="h-9 py-1.5 font-mono"
-                            placeholder={field.key === 'OPENROUTER_BASE_URL' ? 'http://127.0.0.1:8741/v1' : 'From Router API Key'}
-                          />
-                          <p className="mt-1 text-xs text-zinc-400">{field.source}</p>
-                        </div>
-                      ))}
-                      <div>
-                        <label className={`block mb-1 ${consoleSectionLabelClass}`}>Launch command</label>
-                        <Input
-                          value={spawnDraft.launch_command}
-                          onChange={(ev) => setSpawnDraft((d) => ({ ...d, launch_command: ev.target.value }))}
-                          className="h-9 py-1.5 font-mono"
-                          placeholder="hermes chat --ignore-user-config --provider openrouter"
-                        />
-                        <p className="mt-1 text-xs text-zinc-400">Command and arguments used when launching this agent.</p>
-                      </div>
+                    {gatewayPreviewLoading && !gatewayPreview && (
+                      <p className="text-sm text-zinc-500">Loading defaults…</p>
+                    )}
+                    {!gatewayPreviewLoading && gatewayPreview && !gatewayPreview.gateway_running && (
+                      <p className="text-sm text-amber-700">
+                        UniGateway is not running. Start it under Settings → Gateway.
+                      </p>
+                    )}
+                    <div>
+                      <label className={`block mb-1 ${consoleSectionLabelClass}`}>Launch command</label>
+                      <Input
+                        value={spawnDraft.launch_command}
+                        onChange={(ev) => setSpawnDraft((d) => ({ ...d, launch_command: ev.target.value }))}
+                        className="h-9 py-1.5 font-mono"
+                        placeholder="hermes chat --ignore-user-config --provider openrouter"
+                      />
+                      <p className="mt-1 text-xs text-zinc-400">Command and arguments used when launching this agent.</p>
                     </div>
                   </>
                 )}
+                <div className="space-y-3 border-t border-zinc-100 pt-4">
+                  <p className={`${consoleSectionLabelClass}`}>Environment variables</p>
+                  <p className="text-xs text-zinc-400">
+                    Injected at session start in both BYOK and Gateway modes. Highest priority, overrides all other env sources.
+                  </p>
+                  {spawnDraft.envVars.map((pair, idx) => (
+                    <div key={idx} className="flex gap-2 items-center">
+                      <Input
+                        value={pair.key}
+                        onChange={(ev) => setSpawnDraft((d) => ({
+                          ...d,
+                          envVars: d.envVars.map((p, i) => i === idx ? { ...p, key: ev.target.value } : p),
+                        }))}
+                        className="h-9 py-1.5 font-mono text-xs flex-1 min-w-0 w-1/2"
+                        placeholder="ENV_VAR_NAME"
+                      />
+                      <Input
+                        type={isSecretPasswordField(pair.key) ? 'password' : 'text'}
+                        value={pair.value}
+                        onChange={(ev) => setSpawnDraft((d) => ({
+                          ...d,
+                          envVars: d.envVars.map((p, i) => i === idx ? { ...p, value: ev.target.value } : p),
+                        }))}
+                        className="h-9 py-1.5 font-mono text-xs flex-1 min-w-0 w-1/2"
+                        placeholder="value"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setSpawnDraft((d) => ({
+                          ...d,
+                          envVars: d.envVars.filter((_, i) => i !== idx),
+                        }))}
+                        className="flex-shrink-0 text-zinc-400 hover:text-red-500"
+                        title="Remove"
+                      >
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                          <line x1="18" y1="6" x2="6" y2="18" />
+                          <line x1="6" y1="6" x2="18" y2="18" />
+                        </svg>
+                      </button>
+                    </div>
+                  ))}
+                  <button
+                    type="button"
+                    onClick={() => setSpawnDraft((d) => ({
+                      ...d,
+                      envVars: [...d.envVars, { key: '', value: '' }],
+                    }))}
+                    className="text-sm text-zinc-500 hover:text-zinc-700"
+                  >
+                    + Add env var
+                  </button>
+                </div>
                 {authDraft.llm_auth_mode === 'byok' && (
                   <p className="text-sm text-zinc-500">
-                    Users configure their own API keys under Settings → BYOK before launching this agent.
+                    Users configure their own API keys in the Sessions page before launching this agent.
                   </p>
                 )}
                 <div className="flex justify-end gap-2 pt-2">
