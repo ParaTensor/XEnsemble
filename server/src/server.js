@@ -1458,6 +1458,7 @@ fastify.register(async function terminalWsRoutes(app) {
 });
 
 fastify.register(async function workspaceTerminalWsRoutes(app) {
+    const WS_BUFFERED_LIMIT = 1024 * 1024;
     app.get('/ws/v1/workspace-terminal', { websocket: true }, async (connection, req) => {
         const ws = connection.socket;
 
@@ -1518,11 +1519,6 @@ fastify.register(async function workspaceTerminalWsRoutes(app) {
                 ws.close();
                 return;
             }
-
-            // Send an initial empty output to keep the WebSocket alive through
-            // proxies (e.g. Cloudflare) that close idle connections before the
-            // shell process has time to start and produce output.
-            sendJson({ type: 'output', data: '' });
 
             let ready;
             try {
