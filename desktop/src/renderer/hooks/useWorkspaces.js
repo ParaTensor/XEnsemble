@@ -137,12 +137,12 @@ export function useWorkspaces(user) {
     if (typeof document === 'undefined') return;
     const onVisibilityChange = () => {
       if (!document.hidden && user?.id) {
-        Promise.all([fetchProjects(), fetchSessions()]);
+        Promise.all([fetchProjects(), fetchSessions(), fetchAgents()]);
       }
     };
     document.addEventListener('visibilitychange', onVisibilityChange);
     return () => document.removeEventListener('visibilitychange', onVisibilityChange);
-  }, [fetchProjects, fetchSessions, user?.id]);
+  }, [fetchProjects, fetchSessions, fetchAgents, user?.id]);
 
   useEffect(() => {
     if (sessions.length === 0) return;
