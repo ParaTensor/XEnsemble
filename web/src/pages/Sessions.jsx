@@ -28,8 +28,6 @@ import {
   PanelBottomOpen,
   PanelBottomClose,
   FileText,
-  Eye,
-  EyeOff,
   Square,
   Unplug,
   Loader2,
@@ -205,7 +203,6 @@ export default React.forwardRef(function Sessions({
   useEffect(() => {
     if (!activeSession?.projectId) {
       setPanelOpen(false);
-      setPanelTab('files');
       setShellMounted(false);
     }
     setViewingFile(null);
