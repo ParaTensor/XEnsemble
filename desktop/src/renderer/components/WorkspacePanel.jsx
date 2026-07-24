@@ -264,38 +264,6 @@ const WorkspacePanel = memo(function WorkspacePanel({
         )}
       </div>
 
-      {showAuthorDialog && (
-        <ConsoleDialogShell onClose={() => setShowAuthorDialog(false)}>
-          <div className="p-4 w-80">
-            <h3 className="font-bold text-lg text-zinc-900 mb-3">Git 提交信息</h3>
-            <p className="text-xs text-zinc-500 mb-3">需要配置 git 用户名和邮箱才能提交</p>
-            <div className="flex flex-col gap-2">
-              <input
-                ref={authorNameRef}
-                type="text"
-                placeholder="用户名"
-                value={authorName}
-                onChange={(e) => setAuthorName(e.target.value)}
-                onKeyDown={(e) => { if (e.key === 'Enter') handleAuthorConfirm(); }}
-                className={consoleInputClass}
-              />
-              <input
-                type="email"
-                placeholder="邮箱"
-                value={authorEmail}
-                onChange={(e) => setAuthorEmail(e.target.value)}
-                onKeyDown={(e) => { if (e.key === 'Enter') handleAuthorConfirm(); }}
-                className={consoleInputClass}
-              />
-            </div>
-            <div className="flex justify-end gap-2 mt-4">
-              <button onClick={() => setShowAuthorDialog(false)} className={buttonClass('secondary', 'sm')}>取消</button>
-              <button onClick={handleAuthorConfirm} disabled={!authorName.trim() || !authorEmail.trim()} className={buttonClass('primary', 'sm')}>确认</button>
-            </div>
-          </div>
-        </ConsoleDialogShell>
-      )}
-
       {showNewFile && (
         <ConsoleDialogShell onClose={() => setShowNewFile(false)}>
           <div className="p-4 w-80">
