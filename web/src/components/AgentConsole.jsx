@@ -101,6 +101,7 @@ export default function AgentConsole({
       rows: 32,
       scrollback: 10000,
       convertEol: true,
+      scrollOnUserInput: true,
       smoothScrollDuration: 0,
       fontFamily: 'Menlo, Monaco, Consolas, "Liberation Mono", monospace',
       fontSize: 13,
@@ -130,10 +131,7 @@ export default function AgentConsole({
         if (disposed) return;
         if (hostRef.current) hostRef.current.style.opacity = '1';
         if (overlayRef.current) overlayRef.current.style.display = 'none';
-        const viewport = hostRef.current?.querySelector('.xterm-viewport');
-        if (viewport) viewport.style.scrollBehavior = 'auto';
         terminal.scrollToBottom();
-        if (viewport) viewport.style.scrollBehavior = 'smooth';
       });
     };
 
@@ -302,24 +300,13 @@ export default function AgentConsole({
           };
 
           let replayDone = false;
-          let atBottom = true;
-          let scrollCheckPending = false;
-
-          const scheduleScrollCheck = () => {
-            if (scrollCheckPending) return;
-            scrollCheckPending = true;
-            requestAnimationFrame(() => {
-              scrollCheckPending = false;
-              const viewport = hostRef.current?.querySelector('.xterm-viewport');
-              atBottom = !viewport || viewport.scrollTop + viewport.clientHeight >= viewport.scrollHeight - 5;
-            });
-          };
 
           ws.onmessage = (event) => {
             if (disposed) return;
             const msg = parseMessage(event.data);
             if (msg.type === 'output') {
-              scheduleScrollCheck();
+              const viewport = hostRef.current?.querySelector('.xterm-viewport');
+              const atBottom = !viewport || viewport.scrollTop + viewport.clientHeight >= viewport.scrollHeight - 5;
               terminal.write(msg.data, () => {
                 if (!replayDone && !disposed) { replayDone = true; hideOverlay(); }
                 if (atBottom && !disposed) terminal.scrollToBottom();
