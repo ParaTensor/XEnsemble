@@ -216,6 +216,7 @@ export function CustomImagesContent() {
   }
 
   const enabled = catalog?.enabled !== false;
+  const agentSelected = selectedComponentIds.some((id) => id.startsWith('agent:'));
 
   return (
     <>
@@ -385,7 +386,6 @@ export function CustomImagesContent() {
                 <Button type="button" onClick={resetForm} disabled={creating} variant="secondary" size="sm">
                   Cancel
                 </Button>
-                const agentSelected = selectedComponentIds.some((id) => id.startsWith('agent:'));
                 <Button type="submit" disabled={creating || !imageName.trim() || selectedComponentIds.length === 0 || !agentSelected} size="sm">
                   {creating ? (
                     <><Loader2 className="h-3.5 w-3.5 animate-spin" />&ensp;Building…</>
