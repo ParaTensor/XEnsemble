@@ -440,8 +440,15 @@ class LocalGitService {
             args.push('--', options.path);
         }
 
-        const result = await this._git(workspacePath, args, { timeoutMs: 60_000 });
-        return parseDetailedLog(result.stdout);
+        try {
+            const result = await this._git(workspacePath, args, { timeoutMs: 60_000 });
+            return parseDetailedLog(result.stdout);
+        } catch (err) {
+            if (err.message?.includes('does not have any commits')) {
+                return [];
+            }
+            throw err;
+        }
     }
 
     /**
@@ -497,17 +504,24 @@ class LocalGitService {
     async listConflicts(project) {
         const { workspacePath } = await this.ensureProjectRuntime(project);
 
-        const result = await this._git(workspacePath, ['diff', '--name-only', '--diff-filter=U']);
-        const files = result.stdout.trim().split('\n').filter(Boolean);
+        try {
+            const result = await this._git(workspacePath, ['diff', '--name-only', '--diff-filter=U']);
+            const files = result.stdout.trim().split('\n').filter(Boolean);
 
-        const conflicts = [];
-        for (const file of files) {
-            conflicts.push({
-                path: file,
-                status: 'conflicted',
-            });
+            const conflicts = [];
+            for (const file of files) {
+                conflicts.push({
+                    path: file,
+                    status: 'conflicted',
+                });
+            }
+            return conflicts;
+        } catch (err) {
+            if (err.message?.includes('not a git repository')) {
+                return [];
+            }
+            throw err;
         }
-        return conflicts;
     }
 
     /**
