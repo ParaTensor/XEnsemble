@@ -25,6 +25,7 @@ describe('agentBootstrap', () => {
             shouldRunSetup,
             readSetupStatus,
             seedAgentWorkspaceFiles,
+            ensureGitignoreEntries,
         } = ctx.reloaded['./agentBootstrap']);
     });
 
@@ -44,10 +45,17 @@ describe('agentBootstrap', () => {
         assert.ok(fs.existsSync(path.join(ws, 'index.html')));
     });
 
+    it('does not create .gitignore during seed (clone-safe)', () => {
+        const ws = path.join(tmpDir, 'no-gitignore');
+        fs.mkdirSync(ws, { recursive: true });
+        seedAgentWorkspaceFiles(ws);
+        assert.ok(!fs.existsSync(path.join(ws, '.gitignore')));
+    });
+
     it('ensures .gitignore contains .agents/ and .xensemble/', () => {
         const ws = path.join(tmpDir, 'gitignore');
         fs.mkdirSync(ws, { recursive: true });
-        seedAgentWorkspaceFiles(ws);
+        ensureGitignoreEntries(ws);
         const gi = fs.readFileSync(path.join(ws, '.gitignore'), 'utf8');
         assert.match(gi, /\.agents\//);
         assert.match(gi, /\.xensemble\//);
@@ -57,7 +65,7 @@ describe('agentBootstrap', () => {
         const ws = path.join(tmpDir, 'gitignore-existing');
         fs.mkdirSync(ws, { recursive: true });
         fs.writeFileSync(path.join(ws, '.gitignore'), 'node_modules/\n*.log\n', 'utf8');
-        seedAgentWorkspaceFiles(ws);
+        ensureGitignoreEntries(ws);
         const gi = fs.readFileSync(path.join(ws, '.gitignore'), 'utf8');
         assert.ok(gi.startsWith('node_modules/\n*.log\n'));
         assert.match(gi, /\.agents\//);
@@ -67,8 +75,8 @@ describe('agentBootstrap', () => {
     it('does not duplicate entries on re-seed', () => {
         const ws = path.join(tmpDir, 'gitignore-idempotent');
         fs.mkdirSync(ws, { recursive: true });
-        seedAgentWorkspaceFiles(ws);
-        seedAgentWorkspaceFiles(ws);
+        ensureGitignoreEntries(ws);
+        ensureGitignoreEntries(ws);
         const gi = fs.readFileSync(path.join(ws, '.gitignore'), 'utf8');
         const matches = gi.match(/\.agents\//g);
         assert.equal(matches.length, 1);

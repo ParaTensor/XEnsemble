@@ -159,8 +159,6 @@ function seedAgentWorkspaceFiles(workspacePath) {
     seedResumeScript(workspacePath);
 
     ensurePreviewContractFile(workspacePath);
-
-    ensureGitignoreEntries(workspacePath);
 }
 
 function shouldRunSetup(workspacePath, { force = false } = {}) {
@@ -236,6 +234,7 @@ async function runSetupScript(workspacePath, project) {
  */
 async function ensureAgentBootstrap(project, workspacePath, options = {}) {
     seedAgentWorkspaceFiles(workspacePath);
+    ensureGitignoreEntries(workspacePath);
 
     if (!shouldRunSetup(workspacePath, options)) {
         return readSetupStatus(workspacePath);
@@ -271,6 +270,7 @@ module.exports = {
     SETUP_SCRIPT,
     SETUP_STATUS_FILE,
     seedAgentWorkspaceFiles,
+    ensureGitignoreEntries,
     shouldRunSetup,
     ensureAgentBootstrap,
     readSetupStatus,

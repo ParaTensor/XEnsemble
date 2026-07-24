@@ -3,7 +3,7 @@ const path = require('path');
 const crypto = require('crypto');
 const { execFile } = require('child_process');
 const { promisify } = require('util');
-const { seedAgentWorkspaceFiles } = require('./agentBootstrap');
+const { seedAgentWorkspaceFiles, ensureGitignoreEntries } = require('./agentBootstrap');
 const deploymentService = require('../deployments/DeploymentService');
 
 const execFileAsync = promisify(execFile);
@@ -139,6 +139,7 @@ async function runResumeScript(workspacePath, project, options = {}) {
  */
 async function ensureAgentResume(project, workspacePath, options = {}) {
     seedAgentWorkspaceFiles(workspacePath);
+    ensureGitignoreEntries(workspacePath);
     seedResumeScript(workspacePath);
 
     let scriptResult = {
