@@ -1751,7 +1751,7 @@ fastify.get('/api/v1/workspace/files', { preValidation: [fastify.authenticate, f
         const depth = request.query.depth === 'single' ? 'single' : 'recursive';
         const ready = await ensureProjectRuntime(project);
         const ref = ready.runtime ? ready.runtime.runtimeRef : undefined;
-        const cacheKey = `${ref}:${relativePath}:${depth}`;
+        const cacheKey = `${ref}:${relativePath}:${depth}:${includeHidden ? 1 : 0}`;
         const cached = fsListCache.get(cacheKey);
         if (cached && cached.expiresAt > Date.now()) return cached.data;
         const files = await runtime.fs.fsList(ready.workspacePath, relativePath, { runtimeRef: ref, includeHidden, depth });
