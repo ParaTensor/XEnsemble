@@ -154,6 +154,11 @@ export function CustomImagesContent() {
       showToast('error', 'Select at least one component');
       return;
     }
+    const hasAgent = selectedComponentIds.some((id) => id.startsWith('agent:'));
+    if (!hasAgent) {
+      showToast('error', 'Select an agent (required)');
+      return;
+    }
 
     const selection = selectedComponentIds.map((compId) => ({
       component_id: compId,
@@ -369,6 +374,7 @@ export function CustomImagesContent() {
                   {selectedComponentIds.length > 0 && (
                     <p className="text-xs text-zinc-400 mt-1">
                       {selectedComponentIds.length} component{selectedComponentIds.length > 1 ? 's' : ''} selected
+                      {!agentSelected && ' — select an agent to enable build'}
                     </p>
                   )}
                 </div>
@@ -379,7 +385,8 @@ export function CustomImagesContent() {
                 <Button type="button" onClick={resetForm} disabled={creating} variant="secondary" size="sm">
                   Cancel
                 </Button>
-                <Button type="submit" disabled={creating || !imageName.trim() || selectedComponentIds.length === 0} size="sm">
+                const agentSelected = selectedComponentIds.some((id) => id.startsWith('agent:'));
+                <Button type="submit" disabled={creating || !imageName.trim() || selectedComponentIds.length === 0 || !agentSelected} size="sm">
                   {creating ? (
                     <><Loader2 className="h-3.5 w-3.5 animate-spin" />&ensp;Building…</>
                   ) : (

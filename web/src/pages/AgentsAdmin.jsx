@@ -298,6 +298,9 @@ export default function AgentsAdmin() {
   const [detailsAgent, setDetailsAgent] = useState(null);
   const [editDraft, setEditDraft] = useState({ cmd: '', args: '' });
   const [savingExecutable, setSavingExecutable] = useState(false);
+  const [vmResources, setVmResources] = useState({ disk_size_gb: '', cpus: '', memory_mib: '' });
+  const [vmResourcesLoaded, setVmResourcesLoaded] = useState(false);
+  const [savingVmResources, setSavingVmResources] = useState(false);
   const [newAgent, setNewAgent] = useState({
     id: '',
     name: '',
@@ -382,6 +385,21 @@ export default function AgentsAdmin() {
       launch_command: [agent.cmd, ...(agent.args || [])].filter(Boolean).join(' '),
     });
     setKeysAgent(agent);
+    setVmResources({ disk_size_gb: '', cpus: '', memory_mib: '' });
+    setVmResourcesLoaded(false);
+    apiFetch(`/api/v1/admin/agents/${agent.id}/vm-resources`)
+      .then((r) => r.json())
+      .then((data) => {
+        if (data?.vm_resources) {
+          setVmResources({
+            disk_size_gb: data.vm_resources.disk_size_gb != null ? String(data.vm_resources.disk_size_gb) : '',
+            cpus: data.vm_resources.cpus != null ? String(data.vm_resources.cpus) : '',
+            memory_mib: data.vm_resources.memory_mib != null ? String(data.vm_resources.memory_mib) : '',
+          });
+        }
+        setVmResourcesLoaded(true);
+      })
+      .catch(() => setVmResourcesLoaded(true));
     setAuthDraft({
       llm_auth_mode: agent.llm_auth_mode || agent.gateway_config?.llm_auth_mode || 'byok',
       provider: agent.gateway_config?.provider || '',
@@ -493,6 +511,28 @@ export default function AgentsAdmin() {
         showToast('warning', data.warning, { durationMs: 12000 });
       } else {
         showToast('success', 'Agent configuration saved.');
+      }
+      const diskGb = vmResources.disk_size_gb.trim();
+      const cpus = vmResources.cpus.trim();
+      const memMb = vmResources.memory_mib.trim();
+      if (diskGb || cpus || memMb) {
+        try {
+          setSavingVmResources(true);
+          const body = {};
+          if (diskGb) body.disk_size_gb = Number(diskGb);
+          if (cpus) body.cpus = Number(cpus);
+          if (memMb) body.memory_mib = Number(memMb);
+          const vrRes = await apiFetch(`/api/v1/admin/agents/${keysAgent.id}/vm-resources`, {
+            method: 'PUT',
+            body: JSON.stringify(body),
+          });
+          const vrData = await vrRes.json();
+          if (!vrRes.ok) throw new Error(vrData.error);
+          setSavingVmResources(false);
+        } catch (err) {
+          setSavingVmResources(false);
+          showToast('error', 'VM resources saved, but: ' + (err.message || 'failed'));
+        }
       }
       closeKeysDialog();
       fetchAgents({ silent: true });
@@ -924,6 +964,47 @@ export default function AgentsAdmin() {
                     Users configure their own API keys in the Sessions page before launching this agent.
                   </p>
                 )}
+                <div className="space-y-3 border-t border-zinc-100 pt-4">
+                  <p className={`${consoleSectionLabelClass}`}>VM Resources</p>
+                  <p className="text-xs text-zinc-400">
+                    CPU / memory / disk limits for the sandbox VM. Leave empty to use system defaults.
+                  </p>
+                  <div className="grid grid-cols-3 gap-3">
+                    <div>
+                      <label className="block text-xs text-zinc-500 mb-1">Disk (GB)</label>
+                      <Input
+                        type="number"
+                        min="1"
+                        value={vmResources.disk_size_gb}
+                        onChange={(ev) => setVmResources((d) => ({ ...d, disk_size_gb: ev.target.value }))}
+                        className="h-9 py-1.5"
+                        placeholder="Default"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs text-zinc-500 mb-1">CPUs</label>
+                      <Input
+                        type="number"
+                        min="1"
+                        value={vmResources.cpus}
+                        onChange={(ev) => setVmResources((d) => ({ ...d, cpus: ev.target.value }))}
+                        className="h-9 py-1.5"
+                        placeholder="Default"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs text-zinc-500 mb-1">Memory (MB)</label>
+                      <Input
+                        type="number"
+                        min="1"
+                        value={vmResources.memory_mib}
+                        onChange={(ev) => setVmResources((d) => ({ ...d, memory_mib: ev.target.value }))}
+                        className="h-9 py-1.5"
+                        placeholder="Default"
+                      />
+                    </div>
+                  </div>
+                </div>
                 <div className="flex justify-end gap-2 pt-2">
                   <Button type="button" variant="secondary" size="md" onClick={closeKeysDialog}>
                     Cancel
