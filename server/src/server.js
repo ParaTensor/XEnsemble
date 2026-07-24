@@ -1015,6 +1015,7 @@ fastify.post('/api/v1/session/start', { preValidation: [fastify.authenticate] },
             ready = await ensureProjectRuntime(project, {
                 agentId: 'shell',
                 ...(customImageRef ? { image: customImageRef } : {}),
+                ...(custom_image_id ? { customImageId: custom_image_id } : {}),
             });
             workspacePath = ready.workspacePath;
             runtimeId = ready.runtime.id;
@@ -1124,6 +1125,8 @@ fastify.post('/api/v1/session/start', { preValidation: [fastify.authenticate] },
             ready = await ensureProjectRuntime(project, {
                 agentId: agent_id,
                 ...(customImageRef ? { image: customImageRef } : {}),
+                ...(custom_image_id ? { customImageId: custom_image_id } : {}),
+                agentVmResources: dbAgents[0]?.vmResources || null,
             });
             workspacePath = ready.workspacePath;
             runtimeId = ready.runtime.id;

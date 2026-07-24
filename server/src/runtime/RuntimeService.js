@@ -12,6 +12,25 @@ const workspace = require('../workspace');
 
 const PROVIDER = resolveRuntimeProvider();
 
+const DEFAULT_DISK_SIZE_GB = Number(process.env.XENSEMBLE_DEFAULT_DISK_SIZE_GB) || 2;
+
+function resolveVmResources(opts) {
+    const resources = {};
+    if (opts.vmResources) {
+        const parsed = typeof opts.vmResources === 'string' ? JSON.parse(opts.vmResources) : opts.vmResources;
+        if (parsed?.disk_size_gb) resources.disk_size_gb = parsed.disk_size_gb;
+        if (parsed?.cpus) resources.cpus = parsed.cpus;
+        if (parsed?.memory_mib) resources.memory_mib = parsed.memory_mib;
+    }
+    if (!resources.disk_size_gb) {
+        resources.disk_size_gb = DEFAULT_DISK_SIZE_GB;
+    }
+    if (opts.componentDiskSizeMb) {
+        resources.disk_size_gb += Math.ceil(opts.componentDiskSizeMb / 1024);
+    }
+    return Object.keys(resources).length > 0 ? resources : null;
+}
+
 // Short-TTL cache for attach-only ensureProjectRuntime results.
 // Keyed by runtimeId; avoids a DB SELECT on every git/FS API call.
 const RUNTIME_CACHE_TTL_MS = 5_000;
@@ -139,6 +158,23 @@ async function ensureProjectRuntime(project, opts = {}) {
             } else {
                 image = await resolveBoxImage({});
             }
+
+            let componentDiskSizeMb = 0;
+            if (opts.customImageId) {
+                const { getComponentDiskSizeMb } = require('./customImageCatalog');
+                const imgRows = await db.select().from(schema.customImages)
+                    .where(eq(schema.customImages.id, opts.customImageId));
+                if (imgRows.length > 0) {
+                    const components = typeof imgRows[0].components === 'string'
+                        ? JSON.parse(imgRows[0].components)
+                        : imgRows[0].components || [];
+                    for (const c of components) {
+                        componentDiskSizeMb += getComponentDiskSizeMb(c.component_id, c.version);
+                    }
+                }
+            }
+
+            opts.componentDiskSizeMb = componentDiskSizeMb;
         }
 
         const provision = await rt.provider.ensureReady(project, {
@@ -149,6 +185,10 @@ async function ensureProjectRuntime(project, opts = {}) {
                 image,
                 storedImage: storedSpecs.image || null,
                 storedMount: storedSpecs.workspace_mount || null,
+                resources: resolveVmResources({
+                    vmResources: opts.agentVmResources || null,
+                    componentDiskSizeMb: opts.componentDiskSizeMb || 0,
+                }),
             } : {}),
             baseSnapshotId: opts.baseSnapshotId,
             checkpointId: opts.checkpointId,

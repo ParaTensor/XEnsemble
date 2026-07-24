@@ -100,6 +100,7 @@ class BoxLiteRuntimeProvider extends RuntimeProvider {
                 read_only: workspaceVolume.read_only,
             }],
             network: resolveBoxliteSessionNetwork(opts.network),
+            ...(opts.resources ? { resources: opts.resources } : {}),
         };
         const openSession = async () => {
             const TRANSIENT_RE = /mkdir.*memory|memory dir|resource busy|temporarily|try again/i;

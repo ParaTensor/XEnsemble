@@ -113,6 +113,7 @@ const agents = pgTable('agents', {
   cmd: text('cmd').notNull(),
   args: text('args').notNull(),
   envRequired: text('env_required').notNull(),
+  vmResources: jsonb('vm_resources'),
 });
 
 const userPreferences = pgTable('user_preferences', {

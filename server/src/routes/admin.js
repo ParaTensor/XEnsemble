@@ -481,6 +481,43 @@ function registerAdminRoutes(fastify) {
         }
     });
 
+    fastify.get('/api/v1/admin/agents/:id/vm-resources', { preValidation: adminPre }, async (request, reply) => {
+        const rows = await db.select().from(schema.agents).where(eq(schema.agents.id, request.params.id));
+        if (rows.length === 0) return reply.code(404).send({ error: 'Agent not found' });
+        return {
+            agent_id: rows[0].id,
+            vm_resources: rows[0].vmResources || null,
+        };
+    });
+
+    fastify.put('/api/v1/admin/agents/:id/vm-resources', { preValidation: adminPre }, async (request, reply) => {
+        const rows = await db.select().from(schema.agents).where(eq(schema.agents.id, request.params.id));
+        if (rows.length === 0) return reply.code(404).send({ error: 'Agent not found' });
+        const body = request.body || {};
+        const resources = {};
+        if (body.disk_size_gb != null) {
+            const v = Number(body.disk_size_gb);
+            if (!Number.isFinite(v) || v < 1) return reply.code(400).send({ error: 'disk_size_gb must be >= 1' });
+            resources.disk_size_gb = v;
+        }
+        if (body.cpus != null) {
+            const v = Number(body.cpus);
+            if (!Number.isFinite(v) || v < 1) return reply.code(400).send({ error: 'cpus must be >= 1' });
+            resources.cpus = v;
+        }
+        if (body.memory_mib != null) {
+            const v = Number(body.memory_mib);
+            if (!Number.isFinite(v) || v < 1) return reply.code(400).send({ error: 'memory_mib must be >= 1' });
+            resources.memory_mib = v;
+        }
+        const json = Object.keys(resources).length > 0 ? JSON.stringify(resources) : null;
+        await db.update(schema.agents).set({ vmResources: json }).where(eq(schema.agents.id, request.params.id));
+        return {
+            agent_id: rows[0].id,
+            vm_resources: resources,
+        };
+    });
+
     const getAgentImagesCatalog = async () => {
         const catalog = await listAgentBoxImageCatalog();
         return {

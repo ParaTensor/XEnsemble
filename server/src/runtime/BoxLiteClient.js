@@ -102,6 +102,9 @@ class BoxLiteClient {
                 allow_net: Array.isArray(options.network.allow_net) ? options.network.allow_net : [],
             };
         }
+        if (options.resources && Object.keys(options.resources).length > 0) {
+            body.resources = options.resources;
+        }
         const res = await fetch(`${this.base}/api/sessions`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
