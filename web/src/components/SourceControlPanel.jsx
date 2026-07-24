@@ -47,7 +47,7 @@ const GIT_SUB_TABS = [
   { key: 'conflicts', label: 'Conflicts', icon: AlertTriangle },
 ];
 
-export default function SourceControlPanel({ projectId, gitChanges, onGitFileClick, onCollapse, provider }) {
+export default function SourceControlPanel({ projectId, gitChanges, onGitFileClick, onCollapse, provider, sessionLive }) {
   const [gitSubTab, setGitSubTab] = useState(() => {
     const stored = sessionStorage.getItem('xe_git_subtab');
     return stored || 'changes';
@@ -339,11 +339,25 @@ export default function SourceControlPanel({ projectId, gitChanges, onGitFileCli
         )}
 
         {gitSubTab === 'history' && (
-          <GitHistoryPanel projectId={projectId} />
+          sessionLive ? (
+            <GitHistoryPanel projectId={projectId} />
+          ) : (
+            <div className="flex flex-col items-center justify-center py-8 gap-2 text-zinc-400">
+              <Clock className="h-6 w-6" />
+              <p className="text-[10px]">启动 session 后可查看提交历史</p>
+            </div>
+          )
         )}
 
         {gitSubTab === 'blame' && (
-          <GitBlamePanel projectId={projectId} />
+          sessionLive ? (
+            <GitBlamePanel projectId={projectId} />
+          ) : (
+            <div className="flex flex-col items-center justify-center py-8 gap-2 text-zinc-400">
+              <Eye className="h-6 w-6" />
+              <p className="text-[10px]">启动 session 后可查看 Blame</p>
+            </div>
+          )
         )}
 
         {gitSubTab === 'prs' && (
@@ -362,7 +376,14 @@ export default function SourceControlPanel({ projectId, gitChanges, onGitFileCli
         )}
 
         {gitSubTab === 'conflicts' && (
-          <ConflictResolutionPanel projectId={projectId} />
+          sessionLive ? (
+            <ConflictResolutionPanel projectId={projectId} />
+          ) : (
+            <div className="flex flex-col items-center justify-center py-8 gap-2 text-zinc-400">
+              <AlertTriangle className="h-6 w-6" />
+              <p className="text-[10px]">启动 session 后可查看冲突</p>
+            </div>
+          )
         )}
       </div>
 

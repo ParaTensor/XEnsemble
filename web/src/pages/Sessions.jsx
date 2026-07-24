@@ -1445,6 +1445,7 @@ export default React.forwardRef(function Sessions({
                         gitDiffView={gitDiffView}
                         onCloseGitDiff={handleCloseGitDiff}
                         provider={activeProject?.repoProvider}
+                        sessionLive={sessionAlive}
                       />
                     )}
                   </div>

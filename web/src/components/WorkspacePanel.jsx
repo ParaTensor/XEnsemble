@@ -38,6 +38,7 @@ const WorkspacePanel = memo(function WorkspacePanel({
   gitDiffView,
   onCloseGitDiff,
   provider,
+  sessionLive,
 }) {
   const [showNewFile, setShowNewFile] = useState(false);
   const [showNewFolder, setShowNewFolder] = useState(false);
@@ -157,6 +158,7 @@ const WorkspacePanel = memo(function WorkspacePanel({
           onGitFileClick={onGitFileClick}
           onCollapse={() => setSidebarOpen(false)}
           provider={provider}
+          sessionLive={sessionLive}
         />
       );
     }

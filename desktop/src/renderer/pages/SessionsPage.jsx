@@ -1446,6 +1446,7 @@ sessionLive={sessionAlive}
                         gitDiffView={gitDiffView}
                         onCloseGitDiff={handleCloseGitDiff}
                         provider={activeProject?.repoProvider}
+                        sessionLive={sessionAlive}
                       />
                     )}
                   </div>
