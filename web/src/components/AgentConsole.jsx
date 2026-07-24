@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
+import { Unicode11Addon } from '@xterm/addon-unicode11';
 import '@xterm/xterm/css/xterm.css';
 
 import { getAccessToken, getWsUrl, apiFetch } from '../lib/api';
@@ -115,6 +116,8 @@ export default function AgentConsole({
     const fitAddon = new FitAddon();
     fitAddonRef.current = fitAddon;
     terminal.loadAddon(fitAddon);
+    terminal.loadAddon(new Unicode11Addon());
+    terminal.unicode.activeVersion = '11';
     host.replaceChildren();
     terminal.open(host);
     terminalRef.current = terminal;
@@ -158,15 +161,7 @@ export default function AgentConsole({
       lastSentCols = cols;
       lastSentRows = rows;
       if (wsRef.current?.readyState !== WebSocket.OPEN) return;
-      if (force && !changed) {
-        // Full-screen TUIs (opencode) only repaint on a size change. When the
-        // fitted size matches the backend PTY default, nudge the dimensions so
-        // the TUI clears stale rendering artifacts and redraws at full size.
-        sendResize(cols > 1 ? cols - 1 : cols + 1, rows);
-        setTimeout(() => { if (!disposed) sendResize(cols, rows); }, 50);
-      } else {
-        sendResize(cols, rows);
-      }
+      sendResize(cols, rows);
     };
 
     // After the terminal (re)connects, opencode's TUI boots inside the sandbox

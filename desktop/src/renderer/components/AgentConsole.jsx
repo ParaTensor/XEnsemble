@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Cpu, HardDrive, Loader2, Play, Square, Unplug, PanelRightOpen, PanelRightClose } from 'lucide-react';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
+import { Unicode11Addon } from '@xterm/addon-unicode11';
 import '@xterm/xterm/css/xterm.css';
 import { usePreview, PreviewControlGroup } from './PreviewPanel';
 import TerminalThemePicker from './TerminalThemePicker';
@@ -124,6 +125,8 @@ export default function AgentConsole({
 
         const fitAddon = new FitAddon();
         terminal.loadAddon(fitAddon);
+        terminal.loadAddon(new Unicode11Addon());
+        terminal.unicode.activeVersion = '11';
         container.replaceChildren();
         terminal.open(container);
         terminalRef.current = terminal;
