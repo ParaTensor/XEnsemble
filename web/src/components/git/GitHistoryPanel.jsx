@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { Clock, FileText, GitCommit, Loader2, RefreshCw, User } from 'lucide-react';
-import * as gitApi from '../../lib/gitApi.js';
+import * as gitApi from '../../lib/gitApi';
 import { useToast } from '../Toast';
 import {
   consoleIconButtonClass,
@@ -24,6 +24,7 @@ function CommitItem({ commit, isLast }) {
     <div className="relative pl-6">
       <div className="absolute left-[9px] top-0 bottom-0 w-px bg-[#E8EAED]" />
       <div className="absolute left-[5px] top-2.5 h-2.5 w-2.5 rounded-full border-2 border-[#202124] bg-white" />
+
       <div
         className={`rounded-lg border ${borderHairline} p-3 mb-2 cursor-pointer transition-colors hover:bg-[#FAFBFC]`}
         onClick={() => setExpanded(!expanded)}
@@ -48,6 +49,7 @@ function CommitItem({ commit, isLast }) {
             {commit.sha?.slice(0, 7)}
           </span>
         </div>
+
         {expanded && (
           <div className="mt-3 space-y-2">
             {commit.body && (
@@ -133,6 +135,7 @@ export default function GitHistoryPanel({ projectId, filePath }) {
           )}
         </button>
       </div>
+
       <div className="flex-1 min-h-0 overflow-auto p-4">
         {loading && commits.length === 0 ? (
           <div className="flex items-center justify-center gap-2 py-8 text-sm text-[#5F6368]">

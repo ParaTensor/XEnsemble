@@ -1352,9 +1352,10 @@ export default React.forwardRef(function Sessions({
                        projectId={activeSession.projectId}
                        onSessionEnd={handleSessionEnd}
                        onSessionConnected={handleSessionConnected}
-                       sessionLive={sessionAlive}
-                       sessionWakeable={sessionWakeable}
-                     />
+sessionLive={sessionAlive}
+                        sessionWakeable={sessionWakeable}
+                        token={true}
+                      />
                    </div>
                 </div>
                 <GitStatusBar projectId={activeSession.projectId} project={activeProject} git={gitChanges} />
@@ -1444,6 +1445,7 @@ export default React.forwardRef(function Sessions({
                         onGitFileClick={handleGitFileClick}
                         gitDiffView={gitDiffView}
                         onCloseGitDiff={handleCloseGitDiff}
+                        provider={activeProject?.repoProvider}
                       />
                     )}
                   </div>

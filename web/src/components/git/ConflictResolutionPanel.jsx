@@ -3,7 +3,7 @@ import { AlertTriangle, Check, ChevronDown, ChevronRight, FileWarning, Loader2, 
 import Button from '../Button';
 import SelectMenu from '../SelectMenu';
 import { useToast } from '../Toast';
-import * as gitApi from '../../lib/gitApi.js';
+import * as gitApi from '../../lib/gitApi';
 import {
   consoleIconButtonClass,
   textPrimary,

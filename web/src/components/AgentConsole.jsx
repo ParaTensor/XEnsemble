@@ -6,7 +6,7 @@ import '@xterm/xterm/css/xterm.css';
 
 import { getAccessToken, getWsUrl, apiFetch } from '../lib/api';
 import { useTerminalTheme } from '../hooks/useTerminalTheme.jsx';
-import { Loader2 } from 'lucide-react';
+import { usePreview, PreviewControlGroup } from './PreviewPanel';
 
 const FALLBACK_XTERM_THEME = {
   background: '#09090b',
@@ -57,6 +57,7 @@ function getArrowSequence(key, applicationCursorKeys) {
 export default function AgentConsole({
   sessionId,
   reconnectVersion = 0,
+  projectId,
   /* agentName kept for API compat */
   onSessionEnd,
   onSessionConnected,
@@ -65,6 +66,8 @@ export default function AgentConsole({
 }) {
   const { preset } = useTerminalTheme();
   const xtermTheme = preset?.xterm || FALLBACK_XTERM_THEME;
+
+  const preview = usePreview(projectId, true);
 
   const hostRef = useRef(null);
   const overlayRef = useRef(null);
@@ -398,6 +401,7 @@ export default function AgentConsole({
 
   return (
     <div className="relative flex h-full min-h-0 flex-col overflow-hidden bg-transparent">
+      {projectId && <PreviewControlGroup {...preview} />}
       <div
         ref={overlayRef}
         className="absolute inset-0 z-10 flex items-center justify-center bg-zinc-900/90 backdrop-blur-sm"

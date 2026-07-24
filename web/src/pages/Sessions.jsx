@@ -1444,6 +1444,7 @@ export default React.forwardRef(function Sessions({
                         onGitFileClick={handleGitFileClick}
                         gitDiffView={gitDiffView}
                         onCloseGitDiff={handleCloseGitDiff}
+                        provider={activeProject?.repoProvider}
                       />
                     )}
                   </div>

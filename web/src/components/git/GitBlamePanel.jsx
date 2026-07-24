@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { Clock, Eye, Loader2, RefreshCw, User } from 'lucide-react';
-import * as gitApi from '../../lib/gitApi.js';
+import * as gitApi from '../../lib/gitApi';
 import { useToast } from '../Toast';
 import {
   consoleIconButtonClass,
@@ -52,9 +52,11 @@ function BlameLine({ entry, prevSha, showGutter }) {
           <span className="text-[10px] text-transparent select-none">.</span>
         )}
       </div>
+
       <div className="w-10 shrink-0 text-right pr-2 text-[#9AA0A6] select-none border-r border-[#E8EAED]">
         {entry.lineNumber}
       </div>
+
       <div className="flex-1 px-3 whitespace-pre overflow-x-auto text-[#202124]">
         {entry.content}
       </div>
@@ -116,6 +118,7 @@ export default function GitBlamePanel({ projectId, filePath, gitRef }) {
           )}
         </button>
       </div>
+
       <div className="flex-1 min-h-0 overflow-auto">
         {loading ? (
           <div className="flex items-center justify-center gap-2 py-8 text-sm text-[#5F6368]">

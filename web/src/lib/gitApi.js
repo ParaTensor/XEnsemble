@@ -52,3 +52,45 @@ export const createMergeRequest = (projectId, payload) =>
     method: 'POST',
     body: JSON.stringify(payload),
   });
+
+export const syncMergeRequest = (projectId, mrId) =>
+  request(`/api/v1/projects/${encodeURIComponent(projectId)}/merge-requests/${encodeURIComponent(mrId)}/sync`, {
+    method: 'POST',
+  });
+
+export const listReviews = (projectId, mrId) =>
+  request(`/api/v1/projects/${encodeURIComponent(projectId)}/merge-requests/${encodeURIComponent(mrId)}/reviews`);
+
+export const listReviewComments = (projectId, mrId, params = {}) => {
+  const qs = new URLSearchParams(params);
+  return request(`/api/v1/projects/${encodeURIComponent(projectId)}/merge-requests/${encodeURIComponent(mrId)}/comments?${qs}`);
+};
+
+export const getBlame = (projectId, filePath, params = {}) => {
+  const qs = new URLSearchParams({ path: filePath, ...params });
+  return request(`/api/v1/projects/${encodeURIComponent(projectId)}/repository/blame?${qs}`);
+};
+
+export const getDetailedLog = (projectId, params = {}) => {
+  const qs = new URLSearchParams(params);
+  return request(`/api/v1/projects/${encodeURIComponent(projectId)}/repository/log/detailed?${qs}`);
+};
+
+export const conflictCheck = (projectId, targetBranch) => {
+  const qs = new URLSearchParams({ target: targetBranch });
+  return request(`/api/v1/projects/${encodeURIComponent(projectId)}/repository/conflict-check?${qs}`);
+};
+
+export const listConflicts = (projectId) =>
+  request(`/api/v1/projects/${encodeURIComponent(projectId)}/repository/conflicts`);
+
+export const resolveConflict = (projectId, filePath, strategy) =>
+  request(`/api/v1/projects/${encodeURIComponent(projectId)}/repository/conflicts/resolve`, {
+    method: 'POST',
+    body: JSON.stringify({ path: filePath, strategy }),
+  });
+
+export const getFileAtRef = (projectId, filePath, ref = 'HEAD') => {
+  const qs = new URLSearchParams({ path: filePath, ref });
+  return request(`/api/v1/projects/${encodeURIComponent(projectId)}/repository/file?${qs}`);
+};

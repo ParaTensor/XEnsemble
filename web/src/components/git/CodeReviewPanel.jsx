@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { Check, CircleDot, Loader2, MessageSquare, RefreshCw, X } from 'lucide-react';
-import * as gitApi from '../../lib/gitApi.js';
+import * as gitApi from '../../lib/gitApi';
 import { useToast } from '../Toast';
 import {
   consoleIconButtonClass,
@@ -82,6 +82,7 @@ function CommentItem({ comment }) {
           </span>
         </div>
       </div>
+
       {comment.path && (
         <div className="mb-2 flex items-center gap-2">
           <span className="font-mono text-[10px] bg-[#F4F5F6] rounded px-1.5 py-0.5 text-[#5F6368] truncate max-w-[14rem]">
@@ -94,11 +95,13 @@ function CommentItem({ comment }) {
           )}
         </div>
       )}
+
       {comment.diffHunk && (
         <pre className="mb-2 rounded bg-[#F4F5F6] p-2 text-[10px] font-mono text-[#5F6368] max-h-20 overflow-auto whitespace-pre-wrap">
           {comment.diffHunk}
         </pre>
       )}
+
       <p className={`text-xs ${textSecondary} whitespace-pre-wrap`}>
         {comment.body}
       </p>
@@ -168,6 +171,7 @@ export default function CodeReviewPanel({ projectId, mergeRequestId }) {
           )}
         </button>
       </div>
+
       <div className="flex border-b border-[#E8EAED] px-4 shrink-0">
         <button
           type="button"
@@ -192,6 +196,7 @@ export default function CodeReviewPanel({ projectId, mergeRequestId }) {
           Inline Comments ({comments.length})
         </button>
       </div>
+
       <div className="flex-1 min-h-0 overflow-auto p-4 space-y-2">
         {loading ? (
           <div className="flex items-center justify-center gap-2 py-8 text-sm text-[#5F6368]">

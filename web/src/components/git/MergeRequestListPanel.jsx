@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { ExternalLink, Loader2, RefreshCw } from 'lucide-react';
-import { openExternal } from '../../lib/githubApi.js';
-import * as gitApi from '../../lib/gitApi.js';
+import { openExternal } from '../../lib/githubApi';
+import * as gitApi from '../../lib/gitApi';
 import {
   consoleTableShellClass,
   consoleTableHeadRowClass,
