@@ -169,7 +169,25 @@ export default function AgentConsole({
             if (!serverEndedRef.current) terminal.focus();
         };
 
-        (async () => {
+        const reconnectStateRef = { attempts: 0, timer: null };
+        const MAX_RECONNECTS = 5;
+
+        const scheduleReconnect = (reason) => {
+            if (disposedRef.current || serverEndedRef.current) return;
+            if (reconnectStateRef.attempts >= MAX_RECONNECTS) {
+                terminal.write(`\r\n\x1b[31m[System] Terminal could not be restored${reason ? ` (${reason})` : ''}. Click Restart to retry.\x1b[0m\r\n`);
+                setEnded(true);
+                return;
+            }
+            reconnectStateRef.attempts += 1;
+            const delay = Math.min(500 * reconnectStateRef.attempts, 3000);
+            terminal.write(`\r\n\x1b[33m[System] Reconnecting terminal… (${reconnectStateRef.attempts}/${MAX_RECONNECTS})\x1b[0m\r\n`);
+            reconnectStateRef.timer = setTimeout(() => {
+                if (!disposedRef.current) connect();
+            }, delay);
+        };
+
+        const connect = async () => {
             let ws;
             try {
                 const accessToken = await getAccessToken();
@@ -178,15 +196,14 @@ export default function AgentConsole({
                 wsRef.current = ws;
             } catch (err) {
                 if (disposedRef.current) return;
-                terminal.write(`\r\n\x1b[31m[System] Failed to connect: ${err?.message || 'Unknown error'}\x1b[0m\r\n`);
-                showToast('error', `Terminal connection failed: ${err?.message || 'Unknown error'}`);
-                setEnded(true);
+                scheduleReconnect(err?.message || 'connect error');
                 return;
             }
 
             ws.onopen = () => {
                 if (disposedRef.current) return;
                 openedRef.current = true;
+                reconnectStateRef.attempts = 0;
                 if (sessionLiveRef.current) setEnded(false);
                 let attempts = 0;
                 const tryFit = () => {
@@ -216,11 +233,9 @@ export default function AgentConsole({
                 } else if (msg.type === 'metrics') {
                     setMetrics(msg.data);
                 } else if (msg.type === 'error') {
-                    terminal.write(`\r\n\x1b[31m[System] ${msg.data}\x1b[0m\r\n`);
-                    serverEndedRef.current = true;
-                    setEnded(true);
-                    onSessionEndRef.current?.(sessionId);
-                    ws.close();
+                    openedRef.current = false;
+                    try { ws.close(); } catch { /* ignore */ }
+                    scheduleReconnect(msg.data || 'error');
                 } else if (msg.type === 'exit') {
                     if (msg.message) terminal.write(msg.message);
                     serverEndedRef.current = true;
@@ -235,19 +250,18 @@ export default function AgentConsole({
                     ws.close();
                 }
                 if (disposedRef.current || serverEndedRef.current) return;
-                if (!openedRef.current) {
-                    terminal.write(`\r\n\x1b[31m[System] Terminal connection failed. Is the backend running at ${getBackendURL()}?\x1b[0m\r\n`);
-                } else if (!event.wasClean) {
-                    terminal.write('\r\n\x1b[33m[System] Disconnected from terminal.\x1b[0m\r\n');
-                }
-                setEnded(true);
+                const wasConnected = openedRef.current;
+                openedRef.current = false;
+                if (event.wasClean) return;
+                scheduleReconnect(wasConnected ? 'disconnected' : 'connection failed');
             };
 
             terminal.onData((data) => {
                 if (serverEndedRef.current || !wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
                 wsRef.current.send(JSON.stringify({ type: 'input', data }));
             });
-        })();
+        };
+        connect();
 
         container.addEventListener('mousedown', focusTerminal);
         container.addEventListener('click', focusTerminal);
@@ -275,6 +289,7 @@ export default function AgentConsole({
 
         return () => {
             disposedRef.current = true;
+            if (reconnectStateRef.timer) clearTimeout(reconnectStateRef.timer);
             if (resizeFrame !== null) cancelAnimationFrame(resizeFrame);
             visibilityObserver.disconnect();
             resizeObserver.disconnect();

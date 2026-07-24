@@ -137,6 +137,7 @@ export default function AgentConsole({
 
     let disposed = false;
     let serverEnded = false;
+    let reconnectTimer = null;
     let lastSentCols = 0;
     let lastSentRows = 0;
     const resizeTimers = [];
@@ -279,15 +280,36 @@ export default function AgentConsole({
         }
       })();
     } else {
-      (async () => {
+      let reconnectAttempts = 0;
+      const MAX_RECONNECTS = 5;
+
+      const scheduleReconnect = (reason) => {
+        if (disposed || serverEnded) return;
+        if (reconnectAttempts >= MAX_RECONNECTS) {
+          terminal.write(`\r\n\x1b[31m[System] Terminal could not be restored${reason ? ` (${reason})` : ''}. Click Restart to retry.\x1b[0m\r\n`);
+          setEnded(true);
+          return;
+        }
+        reconnectAttempts += 1;
+        const delay = Math.min(500 * reconnectAttempts, 3000);
+        terminal.write(`\r\n\x1b[33m[System] Reconnecting terminal… (${reconnectAttempts}/${MAX_RECONNECTS})\x1b[0m\r\n`);
+        setConnected(false);
+        reconnectTimer = setTimeout(() => {
+          if (!disposed) connect();
+        }, delay);
+      };
+
+      var connect = () => {
         try {
-          showOverlay();
+          if (reconnectAttempts === 0) showOverlay();
           const ws = new WebSocket(getWsUrl(sessionId, getAccessToken()));
           wsRef.current = ws;
+          let replayDone = false;
 
           ws.onopen = () => {
             if (disposed) return;
             connectedRef.current = true;
+            reconnectAttempts = 0;
             setConnected(true);
             setEnded(false);
             onSessionConnectedRef.current?.(sessionId);
@@ -298,8 +320,6 @@ export default function AgentConsole({
             });
             scheduleResizeResends();
           };
-
-          let replayDone = false;
 
           ws.onmessage = (event) => {
             if (disposed) return;
@@ -315,11 +335,9 @@ export default function AgentConsole({
             }
             if (msg.type === 'error') {
               hideOverlay();
-              terminal.write(`\r\n\x1b[31m[System] ${msg.data}\x1b[0m\r\n`);
-              serverEnded = true;
-              setEnded(true);
-              onSessionEndRef.current?.(sessionId);
-              ws.close();
+              connectedRef.current = false;
+              try { ws.close(); } catch { /* ignore */ }
+              scheduleReconnect(msg.data || 'error');
               return;
             }
             if (msg.type === 'exit') {
@@ -334,8 +352,10 @@ export default function AgentConsole({
 
           ws.onerror = () => {
             if (disposed || serverEnded) return;
-            hideOverlay();
-            terminal.write('\r\n\x1b[31m[System] Terminal connection failed.\x1b[0m\r\n');
+            connectedRef.current = false;
+            if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING) {
+              ws.close();
+            }
           };
 
           ws.onclose = (event) => {
@@ -343,19 +363,16 @@ export default function AgentConsole({
             hideOverlay();
             const wasConnected = connectedRef.current;
             connectedRef.current = false;
-            if (!wasConnected) {
-              terminal.write('\r\n\x1b[31m[System] Terminal connection failed.\x1b[0m\r\n');
-            } else if (!event.wasClean) {
-              terminal.write('\r\n\x1b[33m[System] Disconnected from terminal.\x1b[0m\r\n');
-            }
-            setEnded(true);
+            if (event.wasClean) return;
+            scheduleReconnect(wasConnected ? 'disconnected' : 'connection failed');
           };
         } catch (error) {
           if (!disposed) {
-            terminal.write(`\r\n\x1b[31m[System] ${error?.message || 'Failed to connect'}\x1b[0m\r\n`);
+            scheduleReconnect(error?.message || 'connect error');
           }
         }
-      })();
+      };
+      connect();
     }
 
     const applySize = () => {
@@ -366,6 +383,7 @@ export default function AgentConsole({
 
     return () => {
       disposed = true;
+      if (reconnectTimer) clearTimeout(reconnectTimer);
       resizeTimers.forEach((t) => clearTimeout(t));
       resizeObserver.disconnect();
       host.removeEventListener('mousedown', focusTerminal);

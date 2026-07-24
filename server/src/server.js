@@ -1333,11 +1333,30 @@ fastify.post('/api/v1/session/start', { preValidation: [fastify.authenticate] },
     });
 });
 
+const WS_BUFFERED_LIMIT = 1024 * 1024;
+const WS_PING_INTERVAL_MS = Number(process.env.WS_PING_INTERVAL_MS) || 30000;
+
+function startWsHeartbeat(ws) {
+    let alive = true;
+    ws.on('pong', () => { alive = true; });
+    const timer = setInterval(() => {
+        if (ws.readyState !== WebSocket.OPEN) return;
+        if (!alive) {
+            ws.terminate();
+            return;
+        }
+        alive = false;
+        try { ws.ping(); } catch (_) { ws.terminate(); }
+    }, WS_PING_INTERVAL_MS);
+    timer.unref();
+    return () => clearInterval(timer);
+}
+
 // WebSocket Terminal（协议不变；与 /api/v1/terminal/* HTTP 通道共享 terminalBridge）
 fastify.register(async function terminalWsRoutes(app) {
     app.get('/ws/v1/terminal', { websocket: true }, async (connection, req) => {
-        const WS_BUFFERED_LIMIT = 1024 * 1024;
         const ws = connection.socket;
+        const stopHeartbeat = startWsHeartbeat(ws);
 
         const sendJson = (payload) => {
             if (ws.readyState !== WebSocket.OPEN) return;
@@ -1473,7 +1492,10 @@ fastify.register(async function terminalWsRoutes(app) {
                 }
             });
 
-            ws.on('close', sub.cleanup);
+            ws.on('close', () => {
+                stopHeartbeat();
+                sub.cleanup();
+            });
         } catch (err) {
             req.log.error(err);
             sendJson({ type: 'error', data: 'Internal server error' });
@@ -1483,9 +1505,9 @@ fastify.register(async function terminalWsRoutes(app) {
 });
 
 fastify.register(async function workspaceTerminalWsRoutes(app) {
-    const WS_BUFFERED_LIMIT = 1024 * 1024;
     app.get('/ws/v1/workspace-terminal', { websocket: true }, async (connection, req) => {
         const ws = connection.socket;
+        const stopHeartbeat = startWsHeartbeat(ws);
 
         const sendJson = (payload) => {
             if (ws.readyState !== WebSocket.OPEN) return;
@@ -1621,6 +1643,7 @@ fastify.register(async function workspaceTerminalWsRoutes(app) {
             });
 
             ws.on('close', () => {
+                stopHeartbeat();
                 sub.cleanup();
                 WorkspaceShellManager.removeSubscriber(shellId);
             });
