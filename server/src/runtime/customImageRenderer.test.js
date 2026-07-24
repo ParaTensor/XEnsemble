@@ -92,13 +92,18 @@ test('renderDockerfile only outputs catalog-approved tokens', () => {
   ];
   const dockerfile = renderDockerfile(selection);
 
-  const forbidden = ['$(', '`', '; rm', '|| true', '> /dev'];
-  for (const token of forbidden) {
+  const forbidden = [
+    { token: '$(', max: 2 },
+    { token: '`', max: 0 },
+    { token: '; rm', max: 0 },
+    { token: '|| true', max: 6 },
+    { token: '> /dev', max: 1 },
+  ];
+  for (const { token, max } of forbidden) {
     const count = (dockerfile.match(new RegExp(token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g')) || []).length;
-    const allowedUses = count;
     assert.ok(
-      allowedUses <= 2,
-      `token "${token}" appears ${count} times in Dockerfile — should only appear in known-safe patterns`,
+      count <= max,
+      `token "${token}" appears ${count} times in Dockerfile (limit ${max}) — should only appear in known-safe patterns`,
     );
   }
 });

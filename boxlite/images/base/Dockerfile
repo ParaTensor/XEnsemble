@@ -23,9 +23,13 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 # Node 22 (glibc) for npm-based agent CLIs (kimi-code requires >=22.19).
+# /usr/include/node (C++ headers, ~65MB) is only needed by node-gyp when compiling
+# native Node.js addons from source. Agents use prebuilt binaries, and node-gyp can
+# auto-download headers from nodejs.org when missing. Stripping saves ~10% of the VM
+# root disk (vda is typically 639MB).
 RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
     && apt-get install -y --no-install-recommends nodejs \
-    && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/* /usr/include/node
 
 # GitHub CLI (gh) - not shipped in Debian bookworm; use the official apt source.
 RUN mkdir -p -m 755 /etc/apt/keyrings \

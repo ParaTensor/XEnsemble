@@ -27,7 +27,14 @@ function renderInstallSteps(selection) {
   }
 
   steps.push('# Cleanup');
-  steps.push('RUN rm -rf /root/.npm /root/.cache /tmp/* /var/tmp/* 2>/dev/null; true');
+  steps.push('RUN rm -rf /root/.npm /root/.cache /tmp/* /var/tmp/* 2>/dev/null; true \\');
+  steps.push('  && find /usr/lib/node_modules -path "*/prebuilds/win32-*" -prune -exec rm -rf {} + 2>/dev/null || true \\');
+  steps.push('  && find /usr/lib/node_modules -path "*/prebuilds/darwin-*" -prune -exec rm -rf {} + 2>/dev/null || true \\');
+  steps.push('  && find /usr/lib/node_modules -name "*.pdb" -delete 2>/dev/null || true \\');
+  steps.push('  && find /usr/lib/node_modules -maxdepth 4 -type d -name \'.*-*\' -exec rm -rf {} + 2>/dev/null || true \\');
+  steps.push('  && mkdir -p /root/.config/opencode /root/.qwen \\');
+  steps.push('  && echo \'{"autoupdate":false}\' > /root/.config/opencode/opencode.json \\');
+  steps.push('  && echo \'{"general":{"enableAutoUpdate":false}}\' > /root/.qwen/settings.json');
 
   return steps.join('\n');
 }
@@ -40,7 +47,11 @@ function renderDockerfile(selection) {
 ARG BASE_IMAGE=${baseImage}
 FROM \${BASE_IMAGE}
 
-ENV PATH="/usr/local/bin:/root/.local/bin:/root/.cargo/bin:\${PATH}" HOME="/root"
+ENV PATH="/usr/local/bin:/root/.local/bin:/root/.cargo/bin:\${PATH}" HOME="/root" \
+    KIMI_CODE_NO_AUTO_UPDATE=1 \
+    DISABLE_UPDATES=1 \
+    FACTORY_DROID_AUTO_UPDATE_ENABLED=false \
+    OPENCLAW_NO_AUTO_UPDATE=1
 
 ${installSteps}
 
