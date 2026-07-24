@@ -7,6 +7,7 @@ import '@xterm/xterm/css/xterm.css';
 import { getAccessToken, getWsUrl, apiFetch } from '../lib/api';
 import { useTerminalTheme } from '../hooks/useTerminalTheme.jsx';
 import { usePreview, PreviewControlGroup } from './PreviewPanel';
+import { Loader2 } from 'lucide-react';
 
 const FALLBACK_XTERM_THEME = {
   background: '#09090b',
