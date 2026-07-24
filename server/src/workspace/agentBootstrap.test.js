@@ -44,6 +44,36 @@ describe('agentBootstrap', () => {
         assert.ok(fs.existsSync(path.join(ws, 'index.html')));
     });
 
+    it('ensures .gitignore contains .agents/ and .xensemble/', () => {
+        const ws = path.join(tmpDir, 'gitignore');
+        fs.mkdirSync(ws, { recursive: true });
+        seedAgentWorkspaceFiles(ws);
+        const gi = fs.readFileSync(path.join(ws, '.gitignore'), 'utf8');
+        assert.match(gi, /\.agents\//);
+        assert.match(gi, /\.xensemble\//);
+    });
+
+    it('appends to existing .gitignore without clobbering', () => {
+        const ws = path.join(tmpDir, 'gitignore-existing');
+        fs.mkdirSync(ws, { recursive: true });
+        fs.writeFileSync(path.join(ws, '.gitignore'), 'node_modules/\n*.log\n', 'utf8');
+        seedAgentWorkspaceFiles(ws);
+        const gi = fs.readFileSync(path.join(ws, '.gitignore'), 'utf8');
+        assert.ok(gi.startsWith('node_modules/\n*.log\n'));
+        assert.match(gi, /\.agents\//);
+        assert.match(gi, /\.xensemble\//);
+    });
+
+    it('does not duplicate entries on re-seed', () => {
+        const ws = path.join(tmpDir, 'gitignore-idempotent');
+        fs.mkdirSync(ws, { recursive: true });
+        seedAgentWorkspaceFiles(ws);
+        seedAgentWorkspaceFiles(ws);
+        const gi = fs.readFileSync(path.join(ws, '.gitignore'), 'utf8');
+        const matches = gi.match(/\.agents\//g);
+        assert.equal(matches.length, 1);
+    });
+
     it('runs setup once and skips when hash unchanged', async () => {
         const projectId = `proj_${Date.now()}`;
         const userId = `usr_${Date.now()}`;

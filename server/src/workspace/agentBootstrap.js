@@ -120,6 +120,28 @@ function refreshAgentsMd(workspacePath) {
 }
 
 /**
+ * Idempotent: ensure workspace root `.gitignore` contains entries for `.agents/` and `.xensemble/`.
+ * Appends missing entries without removing existing content.
+ */
+function ensureGitignoreEntries(workspacePath) {
+    const ignorePath = path.join(workspacePath, '.gitignore');
+    const entries = ['.agents/', '.xensemble/'];
+
+    let content = '';
+    if (fs.existsSync(ignorePath)) {
+        content = fs.readFileSync(ignorePath, 'utf8');
+    }
+
+    const existingLines = new Set(content.split('\n').map((l) => l.trim()));
+    const missing = entries.filter((e) => !existingLines.has(e));
+    if (missing.length === 0) return;
+
+    const block = `\n# XEnsemble platform metadata - do not commit\n${missing.join('\n')}\n`;
+    const prefix = content.length > 0 && !content.endsWith('\n') ? '\n' : '';
+    fs.writeFileSync(ignorePath, content + prefix + block, 'utf8');
+}
+
+/**
  * Idempotent: seed `.agents/setup`, `AGENTS.md`, resume script, and preview contract files.
  */
 function seedAgentWorkspaceFiles(workspacePath) {
@@ -137,6 +159,8 @@ function seedAgentWorkspaceFiles(workspacePath) {
     seedResumeScript(workspacePath);
 
     ensurePreviewContractFile(workspacePath);
+
+    ensureGitignoreEntries(workspacePath);
 }
 
 function shouldRunSetup(workspacePath, { force = false } = {}) {
