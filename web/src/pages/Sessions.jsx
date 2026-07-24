@@ -25,8 +25,8 @@ import {
   RefreshCw,
   Plus,
   Bot,
-  PanelRightOpen,
-  PanelRightClose,
+  PanelBottomOpen,
+  PanelBottomClose,
   FileText,
   Eye,
   EyeOff,
@@ -112,14 +112,12 @@ export default React.forwardRef(function Sessions({
   const [launchingSession, setLaunchingSession] = useState(false);
   // eslint-disable-next-line no-unused-vars
   const [_error, setError] = useState(null);
-  const [panelOpen, setPanelOpen] = useState(false);
-  const [panelTab, setPanelTab] = useState('files');
+  const [panelOpen, setPanelOpen] = useState(true);
   const [shellMounted, setShellMounted] = useState(false);
-  const [panelWidth, setPanelWidth] = useState(() => {
-    const saved = typeof window !== 'undefined' ? window.localStorage.getItem('xensemble.panel.width') : null;
-    const w = saved ? parseInt(saved, 10) : NaN;
-    const maxW = typeof window !== 'undefined' ? Math.max(480, window.innerWidth - 320) : 640;
-    return Number.isFinite(w) && w >= 200 && w <= maxW ? w : 320;
+  const [panelHeight, setPanelHeight] = useState(() => {
+    const saved = typeof window !== 'undefined' ? window.localStorage.getItem('xensemble.panel.height') : null;
+    const h = saved ? parseInt(saved, 10) : NaN;
+    return Number.isFinite(h) && h >= 150 && h <= 600 ? h : 300;
   });
   const resizingRef = useRef(null);
   const [isLoadingFiles, setIsLoadingFiles] = useState(false);
@@ -169,21 +167,19 @@ export default React.forwardRef(function Sessions({
   const [customImages, setCustomImages] = useState([]);
 
   useEffect(() => {
-    const maxW = typeof window !== 'undefined' ? Math.max(480, window.innerWidth - 320) : 640;
-    if (panelWidth >= 200 && panelWidth <= maxW) {
-      window.localStorage.setItem('xensemble.panel.width', String(panelWidth));
+    if (panelHeight >= 150 && panelHeight <= 600) {
+      window.localStorage.setItem('xensemble.panel.height', String(panelHeight));
     }
-  }, [panelWidth]);
+  }, [panelHeight]);
 
   const startPanelResize = useCallback((e) => {
     e.preventDefault();
-    const startX = e.clientX;
-    const startW = panelWidth;
-    const maxW = Math.max(480, window.innerWidth - 320);
+    const startY = e.clientY;
+    const startH = panelHeight;
     const onMove = (ev) => {
-      const delta = startX - ev.clientX;
-      const next = Math.min(maxW, Math.max(200, startW + delta));
-      setPanelWidth(next);
+      const delta = startY - ev.clientY;
+      const next = Math.min(600, Math.max(150, startH + delta));
+      setPanelHeight(next);
     };
     const onUp = () => {
       window.removeEventListener('mousemove', onMove);
@@ -193,9 +189,9 @@ export default React.forwardRef(function Sessions({
     };
     window.addEventListener('mousemove', onMove);
     window.addEventListener('mouseup', onUp);
-    document.body.style.cursor = 'col-resize';
+    document.body.style.cursor = 'row-resize';
     document.body.style.userSelect = 'none';
-  }, [panelWidth]);
+  }, [panelHeight]);
 
   const getAgentLabel = useCallback(
     (agentId) => agents.find((a) => a.id === agentId)?.name || agentId,
@@ -1294,7 +1290,7 @@ export default React.forwardRef(function Sessions({
                     title={panelOpen ? 'Close workspace panel' : 'Open workspace panel'}
                     aria-label={panelOpen ? 'Close workspace panel' : 'Open workspace panel'}
                   >
-                    {panelOpen ? <PanelRightClose className="w-4 h-4" strokeWidth={1.75} /> : <PanelRightOpen className="w-4 h-4" strokeWidth={1.75} />}
+                    {panelOpen ? <PanelBottomClose className="w-4 h-4" strokeWidth={1.75} /> : <PanelBottomOpen className="w-4 h-4" strokeWidth={1.75} />}
                   </button>
                 </>
               )}
@@ -1337,7 +1333,7 @@ export default React.forwardRef(function Sessions({
                 </div>
               </div>
             ) : (
-            <div className="flex min-h-0 min-w-0 flex-1 flex-row overflow-hidden">
+            <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
               <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
                 <div className="flex min-h-0 flex-1 flex-col p-4">
                   <div
@@ -1363,95 +1359,33 @@ export default React.forwardRef(function Sessions({
                 <>
                 <div
                   onMouseDown={startPanelResize}
-                  className="w-1 shrink-0 cursor-col-resize bg-[#E8EAED] hover:bg-[#202124] transition-colors"
+                  className="h-1 shrink-0 cursor-row-resize bg-[#E8EAED] hover:bg-[#202124] transition-colors"
                   title="Drag to resize"
                 />
-                <div className="flex min-h-0 shrink-0 flex-col border-l border-[#E8EAED] bg-white" style={{ width: panelWidth }}>
-                  <div className="flex h-12 items-center justify-between border-b border-[#E8EAED] px-3 shrink-0">
-                    <div className="flex items-center gap-1">
-                      <button
-                        type="button"
-                        onClick={() => setPanelTab('files')}
-                        className={`px-2.5 py-1.5 text-sm font-medium border-b-2 transition-colors ${
-                          panelTab === 'files'
-                            ? 'border-[#202124] text-[#202124]'
-                            : 'border-transparent text-[#5F6368] hover:text-[#202124]'
-                        }`}
-                      >
-                        Files
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => { setPanelTab('shell'); setShellMounted(true); }}
-                        className={`px-2.5 py-1.5 text-sm font-medium border-b-2 transition-colors ${
-                          panelTab === 'shell'
-                            ? 'border-[#202124] text-[#202124]'
-                            : 'border-transparent text-[#5F6368] hover:text-[#202124]'
-                        }`}
-                      >
-                        Shell
-                      </button>
-                    </div>
-                    {panelTab === 'files' && (
-                      <div className="flex items-center gap-0.5">
-                        <button
-                          type="button"
-                          onClick={() => setShowHiddenFiles((v) => !v)}
-                          className={`p-2 rounded-lg transition-colors ${
-                            showHiddenFiles
-                              ? 'text-[#202124] bg-[#F4F5F6]'
-                              : 'text-[#5F6368] hover:bg-[#F4F5F6]'
-                          }`}
-                          title={showHiddenFiles ? 'Hide hidden files' : 'Show hidden files'}
-                          aria-label={showHiddenFiles ? 'Hide hidden files' : 'Show hidden files'}
-                          aria-pressed={showHiddenFiles}
-                        >
-                          {showHiddenFiles ? (
-                            <EyeOff className="w-4 h-4" strokeWidth={1.75} />
-                          ) : (
-                            <Eye className="w-4 h-4" strokeWidth={1.75} />
-                          )}
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => fetchWorkspaceFiles({ notifyError: true })}
-                          className="p-2 text-[#5F6368] hover:bg-[#F4F5F6] rounded-lg transition-colors"
-                          title="Refresh files"
-                          aria-label="Refresh files"
-                        >
-                          <RefreshCw className={`w-4 h-4 ${isLoadingFiles ? 'animate-spin' : ''}`} strokeWidth={1.75} />
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                  <div className={`min-h-0 flex-1 flex-col ${panelTab === 'files' ? 'flex' : 'hidden'}`}>
-                    {activeSession?.projectId && sessionAlive && (
-                      <WorkspacePanel
-                        projectId={activeSession.projectId}
-                        tabs={editorTabs.tabs}
-                        activePath={editorTabs.activePath}
-                        onSelectTab={editorTabs.selectTab}
-                        onCloseTab={editorTabs.closeTab}
-                        onSaveTab={handleSaveTab}
-                        onOpenFile={handleEditorOpenFile}
-                        onFetchDir={editorTabs.fetchDir}
-                        onCreateFile={handleCreateFile}
-                        onCreateDir={handleCreateDir}
-                        onShowDiff={handleShowDiff}
-                        diffView={editorTabs.diffView}
-                        onCloseDiff={editorTabs.closeDiff}
-                        gitChanges={gitChanges}
-                        onGitFileClick={handleGitFileClick}
-                        gitDiffView={gitDiffView}
-                        onCloseGitDiff={handleCloseGitDiff}
-                        provider={activeProject?.repoProvider}
-                        sessionLive={sessionAlive}
-                      />
-                    )}
-                  </div>
-                  <div className={`min-h-0 flex-1 flex-col ${panelTab === 'shell' ? 'flex' : 'hidden'}`}>
-                    {shellMounted && <WorkspaceShell projectId={activeSession.projectId} />}
-                  </div>
+                <div className="flex min-h-0 shrink-0 flex-col border-t border-[#E8EAED] bg-white" style={{ height: panelHeight }}>
+                  <WorkspacePanel
+                    projectId={activeSession.projectId}
+                    tabs={editorTabs.tabs}
+                    activePath={editorTabs.activePath}
+                    onSelectTab={editorTabs.selectTab}
+                    onCloseTab={editorTabs.closeTab}
+                    onSaveTab={handleSaveTab}
+                    onOpenFile={handleEditorOpenFile}
+                    onFetchDir={editorTabs.fetchDir}
+                    onCreateFile={handleCreateFile}
+                    onCreateDir={handleCreateDir}
+                    onShowDiff={handleShowDiff}
+                    diffView={editorTabs.diffView}
+                    onCloseDiff={editorTabs.closeDiff}
+                    gitChanges={gitChanges}
+                    onGitFileClick={handleGitFileClick}
+                    gitDiffView={gitDiffView}
+                    onCloseGitDiff={handleCloseGitDiff}
+                    provider={activeProject?.repoProvider}
+                    sessionLive={sessionAlive}
+                    shellContent={shellMounted && <WorkspaceShell projectId={activeSession.projectId} />}
+                    onShellMount={() => setShellMounted(true)}
+                  />
                 </div>
                 </>
               )}

@@ -39,10 +39,10 @@ const GIT_STATUS_DESC = {
 };
 
 const GIT_SUB_TABS = [
-  { key: 'changes', label: 'Changes', icon: GitBranch },
+  { key: 'changes', label: 'Diff', icon: GitBranch },
   { key: 'history', label: 'History', icon: Clock },
   { key: 'blame', label: 'Blame', icon: Eye },
-  { key: 'prs', label: 'Pull Requests', icon: GitPullRequest },
+  { key: 'prs', label: 'Pull Request', icon: GitPullRequest },
   { key: 'review', label: 'Code Review', icon: MessageSquare },
   { key: 'conflicts', label: 'Conflicts', icon: AlertTriangle },
 ];
