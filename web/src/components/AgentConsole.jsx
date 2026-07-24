@@ -102,6 +102,7 @@ export default function AgentConsole({
     if (!host) return undefined;
 
     const terminal = new Terminal({
+      allowProposedApi: true,
       cols: 120,
       rows: 32,
       scrollback: 10000,

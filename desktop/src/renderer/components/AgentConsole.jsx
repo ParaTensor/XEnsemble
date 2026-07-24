@@ -107,6 +107,7 @@ export default function AgentConsole({
         const wsRef = { current: null };
 
         const terminal = new Terminal({
+            allowProposedApi: true,
             cols: 120,
             rows: 32,
             scrollback: 10000,
