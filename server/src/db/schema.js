@@ -4,6 +4,7 @@ const {
   integer,
   bigint,
   boolean,
+  jsonb,
   unique,
   uniqueIndex,
   index,
