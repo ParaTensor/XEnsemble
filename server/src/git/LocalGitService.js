@@ -463,8 +463,25 @@ class LocalGitService {
     async logGraph(project, options = {}) {
         const { workspacePath } = await this.ensureProjectRuntime(project);
         const count = Math.min(options.count || 20, 100);
+
+        let currentBranch = 'HEAD';
+        try {
+            const revParse = await this._git(workspacePath, ['rev-parse', '--abbrev-ref', 'HEAD']);
+            currentBranch = revParse.stdout.trim();
+        } catch {
+            currentBranch = 'HEAD';
+        }
+
+        const refs = [currentBranch];
+        try {
+            await this._git(workspacePath, ['rev-parse', '--verify', `refs/remotes/origin/${currentBranch}`]);
+            refs.push(`origin/${currentBranch}`);
+        } catch {
+            // no remote tracking branch
+        }
+
         const args = [
-            'log', '--graph', '--branches', '--remotes', `-n`, String(count),
+            'log', '--graph', ...refs, `-n`, String(count),
             '--date-order',
             '--format=%x00%H%x00%s%x00%ct%x00%an%x00%ae%x00%D%x00',
         ];

@@ -145,7 +145,7 @@ class BoxLiteStreamHandle extends StreamHandle {
                 const timer = setTimeout(() => {
                     try { newWs.close(); } catch (_) {}
                     this._reattaching = false;
-                    this._fireExit(-1);
+                    this._tryReattach();
                 }, 5000);
                 newWs.once('open', () => {
                     clearTimeout(timer);
@@ -157,7 +157,7 @@ class BoxLiteStreamHandle extends StreamHandle {
                 newWs.once('error', () => {
                     clearTimeout(timer);
                     this._reattaching = false;
-                    this._fireExit(-1);
+                    this._tryReattach();
                 });
             } catch {
                 this._reattaching = false;

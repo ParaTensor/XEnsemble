@@ -54,7 +54,7 @@ function CommitRow({ commit }) {
   const graphLines = (commit.graph || '').split('\n');
   const refs = (commit.refs || []).filter(isBranchRef);
   const dotColor = getGraphDotColor(commit.refs || []);
-  const rowH = graphLines.length * 9;
+  const rowH = graphLines.length * 11;
   const curH = `${rowH}px`;
 
   return (
@@ -62,23 +62,23 @@ function CommitRow({ commit }) {
       <div className="flex group cursor-pointer"
            style={{ minHeight: curH }}
            onClick={() => setExpanded(!expanded)}>
-        <div className="font-mono text-[9px] leading-[9px] select-none shrink-0 w-12 overflow-hidden py-px"
+        <div className="font-mono text-[11px] leading-[11px] select-none shrink-0 w-12 overflow-hidden py-px"
              style={{ width: '48px', minWidth: '48px' }}>
           {graphLines.map((line, i) => {
             const starIdx = line.indexOf('*');
             if (starIdx === -1) {
               return (
-                <div key={i} className="h-[9px] text-[#8B949E] whitespace-pre">
+                <div key={i} className="h-[11px] text-[#8B949E] whitespace-pre">
                   {line || ' '}
                 </div>
               );
             }
             return (
-              <div key={i} className="h-[9px] text-[#656D76] whitespace-pre flex items-center">
+              <div key={i} className="h-[11px] text-[#656D76] whitespace-pre flex items-center">
                 <span>{line.slice(0, starIdx)}</span>
                 <span className="inline-flex items-center">
-                  <svg width="9" height="9" viewBox="0 0 9 9" className="shrink-0">
-                    <circle cx="4.5" cy="4.5" r="3.5" fill={dotColor} stroke="none" />
+                  <svg width="11" height="11" viewBox="0 0 11 11" className="shrink-0">
+                    <circle cx="5.5" cy="5.5" r="4.5" fill={dotColor} stroke="none" />
                   </svg>
                 </span>
                 <span>{line.slice(starIdx + 1)}</span>
@@ -87,9 +87,9 @@ function CommitRow({ commit }) {
           })}
         </div>
 
-        <div className="flex-1 min-w-0" style={{ paddingTop: Math.max(0, rowH - 14) / 2 + 'px' }}>
-          <div className="flex items-center gap-1.5 pr-2 h-[14px]">
-            <span className="text-[11px] font-medium text-[#1F2328] line-clamp-1 flex-1 min-w-0">
+        <div className="flex-1 min-w-0" style={{ paddingTop: Math.max(0, rowH - 16) / 2 + 'px' }}>
+          <div className="flex items-center gap-1.5 pr-2 h-[16px]">
+            <span className="text-[13px] font-medium text-[#1F2328] line-clamp-1 flex-1 min-w-0">
               {commit.message}
             </span>
             {refs.length > 0 && (
@@ -98,9 +98,9 @@ function CommitRow({ commit }) {
                   const color = BRANCH_BADGE[i % BRANCH_BADGE.length];
                   return (
                     <span key={i}
-                      className="inline-flex items-center gap-px text-[8px] font-medium rounded-full px-1.5 leading-[11px] whitespace-nowrap"
+                      className="inline-flex items-center gap-px text-[10px] font-medium rounded-full px-1.5 leading-[13px] whitespace-nowrap"
                       style={{ backgroundColor: color.bg, color: color.text }}>
-                      <svg width="6" height="6" viewBox="0 0 9 9" className="shrink-0">
+                      <svg width="8" height="8" viewBox="0 0 9 9" className="shrink-0">
                         <circle cx="4.5" cy="4.5" r="3.5" fill={color.dot} />
                       </svg>
                       {ref.name.replace(/^origin\//, '')}
@@ -109,15 +109,15 @@ function CommitRow({ commit }) {
                 })}
               </span>
             )}
-            <span className="text-[9px] text-[#8B949E] shrink-0 max-w-[80px] truncate"
+            <span className="text-[11px] text-[#8B949E] shrink-0 max-w-[80px] truncate"
                   title={commit.author}>
               {commit.author?.split(/\s+/)[0]}
             </span>
-            <span className="text-[9px] text-[#8B949E] shrink-0 w-[24px] text-right"
+            <span className="text-[11px] text-[#8B949E] shrink-0 w-[24px] text-right"
                   title={formatTimestamp(commit.timestamp)}>
               {formatTimeAgo(commit.timestamp)}
             </span>
-            <span className="font-mono text-[8px] text-[#8B949E] shrink-0 hidden group-hover:inline">
+            <span className="font-mono text-[10px] text-[#8B949E] shrink-0 hidden group-hover:inline">
               {commit.sha?.slice(0, 7)}
             </span>
           </div>
@@ -125,7 +125,7 @@ function CommitRow({ commit }) {
       </div>
 
       {expanded && commit.message && (
-        <div className="pl-12 pb-1.5 text-[10px] text-[#57606A] whitespace-pre-wrap pr-3">
+        <div className="pl-12 pb-1.5 text-[12px] text-[#57606A] whitespace-pre-wrap pr-3">
           {commit.message}
         </div>
       )}
