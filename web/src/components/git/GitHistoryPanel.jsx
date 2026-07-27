@@ -68,8 +68,13 @@ function BranchBadge({ branchRef }) {
       <span
         className="inline-flex items-center gap-0.5 text-[10px] font-medium rounded-full px-1.5 py-px whitespace-nowrap"
         style={{ backgroundColor: '#F0F6FF', color: '#0550AE' }}
+        title="remote"
       >
-        <Cloud className="h-2.5 w-2.5 shrink-0" />
+        <svg width="10" height="10" viewBox="0 0 10 10" className="shrink-0">
+          <circle cx="5" cy="5" r="4" fill="none" stroke="#0550AE" strokeWidth="1" />
+          <circle cx="5" cy="5" r="2.5" fill="none" stroke="#0550AE" strokeWidth="1" />
+          <circle cx="5" cy="5" r="1" fill="#0550AE" />
+        </svg>
         {name}
       </span>
     );
@@ -78,12 +83,9 @@ function BranchBadge({ branchRef }) {
     <span
       className="inline-flex items-center gap-0.5 text-[10px] font-medium rounded-full px-1.5 py-px whitespace-nowrap"
       style={{ backgroundColor: '#F4F5F6', color: '#5F6368' }}
+      title="local"
     >
-      <svg width="10" height="10" viewBox="0 0 10 10" className="shrink-0">
-        <circle cx="5" cy="5" r="4" fill="none" stroke="#5F6368" strokeWidth="1" />
-        <circle cx="5" cy="5" r="2.5" fill="none" stroke="#5F6368" strokeWidth="1" />
-        <circle cx="5" cy="5" r="1" fill="#5F6368" />
-      </svg>
+      <Cloud className="h-2.5 w-2.5 shrink-0" />
       {name}
     </span>
   );

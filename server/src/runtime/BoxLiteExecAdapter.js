@@ -178,6 +178,7 @@ class BoxLiteStreamHandle extends StreamHandle {
                     this._ws = newWs;
                     this._reattaching = false;
                     this._reattachAttempts = 0;
+                    this._byteBuffers = {};
                     this._setupWsListeners(newWs);
                 });
                 newWs.once('error', () => {

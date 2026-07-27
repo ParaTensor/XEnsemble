@@ -505,12 +505,12 @@ class LocalGitService {
     async getCommitFiles(project, sha) {
         const { workspacePath } = await this.ensureProjectRuntime(project);
         const result = await this._git(workspacePath, [
-            'show', '--no-patch', '--name-status', '--format=', sha,
+            'diff-tree', '--no-commit-id', '--name-status', '-r', sha,
         ], { timeoutMs: 30_000 });
         return result.stdout.split('\n').filter(Boolean).map((line) => {
-            const match = line.match(/^([AMDRC]\d*)\t(.+)$/);
-            if (!match) return null;
-            return { status: match[1][0], path: match[2] };
+            const parts = line.split('\t');
+            if (parts.length < 2) return null;
+            return { status: parts[0][0], path: parts[parts.length - 1] };
         }).filter(Boolean);
     }
 
