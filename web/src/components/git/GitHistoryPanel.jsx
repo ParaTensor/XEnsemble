@@ -46,7 +46,7 @@ function isBranchRef(ref) {
 }
 
 function isRemoteRef(ref) {
-  return ref.name.includes('/');
+  return ref.name.startsWith('origin/') || ref.name.startsWith('upstream/');
 }
 
 function getGraphDotColor(refs) {
@@ -62,7 +62,7 @@ function getGraphDotColor(refs) {
 function BranchBadge({ branchRef }) {
   if (!branchRef) return null;
   const remote = isRemoteRef(branchRef);
-  const name = branchRef.name.replace(/^origin\//, '');
+  const name = branchRef.name.replace(/^(origin|upstream)\//, '');
   if (remote) {
     return (
       <span
@@ -70,11 +70,7 @@ function BranchBadge({ branchRef }) {
         style={{ backgroundColor: '#F0F6FF', color: '#0550AE' }}
         title="remote"
       >
-        <svg width="10" height="10" viewBox="0 0 10 10" className="shrink-0">
-          <circle cx="5" cy="5" r="4" fill="none" stroke="#0550AE" strokeWidth="1" />
-          <circle cx="5" cy="5" r="2.5" fill="none" stroke="#0550AE" strokeWidth="1" />
-          <circle cx="5" cy="5" r="1" fill="#0550AE" />
-        </svg>
+        <Cloud className="h-2.5 w-2.5 shrink-0" />
         {name}
       </span>
     );
@@ -85,7 +81,11 @@ function BranchBadge({ branchRef }) {
       style={{ backgroundColor: '#F4F5F6', color: '#5F6368' }}
       title="local"
     >
-      <Cloud className="h-2.5 w-2.5 shrink-0" />
+      <svg width="10" height="10" viewBox="0 0 10 10" className="shrink-0">
+        <circle cx="5" cy="5" r="4" fill="none" stroke="#5F6368" strokeWidth="1" />
+        <circle cx="5" cy="5" r="2.5" fill="none" stroke="#5F6368" strokeWidth="1" />
+        <circle cx="5" cy="5" r="1" fill="#5F6368" />
+      </svg>
       {name}
     </span>
   );
