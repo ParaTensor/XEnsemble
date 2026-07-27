@@ -144,21 +144,21 @@ export default function SourceControlPanel({ projectId, gitChanges, onGitFileCli
     return lines.map((line, i) => {
       const first = line[0];
       if (first === '+') {
-        return <div key={i} className="bg-[#DFF7E4] text-[#1A7F37] pl-4">{line}</div>;
+        return <div key={i} className="bg-[#DFF7E4] text-[#1A7F37] pl-2">{line.slice(1)}</div>;
       }
       if (first === '-') {
-        return <div key={i} className="bg-[#FFEBE9] text-[#CF222E] pl-4">{line}</div>;
+        return <div key={i} className="bg-[#FFEBE9] text-[#CF222E] pl-2">{line.slice(1)}</div>;
       }
       if (first === '@') {
-        return <div key={i} className="bg-[#DAEAFE] text-[#0550AE] font-semibold pl-4">{line}</div>;
+        return <div key={i} className="bg-[#DAEAFE] text-[#0550AE] font-semibold pl-2">{line}</div>;
       }
       if (line.startsWith('---') || line.startsWith('+++')) {
-        return <div key={i} className="bg-[#F6F8FA] text-[#57606A] font-semibold pl-4">{line}</div>;
+        return <div key={i} className="bg-[#F6F8FA] text-[#57606A] font-semibold pl-2">{line}</div>;
       }
       if (line.startsWith('diff ') || line.startsWith('index ') || line.startsWith('new file') || line.startsWith('deleted ')) {
-        return <div key={i} className="text-[#8B949E]">{line}</div>;
+        return <div key={i} className="text-[#8B949E] hidden">{line}</div>;
       }
-      return <div key={i} className="bg-white text-[#1F2328] pl-4">{line || ' '}</div>;
+      return <div key={i} className="bg-white text-[#1F2328] pl-2">{line || ' '}</div>;
     });
   }, []);
 

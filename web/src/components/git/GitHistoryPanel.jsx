@@ -59,10 +59,10 @@ function CommitRow({ commit }) {
 
   return (
     <div>
-      <div className="flex group cursor-pointer"
+      <div className="flex items-center group cursor-pointer"
            style={{ minHeight: curH }}
            onClick={() => setExpanded(!expanded)}>
-        <div className="font-mono text-[11px] leading-[11px] select-none shrink-0 w-12 overflow-hidden py-px"
+        <div className="font-mono text-[11px] leading-[11px] select-none shrink-0 w-12 overflow-hidden"
              style={{ width: '48px', minWidth: '48px' }}>
           {graphLines.map((line, i) => {
             const starIdx = line.indexOf('*');
@@ -87,8 +87,8 @@ function CommitRow({ commit }) {
           })}
         </div>
 
-        <div className="flex-1 min-w-0" style={{ paddingTop: Math.max(0, rowH - 16) / 2 + 'px' }}>
-          <div className="flex items-center gap-1.5 pr-2 h-[16px]">
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-1.5 pr-2">
             <span className="text-[13px] font-medium text-[#1F2328] line-clamp-1 flex-1 min-w-0">
               {commit.message}
             </span>
