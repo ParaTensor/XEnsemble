@@ -296,34 +296,68 @@ async function resumeSession({
 
         let handle;
         try {
+
+            // ── Try reattach to old execution first ──
+            // If the old agent process is still alive in the VM (WebSocket died
+            // but process didn't), reattaching avoids:
+            //   1. Killing the agent mid-tool-execution (causes deadlocks)
+            //   2. Losing conversation context by spawning without --continue
+            if (session.streamRef) {
+                try {
+                    const cursor = transcriptStore.reattachCursor(transcriptRef);
+                    if (cursor != null) {
+                        const reattached = await runtime.provider.attachSession(
+                            session.id, session.streamRef, { after: cursor },
+                        );
+                        if (reattached && typeof reattached.onData === 'function' && typeof reattached.onExit === 'function') {
+                            handle = reattached;
+                            handle.transcriptRef = transcriptRef;
+                            sessionManager.createSession(session.id, handle, agentMeta.id, {
+                                transcriptRef,
+                                projectId: session.projectId || null,
+                                runtimeId: session.runtimeId || null,
+                                runtimeRef: runtimeReady.runtime ? runtimeReady.runtime.runtimeRef : null,
+                                stateDirRef: session.stateDirRef || null,
+                                userId: requestUser.id,
+                            });
+                            await registerSessionLifecycle({
+                                db, schema, sessionManager, sessionId: session.id, project, fastifyLog,
+                            });
+                            await db.update(schema.sessions)
+                                .set({ status: 'running', recoverable: true })
+                                .where(eq(schema.sessions.id, session.id));
+                            return {
+                                session_id: session.id,
+                                status: 'running',
+                                runtime_id: runtimeReady.runtime ? runtimeReady.runtime.id : session.runtimeId || null,
+                                stream_ref: handle.streamRef || null,
+                                recoverable: true,
+                                terminal_theme_id: terminalThemeId || null,
+                                spawn_env_preview: resolvedSpawnEnv.spawn_env_preview || null,
+                                state_dir_ref: session.stateDirRef || null,
+                                reattached: true,
+                            };
+                        }
+                    }
+                } catch (_) {
+                    // Reattach failed - fall through to spawn new process
+                }
+            }
+
+            // ── Reattach failed, spawn new agent ──
             const stateArgs = stateDirPath
                 ? buildStateArgs(resumeSpec, stateDirPath)
                 : [];
+            const resumeArgs = canResume ? (resumeSpec.resumeArgs || []) : [];
 
-            // Check if there's a lingering agent process from a previous run.
-            // If so, killing it would interrupt any ongoing tool execution.
-            // In that case, don't use --continue to avoid the agent deadlocking
-            // on an interrupted tool result.
-            let killedOldProcess = false;
+            // Kill any lingering agent process from a previous run.
             if (runtimeRef) {
                 try {
-                    const pgrepResult = await runtime.exec.exec('pgrep', ['-f', agentMeta.cmd || agentMeta.id], {}, {
+                    await runtime.exec.exec('pkill', ['-f', agentMeta.cmd || agentMeta.id], {}, {
                         runtimeRef, cwd: '/', timeoutMs: 5000,
                     });
-                    const oldPids = pgrepResult.stdout?.trim();
-                    if (oldPids && oldPids.length > 0) {
-                        // Old process exists - kill it and skip --continue
-                        await runtime.exec.exec('pkill', ['-f', agentMeta.cmd || agentMeta.id], {}, {
-                            runtimeRef, cwd: '/', timeoutMs: 5000,
-                        });
-                        killedOldProcess = true;
-                    }
                 } catch (_) { /* best-effort */ }
             }
-
-            // Skip resumeArgs if the state directory has no conversation data,
-            // or if we killed an old process (interrupted tool results cause deadlocks).
-            const resumeArgs = (canResume && !killedOldProcess) ? (resumeSpec.resumeArgs || []) : [];
 
             handle = await runtime.exec.spawn(
                 agentMeta.cmd,
