@@ -87,7 +87,11 @@ async function githubFetch(token, path, opts = {}) {
         body = null;
     }
 
-    const message = body?.message || `${path} failed with status ${res.status}`;
+    let message = body?.message || `${path} failed with status ${res.status}`;
+    if (body?.errors?.length) {
+        const details = body.errors.map((e) => e.message || e.code).filter(Boolean).join('; ');
+        if (details) message = `${message}: ${details}`;
+    }
     throw new GitHubError(message, mapStatusToCode(res.status), res.status);
 }
 
