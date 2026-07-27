@@ -42,7 +42,7 @@ const FILE_STATUS_COLORS = {
 };
 
 function isBranchRef(ref) {
-  return !ref.name.startsWith('tag:') && ref.label !== 'tag';
+  return ref && !ref.name.startsWith('tag:') && ref.label !== 'tag';
 }
 
 function isRemoteRef(ref) {
@@ -59,9 +59,10 @@ function getGraphDotColor(refs) {
   return '#26A641';
 }
 
-function BranchBadge({ ref }) {
-  const remote = isRemoteRef(ref);
-  const name = ref.name.replace(/^origin\//, '');
+function BranchBadge({ branchRef }) {
+  if (!branchRef) return null;
+  const remote = isRemoteRef(branchRef);
+  const name = branchRef.name.replace(/^origin\//, '');
   if (remote) {
     return (
       <span
@@ -155,7 +156,7 @@ function CommitRow({ commit, projectId }) {
             {refs.length > 0 && (
               <span className="flex items-center gap-0.5 shrink-0">
                 {refs.map((ref, i) => (
-                  <BranchBadge key={i} ref={ref} />
+                  <BranchBadge key={i} branchRef={ref} />
                 ))}
               </span>
             )}
