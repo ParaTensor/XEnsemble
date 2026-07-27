@@ -149,8 +149,8 @@ export default function SourceControlPanel({ projectId, gitChanges, onGitFileCli
       if (!fileDiffs[filePath]) {
         setLoadingDiff(filePath);
         try {
-          const text = await getGitFileDiff(projectId, filePath);
-          setFileDiffs((prev) => ({ ...prev, [filePath]: text }));
+          const data = await getGitFileDiff(projectId, filePath);
+          setFileDiffs((prev) => ({ ...prev, [filePath]: data?.diff || '' }));
         } catch (_) {
           setFileDiffs((prev) => ({ ...prev, [filePath]: 'Failed to load diff' }));
         } finally {
