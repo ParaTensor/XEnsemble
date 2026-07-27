@@ -301,6 +301,18 @@ async function resumeSession({
                 : [];
             // Skip resumeArgs if the state directory has no conversation data
             const resumeArgs = canResume ? (resumeSpec.resumeArgs || []) : [];
+
+            // Kill any lingering agent process from a previous run.
+            // The WebSocket may have died without delivering the kill signal,
+            // leaving the old agent process running in the VM.
+            if (runtimeRef) {
+                try {
+                    await runtime.exec.exec('pkill', ['-f', agentMeta.cmd || agentMeta.id], {}, {
+                        runtimeRef, cwd: '/', timeoutMs: 5000,
+                    });
+                } catch (_) { /* best-effort: ignore if no process to kill */ }
+            }
+
             handle = await runtime.exec.spawn(
                 agentMeta.cmd,
                 [...stateArgs, ...agentMeta.args, ...resumeArgs],

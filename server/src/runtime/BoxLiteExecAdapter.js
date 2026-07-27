@@ -168,6 +168,9 @@ class BoxLiteStreamHandle extends StreamHandle {
                 this._ws.close();
             }
         } catch (_) {}
+        // Mark as closed regardless - the actual process kill is handled
+        // by resumeSession via VM exec (pkill) since the WebSocket may be dead.
+        this._closed = true;
     }
 
     get pid() { return null; }
