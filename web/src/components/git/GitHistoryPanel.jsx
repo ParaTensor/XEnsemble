@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { GitBranch, GitCommit, Loader2, RefreshCw, User } from 'lucide-react';
+import { GitCommit, Loader2, RefreshCw } from 'lucide-react';
 import * as gitApi from '../../lib/gitApi';
 import { useToast } from '../Toast';
 import {
@@ -18,17 +18,17 @@ function formatTimeAgo(ts) {
   if (!ts) return '';
   const now = Date.now() / 1000;
   const diff = now - ts;
-  if (diff < 60) return 'just now';
-  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
-  if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
-  if (diff < 604800) return `${Math.floor(diff / 86400)}d ago`;
-  return `${Math.floor(diff / 2592000)}mo ago`;
+  if (diff < 60) return 'now';
+  if (diff < 3600) return `${Math.floor(diff / 60)}m`;
+  if (diff < 86400) return `${Math.floor(diff / 3600)}h`;
+  if (diff < 604800) return `${Math.floor(diff / 86400)}d`;
+  return `${Math.floor(diff / 2592000)}mo`;
 }
 
-const BRANCH_COLORS = [
-  { bg: '#FDE8E8', text: '#9B1C1C' },
-  { bg: '#DEF7EC', text: '#03543F' },
-  { bg: '#E1EFFE', text: '#1E429F' },
+const BRANCH_BADGE = [
+  { bg: '#FFEBE9', text: '#CF222E', dot: '#CF222E' },
+  { bg: '#E6F4EA', text: '#1E7E34', dot: '#26A641' },
+  { bg: '#DAEAFE', text: '#0550AE', dot: '#0969DA' },
 ];
 
 function isBranchRef(ref) {
@@ -39,60 +39,96 @@ function isRemoteRef(ref) {
   return ref.name.includes('/');
 }
 
+function getGraphDotColor(refs) {
+  const branchRefs = (refs || []).filter(isBranchRef);
+  if (branchRefs.length === 0) return '#8B949E';
+  if (branchRefs.some((r) => r.name === 'HEAD' || r.name === 'main' || r.name === 'master'))
+    return '#1F2328';
+  if (branchRefs.some((r) => isRemoteRef(r)))
+    return '#0969DA';
+  return '#26A641';
+}
+
 function CommitRow({ commit }) {
   const [expanded, setExpanded] = useState(false);
   const graphLines = (commit.graph || '').split('\n');
   const refs = (commit.refs || []).filter(isBranchRef);
+  const dotColor = getGraphDotColor(commit.refs || []);
+  const rowH = graphLines.length * 9;
+  const curH = `${rowH}px`;
 
   return (
-    <div className="flex group hover:bg-[#F4F5F6] transition-colors cursor-pointer"
-         onClick={() => setExpanded(!expanded)}>
-      <pre className="font-mono text-[10px] leading-[12px] text-[#8B949E] select-none shrink-0 w-16 overflow-hidden py-px">
-        {graphLines.map((line, i) => (
-          <div key={i}>{line || ' '}</div>
-        ))}
-      </pre>
-
-      <div className="flex-1 min-w-0 py-px border-b border-[#E8EAED]">
-        <div className="flex items-center gap-2 pr-2">
-          <span className="text-xs font-medium text-[#1F2328] line-clamp-1 leading-4">
-            {commit.message}
-          </span>
-
-          {refs.length > 0 && (
-            <span className="flex items-center gap-1 shrink-0">
-              {refs.map((ref, i) => {
-                const colorIdx = ref.name === 'HEAD' ? 0 : isRemoteRef(ref) ? 2 : 1;
-                const color = BRANCH_COLORS[colorIdx % BRANCH_COLORS.length];
-                return (
-                  <span
-                    key={i}
-                    className="inline-flex items-center gap-0.5 text-[9px] font-medium rounded-full px-1.5 py-px whitespace-nowrap"
-                    style={{ backgroundColor: color.bg, color: color.text }}
-                  >
-                    <GitBranch className="h-2 w-2" />
-                    {ref.name.replace(/^origin\//, '')}
-                  </span>
-                );
-              })}
-            </span>
-          )}
-
-          <span className="text-[10px] text-[#8B949E] shrink-0 ml-auto">{commit.author}</span>
-          <span className="text-[10px] text-[#8B949E] shrink-0" title={formatTimestamp(commit.timestamp)}>
-            {formatTimeAgo(commit.timestamp)}
-          </span>
-          <span className="font-mono text-[9px] text-[#8B949E] bg-[#E8EAED] rounded px-1 shrink-0 hidden group-hover:inline">
-            {commit.sha?.slice(0, 7)}
-          </span>
+    <div>
+      <div className="flex group cursor-pointer"
+           style={{ minHeight: curH }}
+           onClick={() => setExpanded(!expanded)}>
+        <div className="font-mono text-[9px] leading-[9px] select-none shrink-0 w-12 overflow-hidden py-px"
+             style={{ width: '48px', minWidth: '48px' }}>
+          {graphLines.map((line, i) => {
+            const starIdx = line.indexOf('*');
+            if (starIdx === -1) {
+              return (
+                <div key={i} className="h-[9px] text-[#8B949E] whitespace-pre">
+                  {line || ' '}
+                </div>
+              );
+            }
+            return (
+              <div key={i} className="h-[9px] text-[#656D76] whitespace-pre flex items-center">
+                <span>{line.slice(0, starIdx)}</span>
+                <span className="inline-flex items-center">
+                  <svg width="9" height="9" viewBox="0 0 9 9" className="shrink-0">
+                    <circle cx="4.5" cy="4.5" r="3.5" fill={dotColor} stroke="none" />
+                  </svg>
+                </span>
+                <span>{line.slice(starIdx + 1)}</span>
+              </div>
+            );
+          })}
         </div>
 
-        {expanded && commit.message && (
-          <div className="px-1 pb-1.5 text-[10px] text-[#8B949E] whitespace-pre-wrap">
-            {commit.message}
+        <div className="flex-1 min-w-0" style={{ paddingTop: Math.max(0, rowH - 14) / 2 + 'px' }}>
+          <div className="flex items-center gap-1.5 pr-2 h-[14px]">
+            <span className="text-[11px] font-medium text-[#1F2328] line-clamp-1 flex-1 min-w-0">
+              {commit.message}
+            </span>
+            {refs.length > 0 && (
+              <span className="flex items-center gap-0.5 shrink-0">
+                {refs.map((ref, i) => {
+                  const color = BRANCH_BADGE[i % BRANCH_BADGE.length];
+                  return (
+                    <span key={i}
+                      className="inline-flex items-center gap-px text-[8px] font-medium rounded-full px-1.5 leading-[11px] whitespace-nowrap"
+                      style={{ backgroundColor: color.bg, color: color.text }}>
+                      <svg width="6" height="6" viewBox="0 0 9 9" className="shrink-0">
+                        <circle cx="4.5" cy="4.5" r="3.5" fill={color.dot} />
+                      </svg>
+                      {ref.name.replace(/^origin\//, '')}
+                    </span>
+                  );
+                })}
+              </span>
+            )}
+            <span className="text-[9px] text-[#8B949E] shrink-0 max-w-[80px] truncate"
+                  title={commit.author}>
+              {commit.author?.split(/\s+/)[0]}
+            </span>
+            <span className="text-[9px] text-[#8B949E] shrink-0 w-[24px] text-right"
+                  title={formatTimestamp(commit.timestamp)}>
+              {formatTimeAgo(commit.timestamp)}
+            </span>
+            <span className="font-mono text-[8px] text-[#8B949E] shrink-0 hidden group-hover:inline">
+              {commit.sha?.slice(0, 7)}
+            </span>
           </div>
-        )}
+        </div>
       </div>
+
+      {expanded && commit.message && (
+        <div className="pl-12 pb-1.5 text-[10px] text-[#57606A] whitespace-pre-wrap pr-3">
+          {commit.message}
+        </div>
+      )}
     </div>
   );
 }
