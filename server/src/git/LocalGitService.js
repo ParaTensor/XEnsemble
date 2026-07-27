@@ -480,6 +480,12 @@ class LocalGitService {
         }
     }
 
+    async listTrackedFiles(project) {
+        const { workspacePath } = await this.ensureProjectRuntime(project);
+        const result = await this._git(workspacePath, ['ls-files', '--cached', '--full-name'], { timeoutMs: 15_000 });
+        return result.stdout.split('\n').filter(Boolean);
+    }
+
     /**
      * Check for merge conflicts between current branch and a target branch.
      * Performs a dry-run merge (no actual changes).
