@@ -72,7 +72,15 @@ function formatCheckpointMessage(meta = {}) {
 class LocalGitService {
     constructor(deps = {}) {
         this.exec = deps.exec ?? getRuntime().exec;
-        this.ensureProjectRuntime = deps.ensureProjectRuntime ?? ensureProjectRuntime;
+        const origEnsure = deps.ensureProjectRuntime ?? ensureProjectRuntime;
+        this.ensureProjectRuntime = async (project) => {
+            const result = await origEnsure(project);
+            if (result.runtime?.runtimeRef) {
+                this._lastRuntimeRef = result.runtime.runtimeRef;
+            }
+            return result;
+        };
+        this._lastRuntimeRef = null;
     }
 
     _execFn() {
@@ -86,6 +94,7 @@ class LocalGitService {
         const result = await exec('git', args, {}, {
             cwd,
             timeoutMs: options.timeoutMs || 30_000,
+            ...(options.runtimeRef || this._lastRuntimeRef ? { runtimeRef: options.runtimeRef || this._lastRuntimeRef } : {}),
             ...options,
         });
         if (result.exitCode !== 0) {
