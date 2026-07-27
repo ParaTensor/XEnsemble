@@ -1,5 +1,21 @@
 const WebSocket = require('ws');
-const { StringDecoder } = require('string_decoder');
+
+function completeUtf8Length(buf) {
+    if (buf.length === 0) return 0;
+    let i = buf.length - 1;
+    while (i >= 0 && (buf[i] & 0xC0) === 0x80) i--;
+    if (i < 0) return 0;
+    const byte = buf[i];
+    let expectedLen;
+    if (byte < 0x80) expectedLen = 1;
+    else if ((byte & 0xE0) === 0xC0) expectedLen = 2;
+    else if ((byte & 0xF0) === 0xE0) expectedLen = 3;
+    else if ((byte & 0xF8) === 0xF0) expectedLen = 4;
+    else return buf.length;
+    const remaining = buf.length - i;
+    if (remaining < expectedLen) return i;
+    return buf.length;
+}
 
 function decodeExecutionFrameRaw(buf, seqFramed = true) {
     const channel = buf.length > 0 ? buf[0] : undefined;
@@ -180,12 +196,22 @@ class BoxLiteClient {
             let stdout = '';
             let stderr = '';
             let settled = false;
-            const decoders = { 0x01: new StringDecoder('utf8'), 0x02: new StringDecoder('utf8') };
+            const byteBufs = { 0x01: Buffer.alloc(0), 0x02: Buffer.alloc(0) };
+            const drain = (ch) => {
+                const buf = byteBufs[ch];
+                const completeLen = completeUtf8Length(buf);
+                if (completeLen > 0) {
+                    const str = buf.slice(0, completeLen).toString('utf8');
+                    byteBufs[ch] = completeLen < buf.length ? buf.slice(completeLen) : Buffer.alloc(0);
+                    return str;
+                }
+                return '';
+            };
             const done = (code) => {
                 if (settled) return;
                 settled = true;
-                stdout += decoders[0x01].end();
-                stderr += decoders[0x02].end();
+                stdout += drain(0x01);
+                stderr += drain(0x02);
                 try { ws.close(); } catch (_) {}
                 resolve({ exitCode: code ?? 0, stdout, stderr });
             };
@@ -193,8 +219,12 @@ class BoxLiteClient {
                 if (isBinary) {
                     const buf = Buffer.from(data);
                     const decoded = decodeExecutionFrameRaw(buf, true);
-                    if (decoded.channel === 0x01) stdout += decoders[0x01].write(decoded.payload);
-                    else if (decoded.channel === 0x02) stderr += decoders[0x02].write(decoded.payload);
+                    if (decoded.channel === 0x01 || decoded.channel === 0x02) {
+                        byteBufs[decoded.channel] = Buffer.concat([byteBufs[decoded.channel], decoded.payload]);
+                        const str = drain(decoded.channel);
+                        if (decoded.channel === 0x01) stdout += str;
+                        else stderr += str;
+                    }
                 } else {
                     try {
                         const msg = JSON.parse(data.toString());

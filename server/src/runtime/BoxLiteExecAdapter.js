@@ -1,13 +1,36 @@
 const { ExecAdapter, AgentSpawnError, StreamHandle } = require('./interfaces');
 const BoxLiteClient = require('./BoxLiteClient');
 const { decodeExecutionFrameRaw } = BoxLiteClient;
-const { StringDecoder } = require('string_decoder');
 
 function quotePosixArg(input) {
     const s = String(input ?? '');
     if (s.length === 0) return "''";
     if (!/[\s'"\\$`\n\r\t;&|<>(){}[\]*?!]/.test(s)) return s;
     return `'${s.replace(/'/g, "'\\''")}'`;
+}
+
+/**
+ * Find the byte index of the last complete UTF-8 character boundary.
+ * Returns the length of the complete portion (may be < buf.length if
+ * the buffer ends with an incomplete multi-byte sequence).
+ */
+function completeUtf8Length(buf) {
+    if (buf.length === 0) return 0;
+    // Scan backwards to find the start of the last character
+    let i = buf.length - 1;
+    // Skip continuation bytes (10xxxxxx = 0x80-0xBF)
+    while (i >= 0 && (buf[i] & 0xC0) === 0x80) i--;
+    if (i < 0) return 0; // all continuation bytes, can't decode
+    const byte = buf[i];
+    let expectedLen;
+    if (byte < 0x80) expectedLen = 1;           // 0xxxxxxx
+    else if ((byte & 0xE0) === 0xC0) expectedLen = 2;  // 110xxxxx
+    else if ((byte & 0xF0) === 0xE0) expectedLen = 3;  // 1110xxxx
+    else if ((byte & 0xF8) === 0xF0) expectedLen = 4;  // 11110xxx
+    else return buf.length; // invalid leading byte, decode everything
+    const remaining = buf.length - i;
+    if (remaining < expectedLen) return i; // incomplete, cut here
+    return buf.length; // complete
 }
 
 class BoxLiteStreamHandle extends StreamHandle {
@@ -19,7 +42,7 @@ class BoxLiteStreamHandle extends StreamHandle {
         this._dataCbs = [];
         this._exitCbs = [];
         this._closed = false;
-        this._decoders = {};
+        this._byteBuffers = {};
         this._lastRseq = 0;
         this._reattaching = false;
         this._client = options.client || null;
@@ -69,8 +92,11 @@ class BoxLiteStreamHandle extends StreamHandle {
                 const decoded = decodeExecutionFrameRaw(buf, this._preferSeqFrames);
                 const ch = decoded.channel;
                 if (ch !== undefined) {
-                    if (!this._decoders[ch]) this._decoders[ch] = new StringDecoder('utf8');
-                    var payload = this._decoders[ch].write(decoded.payload);
+                    if (!this._byteBuffers[ch]) this._byteBuffers[ch] = Buffer.alloc(0);
+                    this._byteBuffers[ch] = Buffer.concat([this._byteBuffers[ch], decoded.payload]);
+                    const completeLen = completeUtf8Length(this._byteBuffers[ch]);
+                    var payload = completeLen > 0 ? this._byteBuffers[ch].slice(0, completeLen).toString('utf8') : '';
+                    this._byteBuffers[ch] = completeLen < this._byteBuffers[ch].length ? this._byteBuffers[ch].slice(completeLen) : Buffer.alloc(0);
                     if (decoded.rseq && decoded.rseq > this._lastRseq) {
                         this._lastRseq = decoded.rseq;
                     }
