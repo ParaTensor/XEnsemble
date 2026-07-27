@@ -466,8 +466,7 @@ class LocalGitService {
         const args = [
             'log', '--graph', '--all', `-n`, String(count),
             '--date-order',
-            '--format=COMMIT_START%n%H%n%s%n%ct%n%an%n%ae%n%D%nCOMMIT_BODY_END',
-            '--name-status',
+            '--format=%x00%H%x00%s%x00%ct%x00%an%x00%ae%x00%D%x00',
         ];
         try {
             const result = await this._git(workspacePath, args, { timeoutMs: 60_000 });
