@@ -20,7 +20,17 @@ class BoxLiteStreamHandle extends StreamHandle {
         this._exitCbs = [];
         this._closed = false;
         this._decoders = {};
+        this._lastRseq = 0;
+        this._reattaching = false;
+        this._client = options.client || null;
+        this._reattachDelayMs = options.reattachDelayMs || 1000;
+        this._reattachMaxAttempts = options.reattachMaxAttempts || 3;
+        this._reattachAttempts = 0;
 
+        this._setupWsListeners(ws);
+    }
+
+    _setupWsListeners(ws) {
         ws.on('message', (data, isBinary) => {
             if (isBinary) {
                 const buf = Buffer.from(data);
@@ -29,6 +39,9 @@ class BoxLiteStreamHandle extends StreamHandle {
                 if (ch !== undefined) {
                     if (!this._decoders[ch]) this._decoders[ch] = new StringDecoder('utf8');
                     var payload = this._decoders[ch].write(decoded.payload);
+                    if (decoded.rseq && decoded.rseq > this._lastRseq) {
+                        this._lastRseq = decoded.rseq;
+                    }
                     for (const cb of this._dataCbs) {
                         try { cb(payload, decoded.rseq, ch); } catch (_) {}
                     }
@@ -37,10 +50,7 @@ class BoxLiteStreamHandle extends StreamHandle {
                 try {
                     const msg = JSON.parse(data.toString());
                     if (msg.type === 'exit') {
-                        this._closed = true;
-                        for (const cb of this._exitCbs) {
-                            try { cb({ exitCode: msg.exit_code ?? 0 }); } catch (_) {}
-                        }
+                        this._fireExit(msg.exit_code ?? 0);
                     } else if (msg.type === 'error') {
                         for (const cb of this._dataCbs) {
                             try { cb('\r\n[error: ' + (msg.message || '') + ']\r\n'); } catch (_) {}
@@ -51,21 +61,76 @@ class BoxLiteStreamHandle extends StreamHandle {
         });
 
         ws.on('close', () => {
-            if (!this._closed) {
-                this._closed = true;
-                for (const cb of this._exitCbs) {
-                    try { cb({ exitCode: -1 }); } catch (_) {}
-                }
-            }
+            if (this._closed || this._reattaching) return;
+            this._tryReattach();
         });
+
         ws.on('error', () => {
-            if (!this._closed) {
-                this._closed = true;
-                for (const cb of this._exitCbs) {
-                    try { cb({ exitCode: -1 }); } catch (_) {}
-                }
-            }
+            if (this._closed || this._reattaching) return;
+            this._tryReattach();
         });
+    }
+
+    _fireExit(exitCode) {
+        if (this._closed) return;
+        this._closed = true;
+        for (const cb of this._exitCbs) {
+            try { cb({ exitCode }); } catch (_) {}
+        }
+    }
+
+    _tryReattach() {
+        if (this._closed || !this._client) {
+            this._fireExit(-1);
+            return;
+        }
+        this._reattaching = true;
+        this._reattachAttempts++;
+        if (this._reattachAttempts > this._reattachMaxAttempts) {
+            this._reattaching = false;
+            this._fireExit(-1);
+            return;
+        }
+
+        const delay = this._reattachDelayMs * this._reattachAttempts;
+        setTimeout(() => {
+            if (this._closed) {
+                this._reattaching = false;
+                return;
+            }
+            try {
+                const parsed = this._client.parseExecutionStreamRef(this._streamRef);
+                if (!parsed) {
+                    this._reattaching = false;
+                    this._fireExit(-1);
+                    return;
+                }
+                const newWs = this._client.createExecutionAttachWebSocket(
+                    parsed.sessionName, parsed.execId,
+                    { seq: 1, after: this._lastRseq },
+                );
+                const timer = setTimeout(() => {
+                    try { newWs.close(); } catch (_) {}
+                    this._reattaching = false;
+                    this._fireExit(-1);
+                }, 5000);
+                newWs.once('open', () => {
+                    clearTimeout(timer);
+                    this._ws = newWs;
+                    this._reattaching = false;
+                    this._reattachAttempts = 0;
+                    this._setupWsListeners(newWs);
+                });
+                newWs.once('error', () => {
+                    clearTimeout(timer);
+                    this._reattaching = false;
+                    this._fireExit(-1);
+                });
+            } catch {
+                this._reattaching = false;
+                this._fireExit(-1);
+            }
+        }, delay);
     }
 
     onData(callback) {
@@ -154,7 +219,7 @@ class BoxLiteExecAdapter extends ExecAdapter {
             ws.once('open', () => { clearTimeout(timer); resolve(); });
             ws.once('error', (e) => { clearTimeout(timer); reject(e); });
         });
-        return new BoxLiteStreamHandle(ws, streamRef, { preferSeqFrames: true });
+        return new BoxLiteStreamHandle(ws, streamRef, { preferSeqFrames: true, client: this.client });
     }
 
     async reattach(streamRef, options = {}) {
@@ -169,7 +234,7 @@ class BoxLiteExecAdapter extends ExecAdapter {
             ws.once('open', () => { clearTimeout(timer); resolve(); });
             ws.once('error', (e) => { clearTimeout(timer); reject(e); });
         });
-        return new BoxLiteStreamHandle(ws, streamRef, { preferSeqFrames: true });
+        return new BoxLiteStreamHandle(ws, streamRef, { preferSeqFrames: true, client: this.client });
     }
 
     async exec(cmd, args, env, options = {}) {

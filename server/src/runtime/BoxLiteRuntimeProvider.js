@@ -239,7 +239,7 @@ class BoxLiteRuntimeProvider extends RuntimeProvider {
             ws.once('open', () => { clearTimeout(timer); resolve(); });
             ws.once('error', (e) => { clearTimeout(timer); reject(e); });
         });
-        return new BoxLiteStreamHandle(ws, streamRef, { preferSeqFrames: true });
+        return new BoxLiteStreamHandle(ws, streamRef, { preferSeqFrames: true, client: this.client });
     }
 
     async destroy(runtimeRef) {
