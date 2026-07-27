@@ -498,7 +498,7 @@ export default function SourceControlPanel({ projectId, gitChanges, onGitFileCli
               </div>
             )}
 
-            {gitStagedFiles.length === 0 && gitChanges?.ahead > 0 && (
+            {gitStagedFiles.length === 0 && (
               <div className="flex flex-col gap-1.5 px-3 py-2 border-t border-[#E8EAED] shrink-0">
                 <button
                   onClick={() => gitChanges?.push()}
@@ -507,7 +507,7 @@ export default function SourceControlPanel({ projectId, gitChanges, onGitFileCli
                 >
                   {gitChanges?.operation === 'push' ? (
                     <Loader2 className="h-3 w-3 animate-spin" />
-                  ) : '推送'}
+                  ) : gitChanges?.ahead > 0 ? `推送 (${gitChanges.ahead})` : '推送'}
                 </button>
               </div>
             )}
