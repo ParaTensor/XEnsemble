@@ -524,7 +524,8 @@ function registerGitHubRoutes(fastify) {
         const project = await getProjectForUser(request.user.id, request.params.id);
         if (!project) return reply.code(404).send({ error: 'Project not found' });
         try {
-            await gitOperationService._execGit(project, ['pull']);
+            const { stdout: branch } = await gitOperationService._execGit(project, ['rev-parse', '--abbrev-ref', 'HEAD']);
+            await gitOperationService._execGit(project, ['pull', 'origin', branch.trim()]);
             return { ok: true };
         } catch (err) {
             request.log.error(err);
