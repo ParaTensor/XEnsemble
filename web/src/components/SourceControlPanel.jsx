@@ -2,7 +2,7 @@ import { useState, useCallback, useRef, useEffect } from 'react';
 import {
   GitBranch, GitCommit, Clock, Eye, GitPullRequest, MessageSquare,
   AlertTriangle, RefreshCw, PanelLeftClose, ArrowUp, ArrowDown,
-  Plus, Minus, Loader2, ChevronRight, ChevronDown, FileText,
+  Plus, Minus, Loader2, ChevronRight, ChevronDown, ChevronsDownUp, ChevronsUpDown, FileText,
 } from 'lucide-react';
 import { consoleButtonFocusClass } from '../lib/consoleTheme';
 import { buttonClass } from '../lib/buttonStyles';
@@ -191,6 +191,33 @@ export default function SourceControlPanel({ projectId, gitChanges, onGitFileCli
     }
   }, [expandedFiles, fileDiffs, projectId]);
 
+  const allFiles = [...gitStagedFiles, ...gitUnstagedFiles];
+  const allExpanded = allFiles.length > 0 && allFiles.every((f) => expandedFiles.has(f.path));
+
+  const toggleExpandAll = useCallback(async () => {
+    if (allExpanded) {
+      setExpandedFiles(new Set());
+      return;
+    }
+    const newExpanded = new Set(allFiles.map((f) => f.path));
+    setExpandedFiles(newExpanded);
+    const toFetch = allFiles.filter((f) => !fileDiffs[f.path]).map((f) => f.path);
+    if (toFetch.length === 0) return;
+    setLoadingDiff('batch');
+    try {
+      const results = await Promise.all(
+        toFetch.map((p) => getGitFileDiff(projectId, p).then((d) => [p, d?.diff || '']).catch(() => [p, 'Failed to load diff'])),
+      );
+      setFileDiffs((prev) => {
+        const next = { ...prev };
+        for (const [p, d] of results) next[p] = d;
+        return next;
+      });
+    } finally {
+      setLoadingDiff(null);
+    }
+  }, [allExpanded, allFiles, fileDiffs, projectId]);
+
   const renderGitFile = (f, stageAction) => {
     const label = GIT_STATUS_LABELS[f.status] || f.status;
     const colorCls = GIT_STATUS_COLORS[f.status] || 'text-zinc-400';
@@ -281,6 +308,15 @@ export default function SourceControlPanel({ projectId, gitChanges, onGitFileCli
           })}
         </div>
         <div className="flex items-center gap-0.5 pr-1 shrink-0">
+          {gitSubTab === 'changes' && gitHasChanges && (
+            <button
+              title={allExpanded ? '全部折叠' : '全部展开'}
+              onClick={toggleExpandAll}
+              className={`p-1 rounded text-zinc-400 hover:text-zinc-600 hover:bg-[#E8EAED] ${consoleButtonFocusClass}`}
+            >
+              {allExpanded ? <ChevronsDownUp className="h-3.5 w-3.5" /> : <ChevronsUpDown className="h-3.5 w-3.5" />}
+            </button>
+          )}
           {gitSubTab === 'changes' && gitHasChanges && (
             <button
               title="文件列表"
