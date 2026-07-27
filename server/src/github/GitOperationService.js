@@ -181,7 +181,7 @@ class GitOperationService {
     }
 
     async getStatusLight(project) {
-        const statusOut = await this._execGit(project, ['status', '--porcelain=v1']).catch(() => ({ stdout: '' }));
+        const statusOut = await this._execGit(project, ['status', '--porcelain=v1', '-uall']).catch(() => ({ stdout: '' }));
         const lines = statusOut.stdout.split('\n').filter(Boolean);
         const files = [];
         let dirty = false;
@@ -218,7 +218,7 @@ class GitOperationService {
         const [branchOut, shaOut, statusOut] = await Promise.all([
             this._execGit(project, ['rev-parse', '--abbrev-ref', 'HEAD']).catch(() => ({ stdout: 'HEAD' })),
             this._execGit(project, ['rev-parse', 'HEAD']).catch(() => ({ stdout: '' })),
-            this._execGit(project, ['status', '--porcelain=v1']).catch(() => ({ stdout: '' })),
+            this._execGit(project, ['status', '--porcelain=v1', '-uall']).catch(() => ({ stdout: '' })),
         ]);
 
         let branch = branchOut.stdout.trim();
@@ -365,8 +365,18 @@ class GitOperationService {
     }
 
     async getFileDiff(project, filePath) {
-        const { stdout } = await this._execGit(project, ['diff', '--', filePath]);
-        return stdout;
+        const { stdout } = await this._execGit(project, ['diff', '--', filePath]).catch(() => ({ stdout: '' }));
+        if (stdout.trim()) return stdout;
+
+        const tracked = await this._execGit(project, ['ls-files', '--error-unmatch', filePath]).then(() => true).catch(() => false);
+        if (tracked) return '';
+
+        const ready = await this.ensureProjectRuntime(project);
+        const content = await this.fs.fsRead(ready.workspacePath, filePath, {
+            runtimeRef: ready.runtime ? ready.runtime.runtimeRef : undefined,
+            encoding: 'utf8',
+        }).catch(() => '');
+        return content.split('\n').map((l) => '+' + l).join('\n');
     }
 
     async getFileContentAtRef(project, filePath, ref = 'HEAD') {

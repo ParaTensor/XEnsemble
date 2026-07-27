@@ -184,7 +184,7 @@ class GitOperationService {
         const [branchOut, shaOut, statusOut] = await Promise.all([
             this._execGit(project, ['rev-parse', '--abbrev-ref', 'HEAD']).catch(() => ({ stdout: 'HEAD' })),
             this._execGit(project, ['rev-parse', 'HEAD']).catch(() => ({ stdout: '' })),
-            this._execGit(project, ['status', '--porcelain=v1']).catch(() => ({ stdout: '' })),
+            this._execGit(project, ['status', '--porcelain=v1', '-uall']).catch(() => ({ stdout: '' })),
         ]);
 
         let branch = branchOut.stdout.trim();
