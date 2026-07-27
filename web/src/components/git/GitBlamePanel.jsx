@@ -33,7 +33,7 @@ function BlameLine({ entry, prevSha, showGutter }) {
   return (
     <div className="flex text-xs font-mono leading-5 hover:bg-[#F4F5F6] transition-colors">
       <div
-        className="w-56 shrink-0 flex items-center gap-2 px-2 border-r border-[#E8EAED] overflow-hidden"
+        className="w-40 shrink-0 flex items-center gap-2 px-2 border-r border-[#E8EAED] overflow-hidden"
         style={{ backgroundColor: isNewBlock ? bg : 'transparent' }}
       >
         {isNewBlock ? (
@@ -44,7 +44,7 @@ function BlameLine({ entry, prevSha, showGutter }) {
             <span className="flex-1 truncate text-[10px] text-[#202124]" title={entry.author}>
               {entry.author}
             </span>
-            <span className="text-[10px] text-[#9AA0A6]">
+            <span className="text-[10px] text-[#9AA0A6] shrink-0">
               {formatDate(entry.date)}
             </span>
           </>
@@ -57,7 +57,7 @@ function BlameLine({ entry, prevSha, showGutter }) {
         {entry.lineNumber}
       </div>
 
-      <div className="flex-1 px-3 whitespace-pre overflow-x-auto text-[#202124]">
+      <div className="flex-1 min-w-0 px-3 whitespace-pre overflow-x-auto text-[#202124]">
         {entry.content}
       </div>
     </div>

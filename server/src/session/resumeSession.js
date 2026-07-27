@@ -299,19 +299,31 @@ async function resumeSession({
             const stateArgs = stateDirPath
                 ? buildStateArgs(resumeSpec, stateDirPath)
                 : [];
-            // Skip resumeArgs if the state directory has no conversation data
-            const resumeArgs = canResume ? (resumeSpec.resumeArgs || []) : [];
 
-            // Kill any lingering agent process from a previous run.
-            // The WebSocket may have died without delivering the kill signal,
-            // leaving the old agent process running in the VM.
+            // Check if there's a lingering agent process from a previous run.
+            // If so, killing it would interrupt any ongoing tool execution.
+            // In that case, don't use --continue to avoid the agent deadlocking
+            // on an interrupted tool result.
+            let killedOldProcess = false;
             if (runtimeRef) {
                 try {
-                    await runtime.exec.exec('pkill', ['-f', agentMeta.cmd || agentMeta.id], {}, {
+                    const pgrepResult = await runtime.exec.exec('pgrep', ['-f', agentMeta.cmd || agentMeta.id], {}, {
                         runtimeRef, cwd: '/', timeoutMs: 5000,
                     });
-                } catch (_) { /* best-effort: ignore if no process to kill */ }
+                    const oldPids = pgrepResult.stdout?.trim();
+                    if (oldPids && oldPids.length > 0) {
+                        // Old process exists - kill it and skip --continue
+                        await runtime.exec.exec('pkill', ['-f', agentMeta.cmd || agentMeta.id], {}, {
+                            runtimeRef, cwd: '/', timeoutMs: 5000,
+                        });
+                        killedOldProcess = true;
+                    }
+                } catch (_) { /* best-effort */ }
             }
+
+            // Skip resumeArgs if the state directory has no conversation data,
+            // or if we killed an old process (interrupted tool results cause deadlocks).
+            const resumeArgs = (canResume && !killedOldProcess) ? (resumeSpec.resumeArgs || []) : [];
 
             handle = await runtime.exec.spawn(
                 agentMeta.cmd,
