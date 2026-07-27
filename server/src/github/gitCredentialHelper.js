@@ -81,10 +81,11 @@ function getOrCreateAskpassScript(dir) {
  * @returns {string} absolute path to the helper script
  */
 function createAskpassScript(token, workspacePath) {
-    const dir = workspacePath || os.tmpdir();
+    const dir = workspacePath ? path.join(workspacePath, '.xensemble', 'git') : os.tmpdir();
+    try { fs.mkdirSync(dir, { recursive: true }); } catch {}
     const scriptPath = path.join(
         dir,
-        `.git-askpass-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2)}.sh`,
+        `git-askpass-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2)}.sh`,
     );
     const content = `#!/bin/sh\nprintf '%s\\n' "$GIT_ASKPASS_TOKEN"\n`;
     fs.writeFileSync(scriptPath, content, { mode: 0o700 });
