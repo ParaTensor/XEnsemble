@@ -252,7 +252,7 @@ export default function SourceControlPanel({ projectId, gitChanges, onGitFileCli
     <div className="flex flex-col h-full min-h-0">
       {/* Sub-tab bar */}
       <div className="flex items-center justify-between border-b border-[#E8EAED] px-1 shrink-0">
-        <div className="flex overflow-x-auto">
+        <div className="flex min-w-0 overflow-x-auto">
           {GIT_SUB_TABS.map((tab) => {
             const Icon = tab.icon;
             const isActive = gitSubTab === tab.key;
@@ -261,14 +261,14 @@ export default function SourceControlPanel({ projectId, gitChanges, onGitFileCli
                 key={tab.key}
                 type="button"
                 onClick={() => setGitSubTab(tab.key)}
-                className={`flex items-center gap-1 px-2.5 py-2 text-[11px] font-medium border-b-2 -mb-px transition-colors whitespace-nowrap ${
+                className={`flex items-center gap-1 px-2 py-2 text-[11px] font-medium border-b-2 -mb-px transition-colors shrink-0 ${
                   isActive
                     ? 'border-[#202124] text-[#202124]'
                     : 'border-transparent text-[#5F6368] hover:text-[#202124]'
                 } ${consoleButtonFocusClass}`}
               >
-                <Icon className="h-3 w-3" />
-                {tab.label}
+                <Icon className="h-3 w-3 shrink-0" />
+                <span className="truncate max-w-[80px]">{tab.label}</span>
               </button>
             );
           })}
@@ -319,7 +319,7 @@ export default function SourceControlPanel({ projectId, gitChanges, onGitFileCli
       )}
 
       {/* Content area */}
-      <div className="flex-1 min-h-0 overflow-hidden">
+      <div className="flex-1 min-h-0 min-w-0 overflow-hidden">
         {gitSubTab === 'changes' && (
           <div className="flex flex-col h-full min-h-0 relative">
             {showFileList && (
