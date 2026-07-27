@@ -62,10 +62,6 @@ function ensurePreviewContractFile(workspacePath) {
         fs.mkdirSync(agentsDir, { recursive: true });
         fs.writeFileSync(agentsPath, `${JSON.stringify(DEFAULT_PREVIEW_JSON, null, 2)}\n`, 'utf8');
     }
-    const indexPath = path.join(workspacePath, 'index.html');
-    if (!fs.existsSync(indexPath)) {
-        fs.writeFileSync(indexPath, DEFAULT_INDEX_HTML, 'utf8');
-    }
 }
 
 /**

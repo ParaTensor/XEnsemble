@@ -51,7 +51,9 @@ function getOrCreateAskpassScript(dir) {
     if (cached && fs.existsSync(cached)) {
         return cached;
     }
-    const scriptPath = path.join(targetDir, `.git-askpass-${process.pid}.sh`);
+    const askpassDir = path.join(targetDir, '.xensemble', 'git');
+    try { fs.mkdirSync(askpassDir, { recursive: true }); } catch {}
+    const scriptPath = path.join(askpassDir, `git-askpass-${process.pid}.sh`);
     const content = `#!/bin/sh\nprintf '%s\\n' "$GIT_ASKPASS_TOKEN"\n`;
     try {
         fs.writeFileSync(scriptPath, content, { mode: 0o700 });
@@ -122,9 +124,11 @@ function removeAskpassScript(scriptPath) {
  */
 function buildCredentialEnv(token, hostPath, sandboxPath) {
     const scriptPath = getOrCreateAskpassScript(hostPath);
+    const scriptName = path.basename(scriptPath);
+    const askpassSubdir = '.xensemble/git';
     // sandboxPath 是沙箱内的工作目录路径，git 在沙箱内运行时通过这个路径访问脚本
     const sandboxScriptPath = sandboxPath
-        ? path.join(sandboxPath, path.basename(scriptPath))
+        ? path.join(sandboxPath, askpassSubdir, scriptName)
         : scriptPath;
     return {
         env: {
