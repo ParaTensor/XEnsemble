@@ -2,7 +2,7 @@ import { useState, useCallback, useRef, useEffect } from 'react';
 import {
   GitBranch, GitCommit, Clock, Eye, GitPullRequest, MessageSquare,
   AlertTriangle, RefreshCw, PanelLeftClose, ArrowUp, ArrowDown,
-  Plus, Minus, Loader2,
+  Plus, Minus, Loader2, ChevronRight, ChevronDown, FileText,
 } from 'lucide-react';
 import { consoleButtonFocusClass } from '../lib/consoleTheme';
 import { buttonClass } from '../lib/buttonStyles';
@@ -13,6 +13,7 @@ import {
   CodeReviewPanel,
   ConflictResolutionPanel,
 } from './git';
+import { getGitFileDiff } from '../lib/githubApi';
 
 const GIT_STATUS_LABELS = {
   'M ': 'M', ' M': 'M', 'MM': 'M',
@@ -58,6 +59,10 @@ export default function SourceControlPanel({ projectId, gitChanges, onGitFileCli
   const [showAuthorDialog, setShowAuthorDialog] = useState(false);
   const [authorName, setAuthorName] = useState(() => localStorage.getItem('xe_git_author_name') || '');
   const [authorEmail, setAuthorEmail] = useState(() => localStorage.getItem('xe_git_author_email') || '');
+  const [expandedFiles, setExpandedFiles] = useState(new Set());
+  const [fileDiffs, setFileDiffs] = useState({});
+  const [loadingDiff, setLoadingDiff] = useState(null);
+  const [showFileList, setShowFileList] = useState(false);
   const authorNameRef = useRef(null);
 
   useEffect(() => {
@@ -133,39 +138,87 @@ export default function SourceControlPanel({ projectId, gitChanges, onGitFileCli
     setGitSubTab('review');
   }, []);
 
+  const toggleFileExpand = useCallback(async (filePath) => {
+    const newExpanded = new Set(expandedFiles);
+    if (newExpanded.has(filePath)) {
+      newExpanded.delete(filePath);
+      setExpandedFiles(newExpanded);
+    } else {
+      newExpanded.add(filePath);
+      setExpandedFiles(newExpanded);
+      if (!fileDiffs[filePath]) {
+        setLoadingDiff(filePath);
+        try {
+          const text = await getGitFileDiff(projectId, filePath);
+          setFileDiffs((prev) => ({ ...prev, [filePath]: text }));
+        } catch (_) {
+          setFileDiffs((prev) => ({ ...prev, [filePath]: 'Failed to load diff' }));
+        } finally {
+          setLoadingDiff(null);
+        }
+      }
+    }
+  }, [expandedFiles, fileDiffs, projectId]);
+
   const renderGitFile = (f, stageAction) => {
     const label = GIT_STATUS_LABELS[f.status] || f.status;
     const colorCls = GIT_STATUS_COLORS[f.status] || 'text-zinc-400';
     const desc = GIT_STATUS_DESC[f.status] || '';
     const fileName = f.path.split('/').pop();
     const dirPath = f.path.includes('/') ? f.path.slice(0, f.path.lastIndexOf('/')) : '';
+    const isExpanded = expandedFiles.has(f.path);
+    const diffText = fileDiffs[f.path];
+    const isLoading = loadingDiff === f.path;
+
     return (
-      <div key={f.path} className="flex items-center group hover:bg-[#E8EAED]">
-        <button
-          onClick={() => onGitFileClick?.(f.path)}
-          className={`flex items-center gap-2 flex-1 min-w-0 px-3 py-1.5 text-left transition-colors ${consoleButtonFocusClass}`}
-        >
-          <span className={`w-4 text-center font-mono text-[11px] font-semibold ${colorCls} shrink-0`}>
-            {label}
-          </span>
-          <span className="truncate text-[#202124] text-xs">{fileName}</span>
-          {dirPath && (
-            <span className="truncate text-[#9AA0A6] text-[10px]">{dirPath}</span>
-          )}
-          <span className="ml-auto text-[#9AA0A6] text-[10px] shrink-0">{desc}</span>
-        </button>
-        {stageAction && (
+      <div key={f.path}>
+        <div className="flex items-center group hover:bg-[#E8EAED]">
           <button
-            onClick={() => stageAction(f.path)}
-            title={stageAction === handleStageFile ? '暂存' : '取消暂存'}
-            className={`shrink-0 p-1 rounded text-zinc-400 hover:text-zinc-600 hover:bg-[#DADCE0] opacity-0 group-hover:opacity-100 transition-opacity ${consoleButtonFocusClass}`}
+            onClick={() => toggleFileExpand(f.path)}
+            className="shrink-0 p-0.5 text-zinc-400 hover:text-zinc-600"
           >
-            {stageAction === handleStageFile ? (
-              <Plus className="h-3 w-3" />
-            ) : (
-              <Minus className="h-3 w-3" />
-            )}
+            {isExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
           </button>
+          <button
+            onClick={() => onGitFileClick?.(f.path)}
+            className={`flex items-center gap-2 flex-1 min-w-0 px-2 py-1.5 text-left transition-colors ${consoleButtonFocusClass}`}
+          >
+            <span className={`w-4 text-center font-mono text-[11px] font-semibold ${colorCls} shrink-0`}>
+              {label}
+            </span>
+            <span className="truncate text-[#202124] text-xs">{fileName}</span>
+            {dirPath && (
+              <span className="truncate text-[#9AA0A6] text-[10px]">{dirPath}</span>
+            )}
+            <span className="ml-auto text-[#9AA0A6] text-[10px] shrink-0">{desc}</span>
+          </button>
+          {stageAction && (
+            <button
+              onClick={() => stageAction(f.path)}
+              title={stageAction === handleStageFile ? '暂存' : '取消暂存'}
+              className={`shrink-0 p-1 rounded text-zinc-400 hover:text-zinc-600 hover:bg-[#DADCE0] opacity-0 group-hover:opacity-100 transition-opacity ${consoleButtonFocusClass}`}
+            >
+              {stageAction === handleStageFile ? (
+                <Plus className="h-3 w-3" />
+              ) : (
+                <Minus className="h-3 w-3" />
+              )}
+            </button>
+          )}
+        </div>
+        {isExpanded && (
+          <div className="border-t border-[#E8EAED] bg-[#FAFAFA]">
+            {isLoading ? (
+              <div className="flex items-center justify-center py-4 text-zinc-400">
+                <Loader2 className="h-4 w-4 animate-spin" />
+              </div>
+            ) : diffText != null ? (
+              <pre className="text-[11px] leading-relaxed p-3 overflow-x-auto whitespace-pre font-mono text-[#202124] select-text"
+                   style={{ tabSize: 4, MozTabSize: 4 }}>
+                {diffText || 'No changes'}
+              </pre>
+            ) : null}
+          </div>
         )}
       </div>
     );
@@ -197,6 +250,15 @@ export default function SourceControlPanel({ projectId, gitChanges, onGitFileCli
           })}
         </div>
         <div className="flex items-center gap-0.5 pr-1 shrink-0">
+          {gitSubTab === 'changes' && gitHasChanges && (
+            <button
+              title="文件列表"
+              onClick={() => setShowFileList((v) => !v)}
+              className={`p-1 rounded ${showFileList ? 'text-[#202124] bg-[#E8EAED]' : 'text-zinc-400 hover:text-zinc-600 hover:bg-[#E8EAED]'} ${consoleButtonFocusClass}`}
+            >
+              <FileText className="h-3.5 w-3.5" />
+            </button>
+          )}
           <button
             title="刷新"
             onClick={() => gitChanges?.fetchStatus()}
@@ -235,7 +297,54 @@ export default function SourceControlPanel({ projectId, gitChanges, onGitFileCli
       {/* Content area */}
       <div className="flex-1 min-h-0 overflow-hidden">
         {gitSubTab === 'changes' && (
-          <div className="flex flex-col h-full min-h-0">
+          <div className="flex flex-col h-full min-h-0 relative">
+            {showFileList && (
+              <div className="absolute right-2 top-1 z-20 w-56 max-h-64 overflow-y-auto bg-white border border-[#E8EAED] rounded-lg shadow-lg">
+                <div className="px-3 py-2 text-[10px] font-semibold text-zinc-500 uppercase tracking-wider border-b border-[#E8EAED] sticky top-0 bg-white">
+                  Files ({gitStagedFiles.length + gitUnstagedFiles.length})
+                </div>
+                <div className="py-1">
+                  {gitStagedFiles.length > 0 && (
+                    <div className="text-[9px] text-zinc-400 px-3 py-0.5">暂存的更改</div>
+                  )}
+                  {gitStagedFiles.map((f) => {
+                    const name = f.path.split('/').pop();
+                    const label = GIT_STATUS_LABELS[f.status] || f.status;
+                    return (
+                      <button
+                        key={'list-' + f.path}
+                        onClick={() => { toggleFileExpand(f.path); setShowFileList(false); }}
+                        className={`w-full text-left px-3 py-1 text-xs truncate hover:bg-[#F4F5F6] ${consoleButtonFocusClass}`}
+                      >
+                        <span className={`font-mono text-[9px] mr-1.5 ${GIT_STATUS_COLORS[f.status] || 'text-zinc-400'}`}>
+                          {label}
+                        </span>
+                        {name}
+                      </button>
+                    );
+                  })}
+                  {gitUnstagedFiles.length > 0 && (
+                    <div className="text-[9px] text-zinc-400 px-3 py-0.5 mt-0.5">更改</div>
+                  )}
+                  {gitUnstagedFiles.map((f) => {
+                    const name = f.path.split('/').pop();
+                    const label = GIT_STATUS_LABELS[f.status] || f.status;
+                    return (
+                      <button
+                        key={'list-' + f.path}
+                        onClick={() => { toggleFileExpand(f.path); setShowFileList(false); }}
+                        className={`w-full text-left px-3 py-1 text-xs truncate hover:bg-[#F4F5F6] ${consoleButtonFocusClass}`}
+                      >
+                        <span className={`font-mono text-[9px] mr-1.5 ${GIT_STATUS_COLORS[f.status] || 'text-zinc-400'}`}>
+                          {label}
+                        </span>
+                        {name}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
             <div className="flex-1 min-h-0 overflow-y-auto">
               {!gitHasChanges ? (
                 <div className="flex flex-col items-center justify-center py-8 gap-2 text-zinc-400">
