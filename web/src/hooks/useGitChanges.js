@@ -3,7 +3,7 @@ import { useGitStatus } from './useGitStatus';
 import * as githubApi from '../lib/githubApi';
 
 export function useGitChanges(projectId) {
-  const { status, loading, operation, commit, push, pull, fetchStatus } = useGitStatus(projectId);
+  const { status, loading, operation, commit: originalCommit, push: originalPush, pull: originalPull, fetchStatus } = useGitStatus(projectId);
   const [optimistic, setOptimistic] = useState(null);
 
   useEffect(() => {
@@ -43,6 +43,24 @@ export function useGitChanges(projectId) {
       return '';
     }
   }, [projectId]);
+
+  const commit = useCallback(async (message, author) => {
+    const result = await originalCommit(message, author);
+    setOptimistic(null);
+    return result;
+  }, [originalCommit]);
+
+  const push = useCallback(async () => {
+    const result = await originalPush();
+    setOptimistic(null);
+    return result;
+  }, [originalPush]);
+
+  const pull = useCallback(async () => {
+    const result = await originalPull();
+    setOptimistic(null);
+    return result;
+  }, [originalPull]);
 
   const stage = useCallback(async (files) => {
     if (!projectId || !files?.length) return;
