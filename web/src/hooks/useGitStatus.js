@@ -87,7 +87,7 @@ export function useGitStatus(projectId) {
     try {
       const result = await githubApi.commitAll(projectId, message.trim(), author);
       showToast('success', 'Changes committed.');
-      if (result.status) {
+      if (result.status && result.status.ahead != null) {
         setStatus((prev) => prev ? { ...prev, ...result.status } : null);
       } else {
         fetchStatusFull({ silent: true });

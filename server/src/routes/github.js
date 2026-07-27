@@ -391,7 +391,7 @@ function registerGitHubRoutes(fastify) {
         try {
             const author = { name: authorName, email: authorEmail };
             const result = await gitOperationService.commitStaged(project, message, author);
-            const status = await gitOperationService.getStatusLight(project).catch(() => null);
+            const status = await gitOperationService.getStatus(project).catch(() => null);
             return { ...result, status };
         } catch (err) {
             request.log.error(err);
