@@ -254,6 +254,10 @@ const WorkspacePanel = memo(function WorkspacePanel({
             projectId={projectId}
             gitChanges={gitChanges}
             onGitFileClick={onGitFileClick}
+            onJumpToFile={(filePath) => {
+              setMainTab('files');
+              onOpenFile?.(projectId, filePath);
+            }}
             onCollapse={() => {}}
             provider={provider}
             sessionLive={sessionLive}

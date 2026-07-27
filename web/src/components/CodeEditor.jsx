@@ -156,6 +156,7 @@ export default function CodeEditor({ content, originalContent, path, readOnly: r
             options={{
               readOnly: true,
               renderSideBySide: true,
+              ignoreTrimWhitespace: false,
               minimap: { enabled: false },
               scrollBeyondLastLine: false,
               fontSize: 13,

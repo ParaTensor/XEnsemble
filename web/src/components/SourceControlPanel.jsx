@@ -48,7 +48,7 @@ const GIT_SUB_TABS = [
   { key: 'conflicts', label: 'Conflicts', icon: AlertTriangle },
 ];
 
-export default function SourceControlPanel({ projectId, gitChanges, onGitFileClick, onCollapse, provider, sessionLive }) {
+export default function SourceControlPanel({ projectId, gitChanges, onGitFileClick, onJumpToFile, onCollapse, provider, sessionLive }) {
   const [gitSubTab, setGitSubTab] = useState(() => {
     const stored = sessionStorage.getItem('xe_git_subtab');
     return stored || 'changes';
@@ -83,20 +83,24 @@ export default function SourceControlPanel({ projectId, gitChanges, onGitFileCli
   const handleStageAll = useCallback(async () => {
     const paths = gitUnstagedFiles.map((f) => f.path);
     if (paths.length === 0) return;
+    setFileDiffs({});
     await gitChanges?.stage(paths);
   }, [gitUnstagedFiles, gitChanges]);
 
   const handleUnstageAll = useCallback(async () => {
     const paths = gitStagedFiles.map((f) => f.path);
     if (paths.length === 0) return;
+    setFileDiffs({});
     await gitChanges?.unstage(paths);
   }, [gitStagedFiles, gitChanges]);
 
   const handleStageFile = useCallback(async (path) => {
+    setFileDiffs((prev) => { const next = { ...prev }; delete next[path]; return next; });
     await gitChanges?.stage([path]);
   }, [gitChanges]);
 
   const handleUnstageFile = useCallback(async (path) => {
+    setFileDiffs((prev) => { const next = { ...prev }; delete next[path]; return next; });
     await gitChanges?.unstage([path]);
   }, [gitChanges]);
 
@@ -142,16 +146,6 @@ export default function SourceControlPanel({ projectId, gitChanges, onGitFileCli
     if (!raw) return <span className="text-zinc-400">No changes</span>;
     const lines = raw.split('\n');
     return lines.map((line, i) => {
-      const first = line[0];
-      if (first === '+') {
-        return <div key={i} className="bg-[#DFF7E4] text-[#1A7F37] pl-2">{line.slice(1)}</div>;
-      }
-      if (first === '-') {
-        return <div key={i} className="bg-[#FFEBE9] text-[#CF222E] pl-2">{line.slice(1)}</div>;
-      }
-      if (first === '@') {
-        return null;
-      }
       if (line.startsWith('---') || line.startsWith('+++')) {
         return null;
       }
@@ -160,6 +154,16 @@ export default function SourceControlPanel({ projectId, gitChanges, onGitFileCli
       }
       if (line.startsWith('\\ No newline')) {
         return null;
+      }
+      const first = line[0];
+      if (first === '@') {
+        return null;
+      }
+      if (first === '+') {
+        return <div key={i} className="bg-[#DFF7E4] text-[#1A7F37] pl-2">{line.slice(1)}</div>;
+      }
+      if (first === '-') {
+        return <div key={i} className="bg-[#FFEBE9] text-[#CF222E] pl-2">{line.slice(1)}</div>;
       }
       return <div key={i} className="bg-white text-[#1F2328] pl-2">{line || ' '}</div>;
     });
@@ -340,7 +344,7 @@ export default function SourceControlPanel({ projectId, gitChanges, onGitFileCli
                     return (
                       <button
                         key={'list-' + f.path}
-                        onClick={() => { toggleFileExpand(f.path); setShowFileList(false); }}
+                        onClick={() => { toggleFileExpand(f.path); setShowFileList(false); onJumpToFile?.(f.path); }}
                         className={`w-full text-left px-3 py-1 text-xs truncate hover:bg-[#F4F5F6] ${consoleButtonFocusClass}`}
                       >
                         <span className={`font-mono text-[9px] mr-1.5 ${GIT_STATUS_COLORS[f.status] || 'text-zinc-400'}`}>
@@ -359,7 +363,7 @@ export default function SourceControlPanel({ projectId, gitChanges, onGitFileCli
                     return (
                       <button
                         key={'list-' + f.path}
-                        onClick={() => { toggleFileExpand(f.path); setShowFileList(false); }}
+                        onClick={() => { toggleFileExpand(f.path); setShowFileList(false); onJumpToFile?.(f.path); }}
                         className={`w-full text-left px-3 py-1 text-xs truncate hover:bg-[#F4F5F6] ${consoleButtonFocusClass}`}
                       >
                         <span className={`font-mono text-[9px] mr-1.5 ${GIT_STATUS_COLORS[f.status] || 'text-zinc-400'}`}>

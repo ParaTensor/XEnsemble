@@ -365,7 +365,7 @@ class GitOperationService {
     }
 
     async getFileDiff(project, filePath) {
-        const { stdout } = await this._execGit(project, ['diff', '--', filePath]).catch(() => ({ stdout: '' }));
+        const { stdout } = await this._execGit(project, ['diff', 'HEAD', '--', filePath]).catch(() => ({ stdout: '' }));
         if (stdout.trim()) return stdout;
 
         const tracked = await this._execGit(project, ['ls-files', '--error-unmatch', filePath]).then(() => true).catch(() => false);
