@@ -719,6 +719,16 @@ function registerGitHubRoutes(fastify) {
             return reply.code(201).send(record);
         } catch (err) {
             request.log.error(err);
+            const isAuthError = err.code === 'token_expired'
+                || err.code === 'github_not_connected'
+                || err.code === 'insufficient_scope'
+                || /Authentication failed|auth/i.test(err.message || '');
+            if (isAuthError) {
+                return reply.code(400).send({
+                    error: 'GitHub token 已过期或无效，请重新认证',
+                    code: 'REAUTH_REQUIRED',
+                });
+            }
             return reply.code(400).send({ error: err.message });
         }
     });

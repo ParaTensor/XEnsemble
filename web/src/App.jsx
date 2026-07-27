@@ -178,6 +178,12 @@ function App() {
   }, [navigate]);
 
   React.useEffect(() => {
+    const openSettings = () => setShowSettingsModal(true);
+    window.addEventListener('xe:open-settings', openSettings);
+    return () => window.removeEventListener('xe:open-settings', openSettings);
+  }, []);
+
+  React.useEffect(() => {
     (async () => {
       const accessToken = getAccessToken();
       let storedUser = null;

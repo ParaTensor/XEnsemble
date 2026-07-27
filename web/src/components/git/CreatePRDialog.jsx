@@ -80,7 +80,13 @@ export default function CreatePRDialog({
       }
       onClose();
     } catch (err) {
-      showToast('error', err.message);
+      if (err.code === 'REAUTH_REQUIRED') {
+        showToast('warning', err.message);
+        onClose();
+        window.dispatchEvent(new CustomEvent('xe:open-settings'));
+      } else {
+        showToast('error', err.message);
+      }
     } finally {
       setCreating(false);
     }
