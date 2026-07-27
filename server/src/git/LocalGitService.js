@@ -464,7 +464,7 @@ class LocalGitService {
         const { workspacePath } = await this.ensureProjectRuntime(project);
         const count = Math.min(options.count || 20, 100);
         const args = [
-            'log', '--graph', '--all', `-n`, String(count),
+            'log', '--graph', '--branches', '--remotes', `-n`, String(count),
             '--date-order',
             '--format=%x00%H%x00%s%x00%ct%x00%an%x00%ae%x00%D%x00',
         ];
