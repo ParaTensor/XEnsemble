@@ -525,7 +525,26 @@ function registerGitHubRoutes(fastify) {
         if (!project) return reply.code(404).send({ error: 'Project not found' });
         try {
             const { stdout: branch } = await gitOperationService._execGit(project, ['rev-parse', '--abbrev-ref', 'HEAD']);
-            await gitOperationService._execGit(project, ['pull', 'origin', branch.trim()]);
+            const current = branch.trim();
+            let target = current;
+            let remoteRef = `origin/${current}`;
+            let existsOnRemote = true;
+            try {
+                await gitOperationService._execGit(project, ['rev-parse', '--verify', '--quiet', remoteRef]);
+            } catch {
+                existsOnRemote = false;
+            }
+            if (!existsOnRemote) {
+                try {
+                    const { stdout: defaultRef } = await gitOperationService._execGit(project, [
+                        'symbolic-ref', '--short', 'refs/remotes/origin/HEAD',
+                    ]);
+                    target = defaultRef.trim().split('/').pop();
+                } catch {
+                    target = 'main';
+                }
+            }
+            await gitOperationService._execGit(project, ['pull', 'origin', target]);
             return { ok: true };
         } catch (err) {
             request.log.error(err);
