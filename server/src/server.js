@@ -611,6 +611,24 @@ fastify.get('/api/v1/projects/:projectId/repository/log/detailed', {
     }
 });
 
+// Commit graph log with tree structure and branch refs
+fastify.get('/api/v1/projects/:projectId/repository/log/graph', {
+    preValidation: [fastify.authenticate],
+}, async (request, reply) => {
+    const project = await getProjectForUser(request.user.id, request.params.projectId);
+    if (!project) return reply.code(404).send({ error: 'Project not found' });
+
+    const localGit = new LocalGitService();
+    try {
+        const count = request.query?.count ? Number(request.query.count) : 20;
+        const commits = await localGit.logGraph(project, { count });
+        return { commits };
+    } catch (err) {
+        request.log.error(err);
+        return reply.code(500).send({ error: 'Failed to get graph log' });
+    }
+});
+
 // Conflict check (dry-run merge to detect conflicts)
 fastify.get('/api/v1/projects/:projectId/repository/conflict-check', {
     preValidation: [fastify.authenticate],

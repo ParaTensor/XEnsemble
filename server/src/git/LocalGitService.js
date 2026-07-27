@@ -460,6 +460,26 @@ class LocalGitService {
         }
     }
 
+    async logGraph(project, options = {}) {
+        const { workspacePath } = await this.ensureProjectRuntime(project);
+        const count = Math.min(options.count || 20, 100);
+        const args = [
+            'log', '--graph', '--all', `-n`, String(count),
+            '--date-order',
+            '--format=COMMIT_START%n%H%n%s%n%ct%n%an%n%ae%n%D%nCOMMIT_BODY_END',
+            '--name-status',
+        ];
+        try {
+            const result = await this._git(workspacePath, args, { timeoutMs: 60_000 });
+            return parseGraphLog(result.stdout);
+        } catch (err) {
+            if (err.message?.includes('does not have any commits')) {
+                return [];
+            }
+            throw err;
+        }
+    }
+
     /**
      * Check for merge conflicts between current branch and a target branch.
      * Performs a dry-run merge (no actual changes).
@@ -585,6 +605,60 @@ class LocalGitService {
 }
 
 // ── Parsers ──
+
+function parseGraphLog(output) {
+    const lines = output.split('\n');
+    const commits = [];
+    let pendingGraphLines = [];
+
+    for (const line of lines) {
+        if (!line.trim()) {
+            pendingGraphLines = [];
+            continue;
+        }
+        const nullIdx = line.indexOf('\x00');
+        if (nullIdx === -1) {
+            pendingGraphLines.push(line);
+            continue;
+        }
+        const graph = pendingGraphLines.length > 0 ? pendingGraphLines.join('\n') + '\n' + line.slice(0, nullIdx) : line.slice(0, nullIdx);
+        pendingGraphLines = [];
+
+        const data = line.slice(nullIdx + 1).split('\x00');
+        const sha = data[0];
+        const subject = data[1] || '';
+        const timestamp = Number(data[2]) || 0;
+        const author = data[3] || '';
+        const email = data[4] || '';
+        const refsRaw = data[5] || '';
+
+        const refs = [];
+        if (refsRaw) {
+            for (const ref of refsRaw.split(',')) {
+                const trimmed = ref.trim();
+                const arrowIdx = trimmed.indexOf(' -> ');
+                if (arrowIdx !== -1) {
+                    refs.push({ name: trimmed.slice(arrowIdx + 4).trim(), label: trimmed.slice(0, arrowIdx).trim() });
+                } else {
+                    const tagPrefix = trimmed.startsWith('tag: ') ? trimmed.slice(5).trim() : null;
+                    refs.push({ name: tagPrefix || trimmed, label: tagPrefix ? 'tag' : 'ref' });
+                }
+            }
+        }
+
+        commits.push({
+            sha,
+            message: subject,
+            author,
+            email,
+            timestamp,
+            refs,
+            graph,
+        });
+    }
+
+    return commits;
+}
 
 function parseBlameOutput(output) {
     const lines = output.split('\n');

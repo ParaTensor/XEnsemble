@@ -76,6 +76,11 @@ export const getDetailedLog = (projectId, params = {}) => {
   return request(`/api/v1/projects/${encodeURIComponent(projectId)}/repository/log/detailed?${qs}`);
 };
 
+export const getGraphLog = (projectId, count = 50) => {
+  const qs = new URLSearchParams({ count: String(count) });
+  return request(`/api/v1/projects/${encodeURIComponent(projectId)}/repository/log/graph?${qs}`);
+};
+
 export const conflictCheck = (projectId, targetBranch) => {
   const qs = new URLSearchParams({ target: targetBranch });
   return request(`/api/v1/projects/${encodeURIComponent(projectId)}/repository/conflict-check?${qs}`);
