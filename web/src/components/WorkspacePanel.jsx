@@ -212,16 +212,6 @@ const WorkspacePanel = memo(function WorkspacePanel({
                     onClose={onCloseGitDiff}
                   />
                 </Suspense>
-              ) : diffView ? (
-                <Suspense fallback={<DiffViewerFallback />}>
-                  <DiffViewer
-                    original={diffView.original}
-                    modified={diffView.modified}
-                    path={diffView.path}
-                    loading={diffView.loading}
-                    onClose={onCloseDiff}
-                  />
-                </Suspense>
               ) : tabs.length > 0 ? (
                 <>
                   <EditorTabs
@@ -230,12 +220,12 @@ const WorkspacePanel = memo(function WorkspacePanel({
                     onSelectTab={onSelectTab}
                     onCloseTab={onCloseTab}
                     onSaveTab={handleSave}
-                    onShowDiff={onShowDiff}
                   />
                   <div className="flex-1 min-h-0 overflow-hidden">
                     {activeTab && (
                       <CodeEditor
                         content={activeTab.content}
+                        originalContent={activeTab.originalContent}
                         path={activeTab.path}
                         isBinary={activeTab.isBinary}
                         readOnly={activeTab.isBinary}

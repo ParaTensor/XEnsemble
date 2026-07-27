@@ -1,10 +1,10 @@
 import { useState, memo } from 'react';
-import { FileDiff, X } from 'lucide-react';
+import { X } from 'lucide-react';
 import { ConsoleDialogShell } from './ConsoleDialog';
 import { consoleButtonFocusClass } from '@/lib/consoleTheme';
 import { buttonClass } from '@/lib/buttonStyles';
 
-const EditorTabs = memo(function EditorTabs({ tabs, activePath, onSelectTab, onCloseTab, onSaveTab, onShowDiff }) {
+const EditorTabs = memo(function EditorTabs({ tabs, activePath, onSelectTab, onCloseTab, onSaveTab }) {
   const [closingTab, setClosingTab] = useState(null);
 
   const handleClose = (path) => {
@@ -39,9 +39,6 @@ const EditorTabs = memo(function EditorTabs({ tabs, activePath, onSelectTab, onC
   const handleCancelClose = () => {
     setClosingTab(null);
   };
-
-  const activeTab = tabs.find((t) => t.path === activePath);
-  const canDiff = activeTab && activeTab.content !== activeTab.originalContent && !activeTab.isBinary;
 
   return (
     <>
@@ -78,17 +75,6 @@ const EditorTabs = memo(function EditorTabs({ tabs, activePath, onSelectTab, onC
             </div>
           );
         })}
-        {canDiff && (
-          <button
-            title="对比已保存版本"
-            onClick={() => onShowDiff?.(activeTab.path)}
-            disabled={!canDiff}
-            className={`ml-auto shrink-0 inline-flex items-center gap-1.5 text-xs px-3 py-2 text-[#5B8DB8] hover:bg-[#F4F5F6] transition-colors ${consoleButtonFocusClass} ${!canDiff ? 'opacity-40 pointer-events-none' : ''}`}
-          >
-            <FileDiff className="h-3.5 w-3.5" />
-            对比已保存版本
-          </button>
-        )}
       </div>
       {closingTab && (
         <ConsoleDialogShell

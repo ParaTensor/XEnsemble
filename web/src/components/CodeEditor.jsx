@@ -1,6 +1,6 @@
-import { useCallback, useRef, useState, useEffect } from 'react';
-import Editor from '@monaco-editor/react';
-import { FileWarning, Loader2, Pencil, Save } from 'lucide-react';
+import { useCallback, useRef, useState, useEffect, useMemo } from 'react';
+import Editor, { DiffEditor } from '@monaco-editor/react';
+import { FileWarning, Loader2, Save, X } from 'lucide-react';
 import { consoleButtonFocusClass } from '@/lib/consoleTheme';
 import { buttonClass } from '@/lib/buttonStyles';
 import '@/lib/monacoSetup'; // Configure Monaco to load from local bundle, not CDN
@@ -57,23 +57,21 @@ function inferLanguage(path) {
 const MEGABYTE = 1024 * 1024;
 const LARGE_FILE_THRESHOLD = MEGABYTE;
 
-export default function CodeEditor({ content, path, readOnly: readOnlyProp, isBinary, onSave, onChange, saving }) {
-  // spec: 文本文件默认只读，点击 Edit 才可编辑
-  const [editing, setEditing] = useState(false);
+export default function CodeEditor({ content, originalContent, path, readOnly: readOnlyProp, isBinary, onSave, onChange, saving }) {
+  const [showDiff, setShowDiff] = useState(false);
   const editorRef = useRef(null);
-  // 用 ref 存储最新 onSave，避免 addCommand 的 stale closure
+  const decorationsRef = useRef([]);
   const onSaveRef = useRef(onSave);
   onSaveRef.current = onSave;
 
-  // 切换 tab 时重置编辑状态，回到只读模式
-  useEffect(() => { setEditing(false); }, [path]);
+  useEffect(() => { setShowDiff(false); }, [path]);
 
   const canEdit = !readOnlyProp && !isBinary;
-  const isReadOnly = !editing || !canEdit;
+  const isReadOnly = !canEdit;
+  const isDirty = canEdit && content !== originalContent;
 
   const handleMount = useCallback((editor, monaco) => {
     editorRef.current = editor;
-    // 用 monaco 命名空间常量，避免硬编码数字（版本升级会失效）
     editor.addCommand(
       monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS,
       () => onSaveRef.current?.()
@@ -105,7 +103,7 @@ export default function CodeEditor({ content, path, readOnly: readOnlyProp, isBi
     <div className="flex flex-col h-full w-full" onKeyDown={handleKeyDown}>
       <div className="flex items-center justify-between px-4 py-2 border-b border-[#E8EAED] bg-[#FAFBFC]">
         <div className="flex items-center gap-2 text-xs text-zinc-500">
-          {isReadOnly ? <span>只读</span> : <span>编辑中</span>}
+          {isReadOnly ? <span>只读</span> : isDirty ? <span className="text-[#C06C5D]">未保存</span> : <span>已保存</span>}
           {isLarge && (
             <span className="inline-flex items-center gap-1 text-amber-700">
               <FileWarning className="h-3 w-3" />
@@ -114,20 +112,23 @@ export default function CodeEditor({ content, path, readOnly: readOnlyProp, isBi
           )}
         </div>
         <div className="flex items-center gap-1">
-          {canEdit && isReadOnly && (
+          {canEdit && isDirty && (
             <button
-              onClick={() => setEditing(true)}
-              className={`inline-flex items-center gap-1.5 text-xs px-3 py-1 rounded-md text-[#5B8DB8] hover:bg-[#F4F5F6] transition-colors ${consoleButtonFocusClass}`}
+              onClick={() => setShowDiff((v) => !v)}
+              className={`inline-flex items-center gap-1.5 text-xs px-3 py-1 rounded-md transition-colors ${consoleButtonFocusClass} ${
+                showDiff ? 'text-[#5B8DB8] bg-[#F4F5F6]' : 'text-[#5F6368] hover:bg-[#F4F5F6]'
+              }`}
+              title={showDiff ? '返回编辑' : '对比已保存版本'}
             >
-              <Pencil className="h-3 w-3" />
-              编辑
+              {showDiff ? <X className="h-3 w-3" /> : null}
+              {showDiff ? '编辑' : '对比'}
             </button>
           )}
-          {canEdit && !isReadOnly && (
+          {canEdit && (
             <button
               onClick={() => onSave?.()}
-              disabled={saving}
-              className={buttonClass('primary', 'sm') + ' ' + consoleButtonFocusClass}
+              disabled={saving || !isDirty}
+              className={buttonClass('primary', 'sm') + ' ' + consoleButtonFocusClass + (!isDirty ? ' opacity-50 pointer-events-none' : '')}
             >
               {saving ? (
                 <>
@@ -145,35 +146,54 @@ export default function CodeEditor({ content, path, readOnly: readOnlyProp, isBi
         </div>
       </div>
       <div className="flex-1 min-h-0">
-        <Editor
-          height="100%"
-          language={language}
-          value={content}
-          onChange={onChange}
-          onMount={handleMount}
-          theme="vs"
-          loading={
-            <div className="flex items-center justify-center h-full gap-2">
-              <Loader2 className="h-4 w-4 animate-spin text-zinc-400" />
-              <span className="text-sm text-zinc-400">加载编辑器…</span>
-            </div>
-          }
-          options={{
-            readOnly: isReadOnly,
-            minimap: { enabled: false },
-            lineNumbers: 'on',
-            scrollBeyondLastLine: false,
-            wordWrap: 'on',
-            fontSize: 13,
-            fontFamily: "'Noto Sans Mono', 'Fira Code', monospace",
-            tabSize: 2,
-            automaticLayout: true,
-            renderLineHighlight: 'all',
-            cursorBlinking: 'smooth',
-            smoothScrolling: true,
-            padding: { top: 12, bottom: 12 },
-          }}
-        />
+        {showDiff && isDirty ? (
+          <DiffEditor
+            height="100%"
+            language={language}
+            original={originalContent || ''}
+            modified={content}
+            theme="vs"
+            options={{
+              readOnly: true,
+              renderSideBySide: true,
+              minimap: { enabled: false },
+              scrollBeyondLastLine: false,
+              fontSize: 13,
+              fontFamily: "'Noto Sans Mono', 'Fira Code', monospace",
+              automaticLayout: true,
+            }}
+          />
+        ) : (
+          <Editor
+            height="100%"
+            language={language}
+            value={content}
+            onChange={onChange}
+            onMount={handleMount}
+            theme="vs"
+            loading={
+              <div className="flex items-center justify-center h-full gap-2">
+                <Loader2 className="h-4 w-4 animate-spin text-zinc-400" />
+                <span className="text-sm text-zinc-400">加载编辑器…</span>
+              </div>
+            }
+            options={{
+              readOnly: isReadOnly,
+              minimap: { enabled: false },
+              lineNumbers: 'on',
+              scrollBeyondLastLine: false,
+              wordWrap: 'on',
+              fontSize: 13,
+              fontFamily: "'Noto Sans Mono', 'Fira Code', monospace",
+              tabSize: 2,
+              automaticLayout: true,
+              renderLineHighlight: 'all',
+              cursorBlinking: 'smooth',
+              smoothScrolling: true,
+              padding: { top: 12, bottom: 12 },
+            }}
+          />
+        )}
       </div>
     </div>
   );
