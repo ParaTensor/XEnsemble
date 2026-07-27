@@ -150,13 +150,16 @@ export default function SourceControlPanel({ projectId, gitChanges, onGitFileCli
         return <div key={i} className="bg-[#FFEBE9] text-[#CF222E] pl-2">{line.slice(1)}</div>;
       }
       if (first === '@') {
-        return <div key={i} className="bg-[#DAEAFE] text-[#0550AE] font-semibold pl-2">{line}</div>;
+        return null;
       }
       if (line.startsWith('---') || line.startsWith('+++')) {
-        return <div key={i} className="bg-[#F6F8FA] text-[#57606A] font-semibold pl-2">{line}</div>;
+        return null;
       }
       if (line.startsWith('diff ') || line.startsWith('index ') || line.startsWith('new file') || line.startsWith('deleted ')) {
-        return <div key={i} className="text-[#8B949E] hidden">{line}</div>;
+        return null;
+      }
+      if (line.startsWith('\\ No newline')) {
+        return null;
       }
       return <div key={i} className="bg-white text-[#1F2328] pl-2">{line || ' '}</div>;
     });
@@ -249,7 +252,7 @@ export default function SourceControlPanel({ projectId, gitChanges, onGitFileCli
   };
 
   return (
-    <div className="flex flex-col h-full min-h-0">
+    <div className="flex flex-col h-full min-h-0 w-full">
       {/* Sub-tab bar */}
       <div className="flex items-center justify-between border-b border-[#E8EAED] px-1 shrink-0">
         <div className="flex min-w-0 overflow-x-auto">
