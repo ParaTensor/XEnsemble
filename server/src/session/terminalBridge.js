@@ -15,10 +15,14 @@ async function resolveLiveSession(sessionId, options = {}) {
 
     const sessionRecord = options.sessionRecord || session || null;
     const canWake = typeof options.wakeSession === 'function';
-    const isIdle = sessionRecord?.status === 'idle' || session?.status === 'idle';
     const recoverable = sessionRecord?.recoverable === true;
+    // Wake when the session is idle OR when it's in memory but not alive
+    // (e.g. the handle's WebSocket died but the DB status wasn't updated to 'idle'
+    // because the onExit callback's DB update failed).
+    const isIdle = sessionRecord?.status === 'idle' || session?.status === 'idle';
+    const inMemoryButDead = Boolean(session) && !sessionManager.isAlive(sessionId);
 
-    if (canWake && isIdle && recoverable) {
+    if (canWake && recoverable && (isIdle || inMemoryButDead)) {
         try {
             await options.wakeSession(sessionRecord);
         } catch (err) {

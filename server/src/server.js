@@ -967,8 +967,8 @@ fastify.post('/api/v1/sessions/:sessionId/resume', { preValidation: [fastify.aut
             state_dir_ref: session.stateDirRef || null,
         };
     }
-    if (session.status !== 'exited' && session.status !== 'idle') {
-        return reply.code(409).send({ error: 'session not resumable — please start a new session' });
+    if (session.status !== 'exited' && session.status !== 'idle' && session.status !== 'running') {
+        return reply.code(409).send({ error: 'session not resumable - please start a new session' });
     }
     try {
         const resumeContext = await buildResumeSessionContext({
