@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { GitCommit, Loader2, RefreshCw } from 'lucide-react';
+import { GitCommit, Loader2, RefreshCw, Cloud, FileText } from 'lucide-react';
 import * as gitApi from '../../lib/gitApi';
 import { useToast } from '../Toast';
 import {
@@ -25,11 +25,21 @@ function formatTimeAgo(ts) {
   return `${Math.floor(diff / 2592000)}mo`;
 }
 
-const BRANCH_BADGE = [
-  { bg: '#FFEBE9', text: '#CF222E', dot: '#CF222E' },
-  { bg: '#E6F4EA', text: '#1E7E34', dot: '#26A641' },
-  { bg: '#DAEAFE', text: '#0550AE', dot: '#0969DA' },
-];
+const FILE_STATUS_LABELS = {
+  A: 'A',
+  M: 'M',
+  D: 'D',
+  R: 'R',
+  C: 'C',
+};
+
+const FILE_STATUS_COLORS = {
+  A: 'text-[#1A7F37]',
+  M: 'text-[#CF222E]',
+  D: 'text-[#CF222E]',
+  R: 'text-[#0550AE]',
+  C: 'text-[#0550AE]',
+};
 
 function isBranchRef(ref) {
   return !ref.name.startsWith('tag:') && ref.label !== 'tag';
@@ -49,19 +59,69 @@ function getGraphDotColor(refs) {
   return '#26A641';
 }
 
-function CommitRow({ commit }) {
+function BranchBadge({ ref }) {
+  const remote = isRemoteRef(ref);
+  const name = ref.name.replace(/^origin\//, '');
+  if (remote) {
+    return (
+      <span
+        className="inline-flex items-center gap-0.5 text-[10px] font-medium rounded-full px-1.5 py-px whitespace-nowrap"
+        style={{ backgroundColor: '#F0F6FF', color: '#0550AE' }}
+      >
+        <Cloud className="h-2.5 w-2.5 shrink-0" />
+        {name}
+      </span>
+    );
+  }
+  return (
+    <span
+      className="inline-flex items-center gap-0.5 text-[10px] font-medium rounded-full px-1.5 py-px whitespace-nowrap"
+      style={{ backgroundColor: '#F4F5F6', color: '#5F6368' }}
+    >
+      <svg width="10" height="10" viewBox="0 0 10 10" className="shrink-0">
+        <circle cx="5" cy="5" r="4" fill="none" stroke="#5F6368" strokeWidth="1" />
+        <circle cx="5" cy="5" r="2.5" fill="none" stroke="#5F6368" strokeWidth="1" />
+        <circle cx="5" cy="5" r="1" fill="#5F6368" />
+      </svg>
+      {name}
+    </span>
+  );
+}
+
+function CommitRow({ commit, projectId }) {
   const [expanded, setExpanded] = useState(false);
+  const [files, setFiles] = useState(null);
+  const [loadingFiles, setLoadingFiles] = useState(false);
   const graphLines = (commit.graph || '').split('\n');
   const refs = (commit.refs || []).filter(isBranchRef);
   const dotColor = getGraphDotColor(commit.refs || []);
   const rowH = graphLines.length * 11;
   const curH = `${rowH}px`;
 
+  const handleClick = useCallback(async () => {
+    if (expanded) {
+      setExpanded(false);
+      return;
+    }
+    setExpanded(true);
+    if (!files && commit.sha) {
+      setLoadingFiles(true);
+      try {
+        const data = await gitApi.getCommitFiles(projectId, commit.sha);
+        setFiles(data.files || []);
+      } catch {
+        setFiles([]);
+      } finally {
+        setLoadingFiles(false);
+      }
+    }
+  }, [expanded, files, commit.sha, projectId]);
+
   return (
     <div>
       <div className="flex items-center group cursor-pointer"
            style={{ minHeight: curH }}
-           onClick={() => setExpanded(!expanded)}>
+           onClick={handleClick}>
         <div className="font-mono text-[11px] leading-[11px] select-none shrink-0 w-12 overflow-hidden"
              style={{ width: '48px', minWidth: '48px' }}>
           {graphLines.map((line, i) => {
@@ -94,19 +154,9 @@ function CommitRow({ commit }) {
             </span>
             {refs.length > 0 && (
               <span className="flex items-center gap-0.5 shrink-0">
-                {refs.map((ref, i) => {
-                  const color = BRANCH_BADGE[i % BRANCH_BADGE.length];
-                  return (
-                    <span key={i}
-                      className="inline-flex items-center gap-px text-[10px] font-medium rounded-full px-1.5 leading-[13px] whitespace-nowrap"
-                      style={{ backgroundColor: color.bg, color: color.text }}>
-                      <svg width="8" height="8" viewBox="0 0 9 9" className="shrink-0">
-                        <circle cx="4.5" cy="4.5" r="3.5" fill={color.dot} />
-                      </svg>
-                      {ref.name.replace(/^origin\//, '')}
-                    </span>
-                  );
-                })}
+                {refs.map((ref, i) => (
+                  <BranchBadge key={i} ref={ref} />
+                ))}
               </span>
             )}
             <span className="text-[11px] text-[#8B949E] shrink-0 max-w-[80px] truncate"
@@ -124,9 +174,28 @@ function CommitRow({ commit }) {
         </div>
       </div>
 
-      {expanded && commit.message && (
-        <div className="pl-12 pb-1.5 text-[12px] text-[#57606A] whitespace-pre-wrap pr-3">
-          {commit.message}
+      {expanded && (
+        <div className="pl-12 pb-2 pr-3">
+          {loadingFiles ? (
+            <div className="flex items-center gap-1.5 py-1.5 text-[11px] text-[#8B949E]">
+              <Loader2 className="h-3 w-3 animate-spin" />
+              Loading files...
+            </div>
+          ) : files && files.length > 0 ? (
+            <div className="flex flex-col gap-px">
+              {files.map((f, i) => (
+                <div key={i} className="flex items-center gap-1.5 py-0.5 text-[11px]">
+                  <span className={`font-mono font-semibold w-4 text-center shrink-0 ${FILE_STATUS_COLORS[f.status] || 'text-zinc-400'}`}>
+                    {FILE_STATUS_LABELS[f.status] || f.status}
+                  </span>
+                  <FileText className="h-3 w-3 text-[#9AA0A6] shrink-0" />
+                  <span className="font-mono text-[#1F2328] truncate">{f.path}</span>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-[11px] text-[#8B949E] py-1">No files changed.</p>
+          )}
         </div>
       )}
     </div>
@@ -198,6 +267,7 @@ export default function GitHistoryPanel({ projectId, filePath }) {
               <CommitRow
                 key={commit.sha || idx}
                 commit={commit}
+                projectId={projectId}
               />
             ))}
             {commits.length >= count && (

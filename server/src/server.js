@@ -611,6 +611,23 @@ fastify.get('/api/v1/projects/:projectId/repository/log/detailed', {
     }
 });
 
+// Get files changed in a specific commit
+fastify.get('/api/v1/projects/:projectId/repository/commit/:sha/files', {
+    preValidation: [fastify.authenticate],
+}, async (request, reply) => {
+    const project = await getProjectForUser(request.user.id, request.params.projectId);
+    if (!project) return reply.code(404).send({ error: 'Project not found' });
+
+    const localGit = new LocalGitService();
+    try {
+        const files = await localGit.getCommitFiles(project, request.params.sha);
+        return { files };
+    } catch (err) {
+        request.log.error(err);
+        return reply.code(500).send({ error: 'Failed to get commit files' });
+    }
+});
+
 // Commit graph log with tree structure and branch refs
 fastify.get('/api/v1/projects/:projectId/repository/files', {
     preValidation: [fastify.authenticate],

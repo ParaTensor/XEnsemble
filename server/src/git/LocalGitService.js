@@ -502,6 +502,18 @@ class LocalGitService {
         return result.stdout.split('\n').filter(Boolean);
     }
 
+    async getCommitFiles(project, sha) {
+        const { workspacePath } = await this.ensureProjectRuntime(project);
+        const result = await this._git(workspacePath, [
+            'show', '--no-patch', '--name-status', '--format=', sha,
+        ], { timeoutMs: 30_000 });
+        return result.stdout.split('\n').filter(Boolean).map((line) => {
+            const match = line.match(/^([AMDRC]\d*)\t(.+)$/);
+            if (!match) return null;
+            return { status: match[1][0], path: match[2] };
+        }).filter(Boolean);
+    }
+
     /**
      * Check for merge conflicts between current branch and a target branch.
      * Performs a dry-run merge (no actual changes).

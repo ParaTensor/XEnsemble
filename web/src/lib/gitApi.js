@@ -76,6 +76,9 @@ export const getDetailedLog = (projectId, params = {}) => {
   return request(`/api/v1/projects/${encodeURIComponent(projectId)}/repository/log/detailed?${qs}`);
 };
 
+export const getCommitFiles = (projectId, sha) =>
+  request(`/api/v1/projects/${encodeURIComponent(projectId)}/repository/commit/${encodeURIComponent(sha)}/files`);
+
 export const listTrackedFiles = (projectId) =>
   request(`/api/v1/projects/${encodeURIComponent(projectId)}/repository/files`);
 
