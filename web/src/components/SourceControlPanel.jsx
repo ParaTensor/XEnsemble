@@ -180,7 +180,7 @@ export default function SourceControlPanel({ projectId, gitChanges, onGitFileCli
             {isExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
           </button>
           <button
-            onClick={() => onGitFileClick?.(f.path)}
+            onClick={() => toggleFileExpand(f.path)}
             className={`flex items-center gap-2 flex-1 min-w-0 px-2 py-1.5 text-left transition-colors ${consoleButtonFocusClass}`}
           >
             <span className={`w-4 text-center font-mono text-[11px] font-semibold ${colorCls} shrink-0`}>
