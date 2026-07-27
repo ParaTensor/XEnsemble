@@ -719,10 +719,11 @@ function registerGitHubRoutes(fastify) {
             return reply.code(201).send(record);
         } catch (err) {
             request.log.error(err);
+            console.error('[PR CREATE ERROR]', JSON.stringify({ message: err.message, code: err.code, status: err.status, name: err.name, body: request.body }));
             const isAuthError = err.code === 'token_expired'
                 || err.code === 'github_not_connected'
                 || err.code === 'insufficient_scope'
-                || /Authentication failed|auth/i.test(err.message || '');
+                || /Authentication failed|auth|credential|forbidden|unauthorized/i.test(err.message || '');
             if (isAuthError) {
                 return reply.code(400).send({
                     error: 'GitHub token 已过期或无效，请重新认证',
