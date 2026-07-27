@@ -138,6 +138,30 @@ export default function SourceControlPanel({ projectId, gitChanges, onGitFileCli
     setGitSubTab('review');
   }, []);
 
+  const renderDiffLines = useCallback((raw) => {
+    if (!raw) return <span className="text-zinc-400">No changes</span>;
+    const lines = raw.split('\n');
+    return lines.map((line, i) => {
+      const first = line[0];
+      if (first === '+') {
+        return <div key={i} className="bg-[#DFF7E4] text-[#1A7F37] pl-4">{line}</div>;
+      }
+      if (first === '-') {
+        return <div key={i} className="bg-[#FFEBE9] text-[#CF222E] pl-4">{line}</div>;
+      }
+      if (first === '@') {
+        return <div key={i} className="bg-[#DAEAFE] text-[#0550AE] font-semibold pl-4">{line}</div>;
+      }
+      if (line.startsWith('---') || line.startsWith('+++')) {
+        return <div key={i} className="bg-[#F6F8FA] text-[#57606A] font-semibold pl-4">{line}</div>;
+      }
+      if (line.startsWith('diff ') || line.startsWith('index ') || line.startsWith('new file') || line.startsWith('deleted ')) {
+        return <div key={i} className="text-[#8B949E]">{line}</div>;
+      }
+      return <div key={i} className="bg-white text-[#1F2328] pl-4">{line || ' '}</div>;
+    });
+  }, []);
+
   const toggleFileExpand = useCallback(async (filePath) => {
     const newExpanded = new Set(expandedFiles);
     if (newExpanded.has(filePath)) {
@@ -213,10 +237,10 @@ export default function SourceControlPanel({ projectId, gitChanges, onGitFileCli
                 <Loader2 className="h-4 w-4 animate-spin" />
               </div>
             ) : diffText != null ? (
-              <pre className="text-[11px] leading-relaxed p-3 overflow-x-auto whitespace-pre font-mono text-[#202124] select-text"
+              <div className="text-[11px] leading-relaxed overflow-x-auto font-mono select-text"
                    style={{ tabSize: 4, MozTabSize: 4 }}>
-                {diffText || 'No changes'}
-              </pre>
+                {renderDiffLines(diffText)}
+              </div>
             ) : null}
           </div>
         )}
