@@ -242,7 +242,7 @@ class GitOperationService {
     }
 
     async pushBranch(project, branchName, { force = false } = {}) {
-        const args = ['push', 'origin', branchName];
+        const args = ['push', '-u', 'origin', branchName];
         if (force) {
             args.push('--force');
         }
