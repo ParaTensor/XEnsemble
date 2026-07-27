@@ -47,8 +47,9 @@ export function useGitChanges(projectId) {
   const commit = useCallback(async (message, author) => {
     const result = await originalCommit(message, author);
     setOptimistic(null);
+    await fetchStatus({ silent: true });
     return result;
-  }, [originalCommit]);
+  }, [originalCommit, fetchStatus]);
 
   const push = useCallback(async () => {
     const result = await originalPush();
