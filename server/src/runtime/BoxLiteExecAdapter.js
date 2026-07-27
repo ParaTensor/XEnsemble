@@ -26,12 +26,44 @@ class BoxLiteStreamHandle extends StreamHandle {
         this._reattachDelayMs = options.reattachDelayMs || 1000;
         this._reattachMaxAttempts = options.reattachMaxAttempts || 3;
         this._reattachAttempts = 0;
+        this._heartbeatTimer = null;
+        this._heartbeatTimeoutMs = options.heartbeatTimeoutMs || 30000;
 
         this._setupWsListeners(ws);
     }
 
+    _startHeartbeat(ws) {
+        this._stopHeartbeat();
+        let lastDataAt = Date.now();
+        this._lastDataAt = lastDataAt;
+        const check = () => {
+            if (this._closed || this._reattaching) return;
+            const elapsed = Date.now() - this._lastDataAt;
+            if (elapsed > this._heartbeatTimeoutMs) {
+                try { ws.close(); } catch (_) {}
+                return;
+            }
+            try { ws.ping(); } catch (_) {}
+        };
+        this._heartbeatTimer = setInterval(check, 10000);
+    }
+
+    _stopHeartbeat() {
+        if (this._heartbeatTimer) {
+            clearInterval(this._heartbeatTimer);
+            this._heartbeatTimer = null;
+        }
+    }
+
     _setupWsListeners(ws) {
+        this._lastDataAt = Date.now();
+        this._startHeartbeat(ws);
+
+        ws.on('pong', () => { this._lastDataAt = Date.now(); });
+        ws.on('ping', () => { this._lastDataAt = Date.now(); });
+
         ws.on('message', (data, isBinary) => {
+            this._lastDataAt = Date.now();
             if (isBinary) {
                 const buf = Buffer.from(data);
                 const decoded = decodeExecutionFrameRaw(buf, this._preferSeqFrames);
@@ -74,6 +106,7 @@ class BoxLiteStreamHandle extends StreamHandle {
     _fireExit(exitCode) {
         if (this._closed) return;
         this._closed = true;
+        this._stopHeartbeat();
         for (const cb of this._exitCbs) {
             try { cb({ exitCode }); } catch (_) {}
         }
@@ -162,6 +195,7 @@ class BoxLiteStreamHandle extends StreamHandle {
     }
 
     kill() {
+        this._stopHeartbeat();
         try {
             if (this._ws && this._ws.readyState === 1) {
                 this._ws.send(JSON.stringify({ type: 'signal', signal: 15 }));
