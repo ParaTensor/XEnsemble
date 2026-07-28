@@ -180,9 +180,38 @@ class GitOperationService {
             .filter(Boolean);
     }
 
+    async _expandDirEntries(project, lines) {
+        const expanded = [];
+        for (const line of lines) {
+            if (line.length < 3) { expanded.push(line); continue; }
+            const filePath = line.slice(3).trim();
+            if (!filePath.endsWith('/')) { expanded.push(line); continue; }
+            const dir = filePath.replace(/\/$/, '');
+            try {
+                const ready = await this.ensureProjectRuntime(project);
+                const runtimeRef = ready.runtime ? ready.runtime.runtimeRef : undefined;
+                const exec = this._execFn();
+                const result = await exec('find', [dir, '-type', 'f', '-not', '-path', '*/.git/*'], {}, {
+                    cwd: ready.workspacePath, runtimeRef, timeoutMs: 10_000,
+                });
+                if (result.exitCode === 0 && result.stdout.trim()) {
+                    for (const f of result.stdout.split('\n').filter(Boolean)) {
+                        expanded.push(`?? ${f}`);
+                    }
+                } else {
+                    expanded.push(line.replace(/\/$/, ''));
+                }
+            } catch {
+                expanded.push(line.replace(/\/$/, ''));
+            }
+        }
+        return expanded;
+    }
+
     async getStatusLight(project) {
         const statusOut = await this._execGit(project, ['status', '--porcelain=v1', '-uall']).catch(() => ({ stdout: '' }));
-        const lines = statusOut.stdout.split('\n').filter(Boolean);
+        let lines = statusOut.stdout.split('\n').filter(Boolean);
+        lines = await this._expandDirEntries(project, lines);
         const files = [];
         let dirty = false;
         const stagedFiles = [];
@@ -191,7 +220,7 @@ class GitOperationService {
             if (line.length < 2) continue;
             const x = line[0];
             const y = line[1];
-            const filePath = line.slice(3).trim().replace(/\/$/, '');
+            const filePath = line.slice(3).trim();
             const entry = { path: filePath, status: x + y };
             if (x === '?' && y === '?') {
                 dirty = true;
@@ -227,12 +256,13 @@ class GitOperationService {
         }
         const sha = shaOut.stdout.trim() || null;
 
-        const lines = statusOut.stdout.split('\n').filter(Boolean);
+        let lines = statusOut.stdout.split('\n').filter(Boolean);
+        lines = await this._expandDirEntries(project, lines);
 
         // check-ignore 和 ahead/behind 互不依赖，并行执行减少延迟
         const filePaths = lines
             .filter((line) => line.length >= 3)
-            .map((line) => line.slice(3).trim().replace(/\/$/, ''));
+            .map((line) => line.slice(3).trim());
 
         const [ignoredResult, aheadBehindResult] = await Promise.all([
             // check-ignore：检查哪些文件被 .gitignore 匹配
@@ -280,7 +310,7 @@ class GitOperationService {
             }
             const x = line[0];
             const y = line[1];
-            const filePath = line.slice(3).trim().replace(/\/$/, '');
+            const filePath = line.slice(3).trim();
             // 跳过被 .gitignore 匹配的文件（包括已跟踪的）
             if (ignoredSet.has(filePath)) continue;
             const entry = { path: filePath, status: x + y };
