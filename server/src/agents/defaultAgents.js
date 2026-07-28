@@ -111,6 +111,7 @@ const DEFAULT_AGENTS = [
             level: 'L2',
             stateArgs: ['--config-dir'],
             resumeArgs: ['--continue'],
+            resumeCheckSubdir: 'logs/sessions',
         },
     },
     {
