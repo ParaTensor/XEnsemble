@@ -348,7 +348,28 @@ async function resumeSession({
             const stateArgs = stateDirPath
                 ? buildStateArgs(resumeSpec, stateDirPath)
                 : [];
-            const resumeArgs = canResume ? (resumeSpec.resumeArgs || []) : [];
+
+            // Resolve resume args: if resolveResumeArgs is defined, call it
+            // to dynamically determine args (e.g. --id <last-session-id>).
+            // Falls back to static resumeArgs.
+            let resumeArgs = [];
+            if (canResume) {
+                if (typeof resumeSpec.resolveResumeArgs === 'function') {
+                    try {
+                        resumeArgs = await resumeSpec.resolveResumeArgs({
+                            exec: runtime.exec.exec.bind(runtime.exec),
+                            env: resolvedSpawnEnv.env,
+                            runtimeRef,
+                            stateDirPath,
+                            fs: runtime.fs,
+                        });
+                    } catch (_) {
+                        resumeArgs = resumeSpec.resumeArgs || [];
+                    }
+                } else {
+                    resumeArgs = resumeSpec.resumeArgs || [];
+                }
+            }
 
             // Kill any lingering agent process from a previous run.
             if (runtimeRef) {

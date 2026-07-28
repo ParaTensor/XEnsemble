@@ -72,6 +72,17 @@ const DEFAULT_AGENTS = [
         resume: {
             level: 'L2',
             stateEnv: 'CLINE_DATA_DIR',
+            resolveResumeArgs: async ({ exec, env, runtimeRef }) => {
+                const result = await exec('cline', ['history', '--json', '--limit', '1'], env, { runtimeRef, timeoutMs: 5000 }).catch(() => null);
+                if (!result?.stdout) return [];
+                try {
+                    const sessions = JSON.parse(result.stdout);
+                    if (Array.isArray(sessions) && sessions.length > 0 && sessions[0].id) {
+                        return ['--id', sessions[0].id];
+                    }
+                } catch { /* ignore */ }
+                return [];
+            },
         },
     },
     {
@@ -107,6 +118,21 @@ const DEFAULT_AGENTS = [
         resume: {
             level: 'L2',
             redirectHome: true,
+            resolveResumeArgs: async ({ exec, env, runtimeRef, stateDirPath }) => {
+                const sessionsDir = `${stateDirPath}/.zai/sessions`;
+                const lsResult = await exec('sh', ['-c', `ls -t "${sessionsDir}"/*.json 2>/dev/null | head -1`], env, { runtimeRef, cwd: '/', timeoutMs: 5000 }).catch(() => null);
+                if (!lsResult?.stdout?.trim()) return [];
+                const filePath = lsResult.stdout.trim();
+                const catResult = await exec('sh', ['-c', `cat "${filePath}"`], env, { runtimeRef, cwd: '/', timeoutMs: 5000 }).catch(() => null);
+                if (!catResult?.stdout) return [];
+                try {
+                    const session = JSON.parse(catResult.stdout);
+                    if (session.metadata?.name) {
+                        return ['load-session', session.metadata.name];
+                    }
+                } catch { /* ignore */ }
+                return [];
+            },
         },
     },
     {
