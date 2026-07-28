@@ -84,6 +84,28 @@ class PullRequestService {
 
         await db.insert(schema.pullRequests).values(record);
 
+        // Sync to merge_requests table for unified listing
+        try {
+            await db.insert(schema.mergeRequests).values({
+                id,
+                projectId: project.id,
+                provider: 'github',
+                remoteMrNumber: ghPr.number,
+                remoteMrUrl: ghPr.html_url,
+                title,
+                description: body ?? null,
+                sourceBranch: src,
+                targetBranch: tgt,
+                status: this._mapStatus({ state: ghPr.state, merged: ghPr.merged }),
+                remoteState: ghPr.state,
+                mergeSha: ghPr.merge_commit_sha ?? null,
+                createdBy: actorUserId ?? null,
+                createdAt: now,
+                updatedAt: now,
+                lastSyncedAt: now,
+            });
+        } catch { /* ignore duplicate sync */ }
+
         await recordEvent({
             userId: actorUserId ?? project.userId,
             projectId: project.id,
