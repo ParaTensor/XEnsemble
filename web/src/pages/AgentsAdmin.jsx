@@ -1103,7 +1103,7 @@ export default function AgentsAdmin() {
       })()}
 
       <div className={consoleTableShellClass}>
-        <div className="overflow-x-auto">
+        <div className="overflow-auto max-h-[calc(100vh-200px)]">
           <table className="w-full text-left text-sm">
             <thead className="border-b border-zinc-200 bg-white">
               <tr>
