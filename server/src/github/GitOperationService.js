@@ -191,7 +191,7 @@ class GitOperationService {
             if (line.length < 2) continue;
             const x = line[0];
             const y = line[1];
-            const filePath = line.slice(3).trim();
+            const filePath = line.slice(3).trim().replace(/\/$/, '');
             const entry = { path: filePath, status: x + y };
             if (x === '?' && y === '?') {
                 dirty = true;
@@ -232,7 +232,7 @@ class GitOperationService {
         // check-ignore 和 ahead/behind 互不依赖，并行执行减少延迟
         const filePaths = lines
             .filter((line) => line.length >= 3)
-            .map((line) => line.slice(3).trim());
+            .map((line) => line.slice(3).trim().replace(/\/$/, ''));
 
         const [ignoredResult, aheadBehindResult] = await Promise.all([
             // check-ignore：检查哪些文件被 .gitignore 匹配
@@ -280,7 +280,7 @@ class GitOperationService {
             }
             const x = line[0];
             const y = line[1];
-            const filePath = line.slice(3).trim();
+            const filePath = line.slice(3).trim().replace(/\/$/, '');
             // 跳过被 .gitignore 匹配的文件（包括已跟踪的）
             if (ignoredSet.has(filePath)) continue;
             const entry = { path: filePath, status: x + y };
@@ -372,8 +372,17 @@ class GitOperationService {
         if (tracked) return '';
 
         const ready = await this.ensureProjectRuntime(project);
+        const runtimeRef = ready.runtime ? ready.runtime.runtimeRef : undefined;
+
+        const isDir = await this.fs.fsStat(ready.workspacePath, filePath, { runtimeRef })
+            .then((s) => s && s.type === 'directory')
+            .catch(() => false);
+        if (isDir) {
+            return '(Contains a nested git repository)';
+        }
+
         const content = await this.fs.fsRead(ready.workspacePath, filePath, {
-            runtimeRef: ready.runtime ? ready.runtime.runtimeRef : undefined,
+            runtimeRef,
             encoding: 'utf8',
         }).catch(() => '');
         return content.split('\n').map((l) => '+' + l).join('\n');

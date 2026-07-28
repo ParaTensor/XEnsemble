@@ -242,7 +242,7 @@ describe('GitOperationService (mock exec)', () => {
         const responses = new Map([
             [JSON.stringify(['rev-parse', '--abbrev-ref', 'HEAD']), 'dev\n'],
             [JSON.stringify(['rev-parse', 'HEAD']), 'status-sha\n'],
-            [JSON.stringify(['status', '--porcelain=v1']), 'M  staged.txt\n?? untracked.txt\n'],
+            [JSON.stringify(['status', '--porcelain=v1', '-uall']), 'M  staged.txt\n?? untracked.txt\n'],
             [JSON.stringify(['rev-list', '--left-right', '--count', 'HEAD...@{upstream}']), '2\t3\n'],
         ]);
         const exec = makeMockExec((args) => responses.get(JSON.stringify(args)) ?? '');
@@ -269,6 +269,22 @@ describe('GitOperationService (mock exec)', () => {
                 { path: 'untracked.txt', status: '??', type: 'untracked' },
             ],
         });
+    });
+
+    it('getStatus strips trailing slash from nested git directory entries', async () => {
+        const responses = new Map([
+            [JSON.stringify(['rev-parse', '--abbrev-ref', 'HEAD']), 'main\n'],
+            [JSON.stringify(['rev-parse', 'HEAD']), 'sha\n'],
+            [JSON.stringify(['status', '--porcelain=v1', '-uall']), '?? nested-repo/\n'],
+            [JSON.stringify(['rev-list', '--left-right', '--count', 'HEAD...@{upstream}']), '0\t0\n'],
+        ]);
+        const exec = makeMockExec((args) => responses.get(JSON.stringify(args)) ?? '');
+        const service = createService(exec);
+
+        const status = await service.getStatus({ id: 'p-nested', userId: 'u1' });
+        const untrackedEntry = status.files.find((f) => f.type === 'untracked');
+        assert.ok(untrackedEntry, 'should have an untracked entry');
+        assert.strictEqual(untrackedEntry.path, 'nested-repo', 'trailing slash should be stripped');
     });
 
     it('commitAll stages and commits', async () => {
