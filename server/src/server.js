@@ -1262,7 +1262,7 @@ fastify.post('/api/v1/session/start', { preValidation: [fastify.authenticate] },
         // ensureKimiConfig is best-effort; ensureSessionStateDir is blocking when stateEnv is set.
         let sessionStateDir = null;
         const stateDirPromise = (async () => {
-            if (!resumeSpec?.stateEnv) return null;
+            if (!resumeSpec?.stateEnv && !resumeSpec?.stateArgs && !resumeSpec?.redirectHome) return null;
             try {
                 return await ensureSessionStateDir(runtime.fs, {
                     workspaceRoot: workspacePath,
