@@ -3,6 +3,9 @@ const schema = require('../db/schema');
 const { eq, and, sql, inArray } = require('drizzle-orm');
 const installedAgents = require('../agents/installedAgents');
 const { probeAgent } = require('../agents/agentProbe');
+const { resolveRuntimeProvider } = require('../config/runtimeProvider');
+
+const IS_LOCAL_RUNTIME = resolveRuntimeProvider() === 'local';
 
 const DIMENSION_LIMIT = {
     projects: 'maxProjects',
@@ -125,7 +128,7 @@ async function checkAgentAccess(userId, agentId, role) {
     if (agentRows.length === 0) {
         return { ok: false, error: 'agent_not_found', agent_id: agentId };
     }
-    if (!probeAgent(agentRows[0].cmd).installed) {
+    if (IS_LOCAL_RUNTIME && !probeAgent(agentRows[0].cmd).installed) {
         return { ok: false, error: 'agent_not_installed', agent_id: agentId };
     }
     if (role === 'admin') return { ok: true };
