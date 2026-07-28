@@ -523,9 +523,11 @@ async function loginUser(username, password, deviceName = null) {
 async function getMe(userId) {
     const user = await getUserById(userId);
     if (!user) return null;
-    const quotas = await policy.getEffectiveQuota(userId);
-    const granted = await policy.listGrantedAgentIds(userId, user.role);
-    const llmAuthMode = await platformSettings.getLlmAuthMode();
+    const [quotas, granted, llmAuthMode] = await Promise.all([
+        policy.getEffectiveQuota(userId),
+        policy.listGrantedAgentIds(userId, user.role),
+        platformSettings.getLlmAuthMode(),
+    ]);
     return {
         id: user.id,
         username: user.username,

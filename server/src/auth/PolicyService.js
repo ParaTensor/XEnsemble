@@ -39,29 +39,26 @@ async function ensureUserQuota(userId) {
 }
 
 async function getUsage(userId) {
-    const [projectRow] = await db
-        .select({ count: sql`count(*)` })
-        .from(schema.projects)
-        .where(eq(schema.projects.userId, userId));
-
-    const [sessionRow] = await db
-        .select({ count: sql`count(*)` })
-        .from(schema.sessions)
-        .where(and(eq(schema.sessions.userId, userId), eq(schema.sessions.status, 'running')));
-
-    const [previewRow] = await db
-        .select({ count: sql`count(*)` })
-        .from(schema.deployments)
-        .where(and(
-            eq(schema.deployments.userId, userId),
-            eq(schema.deployments.kind, 'preview'),
-            inArray(schema.deployments.status, ['pending', 'building', 'running']),
-        ));
+    const [projectRow, sessionRow, previewRow] = await Promise.all([
+        db.select({ count: sql`count(*)` })
+            .from(schema.projects)
+            .where(eq(schema.projects.userId, userId)),
+        db.select({ count: sql`count(*)` })
+            .from(schema.sessions)
+            .where(and(eq(schema.sessions.userId, userId), eq(schema.sessions.status, 'running'))),
+        db.select({ count: sql`count(*)` })
+            .from(schema.deployments)
+            .where(and(
+                eq(schema.deployments.userId, userId),
+                eq(schema.deployments.kind, 'preview'),
+                inArray(schema.deployments.status, ['pending', 'building', 'running']),
+            )),
+    ]);
 
     return {
-        projects: Number(projectRow?.count ?? 0),
-        sessions: Number(sessionRow?.count ?? 0),
-        previews: Number(previewRow?.count ?? 0),
+        projects: Number(projectRow?.[0]?.count ?? 0),
+        sessions: Number(sessionRow?.[0]?.count ?? 0),
+        previews: Number(previewRow?.[0]?.count ?? 0),
     };
 }
 
@@ -77,8 +74,10 @@ function formatQuota(quotaRow, usage) {
 }
 
 async function getEffectiveQuota(userId) {
-    const quotaRow = await ensureUserQuota(userId);
-    const usage = await getUsage(userId);
+    const [quotaRow, usage] = await Promise.all([
+        ensureUserQuota(userId),
+        getUsage(userId),
+    ]);
     return formatQuota(quotaRow, usage);
 }
 

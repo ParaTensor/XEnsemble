@@ -74,7 +74,6 @@ async function seedIfNeeded(db) {
     }
 
     await migrateGithubConnectionsToGit(db);
-    await migratePullRequestsToMergeRequests(db);
     await backfillRemoteRepoFields(db);
     await backfillDefaultRuntimes(db);
 }
@@ -122,33 +121,6 @@ async function migrateGithubConnectionsToGit(db) {
             connectedAt: row.connectedAt,
             lastUsedAt: row.lastUsedAt,
             revokedAt: row.revokedAt,
-        }).onConflictDoNothing();
-    }
-}
-
-async function migratePullRequestsToMergeRequests(db) {
-    const existingMrs = await db.select({ id: schema.mergeRequests.id }).from(schema.mergeRequests);
-    const existingIds = new Set(existingMrs.map((r) => r.id));
-    const prs = await db.select().from(schema.pullRequests);
-    for (const row of prs) {
-        if (existingIds.has(row.id)) continue;
-        await db.insert(schema.mergeRequests).values({
-            id: row.id,
-            projectId: row.projectId,
-            provider: 'github',
-            remoteMrNumber: row.githubPrNumber,
-            remoteMrUrl: row.githubPrUrl,
-            title: row.title,
-            description: row.description,
-            sourceBranch: row.sourceBranch,
-            targetBranch: row.targetBranch,
-            status: row.status,
-            remoteState: row.githubState,
-            mergeSha: row.mergeSha,
-            createdBy: row.createdBy,
-            createdAt: row.createdAt,
-            updatedAt: row.updatedAt,
-            lastSyncedAt: row.lastSyncedAt,
         }).onConflictDoNothing();
     }
 }

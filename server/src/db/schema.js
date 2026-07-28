@@ -257,26 +257,6 @@ const projectBranches = pgTable('project_branches', {
   unqProjectBranch: unique().on(table.projectId, table.branchName),
 }));
 
-const pullRequests = pgTable('pull_requests', {
-  id: text('id').primaryKey(),
-  projectId: text('project_id').notNull().references(() => projects.id),
-  githubPrNumber: integer('github_pr_number').notNull(),
-  githubPrUrl: text('github_pr_url').notNull(),
-  title: text('title').notNull(),
-  description: text('description'),
-  sourceBranch: text('source_branch').notNull(),
-  targetBranch: text('target_branch').notNull(),
-  status: text('status').notNull().default('open'),
-  githubState: text('github_state'),
-  mergeSha: text('merge_sha'),
-  createdBy: text('created_by').references(() => users.id),
-  createdAt: bigint('created_at', { mode: 'number' }).notNull(),
-  updatedAt: bigint('updated_at', { mode: 'number' }).notNull(),
-  lastSyncedAt: bigint('last_synced_at', { mode: 'number' }),
-}, (table) => ({
-  unqProjectPr: unique().on(table.projectId, table.githubPrNumber),
-}));
-
 const gitConnections = pgTable('git_connections', {
   id: text('id').primaryKey(),
   userId: text('user_id').notNull().references(() => users.id),
@@ -391,7 +371,6 @@ module.exports = {
   githubConnections,
   githubOAuthStates,
   projectBranches,
-  pullRequests, // legacy table, kept for migration only
   gitConnections,
   gitOAuthStates,
   mergeRequests,
