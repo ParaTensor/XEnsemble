@@ -243,9 +243,18 @@ export default React.forwardRef(function Sessions({
       const data = await res.json();
       if (res.ok) {
         const allKeys = Object.keys(data);
-        const envVars = allKeys.length > 0
-          ? allKeys.map((key) => ({ key, value: data[key] === '***' ? '' : (data[key] || '') }))
-          : required.map((key) => ({ key, value: '' }));
+        const seen = new Set();
+        const envVars = [];
+        for (const key of required) {
+          const val = data[key];
+          envVars.push({ key, value: val === '***' ? '' : (val || '') });
+          seen.add(key);
+        }
+        for (const key of allKeys) {
+          if (!seen.has(key)) {
+            envVars.push({ key, value: data[key] === '***' ? '' : (data[key] || '') });
+          }
+        }
         setConfigEnvVars(envVars);
         const saved = {};
         allKeys.forEach((k) => { if (data[k]) saved[k] = true; });
