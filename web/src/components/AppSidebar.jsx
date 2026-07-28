@@ -293,6 +293,9 @@ export default function AppSidebar({
   const [activeOnlyFilter, setActiveOnlyFilter] = useState(false);
   const [resumingSessionId, setResumingSessionId] = useState(null);
   const [customImageMap, setCustomImageMap] = useState({});
+  const [renameId, setRenameId] = useState(null);
+  const [renameValue, setRenameValue] = useState('');
+  const [renameLoading, setRenameLoading] = useState(false);
   const { showToast } = useToast();
 
   useEffect(() => {
@@ -438,6 +441,45 @@ export default function AppSidebar({
       width: rect.width,
       height: rect.height,
     });
+  };
+
+  const handleStartRename = (e, ws) => {
+    e.stopPropagation();
+    setRenameId(ws.id);
+    setRenameValue(ws.name);
+  };
+
+  const handleConfirmRename = async (wsId) => {
+    if (renameLoading) return;
+    const trimmed = renameValue.trim();
+    const ws = workspaces.find((w) => w.id === wsId);
+    if (!trimmed || !ws || trimmed === ws.name) {
+      setRenameId(null);
+      setRenameValue('');
+      return;
+    }
+    setRenameLoading(true);
+    try {
+      const res = await apiFetch(`/api/v1/projects/${encodeURIComponent(wsId)}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ name: trimmed }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || '重命名失败');
+      fetchWorkspaces?.();
+      showToast('success', '工作空间已重命名');
+    } catch (err) {
+      showToast('error', err.message);
+    } finally {
+      setRenameLoading(false);
+      setRenameId(null);
+      setRenameValue('');
+    }
+  };
+
+  const handleCancelRename = () => {
+    setRenameId(null);
+    setRenameValue('');
   };
 
   const sessionMatchesQuery = useCallback((s, ws) => {
@@ -683,47 +725,80 @@ export default function AppSidebar({
                     ) : (
                       <FolderOpen className={`w-3.5 h-3.5 ${textPlaceholder} shrink-0`} strokeWidth={1.75} />
                     )}
-                    <button
-                      type="button"
-                      onClick={() => toggleWorkspaceExpanded(ws.id)}
-                      className={`flex-1 min-w-0 text-left py-2 pr-1 text-[13px] ${textPrimary}`}
-                      title={gitTitle}
-                    >
-                      <span className="flex items-center gap-1.5 min-w-0">
-                        <span className="truncate">{ws.name}</span>
-                        {liveInWs > 0 && (
-                          <span className={`shrink-0 text-[10px] font-medium ${accentGreen}`}>{liveInWs}</span>
+                    {renameId === ws.id ? (
+                      <>
+                        <input
+                          type="text"
+                          autoFocus
+                          value={renameValue}
+                          onChange={(e) => setRenameValue(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') { e.preventDefault(); handleConfirmRename(ws.id); }
+                            if (e.key === 'Escape') { e.preventDefault(); handleCancelRename(); }
+                          }}
+                          onBlur={() => handleConfirmRename(ws.id)}
+                          disabled={renameLoading}
+                          className={`flex-1 min-w-0 bg-transparent text-[13px] ${textPrimary} outline-none border-b border-[#9AA0A6] py-1 mr-1`}
+                        />
+                        {renameLoading && (
+                          <Loader2 className={`w-3.5 h-3.5 shrink-0 animate-spin ${textPlaceholder}`} />
                         )}
-                      </span>
-                      {gitLinked && repoLabel && (
-                        <span className={`block truncate text-[10px] ${textPlaceholder}`}>
-                          {providerLabel}: {repoLabel}
-                        </span>
-                      )}
-                    </button>
-                    {isCloning && (
-                      <Loader2 className={`w-3.5 h-3.5 shrink-0 animate-spin ${textPlaceholder}`} />
+                      </>
+                    ) : (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => toggleWorkspaceExpanded(ws.id)}
+                          className={`flex-1 min-w-0 text-left py-2 pr-1 text-[13px] ${textPrimary}`}
+                          title={gitTitle}
+                        >
+                          <span className="flex items-center gap-1.5 min-w-0">
+                            <span className="truncate">{ws.name}</span>
+                            {liveInWs > 0 && (
+                              <span className={`shrink-0 text-[10px] font-medium ${accentGreen}`}>{liveInWs}</span>
+                            )}
+                          </span>
+                          {gitLinked && repoLabel && (
+                            <span className={`block truncate text-[10px] ${textPlaceholder}`}>
+                              {providerLabel}: {repoLabel}
+                            </span>
+                          )}
+                        </button>
+                        {isCloning && (
+                          <Loader2 className={`w-3.5 h-3.5 shrink-0 animate-spin ${textPlaceholder}`} />
+                        )}
+                        {!isOrphan && (
+                          <button
+                            type="button"
+                            title="Rename workspace"
+                            onClick={(e) => handleStartRename(e, ws)}
+                            className={`p-1.5 rounded-lg ${textPlaceholder} ${hoverTextPrimary} hover:bg-[#E8EAED] opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity ${transitionBase}`}
+                          >
+                            <PenSquare className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                        {!isOrphan && (
+                          <button
+                            type="button"
+                            title={wsPinned ? 'Unpin workspace' : 'Pin workspace'}
+                            onClick={(e) => handlePinWorkspace(e, ws.id)}
+                            className={`p-1.5 rounded-lg ${textPlaceholder} ${hoverTextPrimary} hover:bg-[#E8EAED] transition-opacity ${
+                              wsPinned ? `opacity-100 ${textSecondary}` : 'opacity-0 group-hover:opacity-100 focus:opacity-100'
+                            }`}
+                          >
+                            <Pin className={`w-3.5 h-3.5 ${wsPinned ? 'fill-current' : ''}`} />
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          title={isOrphan ? 'Clear unassigned sessions' : 'Delete workspace'}
+                          onClick={(e) => handleRequestDeleteWorkspace(e, ws)}
+                          className={`p-1.5 mr-0.5 ${textPlaceholder} ${accentRed} ${accentRedBg} rounded-lg opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity ${transitionBase}`}
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </>
                     )}
-                    {!isOrphan && (
-                      <button
-                        type="button"
-                        title={wsPinned ? 'Unpin workspace' : 'Pin workspace'}
-                        onClick={(e) => handlePinWorkspace(e, ws.id)}
-                        className={`p-1.5 rounded-lg ${textPlaceholder} ${hoverTextPrimary} hover:bg-[#E8EAED] transition-opacity ${
-                          wsPinned ? `opacity-100 ${textSecondary}` : 'opacity-0 group-hover:opacity-100 focus:opacity-100'
-                        }`}
-                      >
-                        <Pin className={`w-3.5 h-3.5 ${wsPinned ? 'fill-current' : ''}`} />
-                      </button>
-                    )}
-                    <button
-                      type="button"
-                      title={isOrphan ? 'Clear unassigned sessions' : 'Delete workspace'}
-                      onClick={(e) => handleRequestDeleteWorkspace(e, ws)}
-                      className={`p-1.5 mr-0.5 ${textPlaceholder} ${accentRed} ${accentRedBg} rounded-lg opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity ${transitionBase}`}
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
                   </div>
                   {expanded && (
                     <div className="flex flex-col pb-0.5">

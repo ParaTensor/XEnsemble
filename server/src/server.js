@@ -360,6 +360,23 @@ fastify.delete('/api/v1/projects/:projectId', { preValidation: [fastify.authenti
     }
 });
 
+fastify.patch('/api/v1/projects/:projectId', { preValidation: [fastify.authenticate] }, async (request, reply) => {
+    const project = await getProjectForUser(request.user.id, request.params.projectId);
+    if (!project) return reply.code(404).send({ error: 'Project not found' });
+
+    const name = String(request.body?.name || '').trim();
+    if (!name) return reply.code(400).send({ error: 'Project name is required' });
+    if (name.length > 120) return reply.code(400).send({ error: 'Project name is too long' });
+
+    await db.update(schema.projects)
+        .set({ name })
+        .where(eq(schema.projects.id, project.id));
+
+    invalidateProjectCache(project.id);
+
+    return { id: project.id, name };
+});
+
 fastify.get('/api/v1/projects/:projectId/repository', { preValidation: [fastify.authenticate] }, async (request, reply) => {
     const project = await getProjectForUser(request.user.id, request.params.projectId);
     if (!project) return reply.code(404).send({ error: 'Project not found' });
