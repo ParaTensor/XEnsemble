@@ -813,7 +813,44 @@ fastify.get('/api/v1/projects/:projectId/merge-requests/:mrId/comments', {
     }
 });
 
-// Sessions — list
+// PR/MR general (issue-level) comments
+fastify.get('/api/v1/projects/:projectId/merge-requests/:mrId/issue-comments', {
+    preValidation: [fastify.authenticate],
+}, async (request, reply) => {
+    const project = await getProjectForUser(request.user.id, request.params.projectId);
+    if (!project) return reply.code(404).send({ error: 'Project not found' });
+
+    const providerName = project.repoProvider;
+    if (!providerName || providerName === 'local_git' || providerName === 'none') {
+        return { comments: [] };
+    }
+
+    try {
+        const { GitConnectionService } = require('./git/GitConnectionService');
+        const { getProvider } = require('./git/providers/registry');
+        const connService = new GitConnectionService();
+        const token = await connService.getDecryptedToken(project.userId, providerName);
+        if (!token) return { comments: [] };
+
+        const adapter = getProvider(providerName);
+        const mrRows = await db.select().from(schema.mergeRequests)
+            .where(eq(schema.mergeRequests.id, request.params.mrId));
+        if (mrRows.length === 0) return reply.code(404).send({ error: 'Merge request not found' });
+        const mr = mrRows[0];
+        const prNumber = mr.remoteMrNumber;
+        if (!prNumber) return { comments: [] };
+
+        const repoId = project.remoteFullName || project.githubFullName;
+        const page = request.query?.page ? Number(request.query.page) : 1;
+        const comments = await adapter.listIssueComments(token, repoId, prNumber, { page });
+        return { comments };
+    } catch (err) {
+        request.log.error(err);
+        return reply.code(500).send({ error: 'Failed to fetch issue comments' });
+    }
+});
+
+// Sessions - list
 fastify.get('/api/v1/sessions', { preValidation: [fastify.authenticate] }, async (request, reply) => {
     const result = await db.execute(sql`
         SELECT s.id, s.project_id, s.agent_id, s.status, s.recoverable,

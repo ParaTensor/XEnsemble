@@ -168,6 +168,14 @@ class MergeRequestService {
         if (!ctx) return [];
         return ctx.provider.listReviewComments(ctx.token, ctx.repoFullName, mr.remoteMrNumber, { apiBase: ctx.apiBase, ...opts });
     }
+
+    async listIssueComments(project, mrId, opts = {}) {
+        const mr = await this.get(mrId);
+        if (!mr || mr.projectId !== project.id) return [];
+        const ctx = await this._resolveProvider(project, mr);
+        if (!ctx) return [];
+        return ctx.provider.listIssueComments(ctx.token, ctx.repoFullName, mr.remoteMrNumber, { apiBase: ctx.apiBase, ...opts });
+    }
 }
 
 module.exports = { MergeRequestService };

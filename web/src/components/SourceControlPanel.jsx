@@ -54,6 +54,7 @@ export default function SourceControlPanel({ projectId, gitChanges, onGitFileCli
     return stored || 'changes';
   });
   const [selectedMergeRequestId, setSelectedMergeRequestId] = useState(null);
+  const [selectedMR, setSelectedMR] = useState(null);
   const [commitMessage, setCommitMessage] = useState('');
   const [committing, setCommitting] = useState(false);
   const [showAuthorDialog, setShowAuthorDialog] = useState(false);
@@ -139,6 +140,7 @@ export default function SourceControlPanel({ projectId, gitChanges, onGitFileCli
 
   const handleSelectMR = useCallback((mr) => {
     setSelectedMergeRequestId(mr.id);
+    setSelectedMR(mr);
     setGitSubTab('review');
   }, []);
 
@@ -548,6 +550,7 @@ export default function SourceControlPanel({ projectId, gitChanges, onGitFileCli
           <CodeReviewPanel
             projectId={projectId}
             mergeRequestId={selectedMergeRequestId}
+            mergeRequest={selectedMR}
           />
         )}
 

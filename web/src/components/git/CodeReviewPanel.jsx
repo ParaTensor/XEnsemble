@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { Check, CircleDot, Loader2, MessageSquare, RefreshCw, X } from 'lucide-react';
+import { Check, CircleDot, GitPullRequest, Loader2, MessageSquare, RefreshCw, X } from 'lucide-react';
 import * as gitApi from '../../lib/gitApi';
 import { useToast } from '../Toast';
 import {
@@ -109,10 +109,11 @@ function CommentItem({ comment }) {
   );
 }
 
-export default function CodeReviewPanel({ projectId, mergeRequestId }) {
+export default function CodeReviewPanel({ projectId, mergeRequestId, mergeRequest }) {
   const { showToast } = useToast();
   const [reviews, setReviews] = useState([]);
   const [comments, setComments] = useState([]);
+  const [issueComments, setIssueComments] = useState([]);
   const [loading, setLoading] = useState(false);
   const [activeTab, setActiveTab] = useState('reviews');
 
@@ -120,12 +121,14 @@ export default function CodeReviewPanel({ projectId, mergeRequestId }) {
     if (!projectId || !mergeRequestId) return;
     setLoading(true);
     try {
-      const [reviewsRes, commentsRes] = await Promise.all([
+      const [reviewsRes, commentsRes, issueRes] = await Promise.all([
         gitApi.listReviews(projectId, mergeRequestId).catch(() => ({ reviews: [] })),
         gitApi.listReviewComments(projectId, mergeRequestId).catch(() => ({ comments: [] })),
+        gitApi.listIssueComments(projectId, mergeRequestId).catch(() => ({ comments: [] })),
       ]);
       setReviews(reviewsRes.reviews || []);
       setComments(commentsRes.comments || []);
+      setIssueComments(issueRes.comments || []);
     } catch (err) {
       showToast('error', err.message);
     } finally {
@@ -140,20 +143,20 @@ export default function CodeReviewPanel({ projectId, mergeRequestId }) {
   const approvedCount = reviews.filter((r) => r.state === 'APPROVED').length;
   const changesCount = reviews.filter((r) => r.state === 'CHANGES_REQUESTED').length;
 
+  const mrTitle = mergeRequest?.title || mergeRequest?.description || '';
+  const mrNumber = mergeRequest?.remoteMrNumber || mergeRequest?.remote_mr_number || '';
+
   return (
     <div className="flex flex-col h-full min-h-0">
       <div className="flex items-center justify-between border-b border-[#E8EAED] px-4 py-2.5 shrink-0">
-        <div className="flex items-center gap-2">
-          <MessageSquare className="h-4 w-4 text-[#5F6368]" />
-          <h3 className={`text-sm font-semibold ${textPrimary}`}>Code Review</h3>
-          {approvedCount > 0 && (
-            <span className="inline-flex items-center rounded-full bg-green-100 px-2 py-0.5 text-[10px] font-medium text-green-700">
-              {approvedCount} approved
-            </span>
-          )}
-          {changesCount > 0 && (
-            <span className="inline-flex items-center rounded-full bg-red-100 px-2 py-0.5 text-[10px] font-medium text-red-700">
-              {changesCount} changes requested
+        <div className="flex items-center gap-2 min-w-0">
+          <MessageSquare className="h-4 w-4 text-[#5F6368] shrink-0" />
+          <h3 className={`text-sm font-semibold ${textPrimary} shrink-0`}>Code Review</h3>
+          {mrTitle && (
+            <span className="flex items-center gap-1 min-w-0 text-[11px] text-[#5F6368]">
+              <GitPullRequest className="h-3 w-3 shrink-0" />
+              {mrNumber && <span className="shrink-0">#{mrNumber}</span>}
+              <span className="truncate">{mrTitle}</span>
             </span>
           )}
         </div>
@@ -162,7 +165,7 @@ export default function CodeReviewPanel({ projectId, mergeRequestId }) {
           onClick={fetchData}
           disabled={loading}
           title="Refresh reviews"
-          className={consoleIconButtonClass}
+          className={`shrink-0 ${consoleIconButtonClass}`}
         >
           {loading ? (
             <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -172,61 +175,107 @@ export default function CodeReviewPanel({ projectId, mergeRequestId }) {
         </button>
       </div>
 
-      <div className="flex border-b border-[#E8EAED] px-4 shrink-0">
-        <button
-          type="button"
-          onClick={() => setActiveTab('reviews')}
-          className={`px-3 py-2 text-xs font-medium border-b-2 -mb-px transition-colors ${
-            activeTab === 'reviews'
-              ? 'border-[#202124] text-[#202124]'
-              : 'border-transparent text-[#5F6368] hover:text-[#202124]'
-          }`}
-        >
-          Reviews ({reviews.length})
-        </button>
-        <button
-          type="button"
-          onClick={() => setActiveTab('comments')}
-          className={`px-3 py-2 text-xs font-medium border-b-2 -mb-px transition-colors ${
-            activeTab === 'comments'
-              ? 'border-[#202124] text-[#202124]'
-              : 'border-transparent text-[#5F6368] hover:text-[#202124]'
-          }`}
-        >
-          Inline Comments ({comments.length})
-        </button>
-      </div>
+      {!mergeRequestId ? (
+        <div className="flex flex-col items-center justify-center py-8 gap-2 text-zinc-400">
+          <GitPullRequest className="h-6 w-6" />
+          <p className="text-[10px]">从 Pull Request 列表选择一个 PR 查看审查</p>
+        </div>
+      ) : (
+        <>
+          {(approvedCount > 0 || changesCount > 0) && (
+            <div className="flex items-center gap-2 px-4 py-1.5 border-b border-[#E8EAED] shrink-0">
+              {approvedCount > 0 && (
+                <span className="inline-flex items-center rounded-full bg-green-100 px-2 py-0.5 text-[10px] font-medium text-green-700">
+                  {approvedCount} approved
+                </span>
+              )}
+              {changesCount > 0 && (
+                <span className="inline-flex items-center rounded-full bg-red-100 px-2 py-0.5 text-[10px] font-medium text-red-700">
+                  {changesCount} changes requested
+                </span>
+              )}
+            </div>
+          )}
 
-      <div className="flex-1 min-h-0 overflow-auto p-4 space-y-2">
-        {loading ? (
-          <div className="flex items-center justify-center gap-2 py-8 text-sm text-[#5F6368]">
-            <Loader2 className="h-4 w-4 animate-spin" />
-            Loading reviews…
+          <div className="flex border-b border-[#E8EAED] px-4 shrink-0">
+            <button
+              type="button"
+              onClick={() => setActiveTab('reviews')}
+              className={`px-3 py-2 text-xs font-medium border-b-2 -mb-px transition-colors ${
+                activeTab === 'reviews'
+                  ? 'border-[#202124] text-[#202124]'
+                  : 'border-transparent text-[#5F6368] hover:text-[#202124]'
+              }`}
+            >
+              Reviews ({reviews.length})
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab('comments')}
+              className={`px-3 py-2 text-xs font-medium border-b-2 -mb-px transition-colors ${
+                activeTab === 'comments'
+                  ? 'border-[#202124] text-[#202124]'
+                  : 'border-transparent text-[#5F6368] hover:text-[#202124]'
+              }`}
+            >
+              Inline ({comments.length})
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab('discussion')}
+              className={`px-3 py-2 text-xs font-medium border-b-2 -mb-px transition-colors ${
+                activeTab === 'discussion'
+                  ? 'border-[#202124] text-[#202124]'
+                  : 'border-transparent text-[#5F6368] hover:text-[#202124]'
+              }`}
+            >
+              Discussion ({issueComments.length})
+            </button>
           </div>
-        ) : activeTab === 'reviews' ? (
-          reviews.length === 0 ? (
-            <div className="text-center py-8">
-              <MessageSquare className="mx-auto h-8 w-8 text-[#9AA0A6] mb-2" />
-              <p className={`text-sm ${textSecondary}`}>No reviews yet.</p>
-            </div>
-          ) : (
-            reviews.map((review, idx) => (
-              <ReviewItem key={review.id || idx} review={review} />
-            ))
-          )
-        ) : (
-          comments.length === 0 ? (
-            <div className="text-center py-8">
-              <MessageSquare className="mx-auto h-8 w-8 text-[#9AA0A6] mb-2" />
-              <p className={`text-sm ${textSecondary}`}>No inline comments yet.</p>
-            </div>
-          ) : (
-            comments.map((comment, idx) => (
-              <CommentItem key={comment.id || idx} comment={comment} />
-            ))
-          )
-        )}
-      </div>
+
+          <div className="flex-1 min-h-0 overflow-auto p-4 space-y-2">
+            {loading ? (
+              <div className="flex items-center justify-center gap-2 py-8 text-sm text-[#5F6368]">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Loading…
+              </div>
+            ) : activeTab === 'reviews' ? (
+              reviews.length === 0 ? (
+                <div className="text-center py-8">
+                  <MessageSquare className="mx-auto h-8 w-8 text-[#9AA0A6] mb-2" />
+                  <p className={`text-sm ${textSecondary}`}>No reviews yet.</p>
+                </div>
+              ) : (
+                reviews.map((review, idx) => (
+                  <ReviewItem key={review.id || idx} review={review} />
+                ))
+              )
+            ) : activeTab === 'comments' ? (
+              comments.length === 0 ? (
+                <div className="text-center py-8">
+                  <MessageSquare className="mx-auto h-8 w-8 text-[#9AA0A6] mb-2" />
+                  <p className={`text-sm ${textSecondary}`}>No inline comments yet.</p>
+                </div>
+              ) : (
+                comments.map((comment, idx) => (
+                  <CommentItem key={comment.id || idx} comment={comment} />
+                ))
+              )
+            ) : (
+              issueComments.length === 0 ? (
+                <div className="text-center py-8">
+                  <MessageSquare className="mx-auto h-8 w-8 text-[#9AA0A6] mb-2" />
+                  <p className={`text-sm ${textSecondary}`}>No discussion yet.</p>
+                </div>
+              ) : (
+                issueComments.map((comment, idx) => (
+                  <CommentItem key={comment.id || idx} comment={comment} />
+                ))
+              )
+            )}
+          </div>
+        </>
+      )}
     </div>
   );
 }

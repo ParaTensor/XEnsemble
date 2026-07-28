@@ -248,6 +248,22 @@ class GitHubAdapter extends GitProviderService {
 
     // ── Utility ──
 
+    async listIssueComments(token, repoIdentifier, prNumber, { apiBase, page = 1, perPage = 30 } = {}) {
+        const base = apiBase || DEFAULT_API_BASE;
+        const { owner, repo } = this.parseRepoIdentifier(repoIdentifier);
+        const query = new URLSearchParams({ page: String(page), per_page: String(perPage) });
+        const comments = await githubFetch(token, base,
+            `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/issues/${prNumber}/comments?${query}`);
+        return comments.map((c) => ({
+            id: c.id,
+            user: { login: c.user?.login, avatarUrl: c.user?.avatar_url },
+            body: c.body || '',
+            createdAt: c.created_at,
+            updatedAt: c.updated_at,
+            htmlUrl: c.html_url || null,
+        }));
+    }
+
     parseRepoIdentifier(fullName) {
         if (!fullName || typeof fullName !== 'string') {
             throw new Error('Repository full name is required');

@@ -143,6 +143,13 @@ class GitProviderService {
         return [];
     }
 
+    /**
+     * List general PR/MR comments (issue-level, not tied to code lines).
+     */
+    async listIssueComments(token, repoIdentifier, prNumber, opts) {
+        return [];
+    }
+
     // ── Utility ──
 
     /**
