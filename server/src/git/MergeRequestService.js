@@ -141,6 +141,33 @@ class MergeRequestService {
             .where(eq(schema.mergeRequests.id, mrId));
         return rows[0] ?? null;
     }
+
+    async _resolveProvider(project, mr) {
+        const providerName = project.repoProvider || mr?.provider;
+        if (!providerName || providerName === 'none' || providerName === 'local_git') return null;
+        const repoFullName = project.remoteFullName || project.githubFullName;
+        if (!repoFullName) return null;
+        const token = await this.gitConnectionService.getDecryptedToken(project.userId, providerName);
+        const provider = getProvider(providerName);
+        const config = await getProviderConfig(providerName);
+        return { token, provider, repoFullName, apiBase: config?.apiBase };
+    }
+
+    async listReviews(project, mrId) {
+        const mr = await this.get(mrId);
+        if (!mr || mr.projectId !== project.id) return [];
+        const ctx = await this._resolveProvider(project, mr);
+        if (!ctx) return [];
+        return ctx.provider.listReviews(ctx.token, ctx.repoFullName, mr.remoteMrNumber, { apiBase: ctx.apiBase });
+    }
+
+    async listReviewComments(project, mrId, opts = {}) {
+        const mr = await this.get(mrId);
+        if (!mr || mr.projectId !== project.id) return [];
+        const ctx = await this._resolveProvider(project, mr);
+        if (!ctx) return [];
+        return ctx.provider.listReviewComments(ctx.token, ctx.repoFullName, mr.remoteMrNumber, { apiBase: ctx.apiBase, ...opts });
+    }
 }
 
 module.exports = { MergeRequestService };
