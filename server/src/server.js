@@ -1421,7 +1421,7 @@ fastify.post('/api/v1/session/start', { preValidation: [fastify.authenticate] },
     });
 });
 
-const WS_BUFFERED_LIMIT = 1024 * 1024;
+const WS_BUFFERED_LIMIT = 16 * 1024 * 1024;
 const WS_PING_INTERVAL_MS = Number(process.env.WS_PING_INTERVAL_MS) || 30000;
 
 function startWsHeartbeat(ws) {
@@ -1440,24 +1440,51 @@ function startWsHeartbeat(ws) {
     return () => clearInterval(timer);
 }
 
+function createWsSender(ws) {
+    const queue = [];
+    let draining = false;
+    const onDrain = () => {
+        draining = false;
+        while (queue.length > 0 && ws.readyState === WebSocket.OPEN) {
+            if (ws.bufferedAmount > WS_BUFFERED_LIMIT) {
+                draining = true;
+                return;
+            }
+            const payload = queue.shift();
+            try {
+                ws.send(payload);
+            } catch (_) {
+                queue.length = 0;
+                return;
+            }
+        }
+    };
+    ws.on('drain', onDrain);
+
+    return (payload) => {
+        if (ws.readyState !== WebSocket.OPEN) return;
+        const data = typeof payload === 'string' ? payload : JSON.stringify(payload);
+        if (ws.bufferedAmount > WS_BUFFERED_LIMIT || draining) {
+            if (queue.length < 200) {
+                queue.push(data);
+            }
+            return;
+        }
+        try {
+            ws.send(data);
+            if (ws.bufferedAmount > WS_BUFFERED_LIMIT) {
+                draining = true;
+            }
+        } catch (_) {}
+    };
+}
+
 // WebSocket Terminal（协议不变；与 /api/v1/terminal/* HTTP 通道共享 terminalBridge）
 fastify.register(async function terminalWsRoutes(app) {
     app.get('/ws/v1/terminal', { websocket: true }, async (connection, req) => {
         const ws = connection.socket;
         const stopHeartbeat = startWsHeartbeat(ws);
-
-        const sendJson = (payload) => {
-            if (ws.readyState !== WebSocket.OPEN) return;
-            if (ws.bufferedAmount >= WS_BUFFERED_LIMIT) {
-                ws.close();
-                return;
-            }
-            try {
-                ws.send(JSON.stringify(payload));
-            } catch (_) {
-                ws.close();
-            }
-        };
+        const sendJson = createWsSender(ws);
 
         try {
             let sessionId = null;
@@ -1596,19 +1623,7 @@ fastify.register(async function workspaceTerminalWsRoutes(app) {
     app.get('/ws/v1/workspace-terminal', { websocket: true }, async (connection, req) => {
         const ws = connection.socket;
         const stopHeartbeat = startWsHeartbeat(ws);
-
-        const sendJson = (payload) => {
-            if (ws.readyState !== WebSocket.OPEN) return;
-            if (ws.bufferedAmount >= WS_BUFFERED_LIMIT) {
-                ws.close();
-                return;
-            }
-            try {
-                ws.send(JSON.stringify(payload));
-            } catch (_) {
-                ws.close();
-            }
-        };
+        const sendJson = createWsSender(ws);
 
         try {
             let projectId = null;
