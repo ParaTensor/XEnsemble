@@ -77,8 +77,9 @@ const DEFAULT_AGENTS = [
                 if (!result?.stdout) return [];
                 try {
                     const sessions = JSON.parse(result.stdout);
-                    if (Array.isArray(sessions) && sessions.length > 0 && sessions[0].id) {
-                        return ['--id', sessions[0].id];
+                    if (Array.isArray(sessions) && sessions.length > 0) {
+                        const sessionId = sessions[0].sessionId || sessions[0].id;
+                        if (sessionId) return ['--id', sessionId];
                     }
                 } catch { /* ignore */ }
                 return [];
