@@ -391,7 +391,7 @@ module.exports = {
   githubConnections,
   githubOAuthStates,
   projectBranches,
-  pullRequests,
+  pullRequests, // legacy table, kept for migration only
   gitConnections,
   gitOAuthStates,
   mergeRequests,

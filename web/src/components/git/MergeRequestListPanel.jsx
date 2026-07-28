@@ -138,10 +138,10 @@ export default function MergeRequestListPanel({ projectId, provider, onSelectMR 
                   </td>
                   <td className={consoleTableBodyCellDenseClass}>
                     <div className="flex items-center gap-1">
-                      {(mr.remote_url || mr.remoteUrl) && (
+                      {(mr.remoteMrUrl || mr.remote_mr_url || mr.remote_url || mr.remoteUrl) && (
                         <button
                           type="button"
-                          onClick={() => openExternal(mr.remote_url || mr.remoteUrl)}
+                          onClick={() => openExternal(mr.remoteMrUrl || mr.remote_mr_url || mr.remote_url || mr.remoteUrl)}
                           title={`Open on ${provider}`}
                           aria-label={`Open on ${provider}`}
                           className={consoleIconButtonClass}

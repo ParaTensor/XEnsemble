@@ -79,7 +79,7 @@ export const listBranches = (projectId) =>
   request(`/api/v1/projects/${encodeURIComponent(projectId)}/branches`);
 
 export const createPullRequest = (projectId, payload) =>
-  request(`/api/v1/projects/${encodeURIComponent(projectId)}/pull-requests`, {
+  request(`/api/v1/projects/${encodeURIComponent(projectId)}/merge-requests`, {
     method: 'POST',
     body: JSON.stringify(payload),
   });

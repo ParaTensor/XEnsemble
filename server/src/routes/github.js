@@ -4,7 +4,6 @@ const crypto = require('crypto');
 const { GitConnectionService } = require('../github/GitConnectionService');
 const { GitHubService } = require('../github/GitHubService');
 const { GitOperationService } = require('../github/GitOperationService');
-const { PullRequestService } = require('../github/PullRequestService');
 const { db } = require('../db/index');
 const schema = require('../db/schema');
 const { projectDir } = require('../workspace');
@@ -115,7 +114,6 @@ function registerGitHubRoutes(fastify) {
     const connectionService = new GitConnectionService();
     const gitHubService = new GitHubService();
     const gitOperationService = new GitOperationService();
-    const pullRequestService = new PullRequestService();
 
     fastify.get('/api/v1/github/connection', {
         preValidation: [fastify.authenticate, fastify.requireActive],
@@ -691,74 +689,6 @@ function registerGitHubRoutes(fastify) {
         } catch (err) {
             request.log.error(err);
             return reply.code(500).send({ error: err.message });
-        }
-    });
-
-    // ─── PR routes ───
-
-    fastify.get('/api/v1/projects/:id/pull-requests', {
-        preValidation: [fastify.authenticate, fastify.requireActive],
-    }, async (request, reply) => {
-        const project = await getProjectForUser(request.user.id, request.params.id);
-        if (!project) return reply.code(404).send({ error: 'Project not found' });
-        const rows = await pullRequestService.list(project.id);
-        return { pull_requests: rows };
-    });
-
-    fastify.post('/api/v1/projects/:id/pull-requests', {
-        preValidation: [fastify.authenticate, fastify.requireActive],
-    }, async (request, reply) => {
-        const project = await getProjectForUser(request.user.id, request.params.id);
-        if (!project) return reply.code(404).send({ error: 'Project not found' });
-        try {
-            const record = await pullRequestService.create(
-                project,
-                request.body || {},
-                request.user.id,
-            );
-            return reply.code(201).send(record);
-        } catch (err) {
-            request.log.error(err);
-            const isAuthError = err.code === 'token_expired'
-                || err.code === 'github_not_connected'
-                || err.code === 'insufficient_scope'
-                || /Authentication failed|auth|credential|forbidden|unauthorized/i.test(err.message || '');
-            if (isAuthError) {
-                return reply.code(400).send({
-                    error: 'GitHub token 已过期或无效，请重新认证',
-                    code: 'REAUTH_REQUIRED',
-                });
-            }
-            return reply.code(400).send({ error: err.message });
-        }
-    });
-
-    fastify.get('/api/v1/projects/:id/pull-requests/:prId', {
-        preValidation: [fastify.authenticate, fastify.requireActive],
-    }, async (request, reply) => {
-        const project = await getProjectForUser(request.user.id, request.params.id);
-        if (!project) return reply.code(404).send({ error: 'Project not found' });
-        const record = await pullRequestService.get(request.params.prId);
-        if (!record || record.projectId !== project.id) {
-            return reply.code(404).send({ error: 'Pull request not found' });
-        }
-        return record;
-    });
-
-    fastify.post('/api/v1/projects/:id/pull-requests/:prId/sync', {
-        preValidation: [fastify.authenticate, fastify.requireActive],
-    }, async (request, reply) => {
-        const project = await getProjectForUser(request.user.id, request.params.id);
-        if (!project) return reply.code(404).send({ error: 'Project not found' });
-        try {
-            const record = await pullRequestService.sync(project, request.params.prId);
-            if (!record || record.projectId !== project.id) {
-                return reply.code(404).send({ error: 'Pull request not found' });
-            }
-            return record;
-        } catch (err) {
-            request.log.error(err);
-            return reply.code(400).send({ error: err.message });
         }
     });
 }

@@ -75,8 +75,8 @@ export default function CreatePRDialog({
         target_branch: targetBranch,
       });
       showToast('success', 'Pull request created.');
-      if (pr?.github_pr_url || pr?.githubPrUrl) {
-        githubApi.openExternal(pr.github_pr_url || pr.githubPrUrl);
+      if (pr?.remoteMrUrl || pr?.remote_mr_url || pr?.github_pr_url || pr?.githubPrUrl) {
+        githubApi.openExternal(pr.remoteMrUrl || pr.remote_mr_url || pr.github_pr_url || pr.githubPrUrl);
       }
       onClose();
     } catch (err) {

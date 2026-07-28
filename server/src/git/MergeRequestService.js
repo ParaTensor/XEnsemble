@@ -75,29 +75,6 @@ class MergeRequestService {
 
         await db.insert(schema.mergeRequests).values(record);
 
-        // Sync to legacy pull_requests table for backward compat
-        if (providerName === 'github') {
-            try {
-                await db.insert(schema.pullRequests).values({
-                    id,
-                    projectId: project.id,
-                    githubPrNumber: prInfo.number,
-                    githubPrUrl: prInfo.url,
-                    title,
-                    description: body ?? null,
-                    sourceBranch: src,
-                    targetBranch: tgt,
-                    status: record.status,
-                    githubState: prInfo.state,
-                    mergeSha: prInfo.mergeCommitSha ?? null,
-                    createdBy: actorUserId ?? null,
-                    createdAt: now,
-                    updatedAt: now,
-                    lastSyncedAt: now,
-                });
-            } catch { /* ignore legacy table sync failures */ }
-        }
-
         await recordEvent({
             userId: actorUserId ?? project.userId,
             projectId: project.id,

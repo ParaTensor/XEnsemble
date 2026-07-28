@@ -50,7 +50,6 @@ async function deleteProjectForUser(userId, project, opts = {}) {
     await db.delete(schema.repoSnapshots).where(eq(schema.repoSnapshots.projectId, projectId));
     await db.delete(schema.devEnvironmentProfiles).where(eq(schema.devEnvironmentProfiles.projectId, projectId));
     await db.delete(schema.mergeRequests).where(eq(schema.mergeRequests.projectId, projectId));
-    await db.delete(schema.pullRequests).where(eq(schema.pullRequests.projectId, projectId));
     await db.delete(schema.projectBranches).where(eq(schema.projectBranches.projectId, projectId));
     await db.delete(schema.sessions).where(eq(schema.sessions.projectId, projectId));
     await db.delete(schema.deployments).where(eq(schema.deployments.projectId, projectId));

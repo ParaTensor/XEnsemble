@@ -59,23 +59,6 @@ async function handlePullRequest(payload) {
             }).where(eq(schema.mergeRequests.id, existing[0].id));
         }
 
-        // Also sync legacy pull_requests table
-        const legacyRows = await db.select().from(schema.pullRequests)
-            .where(and(
-                eq(schema.pullRequests.projectId, project.id),
-                eq(schema.pullRequests.githubPrNumber, pr.number),
-            ));
-
-        if (legacyRows.length > 0) {
-            await db.update(schema.pullRequests).set({
-                status: state,
-                githubState: state,
-                mergeSha: pr.merge_commit_sha || null,
-                updatedAt: Date.now(),
-                lastSyncedAt: Date.now(),
-            }).where(eq(schema.pullRequests.id, legacyRows[0].id));
-        }
-
         await recordEvent({
             userId: project.userId,
             projectId: project.id,
