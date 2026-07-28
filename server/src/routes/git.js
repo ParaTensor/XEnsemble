@@ -393,37 +393,6 @@ function registerGitRoutes(fastify) {
             return reply.code(400).send({ error: err.message });
         }
     });
-
-    fastify.get('/api/v1/projects/:id/merge-requests/:mrId/reviews', {
-        preValidation: [fastify.authenticate, fastify.requireActive],
-    }, async (request, reply) => {
-        const project = await getProjectForUser(request.user.id, request.params.id);
-        if (!project) return reply.code(404).send({ error: 'Project not found' });
-        try {
-            const reviews = await mergeRequestService.listReviews(project, request.params.mrId);
-            return { reviews };
-        } catch (err) {
-            request.log.error(err);
-            return reply.code(500).send({ error: err.message });
-        }
-    });
-
-    fastify.get('/api/v1/projects/:id/merge-requests/:mrId/comments', {
-        preValidation: [fastify.authenticate, fastify.requireActive],
-    }, async (request, reply) => {
-        const project = await getProjectForUser(request.user.id, request.params.id);
-        if (!project) return reply.code(404).send({ error: 'Project not found' });
-        try {
-            const comments = await mergeRequestService.listReviewComments(project, request.params.mrId, {
-                page: request.query?.page ? Number(request.query.page) : 1,
-                perPage: request.query?.per_page ? Number(request.query.per_page) : 30,
-            });
-            return { comments };
-        } catch (err) {
-            request.log.error(err);
-            return reply.code(500).send({ error: err.message });
-        }
-    });
 }
 
 module.exports = { registerGitRoutes };

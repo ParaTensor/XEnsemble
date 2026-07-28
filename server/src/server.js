@@ -764,7 +764,7 @@ fastify.get('/api/v1/projects/:projectId/merge-requests/:mrId/reviews', {
             .where(eq(schema.mergeRequests.id, request.params.mrId));
         if (mrRows.length === 0) return reply.code(404).send({ error: 'Merge request not found' });
         const mr = mrRows[0];
-        const prNumber = mr.remoteNumber;
+        const prNumber = mr.remoteMrNumber;
         if (!prNumber) return { reviews: [] };
 
         const repoId = project.remoteFullName || project.githubFullName;
@@ -800,7 +800,7 @@ fastify.get('/api/v1/projects/:projectId/merge-requests/:mrId/comments', {
             .where(eq(schema.mergeRequests.id, request.params.mrId));
         if (mrRows.length === 0) return reply.code(404).send({ error: 'Merge request not found' });
         const mr = mrRows[0];
-        const prNumber = mr.remoteNumber;
+        const prNumber = mr.remoteMrNumber;
         if (!prNumber) return { comments: [] };
 
         const repoId = project.remoteFullName || project.githubFullName;
