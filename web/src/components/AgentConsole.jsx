@@ -92,6 +92,7 @@ export default function AgentConsole({
   const onSessionEndRef = useRef(onSessionEnd);
   const onSessionConnectedRef = useRef(onSessionConnected);
   const connectedRef = useRef(false);
+  const firstConnectRef = useRef(true);
   const shouldConnect = sessionLive;
   const shouldReplayIdle = sessionWakeable && !sessionLive;
   // eslint-disable-next-line no-unused-vars
@@ -325,11 +326,24 @@ export default function AgentConsole({
       var connect = () => {
         try {
           if (reconnectAttempts === 0) showOverlay();
-          const cachedSeq = getCachedSeq(sessionId);
+          // On first connect (session switch/initial load), use after=0 to get
+          // the tail replay. On reconnect (WS drop), use cached seq for delta.
+          const isFirstConnect = firstConnectRef.current;
+          firstConnectRef.current = false;
+          const cachedSeq = isFirstConnect ? 0 : getCachedSeq(sessionId);
           const ws = new WebSocket(getWsUrl(sessionId, getAccessToken(), cachedSeq));
           wsRef.current = ws;
           let replayDone = false;
           let writeBuffer = '';
+
+          // Fallback: hide overlay after 5s even if no output was received
+          // (e.g. empty replay with after=cachedSeq and no new frames)
+          const overlayFallbackTimer = setTimeout(() => {
+            if (!replayDone && !disposed) {
+              replayDone = true;
+              hideOverlay();
+            }
+          }, 5000);
 
           const flushWriteBuffer = () => {
             writeRafId = null;
@@ -398,6 +412,7 @@ export default function AgentConsole({
           };
 
           ws.onclose = (event) => {
+            clearTimeout(overlayFallbackTimer);
             if (disposed || serverEnded) return;
             hideOverlay();
             const wasConnected = connectedRef.current;
