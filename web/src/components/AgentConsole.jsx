@@ -55,6 +55,19 @@ function getArrowSequence(key, applicationCursorKeys) {
   }
 }
 
+function getCachedSeq(sessionId) {
+  try {
+    const v = sessionStorage.getItem(`xe_term_seq_${sessionId}`);
+    return v ? Number(v) || 0 : 0;
+  } catch { return 0; }
+}
+
+function setCachedSeq(sessionId, seq) {
+  try {
+    if (seq != null && seq > 0) sessionStorage.setItem(`xe_term_seq_${sessionId}`, String(seq));
+  } catch { /* ignore */ }
+}
+
 export default function AgentConsole({
   sessionId,
   reconnectVersion = 0,
@@ -268,6 +281,7 @@ export default function AgentConsole({
           const data = await response.json();
           if (!response.ok) throw new Error(data.error || 'Failed to load session history');
           if (data.output) terminal.write(data.output);
+          if (data.head != null && data.head > 0) setCachedSeq(sessionId, data.head);
           terminal.write('\r\n\x1b[33m[System] Session paused. Click Start to resume.\x1b[0m\r\n');
           hideOverlay();
           setEnded(true);
@@ -302,7 +316,8 @@ export default function AgentConsole({
       var connect = () => {
         try {
           if (reconnectAttempts === 0) showOverlay();
-          const ws = new WebSocket(getWsUrl(sessionId, getAccessToken()));
+          const cachedSeq = getCachedSeq(sessionId);
+          const ws = new WebSocket(getWsUrl(sessionId, getAccessToken(), cachedSeq));
           wsRef.current = ws;
           let replayDone = false;
 
@@ -325,6 +340,7 @@ export default function AgentConsole({
             if (disposed) return;
             const msg = parseMessage(event.data);
             if (msg.type === 'output') {
+              if (msg.seq != null) setCachedSeq(sessionId, msg.seq);
               const viewport = hostRef.current?.querySelector('.xterm-viewport');
               const atBottom = !viewport || viewport.scrollTop + viewport.clientHeight >= viewport.scrollHeight - 5;
               terminal.write(msg.data, () => {
@@ -342,6 +358,7 @@ export default function AgentConsole({
             }
             if (msg.type === 'exit') {
               hideOverlay();
+              if (msg.seq != null) setCachedSeq(sessionId, msg.seq);
               if (msg.message) terminal.write(msg.message);
               serverEnded = true;
               setEnded(true);

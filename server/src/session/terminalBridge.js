@@ -180,7 +180,26 @@ async function subscribeTerminal(sessionId, send, options = {}) {
     };
 
     const replayTranscript = async () => {
-        const transcriptFrames = transcriptRef ? transcriptStore.readFrom(transcriptRef, after) : [];
+        let transcriptFrames = [];
+        let omittedCount = 0;
+
+        if (transcriptRef) {
+            if (after > 0) {
+                transcriptFrames = transcriptStore.readFrom(transcriptRef, after);
+            } else {
+                const tail = transcriptStore.readTail(transcriptRef);
+                transcriptFrames = tail.frames;
+                omittedCount = tail.omittedCount;
+            }
+        }
+
+        if (omittedCount > 0) {
+            maybeSend({
+                type: 'output',
+                data: `\x1b[33m[${omittedCount} earlier messages truncated. Full history is preserved.]\x1b[0m\r\n`,
+            });
+        }
+
         if (transcriptFrames.length > 0) {
             flushFrames(transcriptFrames);
         } else if (transcriptRef && !transcriptStore.hasTranscript(transcriptRef)) {

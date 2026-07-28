@@ -11,6 +11,7 @@ const META_UPDATE_INTERVAL_SEQ = Number(process.env.TRANSCRIPT_META_UPDATE_INTER
 const FLUSH_INTERVAL_MS = Number(process.env.TRANSCRIPT_FLUSH_INTERVAL_MS) || 100;
 const FLUSH_SIZE_BYTES = Number(process.env.TRANSCRIPT_FLUSH_SIZE_BYTES) || 65536;
 const MAX_FRAMES = Number(process.env.TRANSCRIPT_MAX_FRAMES) || 50000;
+const TAIL_BYTES = Number(process.env.TRANSCRIPT_TAIL_BYTES) || 1048576;
 
 function safeRef(ref) {
     return String(ref || '').replace(/[^a-zA-Z0-9_-]/g, '_');
@@ -156,6 +157,33 @@ class TranscriptStore {
         if (!state) return [];
         const cursor = Number(afterSeq) || 0;
         return state.frames.filter((frame) => frame.seq > cursor);
+    }
+
+    /**
+     * Return the last N frames whose combined `out` data size <= maxBytes.
+     * Used for initial-load replay to avoid sending the entire transcript.
+     * Non-out frames (in/resize/exit) between included out frames are kept.
+     * Returns { frames, omittedCount }.
+     */
+    readTail(streamRef, maxBytes = TAIL_BYTES) {
+        const state = this._state(streamRef);
+        if (!state || state.frames.length === 0) {
+            return { frames: [], omittedCount: 0 };
+        }
+        let totalBytes = 0;
+        let startIdx = state.frames.length;
+        for (let i = state.frames.length - 1; i >= 0; i--) {
+            const frame = state.frames[i];
+            if (frame.kind === 'out' && typeof frame.data === 'string') {
+                if (totalBytes + frame.data.length > maxBytes && startIdx < state.frames.length) {
+                    break;
+                }
+                totalBytes += frame.data.length;
+            }
+            startIdx = i;
+        }
+        const omittedCount = startIdx;
+        return { frames: state.frames.slice(startIdx), omittedCount };
     }
 
     head(streamRef) {

@@ -961,11 +961,24 @@ fastify.get('/api/v1/sessions/:sessionId/transcript', { preValidation: [fastify.
         .where(eq(schema.sessionStreams.sessionId, sessionId));
     const transcriptRef = transcriptRows[0]?.storageRef || session.streamRef || null;
     if (!transcriptRef) {
-        return { session_id: sessionId, after, output: '', head: 0 };
+        return { session_id: sessionId, after, output: '', head: 0, truncated: false };
     }
 
-    const frames = transcriptStore.readFrom(transcriptRef, after);
-    const output = frames
+    let frames;
+    let truncated = false;
+    if (after > 0) {
+        frames = transcriptStore.readFrom(transcriptRef, after);
+    } else {
+        const tail = transcriptStore.readTail(transcriptRef);
+        frames = tail.frames;
+        truncated = tail.omittedCount > 0;
+    }
+
+    let output = '';
+    if (truncated) {
+        output += '\x1b[33m[Earlier messages truncated. Full history is preserved.]\x1b[0m\r\n';
+    }
+    output += frames
         .filter((frame) => frame.kind === 'out' || frame.kind === 'in')
         .map((frame) => (typeof frame.data === 'string' ? frame.data : ''))
         .join('');
@@ -975,6 +988,7 @@ fastify.get('/api/v1/sessions/:sessionId/transcript', { preValidation: [fastify.
         after,
         output,
         head: transcriptStore.head(transcriptRef),
+        truncated,
     };
 });
 
