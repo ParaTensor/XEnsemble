@@ -69,6 +69,10 @@ const DEFAULT_AGENTS = [
         cmd: 'cline',
         args: [],
         env_required: ['ANTHROPIC_API_KEY'],
+        resume: {
+            level: 'L2',
+            stateEnv: 'CLINE_DATA_DIR',
+        },
     },
     {
         id: 'codebuddy',
@@ -100,6 +104,10 @@ const DEFAULT_AGENTS = [
         cmd: 'zai',
         args: [],
         env_required: ['ZAI_API_KEY'],
+        resume: {
+            level: 'L2',
+            redirectHome: true,
+        },
     },
     {
         id: 'qoder',
@@ -139,6 +147,11 @@ const DEFAULT_AGENTS = [
         cmd: 'pi',
         args: [],
         env_required: ['ANTHROPIC_API_KEY', 'OPENAI_API_KEY'],
+        resume: {
+            level: 'L2',
+            stateArgs: ['--session-dir'],
+            resumeArgs: ['--continue'],
+        },
     },
     {
         id: 'github-copilot',
@@ -177,6 +190,10 @@ const DEFAULT_AGENTS = [
         cmd: 'openclaw',
         args: [],
         env_required: ['OPENCLAW_KEY'],
+        resume: {
+            level: 'L2',
+            stateEnv: 'OPENCLAW_STATE_DIR',
+        },
     },
 ];
 
