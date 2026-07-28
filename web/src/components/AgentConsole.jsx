@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { Unicode11Addon } from '@xterm/addon-unicode11';
+import { WebglAddon } from '@xterm/addon-webgl';
 import '@xterm/xterm/css/xterm.css';
 
 import { getAccessToken, getWsUrl, apiFetch } from '../lib/api';
@@ -138,6 +139,13 @@ export default function AgentConsole({
     terminal.unicode.activeVersion = '11';
     host.replaceChildren();
     terminal.open(host);
+    try {
+      const webglAddon = new WebglAddon();
+      webglAddon.onContextLoss(() => { webglAddon.dispose(); });
+      terminal.loadAddon(webglAddon);
+    } catch (_) {
+      // WebGL not available, fall back to default DOM renderer
+    }
     terminalRef.current = terminal;
 
     let overlayTimer = null;
@@ -161,6 +169,7 @@ export default function AgentConsole({
     let reconnectTimer = null;
     let lastSentCols = 0;
     let lastSentRows = 0;
+    let writeRafId = null;
     const resizeTimers = [];
 
     const sendResize = (cols, rows) => {
@@ -320,6 +329,20 @@ export default function AgentConsole({
           const ws = new WebSocket(getWsUrl(sessionId, getAccessToken(), cachedSeq));
           wsRef.current = ws;
           let replayDone = false;
+          let writeBuffer = '';
+
+          const flushWriteBuffer = () => {
+            writeRafId = null;
+            if (disposed || !writeBuffer) return;
+            const data = writeBuffer;
+            writeBuffer = '';
+            const viewport = hostRef.current?.querySelector('.xterm-viewport');
+            const atBottom = !viewport || viewport.scrollTop + viewport.clientHeight >= viewport.scrollHeight - 5;
+            terminal.write(data, () => {
+              if (!replayDone && !disposed) { replayDone = true; hideOverlay(); }
+              if (atBottom && !disposed) terminal.scrollToBottom();
+            });
+          };
 
           ws.onopen = () => {
             if (disposed) return;
@@ -341,15 +364,14 @@ export default function AgentConsole({
             const msg = parseMessage(event.data);
             if (msg.type === 'output') {
               if (msg.seq != null) setCachedSeq(sessionId, msg.seq);
-              const viewport = hostRef.current?.querySelector('.xterm-viewport');
-              const atBottom = !viewport || viewport.scrollTop + viewport.clientHeight >= viewport.scrollHeight - 5;
-              terminal.write(msg.data, () => {
-                if (!replayDone && !disposed) { replayDone = true; hideOverlay(); }
-                if (atBottom && !disposed) terminal.scrollToBottom();
-              });
+              writeBuffer += msg.data;
+              if (writeRafId === null) {
+                writeRafId = requestAnimationFrame(flushWriteBuffer);
+              }
               return;
             }
             if (msg.type === 'error') {
+              if (writeRafId !== null) { cancelAnimationFrame(writeRafId); flushWriteBuffer(); }
               hideOverlay();
               connectedRef.current = false;
               try { ws.close(); } catch { /* ignore */ }
@@ -357,8 +379,8 @@ export default function AgentConsole({
               return;
             }
             if (msg.type === 'exit') {
+              if (writeRafId !== null) { cancelAnimationFrame(writeRafId); flushWriteBuffer(); }
               hideOverlay();
-              if (msg.seq != null) setCachedSeq(sessionId, msg.seq);
               if (msg.message) terminal.write(msg.message);
               serverEnded = true;
               setEnded(true);
@@ -400,6 +422,7 @@ export default function AgentConsole({
 
     return () => {
       disposed = true;
+      if (writeRafId !== null) cancelAnimationFrame(writeRafId);
       if (reconnectTimer) clearTimeout(reconnectTimer);
       resizeTimers.forEach((t) => clearTimeout(t));
       resizeObserver.disconnect();

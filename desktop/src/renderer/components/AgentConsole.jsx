@@ -3,6 +3,7 @@ import { Cpu, HardDrive, Loader2, Play, Square, Unplug, PanelRightOpen, PanelRig
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { Unicode11Addon } from '@xterm/addon-unicode11';
+import { WebglAddon } from '@xterm/addon-webgl';
 import '@xterm/xterm/css/xterm.css';
 import { usePreview, PreviewControlGroup } from './PreviewPanel';
 import TerminalThemePicker from './TerminalThemePicker';
@@ -130,6 +131,13 @@ export default function AgentConsole({
         terminal.unicode.activeVersion = '11';
         container.replaceChildren();
         terminal.open(container);
+        try {
+            const webglAddon = new WebglAddon();
+            webglAddon.onContextLoss(() => { webglAddon.dispose(); });
+            terminal.loadAddon(webglAddon);
+        } catch (_) {
+            // WebGL not available, fall back to default DOM renderer
+        }
         terminalRef.current = terminal;
         applyXtermSurfaceStyles(container, terminalPaneRef.current, presetRef.current.xterm);
 
@@ -191,6 +199,8 @@ export default function AgentConsole({
             }, delay);
         };
 
+        let writeRafId = null;
+
         const connect = async () => {
             let ws;
             try {
@@ -203,6 +213,19 @@ export default function AgentConsole({
                 scheduleReconnect(err?.message || 'connect error');
                 return;
             }
+
+            let writeBuffer = '';
+            const flushWriteBuffer = () => {
+                writeRafId = null;
+                if (disposedRef.current || !writeBuffer) return;
+                const data = writeBuffer;
+                writeBuffer = '';
+                const viewport = containerRef.current?.querySelector('.xterm-viewport');
+                const atBottom = !viewport || viewport.scrollTop + viewport.clientHeight >= viewport.scrollHeight - 5;
+                terminal.write(data, () => {
+                    if (atBottom && !disposedRef.current) terminal.scrollToBottom();
+                });
+            };
 
             ws.onopen = () => {
                 if (disposedRef.current) return;
@@ -229,18 +252,19 @@ export default function AgentConsole({
                 if (disposedRef.current) return;
                 const msg = parseWsMessage(event.data);
                 if (msg.type === 'output') {
-                    const viewport = containerRef.current?.querySelector('.xterm-viewport');
-                    const atBottom = !viewport || viewport.scrollTop + viewport.clientHeight >= viewport.scrollHeight - 5;
-                    terminal.write(msg.data, () => {
-                        if (atBottom && !disposedRef.current) terminal.scrollToBottom();
-                    });
+                    writeBuffer += msg.data;
+                    if (writeRafId === null) {
+                        writeRafId = requestAnimationFrame(flushWriteBuffer);
+                    }
                 } else if (msg.type === 'metrics') {
                     setMetrics(msg.data);
                 } else if (msg.type === 'error') {
+                    if (writeRafId !== null) { cancelAnimationFrame(writeRafId); flushWriteBuffer(); }
                     openedRef.current = false;
                     try { ws.close(); } catch { /* ignore */ }
                     scheduleReconnect(msg.data || 'error');
                 } else if (msg.type === 'exit') {
+                    if (writeRafId !== null) { cancelAnimationFrame(writeRafId); flushWriteBuffer(); }
                     if (msg.message) terminal.write(msg.message);
                     serverEndedRef.current = true;
                     setEnded(true);
@@ -293,6 +317,7 @@ export default function AgentConsole({
 
         return () => {
             disposedRef.current = true;
+            if (writeRafId !== null) cancelAnimationFrame(writeRafId);
             if (reconnectStateRef.timer) clearTimeout(reconnectStateRef.timer);
             if (resizeFrame !== null) cancelAnimationFrame(resizeFrame);
             visibilityObserver.disconnect();
