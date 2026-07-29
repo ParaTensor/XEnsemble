@@ -142,9 +142,12 @@ class BoxLiteFsAdapter extends FsAdapter {
     async fsWrite(rootDir, relativePath, content, opts = {}) {
         const name = opts.runtimeRef;
         if (!name) throw new RuntimeError('runtimeRef required', 400);
-        const rel = safeRel(relativePath);
+        const raw = String(relativePath || '');
+        if (raw.includes('..')) throw new RuntimeError('Invalid path', 400);
+        const isAbsolute = raw.startsWith('/');
+        const rel = isAbsolute ? raw : safeRel(raw);
         const cwd = rootDir || '/workspace';
-        const target = rel.startsWith('/') ? rel : (cwd.replace(/\/$/, '') + '/' + rel);
+        const target = isAbsolute ? rel : (cwd.replace(/\/$/, '') + '/' + rel);
         const parentDir = target.replace(/\/[^/]+$/, '');
         // Merge mkdir -p and base64 -d into a single VM exec to save one HTTP+WS round-trip.
         // 安全约束：用 sh -c 固定脚本 + 位置参数 $1/$2/$3 传递 content(base64)、target、parentDir，

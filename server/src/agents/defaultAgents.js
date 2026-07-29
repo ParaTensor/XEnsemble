@@ -258,12 +258,12 @@ const DEFAULT_AGENTS = [
         },
         configSchema: {
             configFiles: [{
-                path: '/root/.pi/agent/settings.json',
+                path: '/root/.pi/agent/models.json',
                 format: 'json',
-                label: 'settings.json',
-                description: 'Pi 全局配置文件（扩展资源管理）',
+                label: 'models.json',
+                description: 'Pi 模型配置文件（自定义 Provider、模型、API Key）',
                 example: JSON.stringify({
-                    packages: [],
+                    providers: {},
                 }, null, 2),
             }],
         },
