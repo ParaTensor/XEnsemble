@@ -144,6 +144,15 @@ function listBuildableAgentImages() {
         });
 }
 
+function hasBoxImage(agentId) {
+    if (!agentId) return false;
+    const catalog = AGENT_BOX_IMAGE_CATALOG[agentId];
+    const envOverride = process.env[agentImageEnvKey(agentId)]?.trim();
+    if (envOverride) return true;
+    if (catalog?.buildable === false) return false;
+    return resolveAgentBoxImageDefault(agentId) != null || resolveBoxBaseImage() != null;
+}
+
 module.exports = {
     AGENT_BOX_IMAGE_CATALOG,
     DEFAULT_BASE_IMAGE,
@@ -152,6 +161,7 @@ module.exports = {
     resolveBoxBaseImage,
     resolveAgentBoxImageDefault,
     resolveBoxImage,
+    hasBoxImage,
     getAgentBoxInstallCommand,
     listBuildableAgentImages,
 };
