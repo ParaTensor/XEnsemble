@@ -15,12 +15,13 @@ const DEFAULT_AGENTS = [
         },
         configSchema: {
             configFiles: [{
-                path: '/root/.kimi/config.toml',
+                path: '${STATE_DIR}/config.toml',
                 format: 'toml',
                 label: 'config.toml',
                 description: 'Kimi Code 配置文件（模型、Provider、API Key）',
                 example: [
-                    'default_model = "kimi-k2.5"',
+                    'default_model = "kimi-default"',
+                    'default_provider = "kimi"',
                     '',
                     '[providers.kimi]',
                     'type = "kimi"',
@@ -49,10 +50,10 @@ const DEFAULT_AGENTS = [
         },
         configSchema: {
             configFiles: [{
-                path: '${STATE_DIR}/.claude.json',
+                path: '${STATE_DIR}/settings.json',
                 format: 'json',
-                label: '.claude.json',
-                description: 'Claude Code 配置文件（权限、API Key 审批）',
+                label: 'settings.json',
+                description: 'Claude Code 用户设置（权限、模型、环境变量等）',
                 example: JSON.stringify({
                     permissions: {
                         allow: ['Bash(git:*)', 'Read(//**)'],
@@ -90,10 +91,25 @@ const DEFAULT_AGENTS = [
                 path: '/root/.config/opencode/opencode.json',
                 format: 'json',
                 label: 'opencode.json',
-                description: 'OpenCode 配置文件（自动更新、模型选择等）',
+                description: 'OpenCode 配置文件（Provider、模型、自动更新等）',
                 example: JSON.stringify({
                     autoupdate: false,
-                    model: 'auto',
+                    model: 'my-deepseek/deepseek-chat',
+                    provider: {
+                        'my-deepseek': {
+                            name: 'DeepSeek',
+                            npm: '@ai-sdk/openai-compatible',
+                            options: {
+                                baseURL: 'https://api.deepseek.com',
+                                apiKey: 'sk-xxxx',
+                            },
+                            models: {
+                                'deepseek-chat': {
+                                    name: 'DeepSeek Chat',
+                                },
+                            },
+                        },
+                    },
                 }, null, 2),
             }],
         },
@@ -217,18 +233,33 @@ const DEFAULT_AGENTS = [
                 path: '${STATE_DIR}/settings.json',
                 format: 'json',
                 label: 'settings.json',
-                description: 'Qoder CLI 配置文件（自动更新、模型、权限、Skills）',
+                description: 'Qoder CLI 配置文件（Provider、模型、权限等）',
                 example: JSON.stringify({
                     general: {
                         enableAutoUpdate: false,
                     },
-                    model: 'qoder-max',
+                    model: 'my-deepseek/deepseek-chat',
                     permissions: {
                         allow: ['Bash(git:*)', 'Read(//**)'],
                         deny: [],
                     },
-                    skills: {
-                        loadFromAgentsDirectory: true,
+                    providers: {
+                        'my-deepseek': {
+                            baseUrl: 'https://api.deepseek.com',
+                            apiKey: 'sk-xxxx',
+                            displayName: 'DeepSeek',
+                            model: 'deepseek-chat',
+                            contextWindow: 64000,
+                            maxOutputTokens: 8192,
+                            models: [
+                                {
+                                    model: 'deepseek-chat',
+                                    displayName: 'DeepSeek Chat',
+                                    contextWindow: 64000,
+                                    maxOutputTokens: 8192,
+                                },
+                            ],
+                        },
                     },
                 }, null, 2),
             }],
@@ -247,13 +278,39 @@ const DEFAULT_AGENTS = [
         },
         configSchema: {
             configFiles: [{
-                path: '/root/.qwen/settings.json',
+                path: '${STATE_DIR}/settings.json',
                 format: 'json',
                 label: 'settings.json',
-                description: 'Qwen Code 配置文件（自动更新、模型等）',
+                description: 'Qwen Code 配置文件（Provider、模型、自动更新等）',
                 example: JSON.stringify({
                     general: {
                         enableAutoUpdate: false,
+                    },
+                    model: {
+                        name: 'deepseek-chat',
+                    },
+                    modelProviders: {
+                        'my-deepseek': [
+                            {
+                                id: 'deepseek-chat',
+                                baseUrl: 'https://api.deepseek.com/v1',
+                                envKey: 'DEEPSEEK_API_KEY',
+                                generationConfig: {
+                                    contextWindowSize: 64000,
+                                },
+                            },
+                        ],
+                    },
+                    providerProtocol: {
+                        'my-deepseek': 'openai',
+                    },
+                    security: {
+                        auth: {
+                            selectedType: 'openai',
+                        },
+                    },
+                    env: {
+                        DEEPSEEK_API_KEY: 'sk-xxxx',
                     },
                 }, null, 2),
             }],
@@ -284,7 +341,20 @@ const DEFAULT_AGENTS = [
                 label: 'models.json',
                 description: 'Pi 模型配置文件（自定义 Provider、模型、API Key）',
                 example: JSON.stringify({
-                    providers: {},
+                    providers: {
+                        'my-deepseek': {
+                            baseUrl: 'https://api.deepseek.com/v1',
+                            api: 'openai-completions',
+                            apiKey: 'sk-xxxx',
+                            models: [
+                                {
+                                    id: 'deepseek-chat',
+                                    name: 'DeepSeek Chat',
+                                    contextWindow: 64000,
+                                },
+                            ],
+                        },
+                    },
                 }, null, 2),
             }],
         },
@@ -335,12 +405,33 @@ const DEFAULT_AGENTS = [
                 path: '/root/.openclaw/openclaw.json',
                 format: 'json',
                 label: 'openclaw.json',
-                description: 'OpenClaw 配置文件（模型、认证、工具等）',
+                description: 'OpenClaw 配置文件（Provider、模型、日志等）',
                 example: JSON.stringify({
-                    models: {},
-                    auth: {},
                     logging: {
                         level: 'info',
+                    },
+                    agents: {
+                        defaults: {
+                            model: {
+                                primary: 'my-deepseek/deepseek-chat',
+                            },
+                        },
+                    },
+                    models: {
+                        mode: 'merge',
+                        providers: {
+                            'my-deepseek': {
+                                baseUrl: 'https://api.deepseek.com/v1',
+                                apiKey: 'sk-xxxx',
+                                api: 'openai-completions',
+                                models: [
+                                    {
+                                        id: 'deepseek-chat',
+                                        name: 'DeepSeek Chat',
+                                    },
+                                ],
+                            },
+                        },
                     },
                 }, null, 2),
             }],
