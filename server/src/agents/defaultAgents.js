@@ -212,6 +212,27 @@ const DEFAULT_AGENTS = [
             resumeArgs: ['--continue'],
             resumeCheckSubdir: 'logs/sessions',
         },
+        configSchema: {
+            configFiles: [{
+                path: '${STATE_DIR}/settings.json',
+                format: 'json',
+                label: 'settings.json',
+                description: 'Qoder CLI 配置文件（自动更新、模型、权限、Skills）',
+                example: JSON.stringify({
+                    general: {
+                        enableAutoUpdate: false,
+                    },
+                    model: 'qoder-max',
+                    permissions: {
+                        allow: ['Bash(git:*)', 'Read(//**)'],
+                        deny: [],
+                    },
+                    skills: {
+                        loadFromAgentsDirectory: true,
+                    },
+                }, null, 2),
+            }],
+        },
     },
     {
         id: 'qwen-code',
