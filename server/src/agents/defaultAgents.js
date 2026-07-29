@@ -182,6 +182,23 @@ const DEFAULT_AGENTS = [
                 return [];
             },
         },
+        configSchema: {
+            configFiles: [{
+                path: '${STATE_DIR}/.zai/user-settings.json',
+                format: 'json',
+                label: 'user-settings.json',
+                description: 'GLM Agent 配置文件（API Key、模型、监听等）',
+                example: JSON.stringify({
+                    baseURL: 'https://api.z.ai/api/coding/paas/v4',
+                    defaultModel: 'glm-4.6',
+                    models: ['glm-4.6', 'glm-4.5', 'glm-4.5-air'],
+                    watchEnabled: false,
+                    watchDebounceMs: 300,
+                    enableHistory: true,
+                    apiKey: '',
+                }, null, 2),
+            }],
+        },
     },
     {
         id: 'qoder',
@@ -239,6 +256,17 @@ const DEFAULT_AGENTS = [
             stateArgs: ['--session-dir'],
             resumeArgs: ['--continue'],
         },
+        configSchema: {
+            configFiles: [{
+                path: '/root/.pi/agent/settings.json',
+                format: 'json',
+                label: 'settings.json',
+                description: 'Pi 全局配置文件（扩展资源管理）',
+                example: JSON.stringify({
+                    packages: [],
+                }, null, 2),
+            }],
+        },
     },
     {
         id: 'github-copilot',
@@ -280,6 +308,21 @@ const DEFAULT_AGENTS = [
         resume: {
             level: 'L2',
             stateEnv: 'OPENCLAW_STATE_DIR',
+        },
+        configSchema: {
+            configFiles: [{
+                path: '/root/.openclaw/openclaw.json',
+                format: 'json',
+                label: 'openclaw.json',
+                description: 'OpenClaw 配置文件（模型、认证、工具等）',
+                example: JSON.stringify({
+                    models: {},
+                    auth: {},
+                    logging: {
+                        level: 'info',
+                    },
+                }, null, 2),
+            }],
         },
     },
 ];
