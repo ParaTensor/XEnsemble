@@ -20,6 +20,8 @@ ENV PATH="/usr/local/bin:/root/.local/bin:${PATH}" \
 # (mke2fs has a default inode ratio that large node_modules can exceed).
 # NOTE: *.md and examples/*.ts are NOT removed from dist/bundled/ because some
 # agents (e.g. command-code) ship runtime skill assets (SKILL.md, examples).
+# NOTE: *.md in templates/ directories are preserved because some agents
+# (e.g. openclaw) load workspace templates (AGENTS.md, BOOT.md, etc.) at runtime.
 RUN bash -lc "${AGENT_INSTALL}" \
     && rm -rf /root/.npm /root/.cache /tmp/* /var/tmp/* 2>/dev/null || true \
     && find /usr/lib/node_modules -path "*/prebuilds/win32-*" -prune -exec rm -rf {} + 2>/dev/null || true \
@@ -28,7 +30,7 @@ RUN bash -lc "${AGENT_INSTALL}" \
     && find /usr/lib/node_modules -name "*.map" -not -path "*/dist/bundled/*" -delete 2>/dev/null || true \
     && find /usr/lib/node_modules -type d \( -name "__tests__" -o -name "__test__" -o -name "__snapshots__" -o -name "test" -o -name "tests" -o -name "testdata" \) -not -path "*/dist/bundled/*" -exec rm -rf {} + 2>/dev/null || true \
     && find /usr/lib/node_modules -type d \( -name "examples" -o -name "bench" -o -name "benchmarks" \) -not -path "*/dist/bundled/*" -exec rm -rf {} + 2>/dev/null || true \
-    && find /usr/lib/node_modules -type f \( -name "*.md" -o -name "*.markdown" -o -name "*.ts" -o -name "*.tsx" -o -name "*.coffee" -o -name "LICENSE*" -o -name "CHANGELOG*" \) -not -path "*/dist/bundled/*" -delete 2>/dev/null || true \
+    && find /usr/lib/node_modules -type f \( -name "*.md" -o -name "*.markdown" -o -name "*.ts" -o -name "*.tsx" -o -name "*.coffee" -o -name "LICENSE*" -o -name "CHANGELOG*" \) -not -path "*/dist/bundled/*" -not -path "*/templates/*" -delete 2>/dev/null || true \
     && find /usr/lib/node_modules -maxdepth 4 -type d -name '.*-*' -exec rm -rf {} + 2>/dev/null || true \
     && mkdir -p /root/.config/opencode /root/.qwen \
     && echo '{"autoupdate":false}' > /root/.config/opencode/opencode.json \
