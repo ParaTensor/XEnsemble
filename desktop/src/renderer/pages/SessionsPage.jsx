@@ -329,6 +329,15 @@ export default React.forwardRef(function Sessions({
         return false;
       }
 
+      // Collect non-required env vars as custom_env (required ones are injected via secrets)
+      const requiredSet = new Set(selectedAgent?.env_required || []);
+      const cleanCustomEnv = {};
+      for (const { key, value } of configEnvVars) {
+        const k = (key || '').trim();
+        const v = (value || '').trim();
+        if (k && v && !requiredSet.has(k)) cleanCustomEnv[k] = v;
+      }
+
       const response = await apiFetch('/api/v1/session/start', {
         method: 'POST',
         body: JSON.stringify({
@@ -336,6 +345,7 @@ export default React.forwardRef(function Sessions({
           project_id: projectId,
           terminal_theme_id: themeId,
           custom_image_id: customImageId || undefined,
+          ...(Object.keys(cleanCustomEnv).length ? { custom_env: cleanCustomEnv } : {}),
         })
       });
       const data = await response.json();
