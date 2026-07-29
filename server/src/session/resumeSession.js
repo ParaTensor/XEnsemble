@@ -134,7 +134,7 @@ async function resumeSession({
         // --- regular agent session resume below ---
 
         const resumeSpec = getAgentResume(agentMeta.id);
-        if (getAgentResumeLevel(agentMeta.id) !== 'L2' || !resumeSpec?.stateEnv || !session.stateDirRef || !session.recoverable) {
+        if (getAgentResumeLevel(agentMeta.id) !== 'L2' || (!resumeSpec?.stateEnv && !resumeSpec?.stateArgs && !resumeSpec?.redirectHome) || !session.stateDirRef || !session.recoverable) {
             const error = new Error('session not resumable — please start a new session');
             error.statusCode = 409;
             throw error;
