@@ -1854,6 +1854,24 @@ fastify.register(async function workspaceTerminalWsRoutes(app) {
             let shell = WorkspaceShellManager.get(shellId);
             if (!shell || !WorkspaceShellManager.isAlive(shellId)) {
                 shell = null;
+                // Inject custom_env from the most recent running session for this project
+                // so the workspace shell has the same env vars as the agent.
+                let shellEnv = { TERM: 'xterm-256color' };
+                try {
+                    const sessRows = await db.select().from(schema.sessions)
+                        .where(and(eq(schema.sessions.projectId, projectId), eq(schema.sessions.userId, payload.id)))
+                        .orderBy(sql`${schema.sessions.createdAt} DESC`)
+                        .limit(1);
+                    if (sessRows.length > 0) {
+                        const { getSessionConfig } = require('./session/sessionConfig');
+                        const sessCfg = await getSessionConfig(db, schema, sessRows[0].id);
+                        if (sessCfg.customEnv && Object.keys(sessCfg.customEnv).length) {
+                            shellEnv = { ...shellEnv, ...sessCfg.customEnv };
+                        }
+                    }
+                } catch (e) {
+                    req.log.warn({ err: e }, '[workspace-shell] failed to load session custom_env');
+                }
                 const shellCmds = [process.env.SHELL || 'bash', 'bash', 'sh'];
                 let lastErr = null;
                 for (const shellCmd of shellCmds) {
@@ -1861,7 +1879,7 @@ fastify.register(async function workspaceTerminalWsRoutes(app) {
                         const handle = await runtime.exec.spawn(
                             shellCmd,
                             [],
-                            { TERM: 'xterm-256color' },
+                            shellEnv,
                             {
                                 name: 'workspace-shell',
                                 cwd: ready.workspacePath,
