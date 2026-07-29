@@ -143,7 +143,6 @@ export default React.forwardRef(function Sessions({
   const gitChanges = useGitChanges(sessionAlive ? activeSession?.projectId : null);
   const [gitDiffView, setGitDiffView] = useState(null);
 
-  const [showConfigModal, setShowConfigModal] = useState(false);
   const [configEnvVars, setConfigEnvVars] = useState([{ key: '', value: '' }]);
   const [savedConfigKeys, setSavedConfigKeys] = useState({});
   const [configSaving, setConfigSaving] = useState(false);
@@ -166,9 +165,8 @@ export default React.forwardRef(function Sessions({
   const [customImageId, setCustomImageId] = useState('');
   const [customImages, setCustomImages] = useState([]);
 
-  // Launch modal: agent config files + custom env
+  // Launch modal: agent config files
   const [launchConfigFiles, setLaunchConfigFiles] = useState([]);
-  const [launchEnvVars, setLaunchEnvVars] = useState([{ key: '', value: '' }]);
   const [showLaunchConfigModal, setShowLaunchConfigModal] = useState(false);
 
   // Session config dialog (running session)
@@ -190,7 +188,6 @@ export default React.forwardRef(function Sessions({
   // Reset launch config when agent changes
   useEffect(() => {
     setLaunchConfigFiles([]);
-    setLaunchEnvVars([{ key: '', value: '' }]);
   }, [selectedAgentId]);
 
   const startPanelResize = useCallback((e) => {
@@ -253,11 +250,11 @@ export default React.forwardRef(function Sessions({
 
   const selectedAgent = agents.find(a => a.id === selectedAgentId);
 
-  const openConfigModal = async () => {
+  const openLaunchConfigModal = async () => {
     const required = selectedAgent?.env_required || [];
     setConfigError(null);
     setError(null);
-    setShowConfigModal(true);
+    setShowLaunchConfigModal(true);
     setConfigLoading(true);
     try {
       const res = await apiFetch('/api/v1/secrets');
@@ -307,10 +304,10 @@ export default React.forwardRef(function Sessions({
       if (!res.ok) return false;
       const missing = required.filter((k) => !data[k]);
       if (missing.length === 0) return true;
-      openConfigModal();
+      openLaunchConfigModal();
       return false;
     } catch {
-      openConfigModal();
+      openLaunchConfigModal();
       return false;
     }
   };
@@ -359,14 +356,8 @@ export default React.forwardRef(function Sessions({
         return false;
       }
 
-      // Collect non-empty config files and custom env from launch modal
+      // Collect non-empty config files from launch modal
       const cleanConfigFiles = launchConfigFiles.filter((f) => f.path && f.content);
-      const cleanCustomEnv = {};
-      for (const { key, value } of launchEnvVars) {
-        const k = (key || '').trim();
-        const v = (value || '').trim();
-        if (k && v) cleanCustomEnv[k] = v;
-      }
 
       const response = await apiFetch('/api/v1/session/start', {
         method: 'POST',
@@ -376,7 +367,6 @@ export default React.forwardRef(function Sessions({
           terminal_theme_id: themeId,
           custom_image_id: customImageId || undefined,
           ...(cleanConfigFiles.length ? { config_files: cleanConfigFiles } : {}),
-          ...(Object.keys(cleanCustomEnv).length ? { custom_env: cleanCustomEnv } : {}),
         })
       });
       const data = await response.json();
@@ -551,9 +541,7 @@ export default React.forwardRef(function Sessions({
     }
   };
 
-  // eslint-disable-next-line no-unused-vars
-  const handleSaveConfig = async (e) => {
-    e.preventDefault();
+  const handleSaveLaunchConfig = async () => {
     setConfigError(null);
     const payload = {};
     for (const { key, value } of configEnvVars) {
@@ -562,7 +550,7 @@ export default React.forwardRef(function Sessions({
       if (k && v) payload[k] = v;
     }
     if (Object.keys(payload).length === 0) {
-      setShowConfigModal(false);
+      setShowLaunchConfigModal(false);
       setLaunchModalError(null);
       return;
     }
@@ -579,8 +567,8 @@ export default React.forwardRef(function Sessions({
         Object.keys(payload).forEach((k) => { next[k] = true; });
         return next;
       });
-      showToast('success', 'Environment variables saved.');
-      setShowConfigModal(false);
+      showToast('success', 'Configuration saved.');
+      setShowLaunchConfigModal(false);
       setLaunchModalError(null);
     } catch (err) {
       setConfigError(err.message);
@@ -960,7 +948,7 @@ export default React.forwardRef(function Sessions({
       {/* Launch modal */}
       {showNewInstanceModal && (
         <ConsoleInlineDialog
-          onClose={() => { setShowNewInstanceModal(false); setLaunchModalError(null); setCreateNewWorkspaceInline(false); }}
+          onClose={() => { if (showLaunchConfigModal) return; setShowNewInstanceModal(false); setLaunchModalError(null); setCreateNewWorkspaceInline(false); }}
           panelClassName={`${consoleDialogPanelClass} w-full max-w-sm shadow-sm`}
         >
           <div className={`${consoleStructuredDialogHeaderClass} flex items-center gap-2.5`}>
@@ -1078,18 +1066,11 @@ export default React.forwardRef(function Sessions({
               <div>
                 <div className="flex items-center justify-between gap-2 mb-1">
                   <label className={`text-xs font-semibold uppercase tracking-wider ${textPlaceholder}`}>Agent</label>
-                  <div className="flex items-center gap-3">
-                    {selectedAgent?.llm_auth_mode === 'byok' && selectedAgent?.env_required?.length > 0 && (
-                      <button type="button" onClick={() => openConfigModal()} className={`text-xs font-medium ${textPlaceholder} hover:text-[#202124]`}>
-                        <Settings2 className="w-3.5 h-3.5 inline" /> Keys
-                      </button>
-                    )}
-                    {selectedAgent?.config_schema && (
-                      <button type="button" onClick={() => setShowLaunchConfigModal(true)} className={`text-xs font-medium ${textPlaceholder} hover:text-[#202124]`}>
-                        <FileText className="w-3.5 h-3.5 inline" /> Configure
-                      </button>
-                    )}
-                  </div>
+                  {selectedAgent && (
+                    <button type="button" onClick={() => openLaunchConfigModal()} className={`text-xs font-medium ${textPlaceholder} hover:text-[#202124] ${transitionBase}`}>
+                      <Settings2 className="w-3.5 h-3.5 inline" /> Configure
+                    </button>
+                  )}
                 </div>
                 <SelectMenu
                   value={selectedAgentId}
@@ -1132,34 +1113,46 @@ export default React.forwardRef(function Sessions({
         </ConsoleInlineDialog>
       )}
 
-      {/* Launch config dialog (config files + custom env for new session) */}
+      {/* Launch config dialog (config files + env vars for new session) */}
       {showLaunchConfigModal && (
         <ConsoleInlineDialog
           onClose={() => setShowLaunchConfigModal(false)}
           panelClassName={`${consoleDialogPanelClass} w-full max-w-lg shadow-sm`}
         >
           <div className={`${consoleStructuredDialogHeaderClass} flex items-center gap-2.5`}>
-            <FileText className={`w-4 h-4 shrink-0 ${textPlaceholder}`} />
+            <Settings2 className={`w-4 h-4 shrink-0 ${textPlaceholder}`} />
             <h3 className={`font-semibold text-sm ${textPrimary}`}>
               Configure{selectedAgent ? ` - ${selectedAgent.name}` : ''}
             </h3>
           </div>
           <div className="p-4 space-y-3">
+            {configError && (
+              <p className="text-sm text-[#C06C5D] bg-[#FDECEA] border border-[#FADBD8] rounded-md px-3 py-2">{configError}</p>
+            )}
             <AgentConfigEditor
               configSchema={selectedAgent?.config_schema || null}
               configFiles={launchConfigFiles}
-              envVars={launchEnvVars}
+              envVars={configEnvVars}
               onConfigFilesChange={setLaunchConfigFiles}
-              onEnvVarsChange={setLaunchEnvVars}
+              onEnvVarsChange={setConfigEnvVars}
+              loading={configLoading}
             />
           </div>
           <div className={consoleStructuredDialogFooterClass}>
             <button
               type="button"
-              onClick={() => setShowLaunchConfigModal(false)}
-              className={`h-9 px-4 bg-[#202124] text-white rounded-md text-sm font-medium hover:bg-[#3C4043] ${transitionBase}`}
+              onClick={() => { setShowLaunchConfigModal(false); setConfigError(null); }}
+              className={`h-9 px-3 ${bgCanvas} border ${borderHairline} ${textPrimary} rounded-md text-sm font-medium ${hoverBgSecondary} ${transitionBase}`}
             >
-              Done
+              Cancel
+            </button>
+            <button
+              type="button"
+              disabled={configSaving || configLoading}
+              onClick={handleSaveLaunchConfig}
+              className={`h-9 px-3 flex items-center justify-center gap-2 bg-[#202124] text-white rounded-md text-sm font-medium hover:bg-[#3C4043] disabled:opacity-50 ${transitionBase}`}
+            >
+              {configSaving ? <><Loader2 className="w-4 h-4 animate-spin" /> Saving…</> : 'Save'}
             </button>
           </div>
         </ConsoleInlineDialog>
@@ -1244,95 +1237,6 @@ export default React.forwardRef(function Sessions({
                   : 'Delete workspace'}
             </button>
           </div>
-        </ConsoleInlineDialog>
-      )}
-
-      {/* Configure environment variables (BYOK) */}
-      {showConfigModal && (
-        <ConsoleInlineDialog
-          onClose={() => { setShowConfigModal(false); setConfigError(null); }}
-          panelClassName={`${consoleDialogPanelClass} w-full max-w-md shadow-sm`}
-        >
-          <div className={`${consoleStructuredDialogHeaderClass} flex items-center gap-2.5`}>
-            <Settings2 className={`w-4 h-4 shrink-0 ${textPlaceholder}`} />
-            <h3 className={`font-semibold text-sm ${textPrimary}`}>
-              Environment variables{selectedAgent ? ` - ${selectedAgent.name}` : ''}
-            </h3>
-          </div>
-          <form onSubmit={handleSaveConfig}>
-            <div className="p-4 space-y-3">
-              {configError && (
-                <p className="text-sm text-[#C06C5D] bg-[#FDECEA] border border-[#FADBD8] rounded-md px-3 py-2">{configError}</p>
-              )}
-              {configLoading ? (
-                <p className={`text-sm ${textPlaceholder} flex items-center gap-2`}>
-                  <Loader2 className="w-4 h-4 animate-spin" /> Loading…
-                </p>
-              ) : (
-                <>
-                  <p className={`text-xs ${textPlaceholder}`}>
-                    Add environment variables for this agent. Admin-configured variables are used by default; your values here override them.
-                  </p>
-                  {configEnvVars.map((pair, idx) => (
-                    <div key={idx} className="space-y-1">
-                      <div className="flex gap-2 items-center">
-                        <input
-                          value={pair.key}
-                          onChange={(e) => setConfigEnvVars((prev) => prev.map((p, i) => i === idx ? { ...p, key: e.target.value } : p))}
-                          className={consoleInputClass}
-                          placeholder="ENV_VAR_NAME"
-                          autoFocus={idx === 0}
-                          autoComplete="off"
-                        />
-                        <button
-                          type="button"
-                          onClick={() => setConfigEnvVars((prev) => prev.filter((_, i) => i !== idx))}
-                          className={`flex-shrink-0 ${textPlaceholder} hover:text-[#C06C5D] ${transitionBase}`}
-                          title="Remove"
-                        >
-                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                            <line x1="18" y1="6" x2="6" y2="18" />
-                            <line x1="6" y1="6" x2="18" y2="18" />
-                          </svg>
-                        </button>
-                      </div>
-                      <input
-                        type={isSecretPasswordField(pair.key) ? 'password' : 'text'}
-                        value={pair.value}
-                        onChange={(e) => setConfigEnvVars((prev) => prev.map((p, i) => i === idx ? { ...p, value: e.target.value } : p))}
-                        className={consoleInputClass}
-                        placeholder="value"
-                        autoComplete="off"
-                      />
-                    </div>
-                  ))}
-                  <button
-                    type="button"
-                    onClick={() => setConfigEnvVars((prev) => [...prev, { key: '', value: '' }])}
-                    className={`text-sm ${textPlaceholder} hover:${textPrimary} ${transitionBase}`}
-                  >
-                    + Add env var
-                  </button>
-                </>
-              )}
-            </div>
-            <div className={consoleStructuredDialogFooterClass}>
-              <button
-                type="button"
-                onClick={() => { setShowConfigModal(false); setConfigError(null); }}
-                className={`h-9 px-3 ${bgCanvas} border ${borderHairline} ${textPrimary} rounded-md text-sm font-medium ${hoverBgSecondary} ${transitionBase}`}
-              >
-                Cancel
-              </button>
-              <button
-                type="submit"
-                disabled={configSaving || configLoading}
-                className={`h-9 px-3 flex items-center justify-center gap-2 bg-[#202124] text-white rounded-md text-sm font-medium hover:bg-[#3C4043] disabled:opacity-50 ${transitionBase}`}
-              >
-                {configSaving ? <><Loader2 className="w-4 h-4 animate-spin" /> Saving…</> : 'Save'}
-              </button>
-            </div>
-          </form>
         </ConsoleInlineDialog>
       )}
 
