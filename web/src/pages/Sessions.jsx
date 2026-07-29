@@ -169,6 +169,7 @@ export default React.forwardRef(function Sessions({
   // Launch modal: agent config files + custom env
   const [launchConfigFiles, setLaunchConfigFiles] = useState([]);
   const [launchEnvVars, setLaunchEnvVars] = useState([{ key: '', value: '' }]);
+  const [showLaunchConfigModal, setShowLaunchConfigModal] = useState(false);
 
   // Session config dialog (running session)
   const [showSessionConfigModal, setShowSessionConfigModal] = useState(false);
@@ -960,7 +961,7 @@ export default React.forwardRef(function Sessions({
       {showNewInstanceModal && (
         <ConsoleInlineDialog
           onClose={() => { setShowNewInstanceModal(false); setLaunchModalError(null); setCreateNewWorkspaceInline(false); }}
-          panelClassName={`${consoleDialogPanelClass} w-full max-w-md shadow-sm`}
+          panelClassName={`${consoleDialogPanelClass} w-full max-w-sm shadow-sm`}
         >
           <div className={`${consoleStructuredDialogHeaderClass} flex items-center gap-2.5`}>
             {launchModalMode === 'workspace' ? (
@@ -1077,11 +1078,18 @@ export default React.forwardRef(function Sessions({
               <div>
                 <div className="flex items-center justify-between gap-2 mb-1">
                   <label className={`text-xs font-semibold uppercase tracking-wider ${textPlaceholder}`}>Agent</label>
-                  {selectedAgent?.llm_auth_mode === 'byok' && selectedAgent?.env_required?.length > 0 && (
-                    <button type="button" onClick={() => openConfigModal()} className={`text-xs font-medium ${textPlaceholder} hover:text-[#202124]`}>
-                      <Settings2 className="w-3.5 h-3.5 inline" /> Configure Keys
-                    </button>
-                  )}
+                  <div className="flex items-center gap-3">
+                    {selectedAgent?.llm_auth_mode === 'byok' && selectedAgent?.env_required?.length > 0 && (
+                      <button type="button" onClick={() => openConfigModal()} className={`text-xs font-medium ${textPlaceholder} hover:text-[#202124]`}>
+                        <Settings2 className="w-3.5 h-3.5 inline" /> Keys
+                      </button>
+                    )}
+                    {selectedAgent?.config_schema && (
+                      <button type="button" onClick={() => setShowLaunchConfigModal(true)} className={`text-xs font-medium ${textPlaceholder} hover:text-[#202124]`}>
+                        <FileText className="w-3.5 h-3.5 inline" /> Configure
+                      </button>
+                    )}
+                  </div>
                 </div>
                 <SelectMenu
                   value={selectedAgentId}
@@ -1097,17 +1105,6 @@ export default React.forwardRef(function Sessions({
                       : agentSelectOptions
                   }
                   placeholder="Select agent"
-                />
-              </div>
-            )}
-            {launchModalMode !== 'workspace' && selectedAgent?.config_schema && (
-              <div className={`border-t ${borderHairline} pt-3`}>
-                <AgentConfigEditor
-                  configSchema={selectedAgent.config_schema}
-                  configFiles={launchConfigFiles}
-                  envVars={launchEnvVars}
-                  onConfigFilesChange={setLaunchConfigFiles}
-                  onEnvVarsChange={setLaunchEnvVars}
                 />
               </div>
             )}
@@ -1130,6 +1127,39 @@ export default React.forwardRef(function Sessions({
                 : launchModalMode === 'workspace'
                   ? 'Create workspace'
                   : 'Start agent'}
+            </button>
+          </div>
+        </ConsoleInlineDialog>
+      )}
+
+      {/* Launch config dialog (config files + custom env for new session) */}
+      {showLaunchConfigModal && (
+        <ConsoleInlineDialog
+          onClose={() => setShowLaunchConfigModal(false)}
+          panelClassName={`${consoleDialogPanelClass} w-full max-w-lg shadow-sm`}
+        >
+          <div className={`${consoleStructuredDialogHeaderClass} flex items-center gap-2.5`}>
+            <FileText className={`w-4 h-4 shrink-0 ${textPlaceholder}`} />
+            <h3 className={`font-semibold text-sm ${textPrimary}`}>
+              Configure{selectedAgent ? ` - ${selectedAgent.name}` : ''}
+            </h3>
+          </div>
+          <div className="p-4 space-y-3">
+            <AgentConfigEditor
+              configSchema={selectedAgent?.config_schema || null}
+              configFiles={launchConfigFiles}
+              envVars={launchEnvVars}
+              onConfigFilesChange={setLaunchConfigFiles}
+              onEnvVarsChange={setLaunchEnvVars}
+            />
+          </div>
+          <div className={consoleStructuredDialogFooterClass}>
+            <button
+              type="button"
+              onClick={() => setShowLaunchConfigModal(false)}
+              className={`h-9 px-4 bg-[#202124] text-white rounded-md text-sm font-medium hover:bg-[#3C4043] ${transitionBase}`}
+            >
+              Done
             </button>
           </div>
         </ConsoleInlineDialog>
