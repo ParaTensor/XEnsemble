@@ -69,12 +69,15 @@ async function markSessionFailed(sessionId, errMsg, log) {
 }
 
 function formatAgentRow(a) {
+    const { DEFAULT_AGENTS } = require('./agents/defaultAgents');
+    const catalogEntry = DEFAULT_AGENTS.find((entry) => entry.id === a.id);
     return {
         id: a.id,
         name: a.name,
         cmd: a.cmd,
         args: JSON.parse(a.args),
         env_required: JSON.parse(a.envRequired),
+        config_schema: catalogEntry?.configSchema || null,
     };
 }
 
@@ -1030,6 +1033,91 @@ fastify.delete('/api/v1/sessions/:sessionId', { preValidation: [fastify.authenti
     return { ok: true };
 });
 
+// ── Session config (config files + custom env) ──
+fastify.get('/api/v1/sessions/:sessionId/config', { preValidation: [fastify.authenticate] }, async (request, reply) => {
+    const { sessionId } = request.params;
+    const rows = await db.select().from(schema.sessions)
+        .where(and(eq(schema.sessions.id, sessionId), eq(schema.sessions.userId, request.user.id)));
+    if (rows.length === 0) return reply.code(404).send({ error: 'Session not found' });
+
+    const { getSessionConfig, getAgentConfigSchema } = require('./session/sessionConfig');
+    const config = await getSessionConfig(db, schema, sessionId);
+    const schemaDecl = getAgentConfigSchema(rows[0].agentId);
+    return {
+        session_id: sessionId,
+        agent_id: rows[0].agentId,
+        config_files: config.configFiles,
+        custom_env: config.customEnv,
+        config_schema: schemaDecl,
+    };
+});
+
+fastify.put('/api/v1/sessions/:sessionId/config', { preValidation: [fastify.authenticate] }, async (request, reply) => {
+    const { sessionId } = request.params;
+    const { config_files, custom_env } = request.body || {};
+
+    const rows = await db.select().from(schema.sessions)
+        .where(and(eq(schema.sessions.id, sessionId), eq(schema.sessions.userId, request.user.id)));
+    if (rows.length === 0) return reply.code(404).send({ error: 'Session not found' });
+
+    const session = rows[0];
+    const { saveSessionConfig, validateConfigFiles, writeConfigFilesToVM, getSessionConfig } = require('./session/sessionConfig');
+
+    const { valid, invalidPaths } = validateConfigFiles(config_files, session.agentId);
+    if (!valid) {
+        return reply.code(400).send({ error: `Invalid config file paths: ${invalidPaths.join(', ')}` });
+    }
+
+    const cleanConfigFiles = (config_files || []).filter((cf) => cf.path && cf.content);
+    const cleanCustomEnv = {};
+    if (custom_env && typeof custom_env === 'object') {
+        for (const [k, v] of Object.entries(custom_env)) {
+            const trimmed = v != null ? String(v).trim() : '';
+            if (trimmed) cleanCustomEnv[k] = trimmed;
+        }
+    }
+
+    // Compare with previous config to detect env changes (requires restart)
+    const prevConfig = await getSessionConfig(db, schema, sessionId);
+    const envChanged = JSON.stringify(prevConfig.customEnv || {}) !== JSON.stringify(cleanCustomEnv);
+
+    await saveSessionConfig(db, schema, sessionId, { configFiles: cleanConfigFiles, customEnv: cleanCustomEnv });
+
+    // If session is running, write config files to VM immediately (env requires restart)
+    if (session.status === 'running' && cleanConfigFiles.length) {
+        try {
+            const runtimeRows = session.runtimeId
+                ? await db.select().from(schema.runtimes).where(eq(schema.runtimes.id, session.runtimeId))
+                : [];
+            const runtimeRef = runtimeRows[0]?.runtimeRef;
+            if (runtimeRef) {
+                const vmWorkspacePath = process.env.XENSEMBLE_WORKSPACE_PATH || '/workspace';
+                const stateDirRef = session.stateDirRef;
+                const stateDirPath = stateDirRef
+                    ? `${vmWorkspacePath}/${stateDirRef}`
+                    : null;
+                await writeConfigFilesToVM(runtime.fs, {
+                    workspaceRoot: vmWorkspacePath,
+                    runtimeRef,
+                    configFiles: cleanConfigFiles,
+                    stateDirPath,
+                });
+            }
+        } catch (err) {
+            fastify.log.warn({ err, sessionId }, '[sessions] failed to write config files to running VM');
+        }
+    }
+
+    const needsRestart = session.status === 'running' && envChanged;
+    return {
+        ok: true,
+        needs_restart: needsRestart,
+        message: needsRestart
+            ? 'Configuration updated. Restart the session for environment variable changes to take effect.'
+            : 'Configuration updated.',
+    };
+});
+
 fastify.post('/api/v1/sessions/:sessionId/resume', { preValidation: [fastify.authenticate] }, async (request, reply) => {
     const { sessionId } = request.params;
     const { terminal_theme_id } = request.body || {};
@@ -1094,7 +1182,7 @@ fastify.post('/api/v1/sessions/:sessionId/resume', { preValidation: [fastify.aut
 
 // 启动 Agent Session（通过 RuntimeProvider + ExecAdapter）
 fastify.post('/api/v1/session/start', { preValidation: [fastify.authenticate] }, async (request, reply) => {
-    const { agent_id, project_id, terminal_theme_id, custom_image_id } = request.body;
+    const { agent_id, project_id, terminal_theme_id, custom_image_id, config_files, custom_env } = request.body;
     const isShellOnly = !!(custom_image_id && !agent_id);
 
     if (!project_id) {
@@ -1226,6 +1314,17 @@ fastify.post('/api/v1/session/start', { preValidation: [fastify.authenticate] },
         createdAt: Date.now(),
     });
 
+    // Save user-provided config files and custom env to DB
+    if ((config_files?.length) || (custom_env && Object.keys(custom_env).length)) {
+        const { saveSessionConfig, validateConfigFiles } = require('./session/sessionConfig');
+        const { valid, invalidPaths } = validateConfigFiles(config_files, agent_id);
+        if (!valid) {
+            fastify.log.warn({ sessionId, invalidPaths }, '[sessions] invalid config file paths');
+        } else {
+            await saveSessionConfig(db, schema, sessionId, { configFiles: config_files, customEnv: custom_env || {} });
+        }
+    }
+
     // Return 202 immediately — the frontend enters the agent page and shows a loading state
     reply.code(202).send({
         session_id: sessionId,
@@ -1310,6 +1409,20 @@ fastify.post('/api/v1/session/start', { preValidation: [fastify.authenticate] },
             return;
         }
 
+        // Write user-provided config files BEFORE bootstrap so that bootstrap
+        // logic (e.g. claude-code API key approval) can augment user-provided files.
+        const { writeConfigFilesToVM, applyCustomEnv, getSessionConfig } = require('./session/sessionConfig');
+        const userSessionConfig = await getSessionConfig(db, schema, sessionId);
+        if (userSessionConfig.configFiles.length) {
+            const vmRuntimeRef = ready.runtime ? ready.runtime.runtimeRef : undefined;
+            await writeConfigFilesToVM(runtime.fs, {
+                workspaceRoot: workspacePath,
+                runtimeRef: vmRuntimeRef,
+                configFiles: userSessionConfig.configFiles,
+                stateDirPath: sessionStateDir?.stateDirPath || null,
+            }).catch((err) => fastify.log.warn({ err, sessionId }, '[sessions] writeConfigFilesToVM failed'));
+        }
+
         if (sessionStateDir?.stateDirPath) {
             resolved.env = applyStateDirEnv(resolved.env, resumeSpec, sessionStateDir.stateDirPath);
             // Pre-approve custom API key for claude-code to skip the "Detected
@@ -1364,6 +1477,12 @@ fastify.post('/api/v1/session/start', { preValidation: [fastify.authenticate] },
             uid: process.env.RUNTIME_UID,
             gid: process.env.RUNTIME_GID,
         };
+
+        // Merge user-provided custom env (config files already written above)
+        if (Object.keys(userSessionConfig.customEnv).length) {
+            resolved.env = applyCustomEnv(resolved.env, userSessionConfig.customEnv);
+        }
+
         try {
             const stateArgs = sessionStateDir?.stateDirPath
                 ? buildStateArgs(resumeSpec, sessionStateDir.stateDirPath)
@@ -1390,6 +1509,24 @@ fastify.post('/api/v1/session/start', { preValidation: [fastify.authenticate] },
                     workspacePath = ready.workspacePath;
                     spawnOpts.cwd = workspacePath;
                     spawnOpts.runtimeRef = ready.runtime.runtimeRef;
+                    // Re-create state dir and re-write user config files in the new VM
+                    if (sessionStateDir) {
+                        try {
+                            sessionStateDir = await ensureSessionStateDir(runtime.fs, {
+                                workspaceRoot: workspacePath,
+                                sessionId,
+                                runtimeRef: ready.runtime ? ready.runtime.runtimeRef : undefined,
+                            });
+                        } catch (e) { /* best-effort */ }
+                    }
+                    if (userSessionConfig.configFiles.length) {
+                        await writeConfigFilesToVM(runtime.fs, {
+                            workspaceRoot: workspacePath,
+                            runtimeRef: ready.runtime ? ready.runtime.runtimeRef : undefined,
+                            configFiles: userSessionConfig.configFiles,
+                            stateDirPath: sessionStateDir?.stateDirPath || null,
+                        }).catch(() => {});
+                    }
                     handle = await runtime.exec.spawn(
                         agentMeta.cmd,
                         agentMeta.args,

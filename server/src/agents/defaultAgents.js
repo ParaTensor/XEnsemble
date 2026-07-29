@@ -6,12 +6,33 @@ const DEFAULT_AGENTS = [
         name: 'Kimi Code',
         cmd: 'kimi',
         args: [],
-        // Kimi Code authenticates via `kimi login` / config.toml — no BYOK env injection.
+        // Kimi Code authenticates via `kimi login` / config.toml - no BYOK env injection.
         env_required: [],
         resume: {
             level: 'L2',
             stateEnv: 'KIMI_CODE_HOME',
             resumeArgs: ['--continue'],
+        },
+        configSchema: {
+            configFiles: [{
+                path: '/root/.kimi/config.toml',
+                format: 'toml',
+                label: 'config.toml',
+                description: 'Kimi Code 配置文件（模型、Provider、API Key）',
+                example: [
+                    'default_model = "kimi-k2.5"',
+                    '',
+                    '[providers.kimi]',
+                    'type = "kimi"',
+                    'base_url = "https://api.moonshot.cn/v1"',
+                    'api_key = "your-api-key"',
+                    '',
+                    '[models.kimi-default]',
+                    'provider = "kimi"',
+                    'model = "kimi-k2.5"',
+                    'max_context_size = 256000',
+                ].join('\n'),
+            }],
         },
     },
     {
@@ -25,6 +46,20 @@ const DEFAULT_AGENTS = [
             stateEnv: 'CLAUDE_CONFIG_DIR',
             resumeArgs: ['--continue'],
             resumeCheckSubdir: 'projects',
+        },
+        configSchema: {
+            configFiles: [{
+                path: '${STATE_DIR}/.claude.json',
+                format: 'json',
+                label: '.claude.json',
+                description: 'Claude Code 配置文件（权限、API Key 审批）',
+                example: JSON.stringify({
+                    permissions: {
+                        allow: ['Bash(git:*)', 'Read(//**)'],
+                        deny: [],
+                    },
+                }, null, 2),
+            }],
         },
     },
     {
@@ -49,6 +84,18 @@ const DEFAULT_AGENTS = [
             level: 'L2',
             stateEnv: 'XDG_DATA_HOME',
             resumeArgs: ['--continue'],
+        },
+        configSchema: {
+            configFiles: [{
+                path: '/root/.config/opencode/opencode.json',
+                format: 'json',
+                label: 'opencode.json',
+                description: 'OpenCode 配置文件（自动更新、模型选择等）',
+                example: JSON.stringify({
+                    autoupdate: false,
+                    model: 'auto',
+                }, null, 2),
+            }],
         },
     },
     {
@@ -159,6 +206,19 @@ const DEFAULT_AGENTS = [
             level: 'L2',
             stateEnv: 'QWEN_HOME',
             resumeArgs: ['--continue'],
+        },
+        configSchema: {
+            configFiles: [{
+                path: '/root/.qwen/settings.json',
+                format: 'json',
+                label: 'settings.json',
+                description: 'Qwen Code 配置文件（自动更新、模型等）',
+                example: JSON.stringify({
+                    general: {
+                        enableAutoUpdate: false,
+                    },
+                }, null, 2),
+            }],
         },
     },
     {

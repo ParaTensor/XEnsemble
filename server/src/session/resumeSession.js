@@ -266,6 +266,25 @@ async function resumeSession({
 
         const [authMode] = await Promise.all([authModePromise, kimiConfigPromise]);
 
+        // Write user-provided config files AFTER bootstrap (kimiConfig, etc.)
+        // so user-provided files take precedence over bootstrap defaults.
+        const { writeConfigFilesToVM, applyCustomEnv, getSessionConfig } = require('./sessionConfig');
+        const userConfig = await getSessionConfig(db, schema, session.id);
+        if (userConfig.configFiles.length) {
+            await writeConfigFilesToVM(runtime.fs, {
+                workspaceRoot: workspacePath,
+                runtimeRef,
+                configFiles: userConfig.configFiles,
+                stateDirPath: stateDirPath || null,
+            }).catch((err) => {
+                if (fastifyLog?.warn) fastifyLog.warn({ err }, '[sessions] resume writeConfigFilesToVM failed');
+                else if (requestLog?.warn) requestLog.warn({ err }, '[sessions] resume writeConfigFilesToVM failed');
+            });
+        }
+        if (Object.keys(userConfig.customEnv).length && resolvedSpawnEnv?.env) {
+            resolvedSpawnEnv.env = applyCustomEnv(resolvedSpawnEnv.env, userConfig.customEnv);
+        }
+
         let sessionToken = null;
         if (authMode === 'gateway') {
             const gwCfg = await agentGatewayConfig.getForAgent(agentMeta.id);

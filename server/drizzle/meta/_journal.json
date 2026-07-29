@@ -36,6 +36,13 @@
       "when": 1784882400000,
       "tag": "0004_vm_resources",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1785243000000,
+      "tag": "0005_session_configs",
+      "breakpoints": true
     }
   ]
 }

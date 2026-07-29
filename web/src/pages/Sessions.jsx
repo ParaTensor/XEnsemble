@@ -34,6 +34,7 @@ import {
   Trash2,
 } from 'lucide-react';
 import { getSecretLabel, getSecretPlaceholder, isSecretPasswordField } from '../lib/secretLabels';
+import AgentConfigEditor from '../components/AgentConfigEditor';
 import { formatQuotaExceeded } from '../lib/quotaLabels';
 import {
   archiveSession,
@@ -165,12 +166,31 @@ export default React.forwardRef(function Sessions({
   const [customImageId, setCustomImageId] = useState('');
   const [customImages, setCustomImages] = useState([]);
 
+  // Launch modal: agent config files + custom env
+  const [launchConfigFiles, setLaunchConfigFiles] = useState([]);
+  const [launchEnvVars, setLaunchEnvVars] = useState([{ key: '', value: '' }]);
+
+  // Session config dialog (running session)
+  const [showSessionConfigModal, setShowSessionConfigModal] = useState(false);
+  const [sessionConfigFiles, setSessionConfigFiles] = useState([]);
+  const [sessionEnvVars, setSessionEnvVars] = useState([{ key: '', value: '' }]);
+  const [sessionConfigLoading, setSessionConfigLoading] = useState(false);
+  const [sessionConfigSaving, setSessionConfigSaving] = useState(false);
+  const [sessionConfigError, setSessionConfigError] = useState(null);
+  const [showRestartPrompt, setShowRestartPrompt] = useState(false);
+
   useEffect(() => {
     const maxW = typeof window !== 'undefined' ? Math.max(480, window.innerWidth - 320) : 640;
     if (panelWidth >= 200 && panelWidth <= maxW) {
       window.localStorage.setItem('xensemble.panel.width', String(panelWidth));
     }
   }, [panelWidth]);
+
+  // Reset launch config when agent changes
+  useEffect(() => {
+    setLaunchConfigFiles([]);
+    setLaunchEnvVars([{ key: '', value: '' }]);
+  }, [selectedAgentId]);
 
   const startPanelResize = useCallback((e) => {
     e.preventDefault();
@@ -338,6 +358,15 @@ export default React.forwardRef(function Sessions({
         return false;
       }
 
+      // Collect non-empty config files and custom env from launch modal
+      const cleanConfigFiles = launchConfigFiles.filter((f) => f.path && f.content);
+      const cleanCustomEnv = {};
+      for (const { key, value } of launchEnvVars) {
+        const k = (key || '').trim();
+        const v = (value || '').trim();
+        if (k && v) cleanCustomEnv[k] = v;
+      }
+
       const response = await apiFetch('/api/v1/session/start', {
         method: 'POST',
         body: JSON.stringify({
@@ -345,6 +374,8 @@ export default React.forwardRef(function Sessions({
           project_id: projectId,
           terminal_theme_id: themeId,
           custom_image_id: customImageId || undefined,
+          ...(cleanConfigFiles.length ? { config_files: cleanConfigFiles } : {}),
+          ...(Object.keys(cleanCustomEnv).length ? { custom_env: cleanCustomEnv } : {}),
         })
       });
       const data = await response.json();
@@ -554,6 +585,70 @@ export default React.forwardRef(function Sessions({
       setConfigError(err.message);
     } finally {
       setConfigSaving(false);
+    }
+  };
+
+  // ── Session config (config files + custom env for running session) ──
+  const openSessionConfigModal = async () => {
+    if (!activeSession?.sessionId) return;
+    setShowSessionConfigModal(true);
+    setSessionConfigError(null);
+    setSessionConfigLoading(true);
+    try {
+      const res = await apiFetch(`/api/v1/sessions/${encodeURIComponent(activeSession.sessionId)}/config`);
+      const data = await res.json();
+      if (res.ok) {
+        const files = data.config_files || [];
+        setSessionConfigFiles(files);
+        const envObj = data.custom_env || {};
+        const envRows = Object.keys(envObj).length
+          ? Object.entries(envObj).map(([k, v]) => ({ key: k, value: v }))
+          : [{ key: '', value: '' }];
+        setSessionEnvVars(envRows);
+      } else {
+        setSessionConfigFiles([]);
+        setSessionEnvVars([{ key: '', value: '' }]);
+      }
+    } catch {
+      setSessionConfigFiles([]);
+      setSessionEnvVars([{ key: '', value: '' }]);
+      setSessionConfigError('Could not load configuration.');
+    } finally {
+      setSessionConfigLoading(false);
+    }
+  };
+
+  const handleSaveSessionConfig = async () => {
+    if (!activeSession?.sessionId) return;
+    setSessionConfigError(null);
+    setSessionConfigSaving(true);
+    try {
+      const cleanConfigFiles = sessionConfigFiles.filter((f) => f.path && f.content);
+      const cleanCustomEnv = {};
+      for (const { key, value } of sessionEnvVars) {
+        const k = (key || '').trim();
+        const v = (value || '').trim();
+        if (k && v) cleanCustomEnv[k] = v;
+      }
+      const res = await apiFetch(`/api/v1/sessions/${encodeURIComponent(activeSession.sessionId)}/config`, {
+        method: 'PUT',
+        body: JSON.stringify({
+          config_files: cleanConfigFiles,
+          custom_env: cleanCustomEnv,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to save configuration');
+      setShowSessionConfigModal(false);
+      if (data.needs_restart) {
+        setShowRestartPrompt(true);
+      } else {
+        showToast('success', 'Configuration saved.');
+      }
+    } catch (err) {
+      setSessionConfigError(err.message);
+    } finally {
+      setSessionConfigSaving(false);
     }
   };
 
@@ -865,7 +960,7 @@ export default React.forwardRef(function Sessions({
       {showNewInstanceModal && (
         <ConsoleInlineDialog
           onClose={() => { setShowNewInstanceModal(false); setLaunchModalError(null); setCreateNewWorkspaceInline(false); }}
-          panelClassName={`${consoleDialogPanelClass} w-full max-w-sm shadow-sm`}
+          panelClassName={`${consoleDialogPanelClass} w-full max-w-md shadow-sm`}
         >
           <div className={`${consoleStructuredDialogHeaderClass} flex items-center gap-2.5`}>
             {launchModalMode === 'workspace' ? (
@@ -1002,6 +1097,17 @@ export default React.forwardRef(function Sessions({
                       : agentSelectOptions
                   }
                   placeholder="Select agent"
+                />
+              </div>
+            )}
+            {launchModalMode !== 'workspace' && selectedAgent?.config_schema && (
+              <div className={`border-t ${borderHairline} pt-3`}>
+                <AgentConfigEditor
+                  configSchema={selectedAgent.config_schema}
+                  configFiles={launchConfigFiles}
+                  envVars={launchEnvVars}
+                  onConfigFilesChange={setLaunchConfigFiles}
+                  onEnvVarsChange={setLaunchEnvVars}
                 />
               </div>
             )}
@@ -1200,6 +1306,85 @@ export default React.forwardRef(function Sessions({
         </ConsoleInlineDialog>
       )}
 
+      {/* Session config dialog (running session) */}
+      {showSessionConfigModal && (
+        <ConsoleInlineDialog
+          onClose={() => { setShowSessionConfigModal(false); setSessionConfigError(null); }}
+          panelClassName={`${consoleDialogPanelClass} w-full max-w-lg shadow-sm`}
+        >
+          <div className={`${consoleStructuredDialogHeaderClass} flex items-center gap-2.5`}>
+            <Settings2 className={`w-4 h-4 shrink-0 ${textPlaceholder}`} />
+            <h3 className={`font-semibold text-sm ${textPrimary}`}>
+              Agent Configuration{activeSession?.agentName ? ` - ${activeSession.agentName}` : ''}
+            </h3>
+          </div>
+          <div className="p-4 space-y-3">
+            {sessionConfigError && (
+              <p className="text-sm text-[#C06C5D] bg-[#FDECEA] border border-[#FADBD8] rounded-md px-3 py-2">{sessionConfigError}</p>
+            )}
+            <AgentConfigEditor
+              configSchema={agents.find((a) => a.id === activeSession?.agentId)?.config_schema || null}
+              configFiles={sessionConfigFiles}
+              envVars={sessionEnvVars}
+              onConfigFilesChange={setSessionConfigFiles}
+              onEnvVarsChange={setSessionEnvVars}
+              loading={sessionConfigLoading}
+            />
+          </div>
+          <div className={consoleStructuredDialogFooterClass}>
+            <button
+              type="button"
+              onClick={() => { setShowSessionConfigModal(false); setSessionConfigError(null); }}
+              className={`h-9 px-3 ${bgCanvas} border ${borderHairline} ${textPrimary} rounded-md text-sm font-medium ${hoverBgSecondary} ${transitionBase}`}
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              disabled={sessionConfigSaving || sessionConfigLoading}
+              onClick={handleSaveSessionConfig}
+              className={`h-9 px-3 flex items-center justify-center gap-2 bg-[#202124] text-white rounded-md text-sm font-medium hover:bg-[#3C4043] disabled:opacity-50 ${transitionBase}`}
+            >
+              {sessionConfigSaving ? <><Loader2 className="w-4 h-4 animate-spin" /> Saving…</> : 'Save'}
+            </button>
+          </div>
+        </ConsoleInlineDialog>
+      )}
+
+      {/* Restart prompt after config update */}
+      {showRestartPrompt && (
+        <ConsoleInlineDialog
+          onClose={() => setShowRestartPrompt(false)}
+          panelClassName={`${consoleDialogPanelClass} w-full max-w-sm shadow-sm`}
+        >
+          <div className={`${consoleStructuredDialogHeaderClass} flex items-center gap-2.5`}>
+            <RefreshCw className={`w-4 h-4 shrink-0 ${textPlaceholder}`} />
+            <h3 className={`font-semibold text-sm ${textPrimary}`}>Configuration Updated</h3>
+          </div>
+          <div className="p-4 space-y-2">
+            <p className={`text-sm ${textSecondary}`}>
+              Configuration has been updated. Restart this session for environment variable changes to take effect.
+            </p>
+          </div>
+          <div className={consoleStructuredDialogFooterClass}>
+            <button
+              type="button"
+              onClick={() => setShowRestartPrompt(false)}
+              className={`h-9 px-3 ${bgCanvas} border ${borderHairline} ${textPrimary} rounded-md text-sm font-medium ${hoverBgSecondary} ${transitionBase}`}
+            >
+              Later
+            </button>
+            <button
+              type="button"
+              onClick={() => { setShowRestartPrompt(false); handleRestartSession(); }}
+              className={`h-9 px-3 flex items-center justify-center gap-2 bg-[#202124] text-white rounded-md text-sm font-medium hover:bg-[#3C4043] ${transitionBase}`}
+            >
+              <RefreshCw className="w-4 h-4" /> Restart Now
+            </button>
+          </div>
+        </ConsoleInlineDialog>
+      )}
+
       {/* Main area */}
       <div className="flex min-h-0 flex-1 w-full flex-row items-stretch bg-white">
         <div className="flex min-h-0 min-w-0 flex-1 flex-col bg-white">
@@ -1283,6 +1468,15 @@ export default React.forwardRef(function Sessions({
                       )}
                     </>
                   )}
+                  <button
+                    type="button"
+                    onClick={() => openSessionConfigModal()}
+                    className={consoleIconButtonClass}
+                    title="Agent configuration"
+                    aria-label="Agent configuration"
+                  >
+                    <Settings2 className="w-4 h-4" strokeWidth={1.75} />
+                  </button>
                   <button
                     type="button"
                     onClick={() => setActiveSession(null)}

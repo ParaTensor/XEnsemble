@@ -108,6 +108,14 @@ const sessionStreams = pgTable('session_streams', {
   updatedAt: bigint('updated_at', { mode: 'number' }).notNull(),
 });
 
+const sessionConfigs = pgTable('session_configs', {
+  sessionId: text('session_id').primaryKey().references(() => sessions.id, { onDelete: 'cascade' }),
+  configFiles: jsonb('config_files').notNull().default([]),
+  customEnv: jsonb('custom_env').notNull().default({}),
+  createdAt: bigint('created_at', { mode: 'number' }).notNull(),
+  updatedAt: bigint('updated_at', { mode: 'number' }).notNull(),
+});
+
 const agents = pgTable('agents', {
   id: text('id').primaryKey(),
   name: text('name').notNull(),
@@ -360,6 +368,7 @@ module.exports = {
   projects,
   sessions,
   sessionStreams,
+  sessionConfigs,
   agents,
   runtimes,
   deployments,
