@@ -1383,62 +1383,47 @@ fastify.post('/api/v1/session/start', { preValidation: [fastify.authenticate] },
         // Update cwd and runtimeId now that the VM is ready.
         // Defer the DB write to merge with stateDirRef below (reduces serial DB writes).
 
-        // Parallelize ensureSessionStateDir (VM exec) and ensureKimiConfig (VM exec).
-        // ensureKimiConfig is best-effort; ensureSessionStateDir is blocking when stateEnv is set.
+        // Run ensureSessionStateDir and ensureKimiConfig SEQUENTIALLY.
+        // Concurrent exec calls against a just-booted VM trigger a guest zygote race
+        // ("received unexpected message: InitReady, expected: IntermediateReady(0)")
+        // that surfaces as "mkdir failed" / "failed to spawn command in sandbox".
         let sessionStateDir = null;
-        const stateDirPromise = (async () => {
-            if (!resumeSpec?.stateEnv && !resumeSpec?.stateArgs && !resumeSpec?.redirectHome) return null;
+        if (resumeSpec?.stateEnv || resumeSpec?.stateArgs || resumeSpec?.redirectHome) {
             try {
-                return await ensureSessionStateDir(runtime.fs, {
+                sessionStateDir = await ensureSessionStateDir(runtime.fs, {
                     workspaceRoot: workspacePath,
                     sessionId,
                     runtimeRef: ready.runtime ? ready.runtime.runtimeRef : undefined,
                 });
             } catch (err) {
                 fastify.log.error({ err, sessionId }, '[sessions] async provisioning: ensureSessionStateDir failed');
-                throw err;
+                const errMsg = err instanceof RuntimeError ? err.message : (err.message || 'Failed to prepare agent state directory');
+                await markSessionFailed(sessionId, errMsg);
+                return;
             }
-        })();
-
-        const kimiConfigPromise = (async () => {
-            try {
-                const { ensureKimiConfig } = require('./workspace/kimiConfigBootstrap');
-                await ensureKimiConfig({
-                    runtime,
-                    runtimeRef: ready.runtime ? ready.runtime.runtimeRef : undefined,
-                    userId: request.user.id,
-                    agentId: agentMeta.id,
-                    warn: (msg) => fastify.log.warn(msg),
-                });
-            } catch (err) {
-                fastify.log.warn({ err, sessionId }, '[sessions] kimi config bootstrap failed');
+            if (!sessionStateDir) {
+                await markSessionFailed(sessionId, 'Failed to prepare agent state directory');
+                return;
             }
-        })();
+        }
 
-        // Wait for stateDir (blocking) and kimiConfig (best-effort) in parallel.
+        // ensureKimiConfig is best-effort.
         try {
-            sessionStateDir = await stateDirPromise;
+            const { ensureKimiConfig } = require('./workspace/kimiConfigBootstrap');
+            await ensureKimiConfig({
+                runtime,
+                runtimeRef: ready.runtime ? ready.runtime.runtimeRef : undefined,
+                userId: request.user.id,
+                agentId: agentMeta.id,
+                warn: (msg) => fastify.log.warn(msg),
+            });
         } catch (err) {
-            const errMsg = err instanceof RuntimeError ? err.message : (err.message || 'Failed to prepare agent state directory');
-            await markSessionFailed(sessionId, errMsg);
-            return;
-        }
-        if (resumeSpec?.stateEnv && !sessionStateDir) {
-            await markSessionFailed(sessionId, 'Failed to prepare agent state directory');
-            return;
-        }
-        if (resumeSpec?.stateArgs && !sessionStateDir) {
-            await markSessionFailed(sessionId, 'Failed to prepare agent state directory');
-            return;
-        }
-        if (resumeSpec?.redirectHome && !sessionStateDir) {
-            await markSessionFailed(sessionId, 'Failed to prepare agent state directory');
-            return;
+            fastify.log.warn({ err, sessionId }, '[sessions] kimi config bootstrap failed');
         }
 
         // Write user-provided config files BEFORE bootstrap so that bootstrap
         // logic (e.g. claude-code API key approval) can augment user-provided files.
-        const { writeConfigFilesToVM, applyCustomEnv, getSessionConfig } = require('./session/sessionConfig');
+        const { writeConfigFilesToVM, applyCustomEnv, getSessionConfig, resolveAgentSpawnArgs } = require('./session/sessionConfig');
         const userSessionConfig = await getSessionConfig(db, schema, sessionId);
         if (userSessionConfig.configFiles.length) {
             const vmRuntimeRef = ready.runtime ? ready.runtime.runtimeRef : undefined;
@@ -1514,9 +1499,10 @@ fastify.post('/api/v1/session/start', { preValidation: [fastify.authenticate] },
             const stateArgs = sessionStateDir?.stateDirPath
                 ? buildStateArgs(resumeSpec, sessionStateDir.stateDirPath)
                 : [];
+            const configSpawnArgs = resolveAgentSpawnArgs(agent_id, userSessionConfig.configFiles);
             handle = await runtime.exec.spawn(
                 agentMeta.cmd,
-                [...stateArgs, ...agentMeta.args],
+                [...stateArgs, ...agentMeta.args, ...configSpawnArgs],
                 resolved.env,
                 spawnOpts,
             );
@@ -1556,7 +1542,7 @@ fastify.post('/api/v1/session/start', { preValidation: [fastify.authenticate] },
                     }
                     handle = await runtime.exec.spawn(
                         agentMeta.cmd,
-                        agentMeta.args,
+                        [...agentMeta.args, ...resolveAgentSpawnArgs(agent_id, userSessionConfig.configFiles)],
                         resolved.env,
                         spawnOpts,
                     );
