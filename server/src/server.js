@@ -1078,9 +1078,12 @@ fastify.put('/api/v1/sessions/:sessionId/config', { preValidation: [fastify.auth
     const session = rows[0];
     const { saveSessionConfig, validateConfigFiles, writeConfigFilesToVM, getSessionConfig } = require('./session/sessionConfig');
 
-    const { valid, invalidPaths } = validateConfigFiles(config_files, session.agentId);
+    const { valid, invalidPaths, invalidJson } = validateConfigFiles(config_files, session.agentId);
     if (!valid) {
-        return reply.code(400).send({ error: `Invalid config file paths: ${invalidPaths.join(', ')}` });
+        const errors = [];
+        if (invalidPaths.length) errors.push(`Invalid config file paths: ${invalidPaths.join(', ')}`);
+        if (invalidJson?.length) errors.push(`Invalid JSON in: ${invalidJson.map((j) => `${j.path} (${j.error})`).join('; ')}`);
+        return reply.code(400).send({ error: errors.join('; ') });
     }
 
     const cleanConfigFiles = (config_files || []).filter((cf) => cf.path && cf.content);
@@ -1332,9 +1335,12 @@ fastify.post('/api/v1/session/start', { preValidation: [fastify.authenticate] },
     // Save user-provided config files and custom env to DB
     if ((config_files?.length) || (custom_env && Object.keys(custom_env).length)) {
         const { saveSessionConfig, validateConfigFiles } = require('./session/sessionConfig');
-        const { valid, invalidPaths } = validateConfigFiles(config_files, agent_id);
+        const { valid, invalidPaths, invalidJson } = validateConfigFiles(config_files, agent_id);
         if (!valid) {
-            fastify.log.warn({ sessionId, invalidPaths }, '[sessions] invalid config file paths');
+            const details = [];
+            if (invalidPaths.length) details.push(`paths: ${invalidPaths.join(', ')}`);
+            if (invalidJson?.length) details.push(`invalid JSON: ${invalidJson.map((j) => j.path).join(', ')}`);
+            fastify.log.warn({ sessionId, invalidPaths, invalidJson }, '[sessions] invalid config files');
         } else {
             await saveSessionConfig(db, schema, sessionId, { configFiles: config_files, customEnv: custom_env || {} });
         }

@@ -24,21 +24,31 @@ function resolveConfigFilePath(path, stateDirPath) {
 
 /**
  * Validate that all config file paths are declared in the agent's configSchema.
- * Returns { valid, invalidPaths }.
+ * Also validates JSON format for files declared with format: 'json'.
+ * Returns { valid, invalidPaths, invalidJson }.
  */
 function validateConfigFiles(configFiles, agentId) {
     const schema = getAgentConfigSchema(agentId);
     if (!schema?.configFiles?.length) {
-        return { valid: !configFiles?.length, invalidPaths: [] };
+        return { valid: !configFiles?.length, invalidPaths: [], invalidJson: [] };
     }
     const allowedPaths = new Set(schema.configFiles.map((f) => f.path));
     const invalidPaths = [];
+    const invalidJson = [];
     for (const cf of configFiles || []) {
         if (!allowedPaths.has(cf.path)) {
             invalidPaths.push(cf.path);
         }
+        const decl = schema.configFiles.find((f) => f.path === cf.path);
+        if (decl?.format === 'json' && cf.content) {
+            try {
+                JSON.parse(cf.content);
+            } catch (e) {
+                invalidJson.push({ path: cf.path, error: e.message });
+            }
+        }
     }
-    return { valid: invalidPaths.length === 0, invalidPaths };
+    return { valid: invalidPaths.length === 0 && invalidJson.length === 0, invalidPaths, invalidJson };
 }
 
 /**
