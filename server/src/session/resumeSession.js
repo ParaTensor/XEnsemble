@@ -239,8 +239,16 @@ async function resumeSession({
         }
 
         if (resolvedSpawnEnv?.env && stateDirPath) {
+            const path = require('path');
             if (resumeSpec.stateEnv && !resolvedSpawnEnv.env[resumeSpec.stateEnv]?.trim()) {
                 resolvedSpawnEnv.env[resumeSpec.stateEnv] = stateDirPath;
+            }
+            if (resumeSpec.extraStateEnvs) {
+                for (const [envName, suffix] of Object.entries(resumeSpec.extraStateEnvs)) {
+                    if (!resolvedSpawnEnv.env[envName]?.trim()) {
+                        resolvedSpawnEnv.env[envName] = path.join(stateDirPath, suffix);
+                    }
+                }
             }
             if (resumeSpec.redirectHome) {
                 resolvedSpawnEnv.env.HOME = stateDirPath;

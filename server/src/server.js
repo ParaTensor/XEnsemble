@@ -85,10 +85,19 @@ function formatAgentRow(a) {
 
 function applyStateDirEnv(env, resumeSpec, stateDirPath) {
     if (!resumeSpec || !stateDirPath) return env;
+    const path = require('path');
     let result = env;
     // Set state env var (e.g. CLAUDE_CONFIG_DIR, QWEN_HOME)
     if (resumeSpec.stateEnv && !env[resumeSpec.stateEnv]?.trim()) {
         result = { ...result, [resumeSpec.stateEnv]: stateDirPath };
+    }
+    // Set additional state-derived env vars (e.g. OPENCLAW_WORKSPACE_DIR -> $STATE_DIR/workspace)
+    if (resumeSpec.extraStateEnvs) {
+        for (const [envName, suffix] of Object.entries(resumeSpec.extraStateEnvs)) {
+            if (!result[envName]?.trim()) {
+                result = { ...result, [envName]: path.join(stateDirPath, suffix) };
+            }
+        }
     }
     // Redirect HOME for agents that store state under ~/.<name>/ (e.g. commandcode)
     if (resumeSpec.redirectHome) {

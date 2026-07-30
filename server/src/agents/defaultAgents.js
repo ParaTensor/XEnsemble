@@ -401,6 +401,9 @@ const DEFAULT_AGENTS = [
         resume: {
             level: 'L2',
             stateEnv: 'OPENCLAW_STATE_DIR',
+            extraStateEnvs: {
+                'OPENCLAW_WORKSPACE_DIR': 'workspace',
+            },
         },
         configSchema: {
             configFiles: [{
