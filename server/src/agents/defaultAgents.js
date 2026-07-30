@@ -178,7 +178,7 @@ const DEFAULT_AGENTS = [
         name: 'GLM Agent',
         cmd: 'zai',
         args: [],
-        env_required: ['ZAI_API_KEY'],
+        env_required: [],
         resume: {
             level: 'L2',
             redirectHome: true,
@@ -395,14 +395,14 @@ const DEFAULT_AGENTS = [
         name: 'OpenClaw',
         cmd: 'openclaw',
         args: [],
-        env_required: ['OPENCLAW_KEY'],
+        env_required: [],
         resume: {
             level: 'L2',
             stateEnv: 'OPENCLAW_STATE_DIR',
         },
         configSchema: {
             configFiles: [{
-                path: '/root/.openclaw/openclaw.json',
+                path: '${STATE_DIR}/openclaw.json',
                 format: 'json',
                 label: 'openclaw.json',
                 description: 'OpenClaw 配置文件（Provider、模型、日志等）',
