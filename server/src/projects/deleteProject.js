@@ -1,5 +1,5 @@
 const fs = require('fs');
-const { eq } = require('drizzle-orm');
+const { eq, inArray, sql } = require('drizzle-orm');
 const { db } = require('../db/index');
 const schema = require('../db/schema');
 const sessionManager = require('../session/SessionManager');
@@ -70,10 +70,21 @@ async function deleteProjectForUser(userId, project, opts = {}) {
             await db.delete(schema.devEnvironmentProfiles).where(eq(schema.devEnvironmentProfiles.projectId, projectId));
             await db.delete(schema.mergeRequests).where(eq(schema.mergeRequests.projectId, projectId));
             await db.delete(schema.projectBranches).where(eq(schema.projectBranches.projectId, projectId));
+            // Delete session_configs and session_streams BEFORE sessions (they reference sessions.id)
+            const sessionIds = await db.select({ id: schema.sessions.id }).from(schema.sessions)
+                .where(eq(schema.sessions.projectId, projectId));
+            if (sessionIds.length > 0) {
+                const sidList = sessionIds.map((s) => s.id);
+                await db.delete(schema.sessionConfigs).where(inArray(schema.sessionConfigs.sessionId, sidList));
+                await db.delete(schema.sessionStreams).where(inArray(schema.sessionStreams.sessionId, sidList));
+            }
             await db.delete(schema.sessions).where(eq(schema.sessions.projectId, projectId));
             await db.delete(schema.deployments).where(eq(schema.deployments.projectId, projectId));
             await db.delete(schema.runtimes).where(eq(schema.runtimes.projectId, projectId));
             await db.delete(schema.events).where(eq(schema.events.projectId, projectId));
+            // pull_requests table is created by migration 003 but NOT in the Drizzle schema.
+            // It has FK(project_id) REFERENCES projects(id), so must be deleted before projects.
+            await db.execute(sql`DELETE FROM pull_requests WHERE project_id = ${projectId}`);
             await db.delete(schema.projects).where(eq(schema.projects.id, projectId));
             lastDeleteErr = null;
             break;
@@ -87,9 +98,21 @@ async function deleteProjectForUser(userId, project, opts = {}) {
     }
     if (lastDeleteErr) throw lastDeleteErr;
 
+    // Best-effort filesystem cleanup. The DB rows are already deleted above,
+    // so failing here would report a 500 to the user even though the project
+    // is gone from the DB. Common failure causes:
+    // - VM still has the workspace mounted (destroy failed earlier)
+    // - git pack files are read-only
+    // - stale file handles from a recently killed process
     const dir = workspace.projectDir(userId, projectId);
     if (fs.existsSync(dir)) {
-        fs.rmSync(dir, { recursive: true, force: true });
+        try {
+            fs.rmSync(dir, { recursive: true, force: true });
+        } catch (err) {
+            if (log?.warn) {
+                log.warn({ err, projectId, dir }, '[projects] fs.rmSync failed during project delete (directory will be orphaned)');
+            }
+        }
     }
 
     return { failedRuntimeRefs };
