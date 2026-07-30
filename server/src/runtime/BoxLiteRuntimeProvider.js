@@ -164,13 +164,34 @@ class BoxLiteRuntimeProvider extends RuntimeProvider {
                     return { reused: false };
                 } catch (e) {
                     if (/already|exists/i.test(String(e))) {
-                        if (needRecreate) {
+                        // Session exists - check if it's actually healthy
+                        try {
+                            const info = await this.client.getSessionStatus(name);
+                            if (info && info.running && info.status === 'Running') {
+                                if (needRecreate) {
+                                    throw new RuntimeError(
+                                        `BoxLite ensureReady failed: session "${name}" still exists after delete - cannot recreate with image ${image}`,
+                                        502,
+                                    );
+                                }
+                                return { reused: true };
+                            }
+                        } catch (statusErr) { /* fall through to delete+recreate */ }
+                        // VM is not running (Failed/Stopped/etc) - delete and recreate
+                        try { await this.client.deleteSession(name); } catch (_) {}
+                        await new Promise((r) => setTimeout(r, 500));
+                        try {
+                            await this.client.openSession(name, image, warm, openOptions);
+                            return { reused: false };
+                        } catch (e2) {
+                            if (!/already|exists/i.test(String(e2))) {
+                                throw new RuntimeError(`BoxLite ensureReady failed: ${e2.message}`, 502);
+                            }
                             throw new RuntimeError(
-                                `BoxLite ensureReady failed: session "${name}" still exists after delete - cannot recreate with image ${image}`,
+                                `BoxLite ensureReady failed: session "${name}" still exists after delete - cannot recreate`,
                                 502,
                             );
                         }
-                        return { reused: true };
                     }
                     if (/mkdir.*memory/i.test(String(e))) {
                         const info = await this.client.getSessionStatus(name);
