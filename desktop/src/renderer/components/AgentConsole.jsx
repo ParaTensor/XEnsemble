@@ -218,9 +218,23 @@ function AgentConsole({
             }
 
             let writeBuffer = '';
+            let coalesceDelays = 0;
+            const MAX_COALESCE_DELAYS = 4;
+            const COALESCE_DELAY_MS = 40;
+            const CLEAR_SCREEN = '\x1b[2J';
             const flushWriteBuffer = () => {
                 writeRafId = null;
                 if (disposedRef.current || !writeBuffer) return;
+                const lastClearIdx = writeBuffer.lastIndexOf(CLEAR_SCREEN);
+                if (lastClearIdx !== -1) {
+                    const tailLen = writeBuffer.length - lastClearIdx;
+                    if (tailLen < 120 && coalesceDelays < MAX_COALESCE_DELAYS) {
+                        coalesceDelays++;
+                        writeRafId = setTimeout(flushWriteBuffer, COALESCE_DELAY_MS);
+                        return;
+                    }
+                }
+                coalesceDelays = 0;
                 const data = writeBuffer;
                 writeBuffer = '';
                 const viewport = containerRef.current?.querySelector('.xterm-viewport');
@@ -262,12 +276,12 @@ function AgentConsole({
                 } else if (msg.type === 'metrics') {
                     setMetrics(msg.data);
                 } else if (msg.type === 'error') {
-                    if (writeRafId !== null) { cancelAnimationFrame(writeRafId); flushWriteBuffer(); }
+                    if (writeRafId !== null) { cancelAnimationFrame(writeRafId); clearTimeout(writeRafId); writeRafId = null; flushWriteBuffer(); }
                     openedRef.current = false;
                     try { ws.close(); } catch { /* ignore */ }
                     scheduleReconnect(msg.data || 'error');
                 } else if (msg.type === 'exit') {
-                    if (writeRafId !== null) { cancelAnimationFrame(writeRafId); flushWriteBuffer(); }
+                    if (writeRafId !== null) { cancelAnimationFrame(writeRafId); clearTimeout(writeRafId); writeRafId = null; flushWriteBuffer(); }
                     if (msg.message) terminal.write(msg.message);
                     serverEndedRef.current = true;
                     setEnded(true);
@@ -320,7 +334,7 @@ function AgentConsole({
 
         return () => {
             disposedRef.current = true;
-            if (writeRafId !== null) cancelAnimationFrame(writeRafId);
+            if (writeRafId !== null) { cancelAnimationFrame(writeRafId); clearTimeout(writeRafId); }
             if (reconnectStateRef.timer) clearTimeout(reconnectStateRef.timer);
             if (resizeFrame !== null) cancelAnimationFrame(resizeFrame);
             visibilityObserver.disconnect();

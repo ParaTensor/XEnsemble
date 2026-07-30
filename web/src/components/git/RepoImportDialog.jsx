@@ -30,11 +30,17 @@ function parseRepoUrl(input) {
   const trimmed = input.trim();
   if (!trimmed) return null;
   let path = trimmed;
-  try {
-    const url = new URL(trimmed.startsWith('http') ? trimmed : `https://${trimmed}`);
-    path = url.pathname;
-  } catch {
-    path = trimmed;
+  // Only treat as URL if it starts with http(s) or contains a dot in the
+  // first segment (e.g. github.com/owner/repo). Otherwise it's likely a
+  // bare owner/repo path and new URL would misinterpret "owner" as hostname.
+  const looksLikeUrl = /^https?:\/\//i.test(trimmed) || /^[^/]+\.[^/]+\//.test(trimmed);
+  if (looksLikeUrl) {
+    try {
+      const url = new URL(trimmed.startsWith('http') ? trimmed : `https://${trimmed}`);
+      path = url.pathname;
+    } catch {
+      path = trimmed;
+    }
   }
   path = path.replace(/^\/+/, '').replace(/\.git$/, '').replace(/\/(tree|blob)\/.*$/, '').replace(/\/+$/, '');
   return path || null;

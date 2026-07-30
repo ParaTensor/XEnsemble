@@ -352,6 +352,10 @@ function AgentConsole({
           let replayDone = false;
           let writeBuffer = '';
           let pendingSeq = null;
+          let coalesceDelays = 0;
+          const MAX_COALESCE_DELAYS = 4;
+          const COALESCE_DELAY_MS = 40;
+          const CLEAR_SCREEN = '\x1b[2J';
 
           // Fallback: hide overlay after 5s even if no output was received
           // (e.g. empty replay with after=cachedSeq and no new frames)
@@ -370,6 +374,16 @@ function AgentConsole({
               pendingSeq = null;
             }
             if (!writeBuffer) return;
+            const lastClearIdx = writeBuffer.lastIndexOf(CLEAR_SCREEN);
+            if (lastClearIdx !== -1) {
+              const tailLen = writeBuffer.length - lastClearIdx;
+              if (tailLen < 120 && coalesceDelays < MAX_COALESCE_DELAYS) {
+                coalesceDelays++;
+                writeRafId = setTimeout(flushWriteBuffer, COALESCE_DELAY_MS);
+                return;
+              }
+            }
+            coalesceDelays = 0;
             const data = writeBuffer;
             writeBuffer = '';
             const viewport = hostRef.current?.querySelector('.xterm-viewport');
@@ -407,7 +421,7 @@ function AgentConsole({
               return;
             }
             if (msg.type === 'error') {
-              if (writeRafId !== null) { cancelAnimationFrame(writeRafId); flushWriteBuffer(); }
+              if (writeRafId !== null) { cancelAnimationFrame(writeRafId); clearTimeout(writeRafId); writeRafId = null; flushWriteBuffer(); }
               hideOverlay();
               connectedRef.current = false;
               try { ws.close(); } catch { /* ignore */ }
@@ -415,7 +429,7 @@ function AgentConsole({
               return;
             }
             if (msg.type === 'exit') {
-              if (writeRafId !== null) { cancelAnimationFrame(writeRafId); flushWriteBuffer(); }
+              if (writeRafId !== null) { cancelAnimationFrame(writeRafId); clearTimeout(writeRafId); writeRafId = null; flushWriteBuffer(); }
               hideOverlay();
               if (msg.message) terminal.write(msg.message);
               serverEnded = true;
@@ -459,7 +473,7 @@ function AgentConsole({
 
     return () => {
       disposed = true;
-      if (writeRafId !== null) cancelAnimationFrame(writeRafId);
+      if (writeRafId !== null) { cancelAnimationFrame(writeRafId); clearTimeout(writeRafId); }
       if (reconnectTimer) clearTimeout(reconnectTimer);
       resizeTimers.forEach((t) => clearTimeout(t));
       resizeObserver.disconnect();
