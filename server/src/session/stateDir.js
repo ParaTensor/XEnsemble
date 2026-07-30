@@ -8,8 +8,20 @@ async function ensureSessionStateDir(fsAdapter, { workspaceRoot, sessionId, runt
     if (!resolved) {
         return null;
     }
-    await fsAdapter.mkdirp(workspaceRoot, resolved.stateDirRef, { runtimeRef });
-    return resolved;
+    const MAX_RETRIES = 3;
+    let lastErr = null;
+    for (let attempt = 1; attempt <= MAX_RETRIES; attempt += 1) {
+        try {
+            await fsAdapter.mkdirp(workspaceRoot, resolved.stateDirRef, { runtimeRef });
+            return resolved;
+        } catch (err) {
+            lastErr = err;
+            if (attempt < MAX_RETRIES) {
+                await new Promise((r) => setTimeout(r, attempt * 1000));
+            }
+        }
+    }
+    throw lastErr;
 }
 
 async function sessionStateDirExists(fsAdapter, { workspaceRoot, sessionId, runtimeRef, stateDirRef }) {

@@ -1419,7 +1419,8 @@ fastify.post('/api/v1/session/start', { preValidation: [fastify.authenticate] },
         try {
             sessionStateDir = await stateDirPromise;
         } catch (err) {
-            await markSessionFailed(sessionId, 'Failed to prepare agent state directory');
+            const errMsg = err instanceof RuntimeError ? err.message : (err.message || 'Failed to prepare agent state directory');
+            await markSessionFailed(sessionId, errMsg);
             return;
         }
         if (resumeSpec?.stateEnv && !sessionStateDir) {
