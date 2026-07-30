@@ -131,6 +131,9 @@ function AgentConsole({
         terminal.unicode.activeVersion = '11';
         container.replaceChildren();
         terminal.open(container);
+        // Fit terminal to container BEFORE creating WebSocket so transcript
+        // replay doesn't wrap at the wrong width.
+        try { fitAddon.fit(); } catch (_) {}
         try {
             const webglAddon = new WebglAddon();
             webglAddon.onContextLoss(() => { webglAddon.dispose(); });
