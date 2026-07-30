@@ -48,21 +48,36 @@ class GitOperationService {
 
         try {
             const exec = this._execFn();
-            const result = await exec(
-                'git',
-                args,
-                credentials ? credentials.env : {},
-                { cwd: workspacePath, runtimeRef, timeoutMs: 120_000, ...options },
-            );
+            const MAX_SPAWN_RETRIES = 3;
+            let lastErr = null;
+            for (let attempt = 1; attempt <= MAX_SPAWN_RETRIES; attempt += 1) {
+                try {
+                    const result = await exec(
+                        'git',
+                        args,
+                        credentials ? credentials.env : {},
+                        { cwd: workspacePath, runtimeRef, timeoutMs: 120_000, ...options },
+                    );
 
-            if (result.exitCode !== 0) {
-                throw new GitError(
-                    `git ${args.join(' ')} failed (${result.exitCode}): ${result.stderr || result.stdout}`,
-                    result.exitCode,
-                );
+                    if (result.exitCode !== 0) {
+                        throw new GitError(
+                            `git ${args.join(' ')} failed (${result.exitCode}): ${result.stderr || result.stdout}`,
+                            result.exitCode,
+                        );
+                    }
+
+                    return { ...result, workspacePath };
+                } catch (err) {
+                    lastErr = err;
+                    // Retry on "spawn failed" / "failed to spawn command in sandbox"
+                    // which occurs transiently when the VM was just opened and the
+                    // mount or zygote is not yet ready.
+                    const isSpawnError = /spawn failed|failed to spawn/i.test(err.message);
+                    if (!isSpawnError || attempt >= MAX_SPAWN_RETRIES) throw err;
+                    await new Promise((r) => setTimeout(r, 500 * attempt));
+                }
             }
-
-            return { ...result, workspacePath };
+            throw lastErr;
         } finally {
             if (credentials) {
                 credentials.cleanup();
