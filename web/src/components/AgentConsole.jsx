@@ -348,13 +348,14 @@ function AgentConsole({
 
           const flushWriteBuffer = () => {
             writeRafId = null;
-            if (disposed || !writeBuffer) return;
-            const data = writeBuffer;
-            writeBuffer = '';
+            if (disposed) return;
             if (pendingSeq != null) {
               setCachedSeq(sessionId, pendingSeq);
               pendingSeq = null;
             }
+            if (!writeBuffer) return;
+            const data = writeBuffer;
+            writeBuffer = '';
             const viewport = hostRef.current?.querySelector('.xterm-viewport');
             const atBottom = !viewport || viewport.scrollTop + viewport.clientHeight >= viewport.scrollHeight - 5;
             terminal.write(data, () => {

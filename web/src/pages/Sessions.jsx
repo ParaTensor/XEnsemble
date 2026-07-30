@@ -735,14 +735,14 @@ export default React.forwardRef(function Sessions({
       .catch((e) => showToast('error', e.message));
   }, [activeSession?.projectId, editorTabs.showDiff, showToast]);
 
-  const handleSessionEnd = (sessionId) => {
+  const handleSessionEnd = useCallback((sessionId) => {
     setSessions((prev) =>
       prev.map((s) =>
         s.id === sessionId ? { ...s, alive: false, memoryStatus: 'exited', status: 'exited' } : s
       )
     );
     fetchWorkspaces();
-  };
+  }, [fetchWorkspaces]);
 
   const handleSessionIdle = (sessionId) => {
     setSessions((prev) =>
