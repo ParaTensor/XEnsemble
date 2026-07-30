@@ -901,7 +901,11 @@ export default React.forwardRef(function Sessions({
         }
         if (activeSession && !activeSession.projectId) setActiveSession(null);
       } else {
-        await apiFetch(`/api/v1/projects/${encodeURIComponent(workspaceId)}`, { method: 'DELETE' });
+        const res = await apiFetch(`/api/v1/projects/${encodeURIComponent(workspaceId)}`, { method: 'DELETE' });
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({}));
+          throw new Error(data.error || 'Failed to delete workspace');
+        }
         if (activeSession?.projectId === workspaceId) setActiveSession(null);
       }
       purgeWorkspaceSidebarPrefs(workspaceId, sessions);
@@ -914,6 +918,7 @@ export default React.forwardRef(function Sessions({
       showToast('success', workspaceId === '_orphan' ? 'Unassigned sessions cleared.' : 'Workspace deleted.');
     } catch (err) {
       showToast('error', err.message);
+      fetchWorkspaces();
     } finally {
       setDeletingWorkspaceId(null);
     }
