@@ -290,11 +290,24 @@ function AgentConsole({
           const response = await apiFetch(`/api/v1/sessions/${encodeURIComponent(sessionId)}/transcript`);
           const data = await response.json();
           if (!response.ok) throw new Error(data.error || 'Failed to load session history');
-          if (data.output) terminal.write(data.output);
           if (data.head != null && data.head > 0) setCachedSeq(sessionId, data.head);
-          terminal.write('\r\n\x1b[33m[System] Session paused. Click Start to resume.\x1b[0m\r\n');
-          hideOverlay();
-          setEnded(true);
+          const systemMsg = '\r\n\x1b[33m[System] Session paused. Click Start to resume.\x1b[0m\r\n';
+          // Use terminal.write callback to hide overlay only AFTER xterm.js
+          // has fully processed the transcript data. xterm.js processes write
+          // data asynchronously in setTimeout(0) chunks; without the callback,
+          // the terminal becomes visible mid-processing, showing intermediate
+          // rendering states (e.g. un-cleared TUI spinner frames).
+          const finishReplay = () => {
+            hideOverlay();
+            setEnded(true);
+          };
+          if (data.output) {
+            terminal.write(data.output, () => {
+              terminal.write(systemMsg, finishReplay);
+            });
+          } else {
+            terminal.write(systemMsg, finishReplay);
+          }
         } catch (error) {
           if (!disposed) {
             terminal.write(`\r\n\x1b[31m[System] ${error?.message || 'Failed to load session history'}\x1b[0m\r\n`);
