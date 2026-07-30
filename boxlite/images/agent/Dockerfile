@@ -6,6 +6,9 @@ FROM ${BASE_IMAGE}
 ARG AGENT_ID=unknown
 ARG AGENT_INSTALL="echo \"no AGENT_INSTALL provided for ${AGENT_ID}\""
 
+# Copy optional patch scripts (only used by agents that reference them in AGENT_INSTALL).
+COPY patch-zai-autosave.cjs /tmp/patch-zai-autosave.cjs
+
 ENV PATH="/usr/local/bin:/root/.local/bin:${PATH}" \
     HOME="/root" \
     KIMI_CODE_NO_AUTO_UPDATE=1 \

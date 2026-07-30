@@ -37,7 +37,12 @@ const AGENT_BOX_IMAGE_CATALOG = {
     // no engines field — skip
     'codebuddy': { tag: 'codebuddy', buildable: true },
     // engines: >=18.0.0
-    'glm-agent': { tag: 'glm-agent', buildable: true, minNodeVersion: '18' },
+    'glm-agent': {
+        tag: 'glm-agent',
+        buildable: true,
+        minNodeVersion: '18',
+        install: 'npm install -g @guizmo-ai/zai-cli && node /tmp/patch-zai-autosave.cjs',
+    },
     // engines: >=20.0.0
     'qoder': { tag: 'qoder', buildable: true, minNodeVersion: '20' },
     // engines: >=22.0.0
