@@ -1,5 +1,6 @@
 const { getRuntime } = require('../runtime/registry');
 const { ensureProjectRuntime } = require('../runtime/RuntimeService');
+const workspace = require('../workspace');
 const { stripCredentialFromUrl, buildCredentialEnv } = require('./gitCredentialHelper');
 
 // Default token resolver uses the new multi-provider GitConnectionService.
@@ -44,7 +45,8 @@ class GitOperationService {
         const workspacePath = ready.workspacePath;
         const runtimeRef = ready.runtime ? ready.runtime.runtimeRef : undefined;
         const token = await this._resolveToken(project);
-        const credentials = token ? buildCredentialEnv(token) : null;
+        const hostPath = workspace.projectDir(project.userId, project.id);
+        const credentials = token ? buildCredentialEnv(token, hostPath, workspacePath) : null;
 
         try {
             const exec = this._execFn();
