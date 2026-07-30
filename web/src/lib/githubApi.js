@@ -26,6 +26,9 @@ export const getGitStatus = (projectId) =>
 export const getGitStatusLight = (projectId) =>
   request(`/api/v1/projects/${encodeURIComponent(projectId)}/git/status?mode=light`);
 
+export const getCloneStatus = (projectId) =>
+  request(`/api/v1/projects/${encodeURIComponent(projectId)}/git/clone-status`);
+
 export const commitAll = (projectId, message, author) => {
   const body = { message };
   if (author) body.author = author;

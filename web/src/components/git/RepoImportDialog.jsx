@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { GitBranch, Loader2, Search } from 'lucide-react';
+import { GitBranch, Loader2, Search, AlertCircle } from 'lucide-react';
 import {
   ConsoleDialogShell,
   ConsoleStructuredDialogHeader,
@@ -138,16 +138,20 @@ export default function RepoImportDialog({ open, onClose, onImported, fetchWorks
       attempts += 1;
       try {
         await fetchWorkspaces?.();
-        const res = await githubApi.getGitStatus(importedProjectId);
-        if (res?.branch) {
+        const res = await githubApi.getCloneStatus(importedProjectId);
+        if (res?.clone_status === 'ready') {
           setCloneStatus('ready');
           clearInterval(id);
           showToast('success', 'Repository imported and ready.');
           onImported?.(importedProjectId);
           handleClose();
+        } else if (res?.clone_status === 'failed') {
+          setCloneStatus('failed');
+          setCloneError(res.clone_error || 'Clone failed. Please check your repository URL and credentials.');
+          clearInterval(id);
         }
       } catch {
-        // Still cloning
+        // Still cloning or endpoint temporarily unavailable
       }
       if (attempts >= MAX_CLONE_POLL_ATTEMPTS) {
         clearInterval(id);
@@ -366,8 +370,12 @@ export default function RepoImportDialog({ open, onClose, onImported, fetchWorks
             )}
 
             {importedProjectId && (
-              <div className="flex items-center gap-2 rounded-md bg-[#E8F0FE] px-3 py-2 text-sm text-[#1967D2]">
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              <div className={`flex items-center gap-2 rounded-md px-3 py-2 text-sm ${cloneStatus === 'failed' ? 'bg-red-50 text-red-600' : 'bg-[#E8F0FE] text-[#1967D2]'}`}>
+                {cloneStatus === 'failed' ? (
+                  <AlertCircle className="h-3.5 w-3.5 shrink-0" />
+                ) : (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin shrink-0" />
+                )}
                 {cloneError || 'Cloning repository, please wait…'}
               </div>
             )}
