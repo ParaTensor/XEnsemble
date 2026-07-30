@@ -1472,9 +1472,6 @@ fastify.post('/api/v1/session/start', { preValidation: [fastify.authenticate] },
         }
         await db.update(schema.sessions).set(sessionUpdate).where(eq(schema.sessions.id, sessionId));
 
-        // Ensure kimiConfig finished (best-effort, already logged if failed).
-        await kimiConfigPromise;
-
         if (project && project.repoProvider === 'github') {
             resolved.env.XENSEMBLE_GIT_BRANCH = project.currentBranch || '';
             resolved.env.XENSEMBLE_GIT_BASE_BRANCH = project.repoDefaultBranch || '';
