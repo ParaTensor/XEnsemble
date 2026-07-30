@@ -1316,7 +1316,20 @@ fastify.post('/api/v1/session/start', { preValidation: [fastify.authenticate] },
         return reply.code(400).send({ error: resolved.error });
     }
 
-    // Insert session as pending — user sees a provisioning UI immediately
+    // Validate config files BEFORE creating the session so we can reject
+    // invalid JSON without leaving an orphaned session row.
+    if (config_files?.length) {
+        const { validateConfigFiles } = require('./session/sessionConfig');
+        const { valid, invalidPaths, invalidJson } = validateConfigFiles(config_files, agent_id);
+        if (!valid) {
+            const errors = [];
+            if (invalidPaths.length) errors.push(`Invalid config file paths: ${invalidPaths.join(', ')}`);
+            if (invalidJson?.length) errors.push(`Invalid JSON in: ${invalidJson.map((j) => `${j.path} (${j.error})`).join('; ')}`);
+            return reply.code(400).send({ error: errors.join('; ') });
+        }
+    }
+
+    // Insert session as pending - user sees a provisioning UI immediately
     await db.insert(schema.sessions).values({
         id: sessionId,
         userId: request.user.id,
@@ -1334,16 +1347,8 @@ fastify.post('/api/v1/session/start', { preValidation: [fastify.authenticate] },
 
     // Save user-provided config files and custom env to DB
     if ((config_files?.length) || (custom_env && Object.keys(custom_env).length)) {
-        const { saveSessionConfig, validateConfigFiles } = require('./session/sessionConfig');
-        const { valid, invalidPaths, invalidJson } = validateConfigFiles(config_files, agent_id);
-        if (!valid) {
-            const details = [];
-            if (invalidPaths.length) details.push(`paths: ${invalidPaths.join(', ')}`);
-            if (invalidJson?.length) details.push(`invalid JSON: ${invalidJson.map((j) => j.path).join(', ')}`);
-            fastify.log.warn({ sessionId, invalidPaths, invalidJson }, '[sessions] invalid config files');
-        } else {
-            await saveSessionConfig(db, schema, sessionId, { configFiles: config_files, customEnv: custom_env || {} });
-        }
+        const { saveSessionConfig } = require('./session/sessionConfig');
+        await saveSessionConfig(db, schema, sessionId, { configFiles: config_files, customEnv: custom_env || {} });
     }
 
     // Return 202 immediately — the frontend enters the agent page and shows a loading state
