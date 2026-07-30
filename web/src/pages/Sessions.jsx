@@ -1317,7 +1317,7 @@ export default React.forwardRef(function Sessions({
           </div>
           <div className="p-4 space-y-2">
             <p className={`text-sm ${textSecondary}`}>
-              Configuration has been updated. Restart this session for environment variable changes to take effect.
+              Configuration has been updated. Restart this session for the changes to take effect.
             </p>
           </div>
           <div className={consoleStructuredDialogFooterClass}>

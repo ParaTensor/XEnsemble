@@ -1095,9 +1095,10 @@ fastify.put('/api/v1/sessions/:sessionId/config', { preValidation: [fastify.auth
         }
     }
 
-    // Compare with previous config to detect env changes (requires restart)
+    // Compare with previous config to detect changes (requires restart)
     const prevConfig = await getSessionConfig(db, schema, sessionId);
     const envChanged = JSON.stringify(prevConfig.customEnv || {}) !== JSON.stringify(cleanCustomEnv);
+    const configFilesChanged = JSON.stringify(prevConfig.configFiles || []) !== JSON.stringify(cleanConfigFiles);
 
     await saveSessionConfig(db, schema, sessionId, { configFiles: cleanConfigFiles, customEnv: cleanCustomEnv });
 
@@ -1126,12 +1127,12 @@ fastify.put('/api/v1/sessions/:sessionId/config', { preValidation: [fastify.auth
         }
     }
 
-    const needsRestart = session.status === 'running' && envChanged;
+    const needsRestart = session.status === 'running' && (envChanged || configFilesChanged);
     return {
         ok: true,
         needs_restart: needsRestart,
         message: needsRestart
-            ? 'Configuration updated. Restart the session for environment variable changes to take effect.'
+            ? 'Configuration updated. Restart the session for changes to take effect.'
             : 'Configuration updated.',
     };
 });
