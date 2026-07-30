@@ -145,6 +145,7 @@ export default React.forwardRef(function Sessions({
 
   const [configEnvVars, setConfigEnvVars] = useState([{ key: '', value: '' }]);
   const [savedConfigKeys, setSavedConfigKeys] = useState({});
+  const configModalInitialKeysRef = useRef(null);
   const [configSaving, setConfigSaving] = useState(false);
   const [configLoading, setConfigLoading] = useState(false);
   const [configError, setConfigError] = useState(null);
@@ -274,6 +275,7 @@ export default React.forwardRef(function Sessions({
           }
         }
         setConfigEnvVars(envVars);
+        configModalInitialKeysRef.current = new Set(allKeys);
         const saved = {};
         allKeys.forEach((k) => { if (data[k]) saved[k] = true; });
         setSavedConfigKeys(saved);
@@ -560,6 +562,13 @@ export default React.forwardRef(function Sessions({
       const v = (value || '').trim();
       payload[k] = v;
     }
+    // Include keys that were removed via X button (present at modal open, now gone)
+    if (configModalInitialKeysRef.current) {
+      for (const k of configModalInitialKeysRef.current) {
+        if (!(k in payload)) payload[k] = '';
+      }
+    }
+    configModalInitialKeysRef.current = null;
     if (Object.keys(payload).length === 0) {
       setShowLaunchConfigModal(false);
       setLaunchModalError(null);
