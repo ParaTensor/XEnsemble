@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from 'react';
-import { GitBranch, Loader2, Search, AlertCircle } from 'lucide-react';
+import { useEffect, useMemo, useState, useRef } from 'react';
+import { GitBranch, Loader2, Search, AlertCircle, Link2 } from 'lucide-react';
 import {
   ConsoleDialogShell,
   ConsoleStructuredDialogHeader,
@@ -25,6 +25,20 @@ import {
 
 const CLONE_POLL_INTERVAL_MS = 2000;
 const MAX_CLONE_POLL_ATTEMPTS = 300;
+
+function parseRepoUrl(input) {
+  const trimmed = input.trim();
+  if (!trimmed) return null;
+  let path = trimmed;
+  try {
+    const url = new URL(trimmed.startsWith('http') ? trimmed : `https://${trimmed}`);
+    path = url.pathname;
+  } catch {
+    path = trimmed;
+  }
+  path = path.replace(/^\/+/, '').replace(/\.git$/, '').replace(/\/(tree|blob)\/.*$/, '').replace(/\/+$/, '');
+  return path || null;
+}
 
 function normalizeRepo(repo) {
   const fullName = repo.full_name || repo.fullName || '';
@@ -52,6 +66,11 @@ export default function RepoImportDialog({ open, onClose, onImported, fetchWorks
   const [reposLoading, setReposLoading] = useState(false);
   const [query, setQuery] = useState('');
   const [selectedFullName, setSelectedFullName] = useState('');
+  const [mode, setMode] = useState('browse');
+  const [urlInput, setUrlInput] = useState('');
+  const [urlFetching, setUrlFetching] = useState(false);
+  const [urlError, setUrlError] = useState(null);
+  const urlInputRef = useRef(null);
 
   const [name, setName] = useState('');
   const [branch, setBranch] = useState('');
@@ -72,6 +91,10 @@ export default function RepoImportDialog({ open, onClose, onImported, fetchWorks
     setRepos([]);
     setQuery('');
     setSelectedFullName('');
+    setMode('browse');
+    setUrlInput('');
+    setUrlFetching(false);
+    setUrlError(null);
     setName('');
     setBranch('');
     setWorkBranchName(`xensemble/${Date.now()}`);
@@ -99,6 +122,34 @@ export default function RepoImportDialog({ open, onClose, onImported, fetchWorks
       setRepos([]);
     } finally {
       setReposLoading(false);
+    }
+  };
+
+  const handleFetchUrl = async () => {
+    const repoPath = parseRepoUrl(urlInput);
+    if (!repoPath) {
+      setUrlError('Invalid URL. Use owner/repo or https://github.com/owner/repo');
+      return;
+    }
+    setUrlFetching(true);
+    setUrlError(null);
+    try {
+      const data = await gitApi.getRepo(provider, repoPath);
+      const repo = normalizeRepo(data.repo || data);
+      setRepos((prev) => prev.some((r) => r.full_name === repo.full_name) ? prev : [...prev, repo]);
+      setSelectedFullName(repo.full_name);
+    } catch (err) {
+      setUrlError(err.message || 'Repository not found or no access');
+    } finally {
+      setUrlFetching(false);
+    }
+  };
+
+  const switchMode = (next) => {
+    setMode(next);
+    setUrlError(null);
+    if (next === 'url') {
+      requestAnimationFrame(() => urlInputRef.current?.focus());
     }
   };
 
@@ -270,6 +321,66 @@ export default function RepoImportDialog({ open, onClose, onImported, fetchWorks
               </button>
             </div>
 
+            <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                onClick={() => switchMode('browse')}
+                className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${mode === 'browse' ? 'bg-[#202124] text-white' : 'bg-[#F4F5F6] text-[#5F6368] hover:bg-[#E8EAED]'}`}
+              >
+                <Search className="h-3 w-3" />
+                Browse
+              </button>
+              <button
+                type="button"
+                onClick={() => switchMode('url')}
+                className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${mode === 'url' ? 'bg-[#202124] text-white' : 'bg-[#F4F5F6] text-[#5F6368] hover:bg-[#E8EAED]'}`}
+              >
+                <Link2 className="h-3 w-3" />
+                Paste URL
+              </button>
+            </div>
+
+            {mode === 'url' ? (
+              <div className="space-y-2">
+                <div>
+                  <FormLabel htmlFor="repo-url">Repository URL</FormLabel>
+                  <div className="relative mt-1.5">
+                    <Link2 className={`pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 ${textPlaceholder}`} />
+                    <Input
+                      ref={urlInputRef}
+                      id="repo-url"
+                      value={urlInput}
+                      onChange={(e) => setUrlInput(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === 'Enter' && !urlFetching) handleFetchUrl(); }}
+                      placeholder="https://github.com/owner/repo"
+                      className="pl-8"
+                      disabled={urlFetching}
+                    />
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleFetchUrl}
+                  disabled={urlFetching || !urlInput.trim()}
+                  className="text-xs font-medium text-[#1967D2] hover:text-[#174EA6] disabled:opacity-50"
+                >
+                  {urlFetching ? 'Fetching…' : 'Fetch repository'}
+                </button>
+                {urlError && (
+                  <div className="flex items-center gap-1.5 text-xs text-red-600">
+                    <AlertCircle className="h-3 w-3 shrink-0" />
+                    {urlError}
+                  </div>
+                )}
+                {selectedRepo && mode === 'url' && (
+                  <div className="flex items-center justify-between rounded-md border border-[#E8EAED] bg-[#FAFBFC] px-3 py-2">
+                    <span className="min-w-0 truncate text-sm font-medium text-[#202124]">{selectedRepo.full_name}</span>
+                    <span className="shrink-0 text-xs text-[#5F6368]">{selectedRepo.private ? 'Private' : 'Public'}{selectedRepo.language ? ` · ${selectedRepo.language}` : ''}</span>
+                  </div>
+                )}
+              </div>
+            ) : (
+            <>
             <div>
               <FormLabel htmlFor="repo-search">Search repositories</FormLabel>
               <div className="relative mt-1.5">
@@ -318,6 +429,8 @@ export default function RepoImportDialog({ open, onClose, onImported, fetchWorks
                 </ul>
               )}
             </div>
+            </>
+            )}
 
             {selectedRepo && (
               <div className="space-y-3 rounded-lg border border-[#E8EAED] bg-[#FAFBFC] p-4">

@@ -38,6 +38,9 @@ export const listRepos = (provider, params = {}) => {
   return request(`/api/v1/git/repos?${qs.toString()}`);
 };
 
+export const getRepo = (provider, repoPath) =>
+  request(`/api/v1/git/repos/${repoPath}?provider=${encodeURIComponent(provider)}`);
+
 export const importRepo = (payload) =>
   request('/api/v1/projects/import-git', {
     method: 'POST',
