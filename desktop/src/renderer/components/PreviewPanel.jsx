@@ -70,6 +70,7 @@ export function usePreview(projectId, token) {
   const [deployment, setDeployment] = useState(null);
   const [loading, setLoading] = useState(false);
   const previewWindowRef = useRef(null);
+  const hasActiveDeployment = deployment && (deployment.status === 'running' || deployment.status === 'building' || deployment.status === 'pending');
 
   useEffect(() => {
     lastFailedToastRef.current = null;
@@ -86,18 +87,28 @@ export function usePreview(projectId, token) {
       );
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed to load preview');
-      setDeployment(pickActiveDeployment(data));
+      setDeployment((prev) => {
+        const next = pickActiveDeployment(data);
+        if (prev && next && prev.id === next.id && prev.status === next.status && prev.public_url === next.public_url) return prev;
+        return next;
+      });
     } catch (e) {
       // Polling errors stay silent; action failures toast in their handlers.
     }
   }, [projectId, token]);
 
+  // Initial fetch on mount / project change
   useEffect(() => {
-    if (!projectId || !token) return undefined;
+    if (!projectId || !token) return;
     loadDeployments();
+  }, [loadDeployments, projectId, token]);
+
+  // Only poll when there's an active deployment (running/building/pending)
+  useEffect(() => {
+    if (!hasActiveDeployment) return undefined;
     const id = setInterval(loadDeployments, 4000);
     return () => clearInterval(id);
-  }, [loadDeployments, projectId, token]);
+  }, [loadDeployments, hasActiveDeployment]);
 
   const deployPreview = async () => {
     setLoading(true);

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { Unicode11Addon } from '@xterm/addon-unicode11';
@@ -69,7 +69,7 @@ function setCachedSeq(sessionId, seq) {
   } catch { /* ignore */ }
 }
 
-export default function AgentConsole({
+function AgentConsole({
   sessionId,
   reconnectVersion = 0,
   projectId,
@@ -335,6 +335,7 @@ export default function AgentConsole({
           wsRef.current = ws;
           let replayDone = false;
           let writeBuffer = '';
+          let pendingSeq = null;
 
           // Fallback: hide overlay after 5s even if no output was received
           // (e.g. empty replay with after=cachedSeq and no new frames)
@@ -350,6 +351,10 @@ export default function AgentConsole({
             if (disposed || !writeBuffer) return;
             const data = writeBuffer;
             writeBuffer = '';
+            if (pendingSeq != null) {
+              setCachedSeq(sessionId, pendingSeq);
+              pendingSeq = null;
+            }
             const viewport = hostRef.current?.querySelector('.xterm-viewport');
             const atBottom = !viewport || viewport.scrollTop + viewport.clientHeight >= viewport.scrollHeight - 5;
             terminal.write(data, () => {
@@ -377,7 +382,7 @@ export default function AgentConsole({
             if (disposed) return;
             const msg = parseMessage(event.data);
             if (msg.type === 'output') {
-              if (msg.seq != null) setCachedSeq(sessionId, msg.seq);
+              if (msg.seq != null) pendingSeq = msg.seq;
               writeBuffer += msg.data;
               if (writeRafId === null) {
                 writeRafId = requestAnimationFrame(flushWriteBuffer);
@@ -475,3 +480,5 @@ export default function AgentConsole({
     </div>
   );
 }
+
+export default React.memo(AgentConsole);

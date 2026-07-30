@@ -60,7 +60,7 @@ function applyXtermSurfaceStyles(container, pane, theme) {
 
 const GIT_PROVIDERS = new Set(['github', 'gitlab', 'gitea', 'local_git']);
 
-export default function AgentConsole({
+function AgentConsole({
     sessionId,
     agentName,
     projectId,
@@ -461,3 +461,5 @@ export default function AgentConsole({
         </div>
     );
 }
+
+export default React.memo(AgentConsole);

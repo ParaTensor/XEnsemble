@@ -101,6 +101,7 @@ async function subscribeTerminal(sessionId, send, options = {}) {
     const cleanup = () => {
         if (cleaned) return;
         cleaned = true;
+        if (liveFlushTimer) { clearTimeout(liveFlushTimer); liveFlushTimer = null; }
         if (subscribed) {
             sessionManager.removeTerminalSubscriber(sessionId);
             subscribed = false;
@@ -222,12 +223,15 @@ async function subscribeTerminal(sessionId, send, options = {}) {
 
     let liveBatch = [];
     let liveBatchScheduled = false;
+    let liveFlushTimer = null;
+    const LIVE_FLUSH_DELAY_MS = 8;
 
     const flushLiveBatch = () => {
+        if (liveFlushTimer) { clearTimeout(liveFlushTimer); liveFlushTimer = null; }
+        liveBatchScheduled = false;
         if (liveBatch.length === 0) return;
         const frames = liveBatch;
         liveBatch = [];
-        liveBatchScheduled = false;
         let batchedData = '';
         let lastBatchSeq = null;
         for (const frame of frames) {
@@ -258,6 +262,8 @@ async function subscribeTerminal(sessionId, send, options = {}) {
         if (!liveBatchScheduled) {
             liveBatchScheduled = true;
             queueMicrotask(flushLiveBatch);
+        } else if (!liveFlushTimer) {
+            liveFlushTimer = setTimeout(flushLiveBatch, LIVE_FLUSH_DELAY_MS);
         }
     });
 
