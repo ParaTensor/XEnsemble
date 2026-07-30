@@ -2336,6 +2336,11 @@ async function startServer() {
         await fastify.register(require('@fastify/static'), {
             root: staticRoot,
             wildcard: false,
+            setHeaders: (reply, path) => {
+                if (path.endsWith('index.html')) {
+                    reply.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+                }
+            },
         });
         fastify.setNotFoundHandler((request, reply) => {
             const url = request.raw.url || '';
