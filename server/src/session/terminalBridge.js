@@ -101,6 +101,7 @@ async function subscribeTerminal(sessionId, send, options = {}) {
     const cleanup = () => {
         if (cleaned) return;
         cleaned = true;
+        if (liveFlushTimer) { clearTimeout(liveFlushTimer); liveFlushTimer = null; }
         if (subscribed) {
             sessionManager.removeTerminalSubscriber(sessionId);
             subscribed = false;
@@ -222,9 +223,16 @@ async function subscribeTerminal(sessionId, send, options = {}) {
 
     let liveBatch = [];
     let liveBatchScheduled = false;
-    const LIVE_FLUSH_DELAY_MS = 8;
+    let liveFlushTimer = null;
+    // Coalesce high-frequency TUI output (spinner/progress/token streaming)
+    // into fewer WS messages. 8ms is shorter than a single 60fps frame
+    // (16.67ms) so it cannot batch 60fps output; 33ms caps the effective
+    // output rate at ~30fps, halving client terminal writes while staying
+    // smooth for text and spinners. Tunable via TERMINAL_FLUSH_DELAY_MS.
+    const LIVE_FLUSH_DELAY_MS = Number(process.env.TERMINAL_FLUSH_DELAY_MS) || 33;
 
     const flushLiveBatch = () => {
+        liveFlushTimer = null;
         liveBatchScheduled = false;
         if (liveBatch.length === 0) return;
         const frames = liveBatch;
@@ -258,7 +266,7 @@ async function subscribeTerminal(sessionId, send, options = {}) {
         liveBatch.push(frame);
         if (!liveBatchScheduled) {
             liveBatchScheduled = true;
-            setTimeout(flushLiveBatch, LIVE_FLUSH_DELAY_MS);
+            liveFlushTimer = setTimeout(flushLiveBatch, LIVE_FLUSH_DELAY_MS);
         }
     });
 
