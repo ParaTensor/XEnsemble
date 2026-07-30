@@ -119,7 +119,7 @@ const DEFAULT_AGENTS = [
         name: 'AMP',
         cmd: 'amp',
         args: [],
-        env_required: ['AMP_API_KEY'],
+        env_required: [],
         resume: {
             level: 'L2',
             stateEnv: 'XDG_CONFIG_HOME',
@@ -407,7 +407,6 @@ const DEFAULT_AGENTS = [
             level: 'L2',
             stateEnv: 'HERMES_HOME',
             resumeArgs: ['--continue'],
-            resumeCheckSubdir: 'sessions',
         },
         configSchema: {
             configFiles: [{
