@@ -556,8 +556,9 @@ export default React.forwardRef(function Sessions({
     const payload = {};
     for (const { key, value } of configEnvVars) {
       const k = (key || '').trim();
+      if (!k) continue;
       const v = (value || '').trim();
-      if (k && v) payload[k] = v;
+      payload[k] = v;
     }
     if (Object.keys(payload).length === 0) {
       setShowLaunchConfigModal(false);

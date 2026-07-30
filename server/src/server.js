@@ -170,7 +170,13 @@ fastify.post('/api/v1/secrets', { preValidation: [fastify.authenticate] }, async
         const updates = Object.fromEntries(
             Object.entries(request.body || {}).filter(([, v]) => v != null && String(v).trim() !== '')
         );
+        const deletedKeys = Object.entries(request.body || {})
+            .filter(([, v]) => v == null || String(v).trim() === '')
+            .map(([k]) => k);
         const mergedSecrets = { ...currentSecrets, ...updates };
+        for (const key of deletedKeys) {
+            delete mergedSecrets[key];
+        }
         const encrypted = auth.encryptSecrets(mergedSecrets);
 
         if (existing.length > 0) {
