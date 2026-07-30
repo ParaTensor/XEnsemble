@@ -69,6 +69,57 @@ class BoxLiteRuntimeProvider extends RuntimeProvider {
         }
     }
 
+    /**
+     * Run the post-boot init execs for a freshly-opened boxlite session.
+     *
+     * boxlite execs (ensureWorkspacePath -> optional agent probe -> best-effort
+     * cache cleanup) are run SEQUENTIALLY. Concurrent exec calls against a
+     * just-booted VM trigger a guest zygote race
+     * ("received unexpected message: InitReady, expected: IntermediateReady(0)")
+     * that surfaces upstream as "failed to spawn command in sandbox" (HTTP 500).
+     *
+     * ensureAgentBootstrap is host-side filesystem only (no boxlite exec) and is
+     * overlapped with the serialized execs to avoid adding latency.
+     *
+     * @returns {Promise<{probeOk: boolean, initError: Error|null}>}
+     */
+    async _initFreshSessionExecs(name, { probeCmd, guestWorkspacePath, project, hostWorkspacePath, withBootstrap }) {
+        let bootstrapError = null;
+        const bootstrapPromise = withBootstrap
+            ? (async () => {
+                try {
+                    const { ensureAgentBootstrap } = require('../workspace/agentBootstrap');
+                    await ensureAgentBootstrap(project, hostWorkspacePath);
+                } catch (e) { bootstrapError = e; }
+            })()
+            : Promise.resolve();
+
+        let initError = null;
+        try {
+            await this.ensureWorkspacePath(name, guestWorkspacePath);
+        } catch (e) {
+            initError = e;
+        }
+
+        let probeOk = true;
+        if (probeCmd && !initError) {
+            probeOk = await probeAgentCommand(this.client, name, probeCmd, guestWorkspacePath)
+                .catch(() => false);
+        }
+
+        try {
+            await this.client.execForResult(name, 'sh', ['-c',
+                'for d in /root/.npm/_cacache /root/.cache /tmp; do rm -rf "$d"/* 2>/dev/null || true; done',
+            ]);
+        } catch (_) {
+            // Best-effort: cache cleanup failure does not block the session.
+        }
+
+        await bootstrapPromise;
+        if (!initError && bootstrapError) initError = bootstrapError;
+        return { probeOk, initError };
+    }
+
     async ensureReady(project, opts = {}) {
         const runtimeId = opts && opts.runtimeId ? opts.runtimeId : null;
         const name = runtimeId || `p_${project.id}`;
@@ -154,53 +205,25 @@ class BoxLiteRuntimeProvider extends RuntimeProvider {
 
         if (!reused) {
             const probeCmd = resolveAgentProbeCommand(opts.agentId);
+            const withBootstrap = !!opts.agentId;
 
-            const cleanCaches = (async () => {
-                try {
-                    await this.client.execForResult(name, 'sh', ['-c',
-                        'for d in /root/.npm/_cacache /root/.cache /tmp; do rm -rf "$d"/* 2>/dev/null || true; done',
-                    ]);
-                } catch (_) {
-                    // Best-effort: if the cleanup fails the agent still runs.
-                }
-            })();
-
-            const probePromise = probeCmd
-                ? probeAgentCommand(this.client, name, probeCmd, guestWorkspacePath).catch(() => false)
-                : Promise.resolve(true);
-
-            let initError = null;
-            const initPromise = Promise.all([
-                this.ensureWorkspacePath(name, guestWorkspacePath),
-                opts.agentId
-                    ? (async () => {
-                        const { ensureAgentBootstrap } = require('../workspace/agentBootstrap');
-                        await ensureAgentBootstrap(project, hostWorkspacePath);
-                    })()
-                    : Promise.resolve(),
-            ]).catch((e) => { initError = e; });
-
-            const [probeOk] = await Promise.all([probePromise, cleanCaches, initPromise]);
+            // boxlite execs are run sequentially (see _initFreshSessionExecs) to
+            // avoid the guest zygote race that occurs when multiple exec calls
+            // hit a freshly-booted VM concurrently. ensureAgentBootstrap is
+            // host-side FS only and is overlapped inside _initFreshSessionExecs.
+            const { probeOk, initError } = await this._initFreshSessionExecs(
+                name, { probeCmd, guestWorkspacePath, project, hostWorkspacePath, withBootstrap },
+            );
 
             if (probeCmd && !probeOk) {
                 await this.client.deleteSession(name);
                 await openSession();
-                await Promise.all([
-                    (async () => {
-                        try {
-                            await this.client.execForResult(name, 'sh', ['-c',
-                                'for d in /root/.npm/_cacache /root/.cache /tmp; do rm -rf "$d"/* 2>/dev/null || true; done',
-                            ]);
-                        } catch (_) {}
-                    })(),
-                    this.ensureWorkspacePath(name, guestWorkspacePath),
-                    opts.agentId
-                        ? (async () => {
-                            const { ensureAgentBootstrap } = require('../workspace/agentBootstrap');
-                            await ensureAgentBootstrap(project, hostWorkspacePath);
-                        })()
-                        : Promise.resolve(),
-                ]);
+                // Re-run init execs on the recreated VM (a fresh VM usually
+                // clears the transient race), then probe once more.
+                const recreate = await this._initFreshSessionExecs(
+                    name, { probeCmd: null, guestWorkspacePath, project, hostWorkspacePath, withBootstrap },
+                );
+                if (recreate.initError) throw recreate.initError;
                 if (!(await probeAgentCommand(this.client, name, probeCmd, guestWorkspacePath))) {
                     throw new RuntimeError(
                         `BoxLite ensureReady failed: agent command "${probeCmd}" is missing from sandbox image ${image}`,

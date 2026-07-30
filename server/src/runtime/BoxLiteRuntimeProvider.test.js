@@ -195,6 +195,38 @@ test('ensureReady recreates blink session when workspace mount differs', async (
     assert.match(client.opened[0].volumes[0].host_path, /usr_mount[/\\]proj_mount$/);
 });
 
+test('ensureReady runs post-boot boxlite execs sequentially (no concurrent zygote race)', async () => {
+    const provider = new BoxLiteRuntimeProvider();
+    const client = new MockBoxLiteClient();
+    provider.client = client;
+
+    let inFlight = 0;
+    let maxInFlight = 0;
+    client.execHandler = async ({ command, args }) => {
+        inFlight += 1;
+        maxInFlight = Math.max(maxInFlight, inFlight);
+        // Widen the window so concurrency (if reintroduced) would be detected.
+        await new Promise((r) => setTimeout(r, 10));
+        inFlight -= 1;
+        const shell = Array.isArray(args) ? args.join(' ') : '';
+        if (command === 'sh' && shell.includes('command -v')) {
+            return { exitCode: 0, stdout: '/root/.local/bin/agent', stderr: '' };
+        }
+        return { exitCode: 0, stdout: '', stderr: '' };
+    };
+
+    const project = { id: 'proj_serial', userId: 'usr_serial' };
+    await provider.ensureReady(project, {
+        runtimeId: 'rt_serial',
+        agentId: 'cursor',
+        image: 'xensemble/agent-cursor:latest',
+        storedImage: 'xensemble/agent-cursor:latest',
+        storedMount: resultMountKey(project),
+    });
+
+    assert.equal(maxInFlight, 1, `expected serialized boxlite execs (maxInFlight=1), got ${maxInFlight}`);
+});
+
 function resultMountKey(project) {
     const guestPath = '/workspace';
     const hostPath = workspace.projectDir(project.userId, project.id);
