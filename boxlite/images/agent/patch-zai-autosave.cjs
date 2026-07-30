@@ -1,16 +1,12 @@
 /**
- * Patches @guizmo-ai/zai-cli to auto-save the session on SIGTERM.
+ * Patches @guizmo-ai/zai-cli to:
+ * 1. Auto-save the session on SIGTERM (so resolveResumeArgs can find it).
+ * 2. Restore agent.messages from sessionData when load-session is used
+ *    (so the LLM has conversation context, not just the UI display).
  *
- * Problem: zai's SIGTERM handler (dist/index.js) restores the terminal and exits
- * immediately without saving the chat history.  When XEnsemble hibernates a
- * session the agent process receives SIGTERM, the conversation is lost, and
- * resolveResumeArgs can find no session files to load.
- *
- * Fix:
- *  1. Expose `chatHistory` and `agent` on `global` from use-input-handler.js
- *     (the hook re-runs on every React render, so the global stays in sync).
- *  2. In the SIGTERM handler, call sessionManager.saveSession() with the
- *     exposed chat history before exiting.
+ * Problem: zai's SIGTERM handler exits without saving. load-session restores
+ * the UI chatHistory but creates a fresh ZaiAgent with empty this.messages,
+ * so the LLM has no context of previous conversation.
  */
 const fs = require('fs');
 const path = require('path');
@@ -24,10 +20,6 @@ const handlerPath = path.join(dir, 'hooks', 'use-input-handler.js');
 let handler = fs.readFileSync(handlerPath, 'utf8');
 
 if (!handler.includes('__zaiChatHistory')) {
-    // Insert AFTER the function signature's opening brace, BEFORE the first useState.
-    // The original line looks like:
-    //   export function useInputHandler({ agent, chatHistory, ... }) {
-    //       const [showCommandSuggestions, ...
     const needle = '}) {\n    const [showCommandSuggestions';
     const replacement = '}) {\n    if (typeof global !== "undefined") { global.__zaiChatHistory = chatHistory; global.__zaiAgent = agent; }\n    const [showCommandSuggestions';
     handler = handler.replace(needle, replacement);
@@ -37,14 +29,12 @@ if (!handler.includes('__zaiChatHistory')) {
     console.log('[patch-zai] use-input-handler.js already patched');
 }
 
-// --- Patch 2: auto-save on SIGTERM ------------------------------------------
+// --- Patch 2: auto-save on SIGTERM + restore messages on load-session -------
 const indexPath = path.join(dir, 'index.js');
 let index = fs.readFileSync(indexPath, 'utf8');
 
 if (!index.includes('__zaiChatHistory')) {
-    // index.js is ESM ("type": "module") - require() is NOT available.
-    // getSessionManager is already imported at top level (line 18), so the
-    // SIGTERM closure has direct access to it.
+    // Patch 2a: auto-save on SIGTERM
     const needle = 'console.log("\\nGracefully shutting down...");';
     const autosaveCode = [
         'console.log("\\nGracefully shutting down...");',
@@ -56,8 +46,34 @@ if (!index.includes('__zaiChatHistory')) {
         '    } } catch(e) {}',
     ].join('\n');
     index = index.replace(needle, autosaveCode);
-    fs.writeFileSync(indexPath, index);
     console.log('[patch-zai] Patched index.js: auto-save on SIGTERM');
+
+    // Patch 2b: restore agent.messages from sessionData in load-session
+    // The original code creates a fresh ZaiAgent and passes initialSession to
+    // ChatInterface, but agent.messages stays empty (only has constructor defaults).
+    // We inject code to convert chatHistory entries to OpenAI message format and
+    // push them into agent.messages before rendering.
+    const loadNeedle = '// Start interactive mode with loaded session\n    const agent = new ZaiAgent(apiKey, baseURL, sessionData.context.model);\n    render(React.createElement(ChatInterface, {';
+    const loadReplacement = [
+        '// Start interactive mode with loaded session',
+        '    const agent = new ZaiAgent(apiKey, baseURL, sessionData.context.model);',
+        '    // Restore agent.messages from saved chatHistory so the LLM has context',
+        '    if (sessionData.chatHistory && sessionData.chatHistory.length > 0) {',
+        '        for (const entry of sessionData.chatHistory) {',
+        '            if (entry.type === "user" && entry.content) {',
+        '                agent.messages.push({ role: "user", content: entry.content });',
+        '            } else if (entry.type === "assistant" && entry.content) {',
+        '                agent.messages.push({ role: "assistant", content: entry.content });',
+        '            }',
+        '        }',
+        '        agent.chatHistory = [...sessionData.chatHistory];',
+        '    }',
+        '    render(React.createElement(ChatInterface, {',
+    ].join('\n');
+    index = index.replace(loadNeedle, loadReplacement);
+    console.log('[patch-zai] Patched index.js: restore agent.messages on load-session');
+
+    fs.writeFileSync(indexPath, index);
 } else {
     console.log('[patch-zai] index.js already patched');
 }
