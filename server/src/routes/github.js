@@ -302,7 +302,15 @@ function registerGitHubRoutes(fastify) {
 
         (async () => {
             try {
-                const { workspacePath } = await ensureProjectRuntime(project);
+                const ready = await ensureProjectRuntime(project);
+                const workspacePath = ready?.workspacePath;
+                // Update the in-memory project object so that subsequent
+                // _execGit -> ensureProjectRuntime calls use the fast path
+                // (cached runtime row) instead of re-entering ensureReady,
+                // which can trigger a VM delete+recreate race.
+                if (ready?.runtime?.id) {
+                    project.defaultRuntimeId = ready.runtime.id;
+                }
                 const cloneResult = await gitOperationService.cloneRepo(project, {
                     repoUrl: ghRepo.clone_url,
                     branch: baseBranch,
