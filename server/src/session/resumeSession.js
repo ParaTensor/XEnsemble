@@ -158,32 +158,11 @@ async function resumeSession({
         const workspacePath = runtimeReady.workspacePath;
         const runtimeRef = runtimeReady.runtime ? runtimeReady.runtime.runtimeRef : undefined;
 
-        // Start authMode and kimiConfig early — they don't depend on stateDir state.
+        // authMode is a DB query (no VM exec) - safe to start early.
         const authModePromise = agentGatewayConfig.getAgentAuthMode(agentMeta.id);
-        const kimiConfigPromise = (async () => {
-            try {
-                const { ensureKimiConfig } = require('../workspace/kimiConfigBootstrap');
-                await ensureKimiConfig({
-                    runtime,
-                    runtimeRef,
-                    userId: requestUser.id,
-                    agentId: agentMeta.id,
-                    warn: (msg) => {
-                        if (fastifyLog?.warn) fastifyLog.warn(msg);
-                        else if (requestLog?.warn) requestLog.warn(msg);
-                    },
-                });
-            } catch (err) {
-                if (fastifyLog?.warn) {
-                    fastifyLog.warn(err, '[sessions] kimi config bootstrap failed');
-                } else if (requestLog?.warn) {
-                    requestLog.warn(err, '[sessions] kimi config bootstrap failed');
-                }
-            }
-        })();
 
-        // Parallelize ensureAgentResume (host bash, best-effort) and sessionStateDirExists (VM exec, blocking).
-        // Previously these were serial, adding ~500ms-1s to resume latency.
+        // Run ensureAgentResume (host bash) and sessionStateDirExists (VM exec) in parallel.
+        // ensureAgentResume is host-side (not VM exec), so no zygote race with sessionStateDirExists.
         const stateDirResolved = runtime.fs.resolveStateDir(workspacePath, session.id);
         const stateDirPath = stateDirResolved?.stateDirPath || null;
 
@@ -272,6 +251,30 @@ async function resumeSession({
             resolvedSpawnEnv.env.XENSEMBLE_REPO_URL = project.githubFullName || '';
         }
 
+        // ensureKimiConfig (VM exec) runs AFTER sessionStateDirExists completes
+        // to avoid concurrent VM execs triggering the zygote race on a freshly
+        // resumed VM. It is best-effort.
+        const kimiConfigPromise = (async () => {
+            try {
+                const { ensureKimiConfig } = require('../workspace/kimiConfigBootstrap');
+                await ensureKimiConfig({
+                    runtime,
+                    runtimeRef,
+                    userId: requestUser.id,
+                    agentId: agentMeta.id,
+                    warn: (msg) => {
+                        if (fastifyLog?.warn) fastifyLog.warn(msg);
+                        else if (requestLog?.warn) requestLog.warn(msg);
+                    },
+                });
+            } catch (err) {
+                if (fastifyLog?.warn) {
+                    fastifyLog.warn(err, '[sessions] kimi config bootstrap failed');
+                } else if (requestLog?.warn) {
+                    requestLog.warn(err, '[sessions] kimi config bootstrap failed');
+                }
+            }
+        })();
         const [authMode] = await Promise.all([authModePromise, kimiConfigPromise]);
 
         // Write user-provided config files AFTER bootstrap (kimiConfig, etc.)
