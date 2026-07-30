@@ -80,7 +80,7 @@ const DEFAULT_AGENTS = [
         name: 'OpenCode',
         cmd: 'opencode',
         args: [],
-        env_required: ['ANTHROPIC_API_KEY', 'OPENAI_API_KEY'],
+        env_required: [],
         resume: {
             level: 'L2',
             stateEnv: 'XDG_DATA_HOME',
