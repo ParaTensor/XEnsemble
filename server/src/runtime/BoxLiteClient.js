@@ -196,22 +196,12 @@ class BoxLiteClient {
             let stdout = '';
             let stderr = '';
             let settled = false;
-            const byteBufs = { 0x01: Buffer.alloc(0), 0x02: Buffer.alloc(0) };
-            const drain = (ch) => {
-                const buf = byteBufs[ch];
-                const completeLen = completeUtf8Length(buf);
-                if (completeLen > 0) {
-                    const str = buf.slice(0, completeLen).toString('utf8');
-                    byteBufs[ch] = completeLen < buf.length ? buf.slice(completeLen) : Buffer.alloc(0);
-                    return str;
-                }
-                return '';
-            };
+            const decoders = { 0x01: new TextDecoder('utf-8'), 0x02: new TextDecoder('utf-8') };
             const done = (code) => {
                 if (settled) return;
                 settled = true;
-                stdout += drain(0x01);
-                stderr += drain(0x02);
+                stdout += decoders[0x01].decode();
+                stderr += decoders[0x02].decode();
                 try { ws.close(); } catch (_) {}
                 resolve({ exitCode: code ?? 0, stdout, stderr });
             };
@@ -220,8 +210,7 @@ class BoxLiteClient {
                     const buf = Buffer.from(data);
                     const decoded = decodeExecutionFrameRaw(buf, true);
                     if (decoded.channel === 0x01 || decoded.channel === 0x02) {
-                        byteBufs[decoded.channel] = Buffer.concat([byteBufs[decoded.channel], decoded.payload]);
-                        const str = drain(decoded.channel);
+                        const str = decoders[decoded.channel].decode(decoded.payload, { stream: true });
                         if (decoded.channel === 0x01) stdout += str;
                         else stderr += str;
                     }

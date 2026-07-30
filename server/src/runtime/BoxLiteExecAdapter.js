@@ -42,7 +42,7 @@ class BoxLiteStreamHandle extends StreamHandle {
         this._dataCbs = [];
         this._exitCbs = [];
         this._closed = false;
-        this._byteBuffers = {};
+        this._decoders = {};
         this._lastRseq = 0;
         this._reattaching = false;
         this._client = options.client || null;
@@ -92,11 +92,8 @@ class BoxLiteStreamHandle extends StreamHandle {
                 const decoded = decodeExecutionFrameRaw(buf, this._preferSeqFrames);
                 const ch = decoded.channel;
                 if (ch !== undefined) {
-                    if (!this._byteBuffers[ch]) this._byteBuffers[ch] = Buffer.alloc(0);
-                    this._byteBuffers[ch] = Buffer.concat([this._byteBuffers[ch], decoded.payload]);
-                    const completeLen = completeUtf8Length(this._byteBuffers[ch]);
-                    var payload = completeLen > 0 ? this._byteBuffers[ch].slice(0, completeLen).toString('utf8') : '';
-                    this._byteBuffers[ch] = completeLen < this._byteBuffers[ch].length ? this._byteBuffers[ch].slice(completeLen) : Buffer.alloc(0);
+                    if (!this._decoders[ch]) this._decoders[ch] = new TextDecoder('utf-8');
+                    const payload = this._decoders[ch].decode(decoded.payload, { stream: true });
                     if (decoded.rseq && decoded.rseq > this._lastRseq) {
                         this._lastRseq = decoded.rseq;
                     }
@@ -178,7 +175,7 @@ class BoxLiteStreamHandle extends StreamHandle {
                     this._ws = newWs;
                     this._reattaching = false;
                     this._reattachAttempts = 0;
-                    this._byteBuffers = {};
+                    this._decoders = {};
                     this._setupWsListeners(newWs);
                 });
                 newWs.once('error', () => {
