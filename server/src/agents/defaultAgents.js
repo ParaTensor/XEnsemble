@@ -122,8 +122,9 @@ const DEFAULT_AGENTS = [
         env_required: ['AMP_API_KEY'],
         resume: {
             level: 'L2',
-            stateEnv: 'XENSEMBLE_STATE_DIR',
+            stateEnv: 'XDG_CONFIG_HOME',
             resumeArgs: ['last'],
+            resumeCheckSubdir: 'amp',
         },
     },
     {
@@ -388,6 +389,7 @@ const DEFAULT_AGENTS = [
             level: 'L2',
             stateEnv: 'HERMES_HOME',
             resumeArgs: ['--continue'],
+            resumeCheckSubdir: 'sessions',
         },
     },
     {

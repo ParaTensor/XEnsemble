@@ -49,8 +49,31 @@ const AGENT_BOX_IMAGE_CATALOG = {
     // prebuilt standalone binary — no Node.js version requirement
     'github-copilot': { tag: 'github-copilot', buildable: true },
     'cursor': { tag: 'cursor', buildable: true, install: 'curl https://cursor.com/install -fsS | bash' },
-    'amp': { buildable: false, reason: 'install script is host-specific' },
-    'hermes': { buildable: false, reason: 'install script mutates home directory layout' },
+    // Prebuilt binary downloaded by install script - same pattern as cursor.
+    'amp': { tag: 'amp', buildable: true, install: 'curl -fsSL https://ampcode.com/install.sh | bash' },
+    // Python-based agent: needs Python 3.11 + uv (not in base image).
+    // Python is installed in the agent image build, not the base image.
+    'hermes': {
+        tag: 'hermes',
+        buildable: true,
+        install: [
+            'apt-get update',
+            '&& apt-get install -y --no-install-recommends python3 python3-venv python3-pip',
+            '&& rm -rf /var/lib/apt/lists/*',
+            '&& curl -LsSf https://astral.sh/uv/install.sh | sh',
+            '&& export PATH="/root/.local/bin:$PATH"',
+            '&& rm -rf "$HOME/.hermes/hermes-agent" "$HOME/.hermes"/hermes-agent.broken-* 2>/dev/null; true',
+            '&& curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash -s -- --skip-setup --skip-browser',
+            // Strip non-runtime files to reduce image size (~400MB saved).
+            '&& rm -rf /usr/local/lib/hermes-agent/.git',
+            '&& rm -rf /usr/local/lib/hermes-agent/website',
+            '&& rm -rf /usr/local/lib/hermes-agent/apps',
+            '&& rm -rf /usr/local/lib/hermes-agent/tests',
+            '&& rm -rf /usr/local/lib/hermes-agent/node_modules',
+            '&& find /usr/local/lib/hermes-agent -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true',
+            '&& find /usr/local/lib/hermes-agent -name "*.pyc" -delete 2>/dev/null || true',
+        ].join(' '),
+    },
 };
 
 function agentImageEnvKey(agentId) {

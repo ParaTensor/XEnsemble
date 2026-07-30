@@ -46,23 +46,24 @@ test('resolveBoxBaseImage falls back to BLINK_IMAGE then default base', () => {
     }
 });
 
-test('listBuildableAgentImages includes npm-backed agents and skips unsupported ones', () => {
+test('listBuildableAgentImages includes npm-backed agents and unsupported ones', () => {
     const entries = listBuildableAgentImages();
     const byId = new Map(entries.map((entry) => [entry.agentId, entry]));
     assert.ok(byId.has('claude-code'));
     assert.ok(byId.has('droid'));
-    assert.equal(byId.has('hermes'), false);
-    assert.equal(byId.has('amp'), false);
+    assert.ok(byId.has('hermes'));
+    assert.ok(byId.has('amp'));
     assert.match(byId.get('claude-code').install, /npm install -g/);
+    assert.match(byId.get('amp').install, /ampcode\.com/);
+    assert.match(byId.get('hermes').install, /python3/);
     assert.match(resolveAgentBoxImageDefault('claude-code'), /agent-claude-code/);
 });
 
-test('resolveBoxImage rejects non-buildable agents on boxlite unless env override is set', async () => {
-    await assert.rejects(
-        () => resolveBoxImage({ agentId: 'hermes' }),
-        /not supported on boxlite/i,
-    );
+test('resolveBoxImage resolves hermes and amp to their agent images', async () => {
+    assert.match(await resolveBoxImage({ agentId: 'hermes' }), /agent-hermes/);
+    assert.match(await resolveBoxImage({ agentId: 'amp' }), /agent-amp/);
 
+    // env override still works
     const key = agentImageEnvKey('hermes');
     const prev = process.env[key];
     process.env[key] = 'registry.example/hermes:custom';
