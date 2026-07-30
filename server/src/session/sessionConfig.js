@@ -89,6 +89,33 @@ function applyCustomEnv(env, customEnv) {
 }
 
 /**
+ * Resolve extra spawn args derived from user-configured config files.
+ *
+ * droid: the first customModel's `model` field in .factory/settings.json is
+ * passed as `--model <name>` so droid actually selects the configured custom
+ * provider instead of its Factory default (which requires Factory org binding).
+ *
+ * @param {string} agentId
+ * @param {Array} configFiles - [{ path, content }]
+ * @returns {string[]} extra spawn args (may be empty)
+ */
+function resolveAgentSpawnArgs(agentId, configFiles) {
+    if (!configFiles?.length) return [];
+    if (agentId === 'droid') {
+        const cfg = configFiles.find((cf) => cf.path && cf.path.endsWith('.factory/settings.json'));
+        if (!cfg?.content) return [];
+        try {
+            const parsed = JSON.parse(cfg.content);
+            const model = parsed?.customModels?.[0]?.model;
+            if (typeof model === 'string' && model.trim()) {
+                return ['--model', model.trim()];
+            }
+        } catch (_) { /* invalid json - ignore */ }
+    }
+    return [];
+}
+
+/**
  * Save session config to DB (upsert).
  */
 async function saveSessionConfig(db, schema, sessionId, { configFiles, customEnv }) {
@@ -138,6 +165,7 @@ module.exports = {
     validateConfigFiles,
     writeConfigFilesToVM,
     applyCustomEnv,
+    resolveAgentSpawnArgs,
     saveSessionConfig,
     getSessionConfig,
 };

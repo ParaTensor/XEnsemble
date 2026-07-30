@@ -173,6 +173,24 @@ const DEFAULT_AGENTS = [
             stateEnv: 'FACTORY_HOME_OVERRIDE',
             resumeArgs: ['--resume'],
         },
+        configSchema: {
+            configFiles: [{
+                path: '${STATE_DIR}/.factory/settings.json',
+                format: 'json',
+                label: 'settings.json',
+                description: 'Factory Droid 配置文件。配置 customModels 后，droid 将使用自定义 Provider 而非 Factory 官方 API（可绕过 Factory 组织绑定）。首个 customModel 的 model 字段会自动作为 --model 参数传入。支持 provider: openai / anthropic / bedrock-converse / generic-chat-completion-api（OpenAI 兼容）。',
+                example: JSON.stringify({
+                    customModels: [
+                        {
+                            provider: 'generic-chat-completion-api',
+                            model: 'deepseek-chat',
+                            baseUrl: 'https://api.deepseek.com/v1',
+                            apiKey: 'your-api-key',
+                        },
+                    ],
+                }, null, 2),
+            }],
+        },
     },
     {
         id: 'glm-agent',

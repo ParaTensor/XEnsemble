@@ -276,7 +276,7 @@ async function resumeSession({
 
         // Write user-provided config files AFTER bootstrap (kimiConfig, etc.)
         // so user-provided files take precedence over bootstrap defaults.
-        const { writeConfigFilesToVM, applyCustomEnv, getSessionConfig } = require('./sessionConfig');
+        const { writeConfigFilesToVM, applyCustomEnv, getSessionConfig, resolveAgentSpawnArgs } = require('./sessionConfig');
         const userConfig = await getSessionConfig(db, schema, session.id);
         if (userConfig.configFiles.length) {
             await writeConfigFilesToVM(runtime.fs, {
@@ -409,7 +409,7 @@ async function resumeSession({
 
             handle = await runtime.exec.spawn(
                 agentMeta.cmd,
-                [...stateArgs, ...agentMeta.args, ...resumeArgs],
+                [...stateArgs, ...agentMeta.args, ...resumeArgs, ...resolveAgentSpawnArgs(agentMeta.id, userConfig.configFiles)],
                 resolvedSpawnEnv.env,
                 {
                     name: agentMeta.name,
