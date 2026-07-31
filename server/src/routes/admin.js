@@ -351,8 +351,16 @@ function registerAdminRoutes(fastify) {
     fastify.put('/api/v1/admin/gateway/agent-configs/:agentId', { preValidation: adminPre }, async (request, reply) => {
         try {
             const { config, sync } = await agentGatewayConfig.setForAgent(request.params.agentId, request.body || {});
-            const warning = sync && !sync.synced && sync.reason === 'provider_not_found'
-                ? `Provider "${sync.providerName}" does not exist in the gateway. Add it under Gateway before launching this agent.`
+            // Surface every binding-sync failure so admins see why the agent
+            // will fail to route once spawned (not just provider_not_found).
+            const WARNING_BY_REASON = {
+                provider_not_found: (s) => `Provider "${s.providerName}" does not exist in the gateway. Add it under Gateway before launching this agent.`,
+                missing_config: () => 'Gateway config is missing. Start the gateway under Settings → Gateway, then re-save this agent.',
+                no_provider: () => 'Gateway mode requires a provider. Select one under Gateway before launching this agent.',
+                sync_failed: (s) => `Gateway binding sync failed: ${s.error || 'unknown error'}.`,
+            };
+            const warning = sync && !sync.synced && WARNING_BY_REASON[sync.reason]
+                ? WARNING_BY_REASON[sync.reason](sync)
                 : undefined;
             return { ok: true, config, warning };
         } catch (err) {

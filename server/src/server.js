@@ -2316,6 +2316,22 @@ async function startServer() {
         fastify.log.warn(err, '[unigateway] failed to sync platform router secrets');
     }
 
+    // Heal gateway service bindings for gateway-mode agents (e.g. after TOML
+    // regeneration, provider rename/delete, or a config saved before the
+    // provider existed). Best-effort; failures are logged, not fatal.
+    try {
+        const { syncAllAgentServiceBindings } = require('./llm/agentServiceSync');
+        const results = await syncAllAgentServiceBindings(fastify.log);
+        const unfinished = results.filter(
+            (r) => !r.synced && !['not_gateway_mode', 'no_provider'].includes(r.reason),
+        );
+        if (unfinished.length > 0) {
+            fastify.log.warn({ unfinished }, '[llm] gateway binding sync: unfinished');
+        }
+    } catch (err) {
+        fastify.log.warn(err, '[llm] gateway binding sync failed');
+    }
+
     await registerPreviewGateway(fastify);
     await registerLlmProxy(fastify);
     startPreviewLifecycle();

@@ -15,3 +15,6 @@ openspec/
 opencode.json
 skills-lock.json
 .agents/
+
+# XEnsemble platform metadata - do not commit
+.xensemble/

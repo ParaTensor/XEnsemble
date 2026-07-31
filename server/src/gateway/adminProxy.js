@@ -60,6 +60,18 @@ async function requestGateway(method, pathname, { body, query, log } = {}) {
 function registerGatewayAdminRoutes(fastify) {
     const adminPre = [fastify.authenticate, fastify.requireAdmin];
 
+    // After a provider is created/updated/deleted, re-sync agent service
+    // bindings so agents configured for gateway mode pick up the change
+    // (e.g. an agent saved with a provider that only now exists). Best-effort.
+    async function resyncAgentBindingsAfterProviderChange() {
+        try {
+            const { syncAllAgentServiceBindings } = require('../llm/agentServiceSync');
+            await syncAllAgentServiceBindings(fastify.log);
+        } catch (err) {
+            fastify.log.warn(err, '[llm] gateway binding sync after provider change failed');
+        }
+    }
+
     fastify.get('/api/v1/admin/gateway/status', { preValidation: adminPre }, async () => {
         return enrichLlmProxyStatus(await unigateway.refreshRunningState());
     });
@@ -270,6 +282,9 @@ function registerGatewayAdminRoutes(fastify) {
                 body: request.body || {},
                 log: fastify.log,
             });
+            if (result.statusCode >= 200 && result.statusCode < 300) {
+                await resyncAgentBindingsAfterProviderChange();
+            }
             return reply.code(result.statusCode).send(result.body);
         } catch (err) {
             return reply.code(err.statusCode || 500).send({ error: err.message });
@@ -283,6 +298,9 @@ function registerGatewayAdminRoutes(fastify) {
                 body: request.body || {},
                 log: fastify.log,
             });
+            if (result.statusCode >= 200 && result.statusCode < 300) {
+                await resyncAgentBindingsAfterProviderChange();
+            }
             return reply.code(result.statusCode).send(result.body);
         } catch (err) {
             return reply.code(err.statusCode || 500).send({ error: err.message });
@@ -293,6 +311,9 @@ function registerGatewayAdminRoutes(fastify) {
         try {
             const name = encodeURIComponent(request.params.name);
             const result = await requestGateway('DELETE', `/api/admin/providers/${name}`, { log: fastify.log });
+            if (result.statusCode >= 200 && result.statusCode < 300) {
+                await resyncAgentBindingsAfterProviderChange();
+            }
             return reply.code(result.statusCode).send(result.body);
         } catch (err) {
             return reply.code(err.statusCode || 500).send({ error: err.message });
