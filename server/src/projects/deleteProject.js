@@ -20,8 +20,15 @@ async function deleteProjectForUser(userId, project, opts = {}) {
         invalidateProjectCache(projectId);
     } catch { /* circular dep guard */ }
 
-    const sessionRows = await db.select().from(schema.sessions)
-        .where(eq(schema.sessions.projectId, projectId));
+    // Fetch sessions, deployments, and runtimes in parallel (3 SELECTs -> 1 round-trip).
+    const [sessionRows, deploymentRows, runtimeRows] = await Promise.all([
+        db.select().from(schema.sessions).where(eq(schema.sessions.projectId, projectId)),
+        db.select().from(schema.deployments).where(eq(schema.deployments.projectId, projectId)),
+        db.select().from(schema.runtimes).where(eq(schema.runtimes.projectId, projectId)),
+    ]);
+
+    // Phase 1: Kill in-memory session handles + shell managers (synchronous).
+    const sessionIds = sessionRows.map((r) => r.id);
     for (const row of sessionRows) {
         try { sessionManager.deleteSession(row.id); }
         catch (err) { if (log?.warn) log.warn({ err, sessionId: row.id }, '[projects] deleteSession failed during project delete'); }
@@ -29,18 +36,18 @@ async function deleteProjectForUser(userId, project, opts = {}) {
     try { WorkspaceShellManager.deleteByProjectId(projectId); }
     catch (err) { if (log?.warn) log.warn({ err, projectId }, '[projects] WorkspaceShellManager.deleteByProjectId failed'); }
 
-    const deploymentRows = await db.select().from(schema.deployments)
-        .where(eq(schema.deployments.projectId, projectId));
+    // Phase 2: Stop running deployments (stop process + UPDATE status).
+    // Individual row deletion is handled by the bulk DELETE in Phase 4 Round 1.
     for (const dep of deploymentRows) {
-        try { await deploymentService.remove(userId, dep.id); }
-        catch (err) { if (log?.warn) log.warn({ err, deploymentId: dep.id }, '[projects] deploymentService.remove failed'); }
+        if (dep.status === 'running') {
+            try { await deploymentService.stopPreview(userId, dep); }
+            catch (err) { if (log?.warn) log.warn({ err, deploymentId: dep.id }, '[projects] stopPreview failed during project delete'); }
+        }
     }
 
-    // 配套清理：销毁 boxlite/blink sessions 等 runtime 资源（local destroy 为 no-op）。
+    // Phase 3: Destroy runtime VMs (blink-server stop + delete).
     // destroy 失败必须记录：静默忽略会留下孤儿 VM，其 workspace 目录随后被删后会导致
     // boxlite 初始化 panic（见 orphan-VM 故障）。失败的 runtime 记录保留，便于后续对账清理。
-    const runtimeRows = await db.select().from(schema.runtimes)
-        .where(eq(schema.runtimes.projectId, projectId));
     const { getRuntime } = require('../runtime/registry');
     const rt = getRuntime();
     const failedRuntimeRefs = [];
@@ -58,34 +65,56 @@ async function deleteProjectForUser(userId, project, opts = {}) {
         }
     }
 
-    // Delete all dependent rows, then the project row. Retry once if a concurrent
-    // operation (e.g. clone IIFE's ensureProjectRuntime) inserts a new runtime
-    // row between our runtimes-delete and projects-delete, causing an FK violation.
+    // Phase 4: Delete all DB rows in 4 parallel rounds (FK dependency chain).
+    //
+    // Dependency graph (child -> parent, must delete child first):
+    //   Round 1: 9 child tables (only reference projects or sessions, not each other)
+    //   Round 2: repo_snapshots (after workspace_checkpoints) + sessions (after workspace_checkpoints + session_configs/streams)
+    //   Round 3: runtimes (after sessions + deployments, both have runtime_id FK)
+    //   Round 4: projects (after all children)
+    //
+    // All DELETEs are idempotent (0 rows affected on retry). On FK violation retry,
+    // do a fresh SELECT sessions to catch concurrent inserts.
     const MAX_DELETE_RETRIES = 3;
     let lastDeleteErr = null;
     for (let attempt = 1; attempt <= MAX_DELETE_RETRIES; attempt += 1) {
         try {
-            await db.delete(schema.workspaceCheckpoints).where(eq(schema.workspaceCheckpoints.projectId, projectId));
-            await db.delete(schema.repoSnapshots).where(eq(schema.repoSnapshots.projectId, projectId));
-            await db.delete(schema.devEnvironmentProfiles).where(eq(schema.devEnvironmentProfiles.projectId, projectId));
-            await db.delete(schema.mergeRequests).where(eq(schema.mergeRequests.projectId, projectId));
-            await db.delete(schema.projectBranches).where(eq(schema.projectBranches.projectId, projectId));
-            // Delete session_configs and session_streams BEFORE sessions (they reference sessions.id)
-            const sessionIds = await db.select({ id: schema.sessions.id }).from(schema.sessions)
-                .where(eq(schema.sessions.projectId, projectId));
-            if (sessionIds.length > 0) {
-                const sidList = sessionIds.map((s) => s.id);
-                await db.delete(schema.sessionConfigs).where(inArray(schema.sessionConfigs.sessionId, sidList));
-                await db.delete(schema.sessionStreams).where(inArray(schema.sessionStreams.sessionId, sidList));
-            }
-            await db.delete(schema.sessions).where(eq(schema.sessions.projectId, projectId));
-            await db.delete(schema.deployments).where(eq(schema.deployments.projectId, projectId));
+            // On first attempt, use sessionIds from Phase 1 (saves 1 SELECT).
+            // On retry, do a fresh SELECT to catch concurrent session inserts.
+            const sidList = attempt === 1
+                ? sessionIds
+                : (await db.select({ id: schema.sessions.id }).from(schema.sessions)
+                    .where(eq(schema.sessions.projectId, projectId))).map((s) => s.id);
+
+            // Round 1: 9 parallel DELETEs (all independent child tables).
+            await Promise.all([
+                db.delete(schema.workspaceCheckpoints).where(eq(schema.workspaceCheckpoints.projectId, projectId)),
+                db.delete(schema.devEnvironmentProfiles).where(eq(schema.devEnvironmentProfiles.projectId, projectId)),
+                db.delete(schema.mergeRequests).where(eq(schema.mergeRequests.projectId, projectId)),
+                db.delete(schema.projectBranches).where(eq(schema.projectBranches.projectId, projectId)),
+                db.delete(schema.deployments).where(eq(schema.deployments.projectId, projectId)),
+                db.delete(schema.events).where(eq(schema.events.projectId, projectId)),
+                db.execute(sql`DELETE FROM pull_requests WHERE project_id = ${projectId}`),
+                sidList.length > 0
+                    ? db.delete(schema.sessionConfigs).where(inArray(schema.sessionConfigs.sessionId, sidList))
+                    : Promise.resolve(),
+                sidList.length > 0
+                    ? db.delete(schema.sessionStreams).where(inArray(schema.sessionStreams.sessionId, sidList))
+                    : Promise.resolve(),
+            ]);
+
+            // Round 2: repo_snapshots (after workspace_checkpoints) + sessions (after session_configs/streams).
+            await Promise.all([
+                db.delete(schema.repoSnapshots).where(eq(schema.repoSnapshots.projectId, projectId)),
+                db.delete(schema.sessions).where(eq(schema.sessions.projectId, projectId)),
+            ]);
+
+            // Round 3: runtimes (after sessions + deployments, both reference runtimes.id).
             await db.delete(schema.runtimes).where(eq(schema.runtimes.projectId, projectId));
-            await db.delete(schema.events).where(eq(schema.events.projectId, projectId));
-            // pull_requests table is created by migration 003 but NOT in the Drizzle schema.
-            // It has FK(project_id) REFERENCES projects(id), so must be deleted before projects.
-            await db.execute(sql`DELETE FROM pull_requests WHERE project_id = ${projectId}`);
+
+            // Round 4: projects (after all children).
             await db.delete(schema.projects).where(eq(schema.projects.id, projectId));
+
             lastDeleteErr = null;
             break;
         } catch (err) {
@@ -107,10 +136,10 @@ async function deleteProjectForUser(userId, project, opts = {}) {
     const dir = workspace.projectDir(userId, projectId);
     if (fs.existsSync(dir)) {
         try {
-            fs.rmSync(dir, { recursive: true, force: true });
+            await fs.promises.rm(dir, { recursive: true, force: true });
         } catch (err) {
             if (log?.warn) {
-                log.warn({ err, projectId, dir }, '[projects] fs.rmSync failed during project delete (directory will be orphaned)');
+                log.warn({ err, projectId, dir }, '[projects] fs.rm failed during project delete (directory will be orphaned)');
             }
         }
     }
