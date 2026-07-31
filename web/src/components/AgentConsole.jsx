@@ -355,20 +355,81 @@ function AgentConsole({
           let replayDone = false;
           let writeBuffer = '';
           let pendingSeq = null;
-          let lastDataAt = 0;
-          let coalesceStartedAt = 0;
-          const COALESCE_DELAY_MS = 150;
-          const COALESCE_MAX_WAIT_MS = 800;
-          const CLEAR_SCREEN = '\x1b[2J';
+          // Virtual screen for ANSI diff: plain text per row, + cursor Y
+          // Used to detect which rows actually changed in a full-screen redraw
+          // and only output the changed rows (eliminates Ink's full-screen flash).
+          let vsScreen = [];
+          let vsCursorY = 0;
+          const VS_ROWS = 32;
+          for (let y = 0; y < VS_ROWS; y++) vsScreen[y] = '';
 
-          function shouldCoalesce(buf) {
-            if (buf.length < 200) return false;
-            const lastClearIdx = buf.lastIndexOf(CLEAR_SCREEN);
-            if (lastClearIdx !== -1 && buf.length - lastClearIdx < 120) return true;
-            const cursorUpCount = (buf.match(/\x1b\[\d*A/g) || []).length;
-            const eraseLineCount = (buf.match(/\x1b\[\d*K/g) || []).length;
-            if (cursorUpCount >= 2 && eraseLineCount >= 8) return true;
-            return false;
+          function vsStripAnsi(text) {
+            return text.replace(/\x1b\[[0-9;?]*[a-zA-Z]/g, '').replace(/\x1b\].*?\x07/g, '');
+          }
+
+          function vsProcess(data) {
+            const hasClear = /\x1b\[2J/.test(data);
+            if (hasClear) {
+              for (let y = 0; y < VS_ROWS; y++) vsScreen[y] = '';
+            }
+            const cursorUpMatch = data.match(/^\x1b\[(\d+)A/);
+            if (!cursorUpMatch) {
+              let i = 0, cx = 0, cy = vsCursorY;
+              while (i < data.length) {
+                if (data[i] === '\x1b') {
+                  if (data[i + 1] === '[') {
+                    let j = i + 2;
+                    while (j < data.length && !/[A-Za-z]/.test(data[j])) j++;
+                    const p = data.slice(i + 2, j), f = data[j], n = parseInt(p) || 1;
+                    if (f === 'A') cy = Math.max(0, cy - n);
+                    else if (f === 'B') cy = Math.min(VS_ROWS - 1, cy + n);
+                    else if (f === 'G') cx = Math.max(0, n - 1);
+                    else if (f === 'H') { const s = p.split(';'); cy = Math.max(0, (parseInt(s[0]) || 1) - 1); cx = Math.max(0, (parseInt(s[1]) || 1) - 1); }
+                    else if (f === 'J' && n === 2) for (let y = 0; y < VS_ROWS; y++) vsScreen[y] = '';
+                    else if (f === 'K' && (n === 2 || !p)) vsScreen[cy] = '';
+                    else if (f === 'd') cy = Math.max(0, n - 1);
+                    i = j + 1;
+                  } else if (data[i + 1] === 'h' || data[i + 1] === 'l') { i += 2; }
+                  else if (data[i + 1] === ']') { const e = data.indexOf('\x07', i + 2); i = e >= 0 ? e + 1 : data.length; }
+                  else i++;
+                } else if (data[i] === '\r' && data[i + 1] === '\n') { cy++; cx = 0; i += 2; }
+                else if (data[i] === '\r') { cx = 0; i++; }
+                else if (data[i] === '\n') { cy++; i++; }
+                else if (data[i] >= ' ') {
+                  if (cy >= 0 && cy < VS_ROWS && cx < 120) {
+                    const r = vsScreen[cy];
+                    vsScreen[cy] = r.substring(0, cx) + data[i] + r.substring(cx + 1);
+                  }
+                  cx++; i++;
+                } else i++;
+              }
+              vsCursorY = cy;
+              return data;
+            }
+            const upCount = parseInt(cursorUpMatch[1]);
+            let startRow = Math.max(0, vsCursorY - upCount);
+            const rest = data.slice(cursorUpMatch[0].length);
+            const segments = rest.match(/\x1b\[2K[^\r\n]*/g);
+            if (!segments || segments.length === 0) {
+              vsCursorY = startRow;
+              return data;
+            }
+            let output = '';
+            let currentRow = startRow;
+            let anyChanged = false;
+            for (const seg of segments) {
+              if (currentRow >= VS_ROWS) break;
+              const raw = seg.slice(4);
+              const plain = vsStripAnsi(raw);
+              if (vsScreen[currentRow] !== plain) {
+                output += `\x1b[${currentRow + 1};1H\x1b[2K${raw}\r\n`;
+                vsScreen[currentRow] = plain;
+                anyChanged = true;
+              }
+              currentRow++;
+            }
+            vsCursorY = currentRow - 1;
+            return anyChanged ? output : '\x1b[H';
           }
 
           // Fallback: hide overlay after 5s even if no output was received
@@ -388,18 +449,7 @@ function AgentConsole({
               pendingSeq = null;
             }
             if (!writeBuffer) return;
-            if (shouldCoalesce(writeBuffer)) {
-              const now = Date.now();
-              if (coalesceStartedAt === 0) coalesceStartedAt = now;
-              const sinceData = now - lastDataAt;
-              const sinceStart = now - coalesceStartedAt;
-              if (sinceData < COALESCE_DELAY_MS && sinceStart < COALESCE_MAX_WAIT_MS) {
-                writeRafId = setTimeout(flushWriteBuffer, COALESCE_DELAY_MS - sinceData);
-                return;
-              }
-            }
-            coalesceStartedAt = 0;
-            const data = writeBuffer;
+            const data = vsProcess(writeBuffer);
             writeBuffer = '';
             const buf = terminal.buffer.active;
             const atBottom = buf.baseY + terminal.rows >= buf.length;
@@ -430,7 +480,6 @@ function AgentConsole({
             if (msg.type === 'output') {
               if (msg.seq != null) pendingSeq = msg.seq;
               writeBuffer += msg.data;
-              lastDataAt = Date.now();
               if (writeRafId === null) {
                 writeRafId = requestAnimationFrame(flushWriteBuffer);
               }
