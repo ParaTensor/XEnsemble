@@ -43,6 +43,7 @@ class BoxLiteStreamHandle extends StreamHandle {
         this._exitCbs = [];
         this._closed = false;
         this._decoders = {};
+        this._trailingFffd = {}; // per-channel: true if last output ended with stripped FFFD
         this._lastRseq = 0;
         this._reattaching = false;
         this._client = options.client || null;
@@ -93,7 +94,20 @@ class BoxLiteStreamHandle extends StreamHandle {
                 const ch = decoded.channel;
                 if (ch !== undefined) {
                     if (!this._decoders[ch]) this._decoders[ch] = new TextDecoder('utf-8');
-                    const payload = this._decoders[ch].decode(decoded.payload, { stream: true });
+                    let payload = this._decoders[ch].decode(decoded.payload, { stream: true });
+                    // Workaround: blink server chunks PTY output at ~1024 bytes and
+                    // replaces incomplete multi-byte sequences at chunk boundaries with
+                    // U+FFFD. This produces visible garbage (��) at every chunk boundary.
+                    // Pattern: frame N ends with FFFD, frame N+1 starts with FFFD.
+                    // Fix: strip trailing FFFD from frame N and leading FFFD from frame N+1.
+                    if (this._trailingFffd[ch]) {
+                        payload = payload.replace(/^\uFFFD+/, '');
+                        this._trailingFffd[ch] = false;
+                    }
+                    if (payload.endsWith('\uFFFD')) {
+                        payload = payload.replace(/\uFFFD+$/, '');
+                        this._trailingFffd[ch] = true;
+                    }
                     if (decoded.rseq && decoded.rseq > this._lastRseq) {
                         this._lastRseq = decoded.rseq;
                     }
