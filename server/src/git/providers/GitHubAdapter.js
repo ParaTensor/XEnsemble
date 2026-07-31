@@ -39,10 +39,11 @@ function deriveOAuthBase(apiBase) {
 }
 
 async function githubFetch(token, apiBase, path, opts = {}) {
+    const { returnHeaders, ...fetchOpts } = opts;
     const url = `${apiBase}${path}`;
     const options = {
-        ...opts,
-        headers: { ...authHeaders(token), ...opts.headers },
+        ...fetchOpts,
+        headers: { ...authHeaders(token), ...fetchOpts.headers },
     };
 
     let res;
@@ -52,7 +53,9 @@ async function githubFetch(token, apiBase, path, opts = {}) {
         throw new GitHubError(`GitHub request failed: ${cause.message}`, 'network_error');
     }
 
-    if (res.ok) return res.json();
+    if (res.ok) {
+        return returnHeaders ? { data: await res.json(), headers: res.headers } : res.json();
+    }
 
     let body = null;
     try { body = await res.json(); } catch { body = null; }
@@ -141,13 +144,17 @@ class GitHubAdapter extends GitProviderService {
 
     async getAuthenticatedUser(token, { apiBase } = {}) {
         const base = apiBase || DEFAULT_API_BASE;
-        const ghUser = await githubFetch(token, base, '/user');
+        const { data: ghUser, headers } = await githubFetch(token, base, '/user', { returnHeaders: true });
+        // GitHub returns X-OAuth-Scopes for classic PATs (comma+space separated);
+        // fine-grained PATs carry no such header, so mark them distinctly.
+        const scopesHeader = headers?.get('x-oauth-scopes');
         return {
             id: String(ghUser.id),
             username: ghUser.login,
             displayName: ghUser.name || ghUser.login,
             avatarUrl: ghUser.avatar_url || null,
             email: ghUser.email || null,
+            tokenScope: scopesHeader != null ? (scopesHeader || null) : 'fine-grained',
         };
     }
 

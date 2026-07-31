@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { GitBranch, Loader2, Search } from 'lucide-react';
+import { GitBranch, Loader2, Search, AlertCircle } from 'lucide-react';
 import {
   ConsoleDialogShell,
   ConsoleStructuredDialogHeader,
@@ -33,12 +33,17 @@ const PROVIDER_OPTIONS = [
 export default function RepoImportDialog({ open, onClose, onImported, fetchWorkspaces }) {
   const { showToast } = useToast();
   const [provider, setProvider] = useState('github');
-  const { connection, loading: connectionLoading, connect, disconnect } = useGitProvider(provider);
+  const { connection, loading: connectionLoading, connect, connectWithPat, disconnect } = useGitProvider(provider);
 
   const [repos, setRepos] = useState([]);
   const [reposLoading, setReposLoading] = useState(false);
   const [query, setQuery] = useState('');
   const [selectedFullName, setSelectedFullName] = useState('');
+
+  const [patToken, setPatToken] = useState('');
+  const [patConnecting, setPatConnecting] = useState(false);
+  const [patError, setPatError] = useState(null);
+  const [patSectionOpen, setPatSectionOpen] = useState(false);
 
   const [name, setName] = useState('');
   const [branch, setBranch] = useState('');
@@ -167,6 +172,62 @@ export default function RepoImportDialog({ open, onClose, onImported, fetchWorks
 
   const username = connection?.remote_username || connection?.remoteUsername
     || connection?.github_username || connection?.githubUsername || '';
+  const providerLabel = PROVIDER_OPTIONS.find((p) => p.id === provider)?.label || provider;
+
+  const handleConnectPat = async () => {
+    setPatConnecting(true);
+    setPatError(null);
+    try {
+      const ok = await connectWithPat(patToken.trim());
+      if (ok) {
+        setPatToken(''); // Do not keep the token in the dialog after connecting.
+        setPatSectionOpen(false);
+      }
+    } catch (err) {
+      setPatError(err.message);
+    } finally {
+      setPatConnecting(false);
+    }
+  };
+
+  const patSection = (
+    <div className="space-y-2">
+      <FormLabel htmlFor="pat-token">Personal Access Token</FormLabel>
+      <Input
+        id="pat-token"
+        type="password"
+        value={patToken}
+        onChange={(e) => setPatToken(e.target.value)}
+        placeholder={`Paste a ${providerLabel} personal access token`}
+        className="font-mono"
+        autoComplete="off"
+        spellCheck={false}
+      />
+      <div className="flex items-center gap-2">
+        <button
+          type="button"
+          onClick={handleConnectPat}
+          disabled={!patToken.trim() || patConnecting}
+          className="text-xs font-medium text-[#1967D2] hover:text-[#174EA6] disabled:opacity-50"
+        >
+          {patConnecting ? 'Connecting…' : 'Connect with token'}
+        </button>
+        {patToken && (
+          <span className="text-xs text-zinc-500">
+            {provider === 'github'
+              ? 'Requires the "repo" scope to push.'
+              : 'Stored encrypted; used for Git operations.'}
+          </span>
+        )}
+      </div>
+      {patError && (
+        <div className="flex items-center gap-1.5 text-xs text-red-600">
+          <AlertCircle className="h-3 w-3 shrink-0" />
+          {patError}
+        </div>
+      )}
+    </div>
+  );
 
   return (
     <ConsoleDialogShell
@@ -200,7 +261,7 @@ export default function RepoImportDialog({ open, onClose, onImported, fetchWorks
         {!connection ? (
           <div className="space-y-4">
             <p className={textSecondary}>
-              Connect your {PROVIDER_OPTIONS.find((p) => p.id === provider)?.label} account to import repositories.
+              Connect your {providerLabel} account to import repositories.
             </p>
             <GitConnectButton
               provider={provider}
@@ -209,6 +270,12 @@ export default function RepoImportDialog({ open, onClose, onImported, fetchWorks
               onConnect={connect}
               onDisconnect={disconnect}
             />
+            <div className="flex items-center gap-2 py-1">
+              <div className="h-px flex-1 bg-zinc-200" />
+              <span className="text-xs text-zinc-500">or use a personal access token</span>
+              <div className="h-px flex-1 bg-zinc-200" />
+            </div>
+            {patSection}
           </div>
         ) : (
           <div className="space-y-4">
@@ -218,7 +285,10 @@ export default function RepoImportDialog({ open, onClose, onImported, fetchWorks
                 <span className={`text-sm font-medium ${textPrimary}`}>
                   {username}
                 </span>
-                <span className="text-xs text-zinc-400">({provider})</span>
+                <span className="text-xs text-zinc-400">
+                  ({provider}
+                  {connection.connection_type === 'pat' ? ' · PAT' : ''})
+                </span>
               </div>
               <button
                 type="button"
@@ -229,6 +299,17 @@ export default function RepoImportDialog({ open, onClose, onImported, fetchWorks
                 Disconnect
               </button>
             </div>
+
+            <button
+              type="button"
+              onClick={() => setPatSectionOpen((v) => !v)}
+              className="text-xs font-medium text-[#1967D2] hover:text-[#174EA6]"
+            >
+              {patSectionOpen
+                ? 'Hide token input'
+                : 'Use a personal access token instead'}
+            </button>
+            {patSectionOpen && patSection}
 
             <div>
               <FormLabel htmlFor="repo-search">Search repositories</FormLabel>

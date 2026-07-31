@@ -37,6 +37,12 @@ export const disconnectProvider = (provider) =>
     method: 'DELETE',
   });
 
+export const connectWithPat = (provider, token) =>
+  request(`/api/v1/git/connections/${encodeURIComponent(provider)}/pat`, {
+    method: 'POST',
+    body: JSON.stringify({ token }),
+  });
+
 // ── Repos ──
 
 export const listRepos = (provider, params = {}) => {

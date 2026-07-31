@@ -65,7 +65,7 @@ const PROVIDER_OPTIONS = [
 export default function RepoImportDialog({ open, onClose, onImported, fetchWorkspaces }) {
   const { showToast } = useToast();
   const [provider, setProvider] = useState('github');
-  const { connection, loading: connectionLoading, error: connectError, connect, disconnect } = useGitProvider(provider);
+  const { connection, loading: connectionLoading, error: connectError, connect, connectWithPat, disconnect } = useGitProvider(provider);
   const [providerOAuthConfigured, setProviderOAuthConfigured] = useState(null);
 
   const [repos, setRepos] = useState([]);
@@ -77,6 +77,11 @@ export default function RepoImportDialog({ open, onClose, onImported, fetchWorks
   const [urlFetching, setUrlFetching] = useState(false);
   const [urlError, setUrlError] = useState(null);
   const urlInputRef = useRef(null);
+
+  const [patToken, setPatToken] = useState('');
+  const [patConnecting, setPatConnecting] = useState(false);
+  const [patError, setPatError] = useState(null);
+  const [patSectionOpen, setPatSectionOpen] = useState(false);
 
   const [name, setName] = useState('');
   const [branch, setBranch] = useState('');
@@ -109,6 +114,26 @@ export default function RepoImportDialog({ open, onClose, onImported, fetchWorks
     setImportedProjectId(null);
     setCloneStatus(null);
     setCloneError(null);
+    setPatToken('');
+    setPatConnecting(false);
+    setPatError(null);
+    setPatSectionOpen(false);
+  };
+
+  const handleConnectPat = async () => {
+    setPatConnecting(true);
+    setPatError(null);
+    try {
+      const ok = await connectWithPat(patToken.trim());
+      if (ok) {
+        setPatToken(''); // Do not keep the token in the dialog after connecting.
+        setPatSectionOpen(false);
+      }
+    } catch (err) {
+      setPatError(err.message);
+    } finally {
+      setPatConnecting(false);
+    }
   };
 
   const handleClose = () => {
@@ -251,6 +276,46 @@ export default function RepoImportDialog({ open, onClose, onImported, fetchWorks
 
   const username = connection?.remote_username || connection?.remoteUsername
     || connection?.github_username || connection?.githubUsername || '';
+  const providerLabel = PROVIDER_OPTIONS.find((p) => p.id === provider)?.label || provider;
+
+  const patSection = (
+    <div className="space-y-2">
+      <FormLabel htmlFor="pat-token">Personal Access Token</FormLabel>
+      <Input
+        id="pat-token"
+        type="password"
+        value={patToken}
+        onChange={(e) => setPatToken(e.target.value)}
+        placeholder={`Paste a ${providerLabel} personal access token`}
+        className="font-mono"
+        autoComplete="off"
+        spellCheck={false}
+      />
+      <div className="flex items-center gap-2">
+        <button
+          type="button"
+          onClick={handleConnectPat}
+          disabled={!patToken.trim() || patConnecting}
+          className="text-xs font-medium text-[#1967D2] hover:text-[#174EA6] disabled:opacity-50"
+        >
+          {patConnecting ? 'Connecting…' : 'Connect with token'}
+        </button>
+        {patToken && (
+          <span className="text-xs text-[#9AA0A6]">
+            {provider === 'github'
+              ? 'Requires the "repo" scope to push.'
+              : 'Stored encrypted; used for Git operations.'}
+          </span>
+        )}
+      </div>
+      {patError && (
+        <div className="flex items-center gap-1.5 text-xs text-red-600">
+          <AlertCircle className="h-3 w-3 shrink-0" />
+          {patError}
+        </div>
+      )}
+    </div>
+  );
 
   if (!open) return null;
 
@@ -296,8 +361,8 @@ export default function RepoImportDialog({ open, onClose, onImported, fetchWorks
             )}
             <p className={textSecondary}>
               {oauthNotConfigured
-                ? `An administrator must configure ${PROVIDER_OPTIONS.find((p) => p.id === provider)?.label} OAuth before you can connect.`
-                : `Connect your ${PROVIDER_OPTIONS.find((p) => p.id === provider)?.label} account to import repositories.`}
+                ? `An administrator must configure ${providerLabel} OAuth before you can connect.`
+                : `Connect your ${providerLabel} account to import repositories.`}
             </p>
             <GitConnectButton
               provider={provider}
@@ -308,6 +373,12 @@ export default function RepoImportDialog({ open, onClose, onImported, fetchWorks
               disabled={oauthNotConfigured}
               disabledReason={oauthNotConfigured ? formatGitOAuthError(`${provider} OAuth is not configured`, provider) : null}
             />
+            <div className="flex items-center gap-2 py-1">
+              <div className="h-px flex-1 bg-[#E8EAED]" />
+              <span className="text-xs text-[#9AA0A6]">or use a personal access token</span>
+              <div className="h-px flex-1 bg-[#E8EAED]" />
+            </div>
+            {patSection}
           </div>
         ) : (
           <div className="space-y-4">
@@ -315,7 +386,10 @@ export default function RepoImportDialog({ open, onClose, onImported, fetchWorks
               <div className="flex items-center gap-2">
                 <GitBranch className="h-4 w-4 text-[#9AA0A6]" />
                 <span className={`text-sm font-medium ${textPrimary}`}>{username}</span>
-                <span className="text-xs text-[#9AA0A6]">({provider})</span>
+                <span className="text-xs text-[#9AA0A6]">
+                  ({provider}
+                  {connection.connection_type === 'pat' ? ' · PAT' : ''})
+                </span>
               </div>
               <button
                 type="button"
@@ -326,6 +400,17 @@ export default function RepoImportDialog({ open, onClose, onImported, fetchWorks
                 Disconnect
               </button>
             </div>
+
+            <button
+              type="button"
+              onClick={() => setPatSectionOpen((v) => !v)}
+              className="text-xs font-medium text-[#1967D2] hover:text-[#174EA6]"
+            >
+              {patSectionOpen
+                ? 'Hide token input'
+                : 'Use a personal access token instead'}
+            </button>
+            {patSectionOpen && patSection}
 
             <div className="flex items-center gap-1.5">
               <button

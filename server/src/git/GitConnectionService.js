@@ -1,5 +1,5 @@
 const crypto = require('crypto');
-const { eq, and, isNull, lte } = require('drizzle-orm');
+const { eq, and, isNull, lte, desc } = require('drizzle-orm');
 
 const { db } = require('../db/index');
 const schema = require('../db/schema');
@@ -133,6 +133,114 @@ class GitConnectionService {
         return this._finishConnection(stateRow.userId, stateRow.provider, code);
     }
 
+    /**
+     * Connect using a pasted personal access token (PAT).
+     * PAT connections share the git_connections table with OAuth rows via the
+     * providerConfig='pat' discriminator (UNIQUE(user_id, provider, provider_config)
+     * lets both coexist). The newest row wins for token resolution (ORDER BY
+     * connectedAt DESC), so pasting a PAT while an OAuth connection exists
+     * switches push credentials without disconnecting OAuth.
+     *
+     * @param {string} userId
+     * @param {string} providerName
+     * @param {string} token
+     * @returns {Promise<{ connection: object, warning?: { code: string, message: string } }>}
+     */
+    async connectWithPat(userId, providerName, token) {
+        if (!userId) throw new Error('userId is required');
+        if (!hasProvider(providerName)) throw new Error(`Unknown provider: ${providerName}`);
+        if (!token || typeof token !== 'string' || !token.trim() || token.length > 512) {
+            throw new Error('A valid personal access token is required');
+        }
+
+        const provider = getProvider(providerName);
+        const config = await getProviderConfig(providerName);
+
+        // Validate the token and resolve the remote user profile. GitHub's
+        // adapter also surfaces X-OAuth-Scopes for classic PATs.
+        let user;
+        try {
+            user = await provider.getAuthenticatedUser(token.trim(), { apiBase: config?.apiBase });
+        } catch (err) {
+            if (err.code === 'token_expired' || err.status === 401) {
+                throw new Error(`${provider.displayName} rejected this token — it is invalid, expired, or revoked.`);
+            }
+            if (err.code === 'insufficient_scope' || err.status === 403) {
+                throw new Error(`${provider.displayName} rejected this token — it lacks permission to read your profile.`);
+            }
+            throw new Error(`Could not validate this token with ${provider.displayName}: ${err.message}`);
+        }
+
+        // Clear the 30s token cache so the new token is picked up immediately.
+        invalidateTokenCache(userId, providerName);
+        const now = Date.now();
+
+        // Remove any prior PAT row for this provider: the UNIQUE
+        // (user_id, provider, provider_config) constraint counts revoked rows,
+        // so a soft-delete would collide on the next insert (same as the
+        // OAuth path in _finishConnection, which also hard-deletes first).
+        await db.delete(schema.gitConnections)
+            .where(and(
+                eq(schema.gitConnections.userId, userId),
+                eq(schema.gitConnections.provider, providerName),
+                eq(schema.gitConnections.providerConfig, 'pat'),
+            ));
+
+        const encrypted = auth.encryptSecrets({ token: token.trim() });
+        const id = `gitconn_${crypto.randomBytes(8).toString('hex')}`;
+        const connection = {
+            id,
+            userId,
+            provider: providerName,
+            providerConfig: 'pat',
+            remoteUserId: user.id,
+            remoteUsername: user.username,
+            remoteAvatar: user.avatarUrl || null,
+            accessTokenEnc: encrypted,
+            refreshTokenEnc: null,          // PATs have no refresh semantics
+            tokenScope: user.tokenScope ?? null,
+            tokenExpiresAt: null,           // PATs never expire server-side
+            connectedAt: now,
+            lastUsedAt: now,
+            revokedAt: null,
+        };
+
+        await db.insert(schema.gitConnections).values(connection);
+
+        await recordEvent({
+            userId,
+            subjectType: 'git_connection',
+            subjectId: id,
+            type: 'git.connected',
+            data: {
+                provider: providerName,
+                connectionType: 'pat',
+                remoteUserId: user.id,
+                remoteUsername: user.username,
+            },
+        });
+
+        const warning = this._patScopeWarning(providerName, user.tokenScope);
+        return { connection: this._formatConnection(connection), ...(warning ? { warning } : {}) };
+    }
+
+    /**
+     * Warn when a GitHub classic PAT lacks push-capable scopes. Fine-grained
+     * PATs expose no scope list, so they are never warned about.
+     * @returns {{ code: string, message: string } | null}
+     */
+    _patScopeWarning(providerName, tokenScope) {
+        if (providerName !== 'github' || !tokenScope || tokenScope === 'fine-grained') return null;
+        const scopes = tokenScope.split(',').map((s) => s.trim());
+        if (!scopes.includes('repo') && !scopes.includes('public_repo')) {
+            return {
+                code: 'missing_repo_scope',
+                message: 'This token may not be able to push to private repositories. Grant the "repo" scope (or "public_repo" for public repos only).',
+            };
+        }
+        return null;
+    }
+
     async getConnection(userId, providerName) {
         const where = [
             eq(schema.gitConnections.userId, userId),
@@ -143,7 +251,8 @@ class GitConnectionService {
         }
 
         const rows = await db.select().from(schema.gitConnections)
-            .where(and(...where));
+            .where(and(...where))
+            .orderBy(desc(schema.gitConnections.connectedAt));
         if (rows.length === 0) return null;
         return this._formatConnection(rows[0]);
     }
@@ -176,7 +285,8 @@ class GitConnectionService {
         }
 
         const rows = await db.select().from(schema.gitConnections)
-            .where(and(...where));
+            .where(and(...where))
+            .orderBy(desc(schema.gitConnections.connectedAt));
         if (rows.length === 0) throw new Error(`${providerName || 'git'}_not_connected`);
 
         const row = rows[0];
@@ -384,6 +494,7 @@ class GitConnectionService {
             id: row.id,
             user_id: row.userId,
             provider: row.provider,
+            connection_type: row.providerConfig === 'pat' ? 'pat' : 'oauth',
             remote_user_id: row.remoteUserId,
             remote_username: row.remoteUsername,
             remote_avatar: row.remoteAvatar,

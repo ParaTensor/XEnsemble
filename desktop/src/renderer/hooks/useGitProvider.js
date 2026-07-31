@@ -87,6 +87,31 @@ export function useGitProvider(providerName, { onChange } = {}) {
     }
   }, [providerName, fetchConnection, showToast, clearPoll]);
 
+  const connectWithPat = useCallback(async (token) => {
+    if (!providerName) return false;
+    setLoading(true);
+    setError(null);
+    try {
+      const result = await gitApi.connectWithPat(providerName, token);
+      const conn = result.connection || result;
+      setConnection(conn);
+      onChange?.(conn);
+      if (result.warning) {
+        showToast('warning', result.warning.message);
+      }
+      const username = conn.remote_username || conn.remoteUsername
+        || conn.github_username || conn.githubUsername || providerName;
+      showToast('success', `Connected to ${providerName} as ${username}`);
+      return true;
+    } catch (err) {
+      setError(err.message);
+      showToast('error', err.message);
+      return false;
+    } finally {
+      setLoading(false);
+    }
+  }, [providerName, onChange, showToast]);
+
   const disconnect = useCallback(async () => {
     if (!providerName) return;
     setLoading(true);
@@ -108,6 +133,7 @@ export function useGitProvider(providerName, { onChange } = {}) {
     error,
     fetchConnection,
     connect,
+    connectWithPat,
     disconnect,
   };
 }

@@ -65,7 +65,10 @@ class GitProviderService {
     /**
      * Get the authenticated user's profile.
      * @param {string} token
-     * @returns {Promise<{ id: string, username: string, displayName: string, avatarUrl: string, email?: string }>}
+     * @returns {Promise<{ id: string, username: string, displayName: string, avatarUrl: string, email?: string, tokenScope?: string | null }>}
+     *   tokenScope is GitHub-specific: the classic-PAT X-OAuth-Scopes value, or
+     *   'fine-grained' when the token is a fine-grained PAT (no scopes header).
+     *   GitLab/Gitea adapters do not return it; callers fall back to null.
      */
     async getAuthenticatedUser(token) {
         throw new Error('GitProviderService.getAuthenticatedUser not implemented');

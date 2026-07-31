@@ -152,6 +152,21 @@ function registerGitRoutes(fastify) {
         }
     });
 
+    fastify.post('/api/v1/git/connections/:provider/pat', {
+        preValidation: [fastify.authenticate, fastify.requireActive],
+    }, async (request, reply) => {
+        const { token } = request.body || {};
+        if (!token || typeof token !== 'string' || !token.trim()) {
+            return reply.code(400).send({ error: 'A personal access token is required' });
+        }
+        try {
+            return await connectionService.connectWithPat(request.user.id, request.params.provider, token);
+        } catch (err) {
+            request.log.error(err);
+            return reply.code(400).send({ error: err.message });
+        }
+    });
+
     // ── Repos ──
 
     fastify.get('/api/v1/git/repos', {

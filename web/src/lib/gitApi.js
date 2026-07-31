@@ -33,6 +33,12 @@ export const disconnectProvider = (provider) =>
     method: 'DELETE',
   });
 
+export const connectWithPat = (provider, token) =>
+  request(`/api/v1/git/connections/${encodeURIComponent(provider)}/pat`, {
+    method: 'POST',
+    body: JSON.stringify({ token }),
+  });
+
 export const listRepos = (provider, params = {}) => {
   const qs = new URLSearchParams({ provider, ...params });
   return request(`/api/v1/git/repos?${qs.toString()}`);

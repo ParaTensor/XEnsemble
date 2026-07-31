@@ -44,7 +44,14 @@ export default function GitConnectButton({
           <p className={`truncate text-sm font-medium ${textPrimary}`}>
             {username || label}
           </p>
-          <p className={`text-xs ${textSecondary}`}>Connected to {label}</p>
+          <p className={`text-xs ${textSecondary}`}>
+            Connected to {label}
+            {connection.connection_type === 'pat' && (
+              <span className="ml-1 rounded bg-[#F4F5F6] px-1 py-0.5 text-[10px] uppercase tracking-wide text-[#9AA0A6]">
+                via PAT
+              </span>
+            )}
+          </p>
         </div>
         <button
           type="button"
