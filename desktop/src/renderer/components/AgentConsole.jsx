@@ -222,17 +222,22 @@ function AgentConsole({
             const MAX_COALESCE_DELAYS = 4;
             const COALESCE_DELAY_MS = 40;
             const CLEAR_SCREEN = '\x1b[2J';
+            function shouldCoalesce(buf) {
+                if (buf.length < 200) return false;
+                const lastClearIdx = buf.lastIndexOf(CLEAR_SCREEN);
+                if (lastClearIdx !== -1 && buf.length - lastClearIdx < 120) return true;
+                const cursorUpCount = (buf.match(/\x1b\[\d*A/g) || []).length;
+                const eraseLineCount = (buf.match(/\x1b\[\d*K/g) || []).length;
+                if (cursorUpCount >= 2 && eraseLineCount >= 8) return true;
+                return false;
+            }
             const flushWriteBuffer = () => {
                 writeRafId = null;
                 if (disposedRef.current || !writeBuffer) return;
-                const lastClearIdx = writeBuffer.lastIndexOf(CLEAR_SCREEN);
-                if (lastClearIdx !== -1) {
-                    const tailLen = writeBuffer.length - lastClearIdx;
-                    if (tailLen < 120 && coalesceDelays < MAX_COALESCE_DELAYS) {
-                        coalesceDelays++;
-                        writeRafId = setTimeout(flushWriteBuffer, COALESCE_DELAY_MS);
-                        return;
-                    }
+                if (shouldCoalesce(writeBuffer) && coalesceDelays < MAX_COALESCE_DELAYS) {
+                    coalesceDelays++;
+                    writeRafId = setTimeout(flushWriteBuffer, COALESCE_DELAY_MS);
+                    return;
                 }
                 coalesceDelays = 0;
                 const data = writeBuffer;
@@ -312,12 +317,13 @@ function AgentConsole({
         container.addEventListener('click', focusTerminal);
 
         let resizeFrame = null;
+        let resizeDebounce = null;
         const scheduleApplySize = () => {
-            if (resizeFrame !== null) cancelAnimationFrame(resizeFrame);
-            resizeFrame = requestAnimationFrame(() => {
-                resizeFrame = null;
+            if (resizeDebounce) clearTimeout(resizeDebounce);
+            resizeDebounce = setTimeout(() => {
+                resizeDebounce = null;
                 applySize();
-            });
+            }, 100);
         };
 
         const resizeObserver = new ResizeObserver(() => scheduleApplySize());
@@ -336,7 +342,7 @@ function AgentConsole({
             disposedRef.current = true;
             if (writeRafId !== null) { cancelAnimationFrame(writeRafId); clearTimeout(writeRafId); }
             if (reconnectStateRef.timer) clearTimeout(reconnectStateRef.timer);
-            if (resizeFrame !== null) cancelAnimationFrame(resizeFrame);
+            if (resizeDebounce) clearTimeout(resizeDebounce);
             visibilityObserver.disconnect();
             resizeObserver.disconnect();
             container.removeEventListener('mousedown', focusTerminal);

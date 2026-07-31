@@ -270,17 +270,19 @@ function AgentConsole({
 
     let lastHostWidth = 0;
     let lastHostHeight = 0;
+    let resizeDebounce = null;
     const resizeObserver = new ResizeObserver(() => {
-      requestAnimationFrame(() => {
+      if (resizeDebounce) clearTimeout(resizeDebounce);
+      resizeDebounce = setTimeout(() => {
         if (disposed) return;
         const rect = host.getBoundingClientRect();
         const w = Math.floor(rect.width);
         const h = Math.floor(rect.height);
-        if (Math.abs(w - lastHostWidth) <= 1 && Math.abs(h - lastHostHeight) <= 1) return;
+        if (Math.abs(w - lastHostWidth) <= 2 && Math.abs(h - lastHostHeight) <= 2) return;
         lastHostWidth = w;
         lastHostHeight = h;
         fitTerminal();
-      });
+      }, 100);
     });
     resizeObserver.observe(host);
 
@@ -358,6 +360,16 @@ function AgentConsole({
           const COALESCE_DELAY_MS = 40;
           const CLEAR_SCREEN = '\x1b[2J';
 
+          function shouldCoalesce(buf) {
+            if (buf.length < 200) return false;
+            const lastClearIdx = buf.lastIndexOf(CLEAR_SCREEN);
+            if (lastClearIdx !== -1 && buf.length - lastClearIdx < 120) return true;
+            const cursorUpCount = (buf.match(/\x1b\[\d*A/g) || []).length;
+            const eraseLineCount = (buf.match(/\x1b\[\d*K/g) || []).length;
+            if (cursorUpCount >= 2 && eraseLineCount >= 8) return true;
+            return false;
+          }
+
           // Fallback: hide overlay after 5s even if no output was received
           // (e.g. empty replay with after=cachedSeq and no new frames)
           const overlayFallbackTimer = setTimeout(() => {
@@ -375,14 +387,10 @@ function AgentConsole({
               pendingSeq = null;
             }
             if (!writeBuffer) return;
-            const lastClearIdx = writeBuffer.lastIndexOf(CLEAR_SCREEN);
-            if (lastClearIdx !== -1) {
-              const tailLen = writeBuffer.length - lastClearIdx;
-              if (tailLen < 120 && coalesceDelays < MAX_COALESCE_DELAYS) {
-                coalesceDelays++;
-                writeRafId = setTimeout(flushWriteBuffer, COALESCE_DELAY_MS);
-                return;
-              }
+            if (shouldCoalesce(writeBuffer) && coalesceDelays < MAX_COALESCE_DELAYS) {
+              coalesceDelays++;
+              writeRafId = setTimeout(flushWriteBuffer, COALESCE_DELAY_MS);
+              return;
             }
             coalesceDelays = 0;
             const data = writeBuffer;
