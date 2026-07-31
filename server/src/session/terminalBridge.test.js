@@ -113,7 +113,7 @@ test('subscribeTerminal replays from cursor and continues live without duplicate
         assert.equal(replayOutputs[0].data, 'line-2\n');
 
         handle.emitData('line-3\n');
-        await new Promise((resolve) => setImmediate(resolve));
+        await new Promise((resolve) => setTimeout(resolve, 50));
 
         const outputsAfterLive = payloads.filter((p) => p.type === 'output');
         assert.deepEqual(outputsAfterLive.map((p) => p.seq), [2, 3]);
