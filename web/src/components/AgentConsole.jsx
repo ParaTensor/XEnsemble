@@ -355,9 +355,10 @@ function AgentConsole({
           let replayDone = false;
           let writeBuffer = '';
           let pendingSeq = null;
-          let coalesceDelays = 0;
-          const MAX_COALESCE_DELAYS = 4;
-          const COALESCE_DELAY_MS = 40;
+          let lastDataAt = 0;
+          let coalesceStartedAt = 0;
+          const COALESCE_DELAY_MS = 150;
+          const COALESCE_MAX_WAIT_MS = 800;
           const CLEAR_SCREEN = '\x1b[2J';
 
           function shouldCoalesce(buf) {
@@ -387,12 +388,17 @@ function AgentConsole({
               pendingSeq = null;
             }
             if (!writeBuffer) return;
-            if (shouldCoalesce(writeBuffer) && coalesceDelays < MAX_COALESCE_DELAYS) {
-              coalesceDelays++;
-              writeRafId = setTimeout(flushWriteBuffer, COALESCE_DELAY_MS);
-              return;
+            if (shouldCoalesce(writeBuffer)) {
+              const now = Date.now();
+              if (coalesceStartedAt === 0) coalesceStartedAt = now;
+              const sinceData = now - lastDataAt;
+              const sinceStart = now - coalesceStartedAt;
+              if (sinceData < COALESCE_DELAY_MS && sinceStart < COALESCE_MAX_WAIT_MS) {
+                writeRafId = setTimeout(flushWriteBuffer, COALESCE_DELAY_MS - sinceData);
+                return;
+              }
             }
-            coalesceDelays = 0;
+            coalesceStartedAt = 0;
             const data = writeBuffer;
             writeBuffer = '';
             const buf = terminal.buffer.active;
@@ -424,6 +430,7 @@ function AgentConsole({
             if (msg.type === 'output') {
               if (msg.seq != null) pendingSeq = msg.seq;
               writeBuffer += msg.data;
+              lastDataAt = Date.now();
               if (writeRafId === null) {
                 writeRafId = requestAnimationFrame(flushWriteBuffer);
               }
