@@ -50,7 +50,7 @@ class BoxLiteStreamHandle extends StreamHandle {
         this._reattachMaxAttempts = options.reattachMaxAttempts || 3;
         this._reattachAttempts = 0;
         this._heartbeatTimer = null;
-        this._heartbeatTimeoutMs = options.heartbeatTimeoutMs || 30000;
+        this._heartbeatTimeoutMs = options.heartbeatTimeoutMs || 600000;
 
         this._setupWsListeners(ws);
     }
@@ -175,7 +175,9 @@ class BoxLiteStreamHandle extends StreamHandle {
                     this._ws = newWs;
                     this._reattaching = false;
                     this._reattachAttempts = 0;
-                    this._decoders = {};
+                    // Don't clear _decoders: TextDecoder internal buffer may hold
+                    // incomplete multi-byte bytes from the last frame before disconnect.
+                    // Clearing would lose them and cause FFFD on the next frame.
                     this._setupWsListeners(newWs);
                 });
                 newWs.once('error', () => {
