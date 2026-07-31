@@ -161,6 +161,10 @@ async function subscribeTerminal(sessionId, send, options = {}) {
 
     const maybeFinalizeExit = () => {
         if (cleaned || !pendingExit) return;
+        if (sessionManager.isAlive(sessionId)) {
+            pendingExit = null;
+            return;
+        }
         const exitSeq = pendingExit.seq ?? 0;
         if (transcriptRef && pendingExit.seq != null && lastSentSeq < exitSeq) {
             const tail = transcriptStore.readFrom(transcriptRef, lastSentSeq);

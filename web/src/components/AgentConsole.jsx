@@ -113,6 +113,7 @@ function AgentConsole({
   }, [shouldConnect, shouldReplayIdle]);
 
   useEffect(() => {
+    firstConnectRef.current = true;
     const host = hostRef.current;
     if (!host) return undefined;
 
@@ -386,8 +387,8 @@ function AgentConsole({
             coalesceDelays = 0;
             const data = writeBuffer;
             writeBuffer = '';
-            const viewport = hostRef.current?.querySelector('.xterm-viewport');
-            const atBottom = !viewport || viewport.scrollTop + viewport.clientHeight >= viewport.scrollHeight - 5;
+            const buf = terminal.buffer.active;
+            const atBottom = buf.baseY + terminal.rows >= buf.length;
             terminal.write(data, () => {
               if (!replayDone && !disposed) { replayDone = true; hideOverlay(); }
               if (atBottom && !disposed) terminal.scrollToBottom();
