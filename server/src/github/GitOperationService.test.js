@@ -292,15 +292,33 @@ describe('GitOperationService (mock exec)', () => {
             if (args[0] === 'rev-parse' && args[1] === 'HEAD') {
                 return 'commit-sha\n';
             }
+            // Return non-empty for status --porcelain so commit path is taken.
+            if (args[0] === 'status' && args[1] === '--porcelain') {
+                return ' M file.txt\n';
+            }
             return '';
         });
         const service = createService(exec);
         const result = await service.commitAll({ id: 'p1', userId: 'u1' }, 'WIP');
-        assert.deepStrictEqual(result, { sha: 'commit-sha' });
+        assert.deepStrictEqual(result, { sha: 'commit-sha', committed: true });
         assert.ok(findCall(exec.calls, 'add', '-A'));
         const commitCall = findCall(exec.calls, 'commit', '-m');
         assert.ok(commitCall);
         assert.strictEqual(commitCall.args[2], 'WIP');
+    });
+
+    it('commitAll skips commit when nothing to commit', async () => {
+        const exec = makeMockExec((args) => {
+            if (args[0] === 'rev-parse' && args[1] === 'HEAD') {
+                return 'head-sha\n';
+            }
+            return ''; // empty status --porcelain => clean workspace
+        });
+        const service = createService(exec);
+        const result = await service.commitAll({ id: 'p1', userId: 'u1' }, 'WIP');
+        assert.deepStrictEqual(result, { sha: 'head-sha', committed: false });
+        // Should NOT have attempted a commit.
+        assert.strictEqual(findCall(exec.calls, 'commit', '-m'), undefined);
     });
 
     it('pushBranch pushes and uses credentials', async () => {

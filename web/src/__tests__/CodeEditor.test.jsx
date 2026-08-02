@@ -84,15 +84,15 @@ describe('CodeEditor', () => {
     expect(screen.getByText(/文件较大/)).toBeInTheDocument();
   });
 
-  it('resets editing state when path changes', () => {
-    const { rerender } = render(<CodeEditor content="hello" path="app.js" />);
-    // 点击编辑按钮进入编辑模式
-    fireEvent.click(screen.getByText('编辑'));
-    expect(screen.getByText('保存')).toBeInTheDocument();
-    // 切换到另一个文件
-    rerender(<CodeEditor content="world" path="other.js" />);
-    // 应回到只读模式
-    expect(screen.getByText('只读')).toBeInTheDocument();
-    expect(screen.getByText('编辑')).toBeInTheDocument();
+  it('hides status toolbar when file is clean', () => {
+    render(<CodeEditor content="hello" originalContent="hello" path="app.js" />);
+    expect(screen.queryByText('已保存')).not.toBeInTheDocument();
+    expect(screen.queryByText('保存')).not.toBeInTheDocument();
+  });
+
+  it('shows unsaved status when content differs from original', () => {
+    render(<CodeEditor content="hello" originalContent="world" path="app.js" />);
+    expect(screen.getByText('未保存')).toBeInTheDocument();
+    expect(screen.queryByText('保存')).not.toBeInTheDocument();
   });
 });

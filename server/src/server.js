@@ -145,7 +145,7 @@ function applyStateDirEnv(env, resumeSpec, stateDirPath) {
 
 const allowedOrigins = process.env.ALLOWED_ORIGINS
     ? process.env.ALLOWED_ORIGINS.split(',').map((s) => s.trim()).filter(Boolean)
-    : ['http://127.0.0.1:5173', 'http://localhost:5173'];
+    : ['http://127.0.0.1:3889', 'http://localhost:3889'];
 
 fastify.register(require('@fastify/cors'), {
     origin: (origin, cb) => {
@@ -1321,6 +1321,13 @@ fastify.post('/api/v1/session/start', { preValidation: [fastify.authenticate] },
             return reply.code(500).send({ error: 'Project workspace directory is missing and could not be recreated' });
         }
 
+        try {
+            const localGit = new LocalGitService();
+            await localGit.ensureGitInit(project);
+        } catch (err) {
+            request.log.warn({ err, projectId: project.id }, '[sessions] shell ensureGitInit failed (non-fatal)');
+        }
+
         await db.insert(schema.sessions).values({
             id: sessionId,
             userId: request.user.id,
@@ -1456,6 +1463,14 @@ fastify.post('/api/v1/session/start', { preValidation: [fastify.authenticate] },
             fastify.log.error({ err, sessionId }, '[sessions] async provisioning: ensureProjectRuntime failed');
             await markSessionFailed(sessionId, err instanceof RuntimeError ? err.message : (err.message || 'Failed to prepare project runtime'));
             return;
+        }
+
+        // Backfill built-in git if create-time initRepo failed (e.g. BoxLite).
+        try {
+            const localGit = new LocalGitService();
+            await localGit.ensureGitInit(project);
+        } catch (err) {
+            fastify.log.warn({ err, sessionId, projectId: project.id }, '[sessions] ensureGitInit failed (non-fatal)');
         }
 
         if (!(await isSessionStillPending(sessionId))) {
@@ -2531,7 +2546,13 @@ async function startServer() {
             activeWebSockets,
         });
     });
-    installProcessShutdownHooks(fastify);
+    installProcessShutdownHooks(fastify, {
+        onShutdown: async () => {
+            // Stop the idle-hibernate sweep immediately so no new hibernate
+            // operations start while sessions are being shut down.
+            idleHibernateMonitor.stop();
+        },
+    });
 
     try {
         const sync = await userAdmin.syncInstalledAgentGrantsForAllUsers();

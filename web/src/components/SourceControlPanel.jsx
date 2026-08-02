@@ -1,19 +1,16 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import {
-  GitBranch, GitCommit, Clock, Eye, GitPullRequest, MessageSquare,
-  AlertTriangle, RefreshCw, PanelLeftClose, ArrowUp, ArrowDown,
+  GitBranch, GitCommit, GitPullRequest, RefreshCw, PanelLeftClose, ArrowUp, ArrowDown,
   Plus, Minus, Loader2, ChevronRight, ChevronDown, ChevronsDownUp, ChevronsUpDown, FileText,
+  Upload,
 } from 'lucide-react';
 import { consoleButtonFocusClass } from '../lib/consoleTheme';
+import { consoleDropdownPanelClass, consoleMenuDropdownZClass } from '../lib/consoleTokens';
 import { buttonClass } from '../lib/buttonStyles';
-import {
-  GitHistoryPanel,
-  GitBlamePanel,
-  MergeRequestListPanel,
-  CodeReviewPanel,
-  ConflictResolutionPanel,
-} from './git';
+import CreatePRDialog from './git/CreatePRDialog';
 import { getGitFileDiff } from '../lib/githubApi';
+import { useToast } from './Toast';
 
 const GIT_STATUS_LABELS = {
   'M ': 'M', ' M': 'M', 'MM': 'M',
@@ -39,25 +36,15 @@ const GIT_STATUS_DESC = {
   'R ': '重命名',
 };
 
-const GIT_SUB_TABS = [
-  { key: 'changes', label: 'Diff', icon: GitBranch },
-  { key: 'history', label: 'History', icon: Clock },
-  { key: 'blame', label: 'Blame', icon: Eye },
-  { key: 'prs', label: 'Pull Request', icon: GitPullRequest },
-  { key: 'review', label: 'Code Review', icon: MessageSquare },
-  { key: 'conflicts', label: 'Conflicts', icon: AlertTriangle },
-];
-
-export default function SourceControlPanel({ projectId, gitChanges, onGitFileClick, onJumpToFile, onCollapse, provider, sessionLive }) {
-  const [gitSubTab, setGitSubTab] = useState(() => {
-    const stored = sessionStorage.getItem('xe_git_subtab');
-    return stored || 'changes';
-  });
-  const [selectedMergeRequestId, setSelectedMergeRequestId] = useState(null);
-  const [selectedMR, setSelectedMR] = useState(null);
+export default function SourceControlPanel({ projectId, gitChanges, onJumpToFile, onCollapse }) {
+  const { showToast } = useToast();
   const [commitMessage, setCommitMessage] = useState('');
   const [committing, setCommitting] = useState(false);
+  const [pushing, setPushing] = useState(false);
   const [showAuthorDialog, setShowAuthorDialog] = useState(false);
+  const [createPROpen, setCreatePROpen] = useState(false);
+  const [actionMenuOpen, setActionMenuOpen] = useState(false);
+  const [actionMenuRect, setActionMenuRect] = useState(null);
   const [authorName, setAuthorName] = useState(() => localStorage.getItem('xe_git_author_name') || '');
   const [authorEmail, setAuthorEmail] = useState(() => localStorage.getItem('xe_git_author_email') || '');
   const [expandedFiles, setExpandedFiles] = useState(new Set());
@@ -65,10 +52,7 @@ export default function SourceControlPanel({ projectId, gitChanges, onGitFileCli
   const [loadingDiff, setLoadingDiff] = useState(null);
   const [showFileList, setShowFileList] = useState(false);
   const authorNameRef = useRef(null);
-
-  useEffect(() => {
-    sessionStorage.setItem('xe_git_subtab', gitSubTab);
-  }, [gitSubTab]);
+  const actionMenuBtnRef = useRef(null);
 
   useEffect(() => {
     if (showAuthorDialog && authorNameRef.current) {
@@ -76,9 +60,36 @@ export default function SourceControlPanel({ projectId, gitChanges, onGitFileCli
     }
   }, [showAuthorDialog]);
 
+  useEffect(() => {
+    if (!actionMenuOpen) {
+      setActionMenuRect(null);
+      return undefined;
+    }
+    const update = () => {
+      const el = actionMenuBtnRef.current;
+      if (!el) return;
+      const rect = el.getBoundingClientRect();
+      setActionMenuRect({ top: rect.bottom + 4, left: Math.max(8, rect.right - 180), width: 180 });
+    };
+    update();
+    const onDoc = (e) => {
+      if (actionMenuBtnRef.current?.contains(e.target)) return;
+      const menu = document.getElementById('changes-action-menu');
+      if (menu?.contains(e.target)) return;
+      setActionMenuOpen(false);
+    };
+    window.addEventListener('resize', update);
+    document.addEventListener('mousedown', onDoc);
+    return () => {
+      window.removeEventListener('resize', update);
+      document.removeEventListener('mousedown', onDoc);
+    };
+  }, [actionMenuOpen]);
+
   const gitStagedFiles = gitChanges?.stagedFiles || [];
   const gitUnstagedFiles = gitChanges?.unstagedFiles || [];
   const gitHasChanges = gitStagedFiles.length + gitUnstagedFiles.length > 0;
+  const changeCount = gitStagedFiles.length + gitUnstagedFiles.length;
   const branch = gitChanges?.branch || '';
 
   const handleStageAll = useCallback(async () => {
@@ -138,10 +149,22 @@ export default function SourceControlPanel({ projectId, gitChanges, onGitFileCli
     }
   }, [commitMessage, gitChanges, authorName, authorEmail]);
 
-  const handleSelectMR = useCallback((mr) => {
-    setSelectedMergeRequestId(mr.id);
-    setSelectedMR(mr);
-    setGitSubTab('review');
+  const handlePush = useCallback(async () => {
+    setActionMenuOpen(false);
+    setPushing(true);
+    try {
+      await gitChanges?.push();
+      showToast('success', 'Pushed');
+    } catch (err) {
+      showToast('error', err.message || 'Push failed');
+    } finally {
+      setPushing(false);
+    }
+  }, [gitChanges, showToast]);
+
+  const handleOpenCreatePR = useCallback(() => {
+    setActionMenuOpen(false);
+    setCreatePROpen(true);
   }, []);
 
   const normalizeDiffEntry = useCallback((data, fallbackText = '') => {
@@ -320,31 +343,23 @@ export default function SourceControlPanel({ projectId, gitChanges, onGitFileCli
 
   return (
     <div className="flex flex-col h-full min-h-0 w-full">
-      {/* Sub-tab bar */}
-      <div className="flex items-center justify-between border-b border-[#E8EAED] px-1 shrink-0">
-        <div className="flex min-w-0 overflow-x-auto">
-          {GIT_SUB_TABS.map((tab) => {
-            const Icon = tab.icon;
-            const isActive = gitSubTab === tab.key;
-            return (
-              <button
-                key={tab.key}
-                type="button"
-                onClick={() => setGitSubTab(tab.key)}
-                className={`flex items-center gap-1 px-2 py-2 text-[11px] font-medium border-b-2 -mb-px transition-colors shrink-0 ${
-                  isActive
-                    ? 'border-[#202124] text-[#202124]'
-                    : 'border-transparent text-[#5F6368] hover:text-[#202124]'
-                } ${consoleButtonFocusClass}`}
-              >
-                <Icon className="h-3 w-3 shrink-0" />
-                <span className="truncate max-w-[80px]">{tab.label}</span>
-              </button>
-            );
-          })}
+      <div className="flex items-center justify-between gap-2 border-b border-[#E8EAED] px-3 py-1.5 shrink-0">
+        <div className="flex min-w-0 items-center gap-1.5 text-[11px] text-zinc-500">
+          <GitBranch className="h-3 w-3 shrink-0" />
+          <span className="font-mono truncate">{branch || '—'}</span>
+          {gitChanges?.ahead > 0 && (
+            <span className="flex items-center gap-0.5 text-[#4A7C59] shrink-0">
+              <ArrowUp className="h-2.5 w-2.5" />{gitChanges.ahead}
+            </span>
+          )}
+          {gitChanges?.behind > 0 && (
+            <span className="flex items-center gap-0.5 text-[#C06C5D] shrink-0">
+              <ArrowDown className="h-2.5 w-2.5" />{gitChanges.behind}
+            </span>
+          )}
         </div>
-        <div className="flex items-center gap-0.5 pr-1 shrink-0">
-          {gitSubTab === 'changes' && gitHasChanges && (
+        <div className="flex items-center gap-0.5 shrink-0">
+          {gitHasChanges && (
             <button
               title={allExpanded ? '全部折叠' : '全部展开'}
               onClick={toggleExpandAll}
@@ -353,7 +368,7 @@ export default function SourceControlPanel({ projectId, gitChanges, onGitFileCli
               {allExpanded ? <ChevronsDownUp className="h-3.5 w-3.5" /> : <ChevronsUpDown className="h-3.5 w-3.5" />}
             </button>
           )}
-          {gitSubTab === 'changes' && gitHasChanges && (
+          {gitHasChanges && (
             <button
               title="文件列表"
               onClick={() => setShowFileList((v) => !v)}
@@ -369,236 +384,212 @@ export default function SourceControlPanel({ projectId, gitChanges, onGitFileCli
           >
             <RefreshCw className="h-3 w-3" />
           </button>
-          <button
-            title="收起侧栏"
-            onClick={onCollapse}
-            className={`p-1 rounded text-zinc-400 hover:text-zinc-600 hover:bg-[#E8EAED] ${consoleButtonFocusClass}`}
-          >
-            <PanelLeftClose className="h-3.5 w-3.5" />
-          </button>
+          {onCollapse && (
+            <button
+              title="收起侧栏"
+              onClick={onCollapse}
+              className={`p-1 rounded text-zinc-400 hover:text-zinc-600 hover:bg-[#E8EAED] ${consoleButtonFocusClass}`}
+            >
+              <PanelLeftClose className="h-3.5 w-3.5" />
+            </button>
+          )}
         </div>
       </div>
 
-      {/* Branch info - shown for all sub-tabs */}
-      {branch && (
-        <div className="flex items-center gap-1.5 px-3 py-1.5 border-b border-[#E8EAED] text-[11px] text-zinc-500 shrink-0">
-          <GitBranch className="h-3 w-3" />
-          <span className="font-mono">{branch}</span>
-          {gitChanges?.ahead > 0 && (
-            <span className="flex items-center gap-0.5 text-[#4A7C59]">
-              <ArrowUp className="h-2.5 w-2.5" />{gitChanges.ahead}
-            </span>
-          )}
-          {gitChanges?.behind > 0 && (
-            <span className="flex items-center gap-0.5 text-[#C06C5D]">
-              <ArrowDown className="h-2.5 w-2.5" />{gitChanges.behind}
-            </span>
-          )}
-        </div>
-      )}
-
-      {/* Content area */}
       <div className="flex-1 min-h-0 min-w-0 overflow-hidden">
-        {gitSubTab === 'changes' && (
-          <div className="flex flex-col h-full min-h-0 relative">
-            {showFileList && (
-              <div className="absolute right-2 top-1 z-20 w-56 max-h-64 overflow-y-auto bg-white border border-[#E8EAED] rounded-lg shadow-lg">
-                <div className="px-3 py-2 text-[10px] font-semibold text-zinc-500 uppercase tracking-wider border-b border-[#E8EAED] sticky top-0 bg-white">
-                  Files ({gitStagedFiles.length + gitUnstagedFiles.length})
-                </div>
-                <div className="py-1">
-                  {gitStagedFiles.length > 0 && (
-                    <div className="text-[9px] text-zinc-400 px-3 py-0.5">暂存的更改</div>
-                  )}
-                  {gitStagedFiles.map((f) => {
-                    const name = f.path.split('/').pop();
-                    const label = GIT_STATUS_LABELS[f.status] || f.status;
-                    return (
-                      <button
-                        key={'list-' + f.path}
-                        onClick={() => { toggleFileExpand(f.path); setShowFileList(false); onJumpToFile?.(f.path); }}
-                        className={`w-full text-left px-3 py-1 text-xs truncate hover:bg-[#F4F5F6] ${consoleButtonFocusClass}`}
-                      >
-                        <span className={`font-mono text-[9px] mr-1.5 ${GIT_STATUS_COLORS[f.status] || 'text-zinc-400'}`}>
-                          {label}
-                        </span>
-                        {name}
-                      </button>
-                    );
-                  })}
-                  {gitUnstagedFiles.length > 0 && (
-                    <div className="text-[9px] text-zinc-400 px-3 py-0.5 mt-0.5">更改</div>
-                  )}
-                  {gitUnstagedFiles.map((f) => {
-                    const name = f.path.split('/').pop();
-                    const label = GIT_STATUS_LABELS[f.status] || f.status;
-                    return (
-                      <button
-                        key={'list-' + f.path}
-                        onClick={() => { toggleFileExpand(f.path); setShowFileList(false); onJumpToFile?.(f.path); }}
-                        className={`w-full text-left px-3 py-1 text-xs truncate hover:bg-[#F4F5F6] ${consoleButtonFocusClass}`}
-                      >
-                        <span className={`font-mono text-[9px] mr-1.5 ${GIT_STATUS_COLORS[f.status] || 'text-zinc-400'}`}>
-                          {label}
-                        </span>
-                        {name}
-                      </button>
-                    );
-                  })}
-                </div>
+        <div className="flex flex-col h-full min-h-0 relative">
+          {showFileList && (
+            <div className="absolute right-2 top-1 z-20 w-56 max-h-64 overflow-y-auto console-scroll-hidden bg-white border border-[#E8EAED] rounded-lg shadow-lg">
+              <div className="px-3 py-2 text-[10px] font-semibold text-zinc-500 uppercase tracking-wider border-b border-[#E8EAED] sticky top-0 bg-white">
+                Files ({gitStagedFiles.length + gitUnstagedFiles.length})
               </div>
-            )}
-            <div className="flex-1 min-h-0 overflow-y-auto">
-              {!gitHasChanges ? (
-                <div className="flex flex-col items-center justify-center py-8 gap-2 text-zinc-400">
-                  <GitCommit className="h-6 w-6" />
-                  <p className="text-[10px]">暂无已保存的更改</p>
-                </div>
-              ) : (
-                <div className="flex flex-col">
-                  {gitStagedFiles.length > 0 && (
-                    <>
-                      <div className="flex items-center justify-between px-3 py-1.5 border-b border-[#E8EAED]">
-                        <span className="text-[10px] font-semibold text-zinc-500 uppercase tracking-wider">
-                          暂存的更改 ({gitStagedFiles.length})
-                        </span>
-                        <button
-                          onClick={handleUnstageAll}
-                          title="全部取消暂存"
-                          className={`text-[10px] text-zinc-400 hover:text-zinc-600 ${consoleButtonFocusClass}`}
-                        >
-                          <Minus className="h-3 w-3" />
-                        </button>
-                      </div>
-                      {gitStagedFiles.map((f) => renderGitFile(f, handleUnstageFile))}
-                    </>
-                  )}
-                  {gitUnstagedFiles.length > 0 && (
-                    <>
-                      <div className="flex items-center justify-between px-3 py-1.5 border-b border-[#E8EAED]">
-                        <span className="text-[10px] font-semibold text-zinc-500 uppercase tracking-wider">
-                          更改 ({gitUnstagedFiles.length})
-                        </span>
-                        <button
-                          onClick={handleStageAll}
-                          title="全部暂存"
-                          className={`text-[10px] text-zinc-400 hover:text-zinc-600 ${consoleButtonFocusClass}`}
-                        >
-                          <Plus className="h-3 w-3" />
-                        </button>
-                      </div>
-                      {gitUnstagedFiles.map((f) => renderGitFile(f, handleStageFile))}
-                    </>
-                  )}
-                </div>
-              )}
-            </div>
-
-            {gitStagedFiles.length > 0 && (
-              <div className="flex flex-col gap-1.5 px-3 py-2 border-t border-[#E8EAED] shrink-0">
-                <textarea
-                  placeholder="提交信息"
-                  value={commitMessage}
-                  onChange={(e) => setCommitMessage(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
-                      e.preventDefault();
-                      handleCommit();
-                    }
-                  }}
-                  rows={2}
-                  className="w-full text-xs px-2 py-1 rounded border border-[#DADCE0] bg-white resize-none focus:outline-none focus:border-[#5B8DB8]"
-                />
-                <div className="flex gap-1">
-                  <button
-                    onClick={handleCommit}
-                    disabled={!commitMessage.trim() || committing || gitChanges?.operation === 'commit'}
-                    className={`flex-1 text-xs h-7 rounded ${buttonClass('primary', 'sm')}`}
-                  >
-                    {committing || gitChanges?.operation === 'commit' ? (
-                      <Loader2 className="h-3 w-3 animate-spin" />
-                    ) : '提交'}
-                  </button>
-                  {gitChanges?.ahead > 0 && (
+              <div className="py-1">
+                {gitStagedFiles.length > 0 && (
+                  <div className="text-[9px] text-zinc-400 px-3 py-0.5">暂存的更改</div>
+                )}
+                {gitStagedFiles.map((f) => {
+                  const name = f.path.split('/').pop();
+                  const label = GIT_STATUS_LABELS[f.status] || f.status;
+                  return (
                     <button
-                      onClick={() => gitChanges?.push()}
-                      disabled={gitChanges?.operation === 'push'}
-                      className={`text-xs h-7 px-3 rounded ${buttonClass('secondary', 'sm')}`}
+                      key={'list-' + f.path}
+                      onClick={() => { toggleFileExpand(f.path); setShowFileList(false); onJumpToFile?.(f.path); }}
+                      className={`w-full text-left px-3 py-1 text-xs truncate hover:bg-[#F4F5F6] ${consoleButtonFocusClass}`}
                     >
-                      {gitChanges?.operation === 'push' ? (
-                        <Loader2 className="h-3 w-3 animate-spin" />
-                      ) : '推送'}
+                      <span className={`font-mono text-[9px] mr-1.5 ${GIT_STATUS_COLORS[f.status] || 'text-zinc-400'}`}>
+                        {label}
+                      </span>
+                      {name}
                     </button>
-                  )}
-                </div>
+                  );
+                })}
+                {gitUnstagedFiles.length > 0 && (
+                  <div className="text-[9px] text-zinc-400 px-3 py-0.5 mt-0.5">更改</div>
+                )}
+                {gitUnstagedFiles.map((f) => {
+                  const name = f.path.split('/').pop();
+                  const label = GIT_STATUS_LABELS[f.status] || f.status;
+                  return (
+                    <button
+                      key={'list-' + f.path}
+                      onClick={() => { toggleFileExpand(f.path); setShowFileList(false); onJumpToFile?.(f.path); }}
+                      className={`w-full text-left px-3 py-1 text-xs truncate hover:bg-[#F4F5F6] ${consoleButtonFocusClass}`}
+                    >
+                      <span className={`font-mono text-[9px] mr-1.5 ${GIT_STATUS_COLORS[f.status] || 'text-zinc-400'}`}>
+                        {label}
+                      </span>
+                      {name}
+                    </button>
+                  );
+                })}
               </div>
-            )}
-
-            {gitStagedFiles.length === 0 && (
-              <div className="flex flex-col gap-1.5 px-3 py-2 border-t border-[#E8EAED] shrink-0">
-                <button
-                  onClick={() => gitChanges?.push()}
-                  disabled={gitChanges?.operation === 'push'}
-                  className={`text-xs h-7 rounded ${buttonClass('primary', 'sm')}`}
-                >
-                  {gitChanges?.operation === 'push' ? (
-                    <Loader2 className="h-3 w-3 animate-spin" />
-                  ) : gitChanges?.ahead > 0 ? `推送 (${gitChanges.ahead})` : '推送'}
-                </button>
+            </div>
+          )}
+          <div className="flex-1 min-h-0 overflow-y-auto console-scroll-hidden">
+            {!gitHasChanges ? (
+              <div className="flex flex-col items-center justify-center py-8 gap-2 text-zinc-400">
+                <GitCommit className="h-6 w-6" />
+                <p className="text-[10px]">暂无已保存的更改</p>
+              </div>
+            ) : (
+              <div className="flex flex-col">
+                {gitStagedFiles.length > 0 && (
+                  <>
+                    <div className="flex items-center justify-between px-3 py-1.5 border-b border-[#E8EAED]">
+                      <span className="text-[10px] font-semibold text-zinc-500 uppercase tracking-wider">
+                        暂存的更改 ({gitStagedFiles.length})
+                      </span>
+                      <button
+                        onClick={handleUnstageAll}
+                        title="全部取消暂存"
+                        className={`text-[10px] text-zinc-400 hover:text-zinc-600 ${consoleButtonFocusClass}`}
+                      >
+                        <Minus className="h-3 w-3" />
+                      </button>
+                    </div>
+                    {gitStagedFiles.map((f) => renderGitFile(f, handleUnstageFile))}
+                  </>
+                )}
+                {gitUnstagedFiles.length > 0 && (
+                  <>
+                    <div className="flex items-center justify-between px-3 py-1.5 border-b border-[#E8EAED]">
+                      <span className="text-[10px] font-semibold text-zinc-500 uppercase tracking-wider">
+                        更改 ({gitUnstagedFiles.length})
+                      </span>
+                      <button
+                        onClick={handleStageAll}
+                        title="全部暂存"
+                        className={`text-[10px] text-zinc-400 hover:text-zinc-600 ${consoleButtonFocusClass}`}
+                      >
+                        <Plus className="h-3 w-3" />
+                      </button>
+                    </div>
+                    {gitUnstagedFiles.map((f) => renderGitFile(f, handleStageFile))}
+                  </>
+                )}
               </div>
             )}
           </div>
-        )}
 
-        {gitSubTab === 'history' && (
-          sessionLive ? (
-            <GitHistoryPanel projectId={projectId} />
-          ) : (
-            <div className="flex flex-col items-center justify-center py-8 gap-2 text-zinc-400">
-              <Clock className="h-6 w-6" />
-              <p className="text-[10px]">启动 session 后可查看提交历史</p>
+          <div className="flex flex-col gap-1.5 px-3 py-2 border-t border-[#E8EAED] shrink-0">
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-[11px] text-[#5F6368]">
+                {changeCount > 0 ? `${changeCount} change${changeCount === 1 ? '' : 's'}` : 'No changes'}
+                {gitChanges?.ahead > 0 ? ` · ↑${gitChanges.ahead}` : ''}
+              </span>
+              <div className="flex items-stretch shrink-0">
+                <button
+                  type="button"
+                  onClick={handleCommit}
+                  disabled={!commitMessage.trim() || gitStagedFiles.length === 0 || committing || gitChanges?.operation === 'commit'}
+                  className={`${buttonClass('primary', 'sm')} h-7 rounded-r-none px-3 text-xs ${consoleButtonFocusClass}`}
+                >
+                  {committing || gitChanges?.operation === 'commit' ? (
+                    <Loader2 className="h-3 w-3 animate-spin" />
+                  ) : 'Commit'}
+                </button>
+                <button
+                  ref={actionMenuBtnRef}
+                  type="button"
+                  title="More actions"
+                  onClick={() => setActionMenuOpen((v) => !v)}
+                  className={`${buttonClass('primary', 'sm')} h-7 rounded-l-none border-l border-white/20 px-1.5 ${consoleButtonFocusClass}`}
+                >
+                  <ChevronDown className="h-3.5 w-3.5" />
+                </button>
+              </div>
             </div>
-          )
-        )}
-
-        {gitSubTab === 'blame' && (
-          sessionLive ? (
-            <GitBlamePanel projectId={projectId} />
-          ) : (
-            <div className="flex flex-col items-center justify-center py-8 gap-2 text-zinc-400">
-              <Eye className="h-6 w-6" />
-              <p className="text-[10px]">启动 session 后可查看 Blame</p>
-            </div>
-          )
-        )}
-
-        {gitSubTab === 'prs' && (
-          <MergeRequestListPanel
-            projectId={projectId}
-            provider={provider}
-            onSelectMR={handleSelectMR}
-          />
-        )}
-
-        {gitSubTab === 'review' && (
-          <CodeReviewPanel
-            projectId={projectId}
-            mergeRequestId={selectedMergeRequestId}
-            mergeRequest={selectedMR}
-          />
-        )}
-
-        {gitSubTab === 'conflicts' && (
-          sessionLive ? (
-            <ConflictResolutionPanel projectId={projectId} />
-          ) : (
-            <div className="flex flex-col items-center justify-center py-8 gap-2 text-zinc-400">
-              <AlertTriangle className="h-6 w-6" />
-              <p className="text-[10px]">启动 session 后可查看冲突</p>
-            </div>
-          )
-        )}
+            {gitStagedFiles.length > 0 && (
+              <textarea
+                placeholder="Commit message"
+                value={commitMessage}
+                onChange={(e) => setCommitMessage(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+                    e.preventDefault();
+                    handleCommit();
+                  }
+                }}
+                rows={2}
+                className="w-full text-xs px-2 py-1 rounded border border-[#DADCE0] bg-white resize-none focus:outline-none focus:border-[#5B8DB8]"
+              />
+            )}
+          </div>
+        </div>
       </div>
+
+      {actionMenuOpen && actionMenuRect && createPortal(
+        <div
+          id="changes-action-menu"
+          className={`fixed ${consoleMenuDropdownZClass} ${consoleDropdownPanelClass} py-1 shadow-lg`}
+          style={{ top: actionMenuRect.top, left: actionMenuRect.left, width: actionMenuRect.width }}
+          role="menu"
+        >
+          <button
+            type="button"
+            role="menuitem"
+            disabled={!commitMessage.trim() || gitStagedFiles.length === 0 || committing}
+            onClick={() => { setActionMenuOpen(false); handleCommit(); }}
+            className={`w-full flex items-center gap-2 px-3 py-2 text-sm text-left text-zinc-700 hover:bg-zinc-50 disabled:opacity-40 ${consoleButtonFocusClass}`}
+          >
+            <GitCommit className="h-3.5 w-3.5" />
+            Commit
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            disabled={pushing || gitChanges?.operation === 'push'}
+            onClick={handlePush}
+            className={`w-full flex items-center gap-2 px-3 py-2 text-sm text-left text-zinc-700 hover:bg-zinc-50 disabled:opacity-40 ${consoleButtonFocusClass}`}
+          >
+            {pushing || gitChanges?.operation === 'push' ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <Upload className="h-3.5 w-3.5" />
+            )}
+            Push{gitChanges?.ahead > 0 ? ` (${gitChanges.ahead})` : ''}
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            disabled={!branch}
+            onClick={handleOpenCreatePR}
+            className={`w-full flex items-center gap-2 px-3 py-2 text-sm text-left text-zinc-700 hover:bg-zinc-50 disabled:opacity-40 ${consoleButtonFocusClass}`}
+          >
+            <GitPullRequest className="h-3.5 w-3.5" />
+            Create PR
+          </button>
+        </div>,
+        document.body,
+      )}
+
+      <CreatePRDialog
+        open={createPROpen}
+        projectId={projectId}
+        sourceBranch={branch}
+        defaultTargetBranch="main"
+        onClose={() => setCreatePROpen(false)}
+      />
 
       {/* Author dialog */}
       {showAuthorDialog && (

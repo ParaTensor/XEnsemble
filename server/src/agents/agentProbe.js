@@ -34,10 +34,17 @@ const HOME_PATH_PREFIXES = [
 
 function isExecutable(filePath) {
     try {
+        const stat = fs.statSync(filePath);
+        if (!stat.isFile()) return false;
         fs.accessSync(filePath, fs.constants.X_OK);
         return true;
     } catch {
-        return fs.existsSync(filePath);
+        // Fallback: existsSync also matches directories; guard with isFile
+        try {
+            return fs.existsSync(filePath) && fs.statSync(filePath).isFile();
+        } catch {
+            return false;
+        }
     }
 }
 

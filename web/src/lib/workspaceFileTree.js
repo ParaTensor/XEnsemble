@@ -21,6 +21,24 @@ export function collectAncestorFolderPaths(filePath) {
   return paths;
 }
 
+/** Prefer README*, then other root docs, then first non-hidden root file. */
+export function pickDefaultRootFile(entries) {
+  const files = (entries || []).filter((item) => {
+    if (!item || item.type !== 'file' || !item.path) return false;
+    const segments = String(item.path).split('/').filter(Boolean);
+    return segments.length === 1;
+  });
+  if (!files.length) return null;
+
+  const byName = (re) => files.find((f) => re.test(f.name || f.path));
+  return (
+    byName(/^readme(\.|$)/i)
+    || byName(/\.(md|mdx|markdown|txt|rst|adoc)$/i)
+    || files.find((f) => !String(f.name || f.path).startsWith('.'))
+    || files[0]
+  );
+}
+
 function sortNodes(nodes) {
   nodes.sort((a, b) => {
     if (a.type !== b.type) return a.type === 'directory' ? -1 : 1;

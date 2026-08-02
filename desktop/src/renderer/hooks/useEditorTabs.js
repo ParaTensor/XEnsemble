@@ -1,4 +1,5 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
+import { pickDefaultRootFile } from '../lib/workspaceFileTree';
 import { useWorkspaceFiles } from './useWorkspaceFiles';
 
 export function useEditorTabs(projectId) {
@@ -8,6 +9,7 @@ export function useEditorTabs(projectId) {
   const { listFiles, readFile, writeFile, createDir } = useWorkspaceFiles();
   const fetchDirLock = useRef({});
   const lastProjectId = useRef(projectId);
+  const autoOpenedForProject = useRef(null);
 
   // tabsRef keeps the latest tabs array without triggering re-renders,
   // allowing callbacks (openFile, saveTab, showDiff) to have stable
@@ -21,6 +23,9 @@ export function useEditorTabs(projectId) {
   useEffect(() => {
     if (lastProjectId.current !== projectId) {
       lastProjectId.current = projectId;
+      tabsRef.current = [];
+      activePathRef.current = null;
+      autoOpenedForProject.current = null;
       setTabs([]);
       setActivePath(null);
       setDiffView(null);
@@ -113,6 +118,35 @@ export function useEditorTabs(projectId) {
       delete fetchDirLock.current[key];
     }
   }, [listFiles]);
+
+  // 进入项目时默认打开根目录文档（优先 README）
+  useEffect(() => {
+    if (!projectId) return;
+    if (autoOpenedForProject.current === projectId) return;
+    if (tabsRef.current.length > 0) {
+      autoOpenedForProject.current = projectId;
+      return;
+    }
+
+    let cancelled = false;
+    (async () => {
+      try {
+        const entries = await fetchDir(projectId, '.');
+        if (cancelled || autoOpenedForProject.current === projectId) return;
+        if (tabsRef.current.length > 0) {
+          autoOpenedForProject.current = projectId;
+          return;
+        }
+        const file = pickDefaultRootFile(entries);
+        autoOpenedForProject.current = projectId;
+        if (file) await openFile(projectId, file);
+      } catch {
+        if (!cancelled) autoOpenedForProject.current = projectId;
+      }
+    })();
+
+    return () => { cancelled = true; };
+  }, [projectId, fetchDir, openFile]);
 
   const handleCreateFile = useCallback(async (projectId, name) => {
     // 先创建空文件，然后打开 tab 进入编辑模式

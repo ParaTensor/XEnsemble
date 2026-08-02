@@ -452,13 +452,6 @@ class GitConnectionService {
         const now = Date.now();
         const id = `gitconn_${crypto.randomBytes(8).toString('hex')}`;
 
-        // Remove any prior connections for this user+provider
-        await db.delete(schema.gitConnections)
-            .where(and(
-                eq(schema.gitConnections.userId, userId),
-                eq(schema.gitConnections.provider, providerName),
-            ));
-
         const connection = {
             id,
             userId,
@@ -478,27 +471,37 @@ class GitConnectionService {
             revokedAt: null,
         };
 
-        await db.insert(schema.gitConnections).values(connection);
+        // Wrap DELETE + INSERT in a transaction so concurrent getDecryptedToken
+        // calls always see either the old or new row — never an empty gap.
+        await db.transaction(async (tx) => {
+            await tx.delete(schema.gitConnections)
+                .where(and(
+                    eq(schema.gitConnections.userId, userId),
+                    eq(schema.gitConnections.provider, providerName),
+                ));
 
-        // Also sync to legacy github_connections for backward compat
-        if (providerName === 'github') {
-            try {
-                await db.delete(schema.githubConnections)
-                    .where(eq(schema.githubConnections.userId, userId));
-                await db.insert(schema.githubConnections).values({
-                    id,
-                    userId,
-                    githubUserId: Number(user.id) || 0,
-                    githubUsername: user.username,
-                    githubAvatar: user.avatarUrl || null,
-                    accessTokenEnc: encrypted,
-                    tokenScope: tokenResult.scope || 'repo',
-                    connectedAt: now,
-                    lastUsedAt: now,
-                    revokedAt: null,
-                });
-            } catch { /* ignore legacy table sync failures */ }
-        }
+            await tx.insert(schema.gitConnections).values(connection);
+
+            // Also sync to legacy github_connections for backward compat
+            if (providerName === 'github') {
+                try {
+                    await tx.delete(schema.githubConnections)
+                        .where(eq(schema.githubConnections.userId, userId));
+                    await tx.insert(schema.githubConnections).values({
+                        id,
+                        userId,
+                        githubUserId: Number(user.id) || 0,
+                        githubUsername: user.username,
+                        githubAvatar: user.avatarUrl || null,
+                        accessTokenEnc: encrypted,
+                        tokenScope: tokenResult.scope || 'repo',
+                        connectedAt: now,
+                        lastUsedAt: now,
+                        revokedAt: null,
+                    });
+                } catch { /* ignore legacy table sync failures */ }
+            }
+        });
 
         await recordEvent({
             userId,

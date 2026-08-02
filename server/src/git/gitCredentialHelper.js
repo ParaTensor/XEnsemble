@@ -15,6 +15,31 @@ process.on('exit', () => {
 });
 
 /**
+ * Remove stale askpass scripts left behind by previous server processes.
+ * Called once at module load to clean up scripts whose PID no longer exists.
+ */
+function cleanStaleAskpassScripts(dir) {
+    try {
+        const gitDir = path.join(dir, '.xensemble', 'git');
+        if (!fs.existsSync(gitDir)) return;
+        for (const name of fs.readdirSync(gitDir)) {
+            if (!name.startsWith('git-askpass-') || !name.endsWith('.sh')) continue;
+            // Extract PID from filename: git-askpass-<pid>.sh
+            const pid = Number(name.replace(/^git-askpass-/, '').replace(/\.sh$/, ''));
+            if (!pid) continue;
+            try {
+                // process.kill(pid, 0) checks if the process exists without sending a signal.
+                process.kill(pid, 0);
+                // Process is still alive — leave the script.
+            } catch {
+                // Process is gone — safe to remove the stale script.
+                try { fs.unlinkSync(path.join(gitDir, name)); } catch { /* best-effort */ }
+            }
+        }
+    } catch { /* best-effort */ }
+}
+
+/**
  * Remove embedded credentials from a Git remote URL so the remote is always
  * stored without a token / password.
  *
@@ -53,6 +78,8 @@ function getOrCreateAskpassScript(dir) {
     }
     const askpassDir = path.join(targetDir, '.xensemble', 'git');
     try { fs.mkdirSync(askpassDir, { recursive: true }); } catch {}
+    // Remove stale scripts from previous server processes on first use per dir.
+    if (!askpassCache.has(targetDir)) cleanStaleAskpassScripts(targetDir);
     const scriptPath = path.join(askpassDir, `git-askpass-${process.pid}.sh`);
     const content = `#!/bin/sh\nprintf '%s\\n' "$GIT_ASKPASS_TOKEN"\n`;
     try {

@@ -15,31 +15,48 @@ async function waitForAgentExit(runtime, runtimeRef, agentId) {
         if (agent?.cmd) agentCmd = agent.cmd;
     } catch (_) {}
 
+    const isLinux = (process.platform === 'linux');
+
+    // Linux: iterate /proc to find and gracefully terminate agent processes.
+    // macOS/other: fall back to pkill, which is the best available mechanism.
     const maxTries = 10;
-    const script = [
-        'for f in /proc/[0-9]*/cmdline; do',
-        '  p=${f#/proc/}; p=${p%/cmdline}',
-        '  [ "$p" = "$$" ] && continue',
-        '  cat "$f" 2>/dev/null | tr "\\0" " " | grep -q "$1" && kill -TERM "$p" 2>/dev/null',
-        'done',
-        'i=0',
-        `while [ $i -lt ${maxTries} ]; do`,
-        '  found=0',
-        '  for f in /proc/[0-9]*/cmdline; do',
-        '    p=${f#/proc/}; p=${p%/cmdline}',
-        '    [ "$p" = "$$" ] && continue',
-        '    cat "$f" 2>/dev/null | tr "\\0" " " | grep -q "$1" && { found=1; break; }',
-        '  done',
-        '  [ "$found" = "0" ] && exit 0',
-        '  sleep 0.5',
-        '  i=$((i+1))',
-        'done',
-        'for f in /proc/[0-9]*/cmdline; do',
-        '  p=${f#/proc/}; p=${p%/cmdline}',
-        '  [ "$p" = "$$" ] && continue',
-        '  cat "$f" 2>/dev/null | tr "\\0" " " | grep -q "$1" && kill -KILL "$p" 2>/dev/null',
-        'done',
-    ].join('\n');
+    const script = isLinux
+        ? [
+            'for f in /proc/[0-9]*/cmdline; do',
+            '  p=${f#/proc/}; p=${p%/cmdline}',
+            '  [ "$p" = "$$" ] && continue',
+            '  cat "$f" 2>/dev/null | tr "\\0" " " | grep -q "$1" && kill -TERM "$p" 2>/dev/null',
+            'done',
+            'i=0',
+            `while [ $i -lt ${maxTries} ]; do`,
+            '  found=0',
+            '  for f in /proc/[0-9]*/cmdline; do',
+            '    p=${f#/proc/}; p=${p%/cmdline}',
+            '    [ "$p" = "$$" ] && continue',
+            '    cat "$f" 2>/dev/null | tr "\\0" " " | grep -q "$1" && { found=1; break; }',
+            '  done',
+            '  [ "$found" = "0" ] && exit 0',
+            '  sleep 0.5',
+            '  i=$((i+1))',
+            'done',
+            'for f in /proc/[0-9]*/cmdline; do',
+            '  p=${f#/proc/}; p=${p%/cmdline}',
+            '  [ "$p" = "$$" ] && continue',
+            '  cat "$f" 2>/dev/null | tr "\\0" " " | grep -q "$1" && kill -KILL "$p" 2>/dev/null',
+            'done',
+        ].join('\n')
+        : [
+            // macOS / non-Linux fallback: use pkill (matches by process name).
+            // pkill exits 1 when no process matches, which is fine.
+            `pkill -TERM -x "$1" 2>/dev/null || pkill -TERM -f "$1" 2>/dev/null || true`,
+            'i=0',
+            `while [ $i -lt ${maxTries} ]; do`,
+            `  pgrep -x "$1" >/dev/null 2>&1 || pgrep -f "$1" >/dev/null 2>&1 || exit 0`,
+            '  sleep 0.5',
+            '  i=$((i+1))',
+            'done',
+            `pkill -KILL -x "$1" 2>/dev/null || pkill -KILL -f "$1" 2>/dev/null || true`,
+        ].join('\n');
 
     try {
         await runtime.exec.exec('sh', ['-c', script, 'sh', agentCmd], {}, { runtimeRef, cwd: '/' });

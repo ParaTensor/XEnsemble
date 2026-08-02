@@ -186,12 +186,41 @@ async function getNpmLatest(packageName) {
 
 function compareVersions(a, b) {
     if (!a || !b) return 0;
-    const pa = a.replace(/^v/, '').split(/[.-]/).map((x) => parseInt(x, 10) || 0);
-    const pb = b.replace(/^v/, '').split(/[.-]/).map((x) => parseInt(x, 10) || 0);
+    // Split numeric core from pre-release suffix (e.g. "1.0.0-beta.1")
+    const coreA = a.replace(/^v/, '');
+    const coreB = b.replace(/^v/, '');
+    const [numA, preA] = coreA.split('-', 2);
+    const [numB, preB] = coreB.split('-', 2);
+    const pa = numA.split('.').map((x) => parseInt(x, 10) || 0);
+    const pb = numB.split('.').map((x) => parseInt(x, 10) || 0);
     const len = Math.max(pa.length, pb.length);
     for (let i = 0; i < len; i += 1) {
         const diff = (pa[i] || 0) - (pb[i] || 0);
         if (diff !== 0) return diff < 0 ? -1 : 1;
+    }
+    // Numeric cores are equal — apply SemVer pre-release precedence:
+    //   - no pre-release > has pre-release (1.0.0 > 1.0.0-beta)
+    //   - pre-release segments compared per SemVer §11:
+    //     numeric segments compared as integers, string segments lexically,
+    //     shorter pre-release < longer when all preceding segments are equal.
+    if (!preA && !preB) return 0;
+    if (!preA) return 1;   // a is release, b is pre-release => a > b
+    if (!preB) return -1;  // b is release, a is pre-release => b > a
+    const segA = preA.split('.');
+    const segB = preB.split('.');
+    const segLen = Math.max(segA.length, segB.length);
+    for (let i = 0; i < segLen; i += 1) {
+        if (segA[i] === undefined) return -1; // a has fewer segments => a < b
+        if (segB[i] === undefined) return 1;  // b has fewer segments => a > b
+        const aNum = /^[0-9]+$/.test(segA[i]) ? parseInt(segA[i], 10) : NaN;
+        const bNum = /^[0-9]+$/.test(segB[i]) ? parseInt(segB[i], 10) : NaN;
+        if (!Number.isNaN(aNum) && !Number.isNaN(bNum)) {
+            if (aNum < bNum) return -1;
+            if (aNum > bNum) return 1;
+        } else {
+            if (segA[i] < segB[i]) return -1;
+            if (segA[i] > segB[i]) return 1;
+        }
     }
     return 0;
 }

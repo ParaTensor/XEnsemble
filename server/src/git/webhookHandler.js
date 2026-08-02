@@ -26,17 +26,18 @@ async function handlePullRequest(payload) {
     const repoFullName = repo?.full_name;
     if (!repoFullName) return { handled: false };
 
-    // Find projects linked to this repo
+    // Find projects linked to this repo (check both githubFullName and remoteFullName,
+    // then deduplicate — a project may have both fields set to the same value).
     const projects = await db.select().from(schema.projects)
         .where(eq(schema.projects.githubFullName, repoFullName));
 
-    if (projects.length === 0) {
-        // Try the new remoteFullName field
-        const altProjects = await db.select().from(schema.projects)
-            .where(eq(schema.projects.remoteFullName, repoFullName));
-        if (altProjects.length === 0) return { handled: false, reason: 'no_matching_project' };
-        projects.push(...altProjects);
+    const altProjects = await db.select().from(schema.projects)
+        .where(eq(schema.projects.remoteFullName, repoFullName));
+    for (const p of altProjects) {
+        if (!projects.find((x) => x.id === p.id)) projects.push(p);
     }
+
+    if (projects.length === 0) return { handled: false, reason: 'no_matching_project' };
 
     const action = payload.action; // opened, closed, synchronize, reopened, etc.
     const state = pr.merged ? 'merged' : pr.state; // open, closed, merged
