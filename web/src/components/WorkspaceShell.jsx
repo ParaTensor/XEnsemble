@@ -3,13 +3,8 @@ import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import '@xterm/xterm/css/xterm.css';
 
-import { getAccessToken, getWorkspaceShellWsUrl, refreshAccessToken } from '../lib/api';
+import { getAccessToken, getWorkspaceShellWsUrl } from '../lib/api';
 import { useTerminalTheme } from '../hooks/useTerminalTheme.jsx';
-import {
-  createTerminalReconnectState,
-  isTerminalAuthFailure,
-  refreshTokenForTerminalFailure,
-} from '../../../shared/terminalReconnect.mjs';
 
 const FALLBACK_XTERM_THEME = {
   background: '#09090b',
@@ -95,7 +90,7 @@ export default function WorkspaceShell({ projectId }) {
 
     let disposed = false;
     let serverEnded = false;
-    const reconnectState = createTerminalReconnectState();
+    let reconnectAttempts = 0;
     let reconnectTimer = null;
     const MAX_RECONNECTS = 5;
 
@@ -135,17 +130,17 @@ export default function WorkspaceShell({ projectId }) {
     // reopen a fresh shell instead of leaving a dead terminal.
     const scheduleReconnect = (reason) => {
       if (disposed) return;
-      const next = reconnectState.nextReconnect();
-      if (next.exhausted) {
+      if (reconnectAttempts >= MAX_RECONNECTS) {
         terminal.write(`\r\n\x1b[31m[System] Workspace shell could not be restored${reason ? ` (${reason})` : ''}. Switch tabs to retry.\x1b[0m\r\n`);
         serverEnded = true;
         return;
       }
-      terminal.write(`\r\n\x1b[33m[System] Reconnecting workspace shell… (${next.attempt}/${MAX_RECONNECTS})\x1b[0m\r\n`);
+      reconnectAttempts += 1;
+      const delay = Math.min(500 * reconnectAttempts, 3000);
+      terminal.write('\r\n\x1b[33m[System] Reconnecting workspace shell…\x1b[0m\r\n');
       reconnectTimer = setTimeout(() => {
-        reconnectTimer = null;
         if (!disposed) connect();
-      }, next.delayMs);
+      }, delay);
     };
 
     terminal.attachCustomKeyEventHandler((event) => {
@@ -202,29 +197,11 @@ export default function WorkspaceShell({ projectId }) {
         try {
           const ws = new WebSocket(getWorkspaceShellWsUrl(projectId, getAccessToken()));
           wsRef.current = ws;
-          let failureHandled = false;
-          let authenticated = false;
-
-          const markAuthenticated = () => {
-            if (authenticated || disposed || wsRef.current !== ws) return;
-            authenticated = true;
-            connectedRef.current = true;
-            reconnectState.authenticationSucceeded();
-          };
-
-          const handleConnectionFailure = async (reason, failure = {}) => {
-            if (failureHandled || disposed || serverEnded || wsRef.current !== ws) return;
-            failureHandled = true;
-            connectedRef.current = false;
-            await refreshTokenForTerminalFailure(failure, refreshAccessToken);
-            if (!disposed && !serverEnded && wsRef.current === ws) {
-              scheduleReconnect(reason);
-            }
-          };
 
           ws.onopen = () => {
             if (disposed) return;
-            reconnectState.socketOpened();
+            connectedRef.current = true;
+            reconnectAttempts = 0;
             requestAnimationFrame(() => {
               requestAnimationFrame(() => {
                 if (!disposed) fitTerminal();
@@ -235,10 +212,6 @@ export default function WorkspaceShell({ projectId }) {
           ws.onmessage = (event) => {
             if (disposed) return;
             const msg = parseMessage(event.data);
-            if (msg.type === 'ready') {
-              markAuthenticated();
-              return;
-            }
             if (msg.type === 'output') {
               const viewport = hostRef.current?.querySelector('.xterm-viewport');
               const atBottom = !viewport || viewport.scrollTop + viewport.clientHeight >= viewport.scrollHeight - 5;
@@ -253,9 +226,8 @@ export default function WorkspaceShell({ projectId }) {
             if (msg.type === 'error') {
               // Backend lost the shell (e.g. VM rebuilt on agent restart) — reopen.
               connectedRef.current = false;
-              const failure = { message: msg.data };
-              void handleConnectionFailure(msg.data || 'error', failure);
               try { ws.close(); } catch { /* ignore */ }
+              scheduleReconnect(msg.data);
               return;
             }
             if (msg.type === 'exit') {
@@ -268,7 +240,7 @@ export default function WorkspaceShell({ projectId }) {
                 serverEnded = true;
               } else {
                 // Abnormal exit (e.g. -1 when the VM was torn down) — reopen.
-                void handleConnectionFailure(`code ${code}`, { message: `code ${code}` });
+                scheduleReconnect(`code ${code}`);
               }
             }
           };
@@ -285,13 +257,8 @@ export default function WorkspaceShell({ projectId }) {
             if (disposed || serverEnded) return;
             const wasConnected = connectedRef.current;
             connectedRef.current = false;
-            const failure = { code: event.code, reason: event.reason };
-            if (isTerminalAuthFailure(failure)) {
-              void handleConnectionFailure(event.reason || 'Invalid access token', failure);
-              return;
-            }
             if (event.wasClean) return;
-            void handleConnectionFailure(wasConnected ? 'disconnected' : 'connection failed', failure);
+            scheduleReconnect(wasConnected ? 'disconnected' : 'connection failed');
           };
         } catch (error) {
           if (!disposed) {

@@ -8,7 +8,6 @@
   "scripts": {
     "dev": "electron-vite dev",
     "build": "electron-vite build",
-    "test": "node --test src/renderer/lib/*.test.js",
     "preview": "electron-vite preview",
     "package": "electron-builder",
     "package:dir": "electron-builder --dir",

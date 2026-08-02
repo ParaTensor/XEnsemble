@@ -34,11 +34,6 @@ const schema = require('./db/schema');
 const { eq, and, ne, sql } = require('drizzle-orm');
 const auth = require('./auth/index');
 const { assertActiveUser } = require('./auth/assertActiveUser');
-const {
-    closeUnauthorizedWebSocket,
-    closeForbiddenWebSocket,
-    sendWebSocketReady,
-} = require('./auth/websocket');
 const { addSseClient, broadcastSse } = require('./session/sseManager');
 const { getProjectForUser, invalidateProjectCache } = require('./projects/getProjectForUser');
 const { registerAuthHooks } = require('./auth/hooks');
@@ -1621,9 +1616,7 @@ function startWsHeartbeat(ws) {
         try { ws.ping(); } catch (_) { ws.terminate(); }
     }, WS_PING_INTERVAL_MS);
     timer.unref();
-    const stop = () => clearInterval(timer);
-    ws.once('close', stop);
-    return stop;
+    return () => clearInterval(timer);
 }
 
 function createWsSender(ws) {
@@ -1689,19 +1682,22 @@ fastify.register(async function terminalWsRoutes(app) {
             }
 
             if (!accessToken) {
-                closeUnauthorizedWebSocket(ws, sendJson, 'access_token is required');
+                sendJson({ type: 'error', data: 'access_token is required' });
+                ws.close();
                 return;
             }
 
             const payload = auth.verifyAccessToken(accessToken);
             if (!payload?.id) {
-                closeUnauthorizedWebSocket(ws, sendJson);
+                sendJson({ type: 'error', data: 'Invalid access token' });
+                ws.close();
                 return;
             }
 
             const active = await assertActiveUser(payload);
             if (active.error) {
-                closeForbiddenWebSocket(ws, sendJson, active.error);
+                sendJson({ type: 'error', data: active.error });
+                ws.close();
                 return;
             }
 
@@ -1763,7 +1759,6 @@ fastify.register(async function terminalWsRoutes(app) {
                 ws.close();
                 return;
             }
-            sendWebSocketReady(sendJson);
 
             ws.on('message', (message) => {
                 if (!sessionManager.isAlive(sessionId)) return;
@@ -1822,19 +1817,22 @@ fastify.register(async function workspaceTerminalWsRoutes(app) {
             }
 
             if (!accessToken) {
-                closeUnauthorizedWebSocket(ws, sendJson, 'access_token is required');
+                sendJson({ type: 'error', data: 'access_token is required' });
+                ws.close();
                 return;
             }
 
             const payload = auth.verifyAccessToken(accessToken);
             if (!payload?.id) {
-                closeUnauthorizedWebSocket(ws, sendJson);
+                sendJson({ type: 'error', data: 'Invalid access token' });
+                ws.close();
                 return;
             }
 
             const active = await assertActiveUser(payload);
             if (active.error) {
-                closeForbiddenWebSocket(ws, sendJson, active.error);
+                sendJson({ type: 'error', data: active.error });
+                ws.close();
                 return;
             }
 
@@ -1933,7 +1931,6 @@ fastify.register(async function workspaceTerminalWsRoutes(app) {
                 ws.close();
                 return;
             }
-            sendWebSocketReady(sendJson);
 
             ws.on('message', (message) => {
                 if (!WorkspaceShellManager.isAlive(shellId)) return;
