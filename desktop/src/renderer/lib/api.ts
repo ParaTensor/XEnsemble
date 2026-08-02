@@ -1,4 +1,10 @@
-export { getBackendURL, getApiBase, getWsUrl, publicFetch } from './backend';
+export {
+  getBackendURL,
+  getApiBase,
+  getWsUrl,
+  getWorkspaceShellWsUrl,
+  publicFetch,
+} from './backend';
 
 export {
   apiFetch,

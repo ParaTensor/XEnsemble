@@ -8,11 +8,16 @@ import '@xterm/xterm/css/xterm.css';
 import { usePreview, PreviewControlGroup } from './PreviewPanel';
 import TerminalThemePicker from './TerminalThemePicker';
 import BranchSelector from './github/BranchSelector';
-import { getWsUrl, getAccessToken, getBackendURL } from '../lib/api';
+import { getWsUrl, getAccessToken, getBackendURL, refreshAccessToken } from '../lib/api';
 import { useTerminalTheme } from '../hooks/useTerminalTheme.jsx';
 import { XTERM_MINIMUM_CONTRAST_RATIO } from '../lib/terminalThemes.js';
 import { useToast } from './Toast';
 import { useGitStatus } from '../hooks/useGitStatus.js';
+import {
+    createTerminalReconnectState,
+    isTerminalAuthFailure,
+    refreshTokenForTerminalFailure,
+} from '../../../../shared/terminalReconnect.mjs';
 
 function parseWsMessage(message) {
     const raw = typeof message === 'string' ? message : message.toString();
@@ -104,7 +109,7 @@ function AgentConsole({
         setEnded(!sessionLiveRef.current);
         const disposedRef = { current: false };
         const serverEndedRef = { current: false };
-        const openedRef = { current: false };
+        const authenticatedRef = { current: false };
         const wsRef = { current: null };
 
         const terminal = new Terminal({
@@ -184,22 +189,23 @@ function AgentConsole({
             if (!serverEndedRef.current) terminal.focus();
         };
 
-        const reconnectStateRef = { attempts: 0, timer: null };
+        const reconnectState = createTerminalReconnectState();
+        const reconnectTimerRef = { current: null };
         const MAX_RECONNECTS = 5;
 
         const scheduleReconnect = (reason) => {
             if (disposedRef.current || serverEndedRef.current) return;
-            if (reconnectStateRef.attempts >= MAX_RECONNECTS) {
+            const next = reconnectState.nextReconnect();
+            if (next.exhausted) {
                 terminal.write(`\r\n\x1b[31m[System] Terminal could not be restored${reason ? ` (${reason})` : ''}. Click Restart to retry.\x1b[0m\r\n`);
                 setEnded(true);
                 return;
             }
-            reconnectStateRef.attempts += 1;
-            const delay = Math.min(500 * reconnectStateRef.attempts, 3000);
-            terminal.write(`\r\n\x1b[33m[System] Reconnecting terminal… (${reconnectStateRef.attempts}/${MAX_RECONNECTS})\x1b[0m\r\n`);
-            reconnectStateRef.timer = setTimeout(() => {
+            terminal.write(`\r\n\x1b[33m[System] Reconnecting terminal… (${next.attempt}/${MAX_RECONNECTS})\x1b[0m\r\n`);
+            reconnectTimerRef.current = setTimeout(() => {
+                reconnectTimerRef.current = null;
                 if (!disposedRef.current) connect();
-            }, delay);
+            }, next.delayMs);
         };
 
         let writeRafId = null;
@@ -217,6 +223,8 @@ function AgentConsole({
                 return;
             }
 
+            let failureHandled = false;
+            let authenticated = false;
             let writeBuffer = '';
             let vsScreen = [];
             let vsCursorY = 0;
@@ -295,11 +303,27 @@ function AgentConsole({
                 });
             };
 
+            const markAuthenticated = () => {
+                if (authenticated || disposedRef.current || wsRef.current !== ws) return;
+                authenticated = true;
+                authenticatedRef.current = true;
+                reconnectState.authenticationSucceeded();
+                if (sessionLiveRef.current) setEnded(false);
+            };
+
+            const handleConnectionFailure = async (reason, failure = {}) => {
+                if (failureHandled || disposedRef.current || serverEndedRef.current || wsRef.current !== ws) return;
+                failureHandled = true;
+                authenticatedRef.current = false;
+                await refreshTokenForTerminalFailure(failure, refreshAccessToken);
+                if (!disposedRef.current && !serverEndedRef.current && wsRef.current === ws) {
+                    scheduleReconnect(reason);
+                }
+            };
+
             ws.onopen = () => {
                 if (disposedRef.current) return;
-                openedRef.current = true;
-                reconnectStateRef.attempts = 0;
-                if (sessionLiveRef.current) setEnded(false);
+                reconnectState.socketOpened();
                 let attempts = 0;
                 const tryFit = () => {
                     applySize();
@@ -319,7 +343,9 @@ function AgentConsole({
             ws.onmessage = (event) => {
                 if (disposedRef.current) return;
                 const msg = parseWsMessage(event.data);
-                if (msg.type === 'output') {
+                if (msg.type === 'ready') {
+                    markAuthenticated();
+                } else if (msg.type === 'output') {
                     writeBuffer += msg.data;
                     if (writeRafId === null) {
                         writeRafId = requestAnimationFrame(flushWriteBuffer);
@@ -328,9 +354,10 @@ function AgentConsole({
                     setMetrics(msg.data);
                 } else if (msg.type === 'error') {
                     if (writeRafId !== null) { cancelAnimationFrame(writeRafId); clearTimeout(writeRafId); writeRafId = null; flushWriteBuffer(); }
-                    openedRef.current = false;
+                    authenticatedRef.current = false;
+                    const failure = { message: msg.data };
+                    void handleConnectionFailure(msg.data || 'error', failure);
                     try { ws.close(); } catch { /* ignore */ }
-                    scheduleReconnect(msg.data || 'error');
                 } else if (msg.type === 'exit') {
                     if (writeRafId !== null) { cancelAnimationFrame(writeRafId); clearTimeout(writeRafId); writeRafId = null; flushWriteBuffer(); }
                     if (msg.message) terminal.write(msg.message);
@@ -346,10 +373,15 @@ function AgentConsole({
                     ws.close();
                 }
                 if (disposedRef.current || serverEndedRef.current) return;
-                const wasConnected = openedRef.current;
-                openedRef.current = false;
+                const wasConnected = authenticatedRef.current;
+                authenticatedRef.current = false;
+                const failure = { code: event.code, reason: event.reason };
+                if (isTerminalAuthFailure(failure)) {
+                    void handleConnectionFailure(event.reason || 'Invalid access token', failure);
+                    return;
+                }
                 if (event.wasClean) return;
-                scheduleReconnect(wasConnected ? 'disconnected' : 'connection failed');
+                void handleConnectionFailure(wasConnected ? 'disconnected' : 'connection failed', failure);
             };
 
             terminal.onData((data) => {
@@ -387,7 +419,7 @@ function AgentConsole({
         return () => {
             disposedRef.current = true;
             if (writeRafId !== null) { cancelAnimationFrame(writeRafId); clearTimeout(writeRafId); }
-            if (reconnectStateRef.timer) clearTimeout(reconnectStateRef.timer);
+            if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current);
             if (resizeDebounce) clearTimeout(resizeDebounce);
             visibilityObserver.disconnect();
             resizeObserver.disconnect();
