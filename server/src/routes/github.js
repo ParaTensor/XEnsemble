@@ -9,6 +9,7 @@ const schema = require('../db/schema');
 const { projectDir } = require('../workspace');
 const policy = require('../auth/PolicyService');
 const { scaffoldXEnsemble } = require('../repositories/RepositoryEnvironmentService');
+const { withProjectGitLock } = require('../git/gitMutationLock');
 
 function escapeHtml(str) {
     return String(str)
@@ -475,11 +476,16 @@ function registerGitHubRoutes(fastify) {
         const project = await getProjectForUser(request.user.id, request.params.id);
         if (!project) return reply.code(404).send({ error: 'Project not found' });
         try {
-            const diff = await gitOperationService.getDiff(project, {
+            const result = await gitOperationService.getDiff(project, {
                 base: request.query?.base,
                 head: request.query?.head,
             });
-            return { diff };
+            return {
+                diff: result.diff,
+                truncated: Boolean(result.truncated),
+                binary: Boolean(result.binary),
+                omitted_bytes: result.omittedBytes || 0,
+            };
         } catch (err) {
             request.log.error(err);
             return reply.code(500).send({ error: err.message });
@@ -527,8 +533,13 @@ function registerGitHubRoutes(fastify) {
         const filePath = request.query?.path;
         if (!filePath) return reply.code(400).send({ error: 'path is required' });
         try {
-            const { original, modified } = await gitOperationService.getFileDiffView(project, filePath);
-            return { original, modified };
+            const view = await gitOperationService.getFileDiffView(project, filePath);
+            return {
+                original: view.original,
+                modified: view.modified,
+                truncated: Boolean(view.truncated),
+                binary: Boolean(view.binary),
+            };
         } catch (err) {
             request.log.error(err);
             return reply.code(500).send({ error: err.message });
@@ -541,27 +552,29 @@ function registerGitHubRoutes(fastify) {
         const project = await getProjectForUser(request.user.id, request.params.id);
         if (!project) return reply.code(404).send({ error: 'Project not found' });
         try {
-            const { stdout: branch } = await gitOperationService._execGit(project, ['rev-parse', '--abbrev-ref', 'HEAD']);
-            const current = branch.trim();
-            let target = current;
-            let remoteRef = `origin/${current}`;
-            let existsOnRemote = true;
-            try {
-                await gitOperationService._execGit(project, ['rev-parse', '--verify', '--quiet', remoteRef]);
-            } catch {
-                existsOnRemote = false;
-            }
-            if (!existsOnRemote) {
+            await withProjectGitLock(project.id, async () => {
+                const { stdout: branch } = await gitOperationService._execGit(project, ['rev-parse', '--abbrev-ref', 'HEAD']);
+                const current = branch.trim();
+                let target = current;
+                let remoteRef = `origin/${current}`;
+                let existsOnRemote = true;
                 try {
-                    const { stdout: defaultRef } = await gitOperationService._execGit(project, [
-                        'symbolic-ref', '--short', 'refs/remotes/origin/HEAD',
-                    ]);
-                    target = defaultRef.trim().split('/').pop();
+                    await gitOperationService._execGit(project, ['rev-parse', '--verify', '--quiet', remoteRef]);
                 } catch {
-                    target = 'main';
+                    existsOnRemote = false;
                 }
-            }
-            await gitOperationService._execGit(project, ['pull', 'origin', target]);
+                if (!existsOnRemote) {
+                    try {
+                        const { stdout: defaultRef } = await gitOperationService._execGit(project, [
+                            'symbolic-ref', '--short', 'refs/remotes/origin/HEAD',
+                        ]);
+                        target = defaultRef.trim().split('/').pop();
+                    } catch {
+                        target = 'main';
+                    }
+                }
+                await gitOperationService._execGit(project, ['pull', 'origin', target]);
+            });
             return { ok: true };
         } catch (err) {
             request.log.error(err);

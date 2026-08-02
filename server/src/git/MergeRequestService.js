@@ -7,6 +7,7 @@ const { recordEvent } = require('../events/recordEvent');
 const { getProvider } = require('./providers/registry');
 const { GitConnectionService, getProviderConfig } = require('./GitConnectionService');
 const { GitOperationService } = require('./GitOperationService');
+const { withProjectGitLock } = require('./gitMutationLock');
 
 class MergeRequestService {
     constructor(deps = {}) {
@@ -101,77 +102,79 @@ class MergeRequestService {
     }
 
     async create(project, { title, body, sourceBranch, source_branch, targetBranch, target_branch }, actorUserId) {
-        const providerName = project.repoProvider;
-        if (!providerName || providerName === 'none' || providerName === 'local_git') {
-            throw new Error('Project is not connected to an external Git provider');
-        }
+        return withProjectGitLock(project.id, async () => {
+            const providerName = project.repoProvider;
+            if (!providerName || providerName === 'none' || providerName === 'local_git') {
+                throw new Error('Project is not connected to an external Git provider');
+            }
 
-        const repoFullName = project.remoteFullName || project.githubFullName;
-        if (!repoFullName) throw new Error('Project does not have a remote repository identifier');
+            const repoFullName = project.remoteFullName || project.githubFullName;
+            if (!repoFullName) throw new Error('Project does not have a remote repository identifier');
 
-        const token = await this.gitConnectionService.getDecryptedToken(project.userId, providerName);
-        const provider = getProvider(providerName);
-        const config = await getProviderConfig(providerName);
+            const token = await this.gitConnectionService.getDecryptedToken(project.userId, providerName);
+            const provider = getProvider(providerName);
+            const config = await getProviderConfig(providerName);
 
-        const src = sourceBranch || source_branch || project.currentBranch;
-        const tgt = targetBranch || target_branch || project.repoDefaultBranch || 'main';
-        if (!src) throw new Error('sourceBranch is required and project.currentBranch is not set');
-        if (!title) throw new Error('title is required');
+            const src = sourceBranch || source_branch || project.currentBranch;
+            const tgt = targetBranch || target_branch || project.repoDefaultBranch || 'main';
+            if (!src) throw new Error('sourceBranch is required and project.currentBranch is not set');
+            if (!title) throw new Error('title is required');
 
-        const localOpen = await this._findLocalOpen(project.id, providerName, src, tgt);
-        if (localOpen) return localOpen;
+            const localOpen = await this._findLocalOpen(project.id, providerName, src, tgt);
+            if (localOpen) return localOpen;
 
-        const remoteOpen = await this._findRemoteOpen(
-            provider, token, repoFullName, src, tgt, config?.apiBase,
-        );
-        if (remoteOpen) {
-            return this._upsertFromRemote(project, providerName, remoteOpen, {
-                title, body, src, tgt, actorUserId,
-            });
-        }
-
-        await this.gitOperationService.pushBranch(project, src);
-
-        let prInfo;
-        try {
-            prInfo = await provider.createPR(token, repoFullName, {
-                title,
-                body,
-                head: src,
-                base: tgt,
-                apiBase: config?.apiBase,
-            });
-        } catch (err) {
-            // Another client may have created the same PR between list and create.
-            const raced = await this._findRemoteOpen(
+            const remoteOpen = await this._findRemoteOpen(
                 provider, token, repoFullName, src, tgt, config?.apiBase,
             );
-            if (!raced) throw err;
-            return this._upsertFromRemote(project, providerName, raced, {
+            if (remoteOpen) {
+                return this._upsertFromRemote(project, providerName, remoteOpen, {
+                    title, body, src, tgt, actorUserId,
+                });
+            }
+
+            await this.gitOperationService.pushBranch(project, src);
+
+            let prInfo;
+            try {
+                prInfo = await provider.createPR(token, repoFullName, {
+                    title,
+                    body,
+                    head: src,
+                    base: tgt,
+                    apiBase: config?.apiBase,
+                });
+            } catch (err) {
+                // Another client may have created the same PR between list and create.
+                const raced = await this._findRemoteOpen(
+                    provider, token, repoFullName, src, tgt, config?.apiBase,
+                );
+                if (!raced) throw err;
+                return this._upsertFromRemote(project, providerName, raced, {
+                    title, body, src, tgt, actorUserId,
+                });
+            }
+
+            const record = await this._upsertFromRemote(project, providerName, prInfo, {
                 title, body, src, tgt, actorUserId,
             });
-        }
 
-        const record = await this._upsertFromRemote(project, providerName, prInfo, {
-            title, body, src, tgt, actorUserId,
+            await recordEvent({
+                userId: actorUserId ?? project.userId,
+                projectId: project.id,
+                subjectType: 'merge_request',
+                subjectId: record.id,
+                type: 'mr.created',
+                data: {
+                    provider: providerName,
+                    remoteMrNumber: prInfo.number,
+                    title,
+                    sourceBranch: src,
+                    targetBranch: tgt,
+                },
+            });
+
+            return record;
         });
-
-        await recordEvent({
-            userId: actorUserId ?? project.userId,
-            projectId: project.id,
-            subjectType: 'merge_request',
-            subjectId: record.id,
-            type: 'mr.created',
-            data: {
-                provider: providerName,
-                remoteMrNumber: prInfo.number,
-                title,
-                sourceBranch: src,
-                targetBranch: tgt,
-            },
-        });
-
-        return record;
     }
 
     async sync(project, mrId) {

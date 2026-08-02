@@ -49,4 +49,15 @@ describe('DiffViewer', () => {
     render(<DiffViewer original="a" modified="b" path="src/app.ts" />);
     expect(screen.getByTestId('monaco-diff-editor')).toHaveAttribute('data-language', 'typescript');
   });
+
+  it('shows binary placeholder', () => {
+    render(<DiffViewer original="" modified="" path="img.png" binary />);
+    expect(screen.getByTestId('diff-binary')).toBeInTheDocument();
+    expect(screen.queryByTestId('monaco-diff-editor')).not.toBeInTheDocument();
+  });
+
+  it('shows truncated notice', () => {
+    render(<DiffViewer original="a" modified="b" path="big.js" truncated />);
+    expect(screen.getByTestId('diff-truncated')).toBeInTheDocument();
+  });
 });
