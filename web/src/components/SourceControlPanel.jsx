@@ -144,6 +144,21 @@ export default function SourceControlPanel({ projectId, gitChanges, onGitFileCli
     setGitSubTab('review');
   }, []);
 
+  const normalizeDiffEntry = useCallback((data, fallbackText = '') => {
+    if (data && typeof data === 'object' && !Array.isArray(data)) {
+      return {
+        diff: typeof data.diff === 'string' ? data.diff : fallbackText,
+        binary: Boolean(data.binary),
+        truncated: Boolean(data.truncated),
+      };
+    }
+    return {
+      diff: typeof data === 'string' ? data : fallbackText,
+      binary: false,
+      truncated: false,
+    };
+  }, []);
+
   const renderDiffLines = useCallback((raw) => {
     if (!raw) return <span className="text-zinc-400">No changes</span>;
     const lines = raw.split('\n');
@@ -183,15 +198,18 @@ export default function SourceControlPanel({ projectId, gitChanges, onGitFileCli
         setLoadingDiff(filePath);
         try {
           const data = await getGitFileDiff(projectId, filePath);
-          setFileDiffs((prev) => ({ ...prev, [filePath]: data?.diff || '' }));
+          setFileDiffs((prev) => ({ ...prev, [filePath]: normalizeDiffEntry(data) }));
         } catch (_) {
-          setFileDiffs((prev) => ({ ...prev, [filePath]: 'Failed to load diff' }));
+          setFileDiffs((prev) => ({
+            ...prev,
+            [filePath]: normalizeDiffEntry({ diff: 'Failed to load diff' }),
+          }));
         } finally {
           setLoadingDiff(null);
         }
       }
     }
-  }, [expandedFiles, fileDiffs, projectId]);
+  }, [expandedFiles, fileDiffs, projectId, normalizeDiffEntry]);
 
   const allFiles = [...gitStagedFiles, ...gitUnstagedFiles];
   const allExpanded = allFiles.length > 0 && allFiles.every((f) => expandedFiles.has(f.path));
@@ -208,7 +226,9 @@ export default function SourceControlPanel({ projectId, gitChanges, onGitFileCli
     setLoadingDiff('batch');
     try {
       const results = await Promise.all(
-        toFetch.map((p) => getGitFileDiff(projectId, p).then((d) => [p, d?.diff || '']).catch(() => [p, 'Failed to load diff'])),
+        toFetch.map((p) => getGitFileDiff(projectId, p)
+          .then((d) => [p, normalizeDiffEntry(d)])
+          .catch(() => [p, normalizeDiffEntry({ diff: 'Failed to load diff' })])),
       );
       setFileDiffs((prev) => {
         const next = { ...prev };
@@ -218,7 +238,7 @@ export default function SourceControlPanel({ projectId, gitChanges, onGitFileCli
     } finally {
       setLoadingDiff(null);
     }
-  }, [allExpanded, allFiles, fileDiffs, projectId]);
+  }, [allExpanded, allFiles, fileDiffs, projectId, normalizeDiffEntry]);
 
   const renderGitFile = (f, stageAction) => {
     const label = GIT_STATUS_LABELS[f.status] || f.status;
@@ -227,7 +247,10 @@ export default function SourceControlPanel({ projectId, gitChanges, onGitFileCli
     const fileName = f.path.split('/').pop();
     const dirPath = f.path.includes('/') ? f.path.slice(0, f.path.lastIndexOf('/')) : '';
     const isExpanded = expandedFiles.has(f.path);
-    const diffText = fileDiffs[f.path];
+    const diffEntry = fileDiffs[f.path];
+    const diffText = typeof diffEntry === 'string' ? diffEntry : diffEntry?.diff;
+    const diffBinary = Boolean(diffEntry && typeof diffEntry === 'object' && diffEntry.binary);
+    const diffTruncated = Boolean(diffEntry && typeof diffEntry === 'object' && diffEntry.truncated);
     const isLoading = loadingDiff === f.path;
 
     return (
@@ -272,11 +295,22 @@ export default function SourceControlPanel({ projectId, gitChanges, onGitFileCli
               <div className="flex items-center justify-center py-4 text-zinc-400">
                 <Loader2 className="h-4 w-4 animate-spin" />
               </div>
-            ) : diffText != null ? (
-              <div className="text-[11px] leading-relaxed overflow-x-auto font-mono select-text"
-                   style={{ tabSize: 4, MozTabSize: 4 }}>
-                {renderDiffLines(diffText)}
-              </div>
+            ) : diffEntry != null ? (
+              diffBinary ? (
+                <div className="px-3 py-3 text-[11px] text-zinc-500" data-testid="inline-diff-binary">
+                  二进制文件，无法显示文本对比
+                </div>
+              ) : (
+                <div className="text-[11px] leading-relaxed overflow-x-auto font-mono select-text"
+                     style={{ tabSize: 4, MozTabSize: 4 }}>
+                  {renderDiffLines(diffText)}
+                  {diffTruncated && (
+                    <div className="px-2 py-1 text-amber-700 bg-amber-50 border-t border-amber-200" data-testid="inline-diff-truncated">
+                      内容过大，已截断显示
+                    </div>
+                  )}
+                </div>
+              )
             ) : null}
           </div>
         )}

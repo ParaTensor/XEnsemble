@@ -26,6 +26,8 @@ export default function CreatePRDialog({
   const [title, setTitle] = useState('');
   const [body, setBody] = useState('');
   const [diff, setDiff] = useState('');
+  const [diffBinary, setDiffBinary] = useState(false);
+  const [diffTruncated, setDiffTruncated] = useState(false);
   const [showDiff, setShowDiff] = useState(false);
   const [diffLoading, setDiffLoading] = useState(false);
   const [creating, setCreating] = useState(false);
@@ -45,6 +47,8 @@ export default function CreatePRDialog({
       setTitle('');
       setBody('');
       setDiff('');
+      setDiffBinary(false);
+      setDiffTruncated(false);
       setShowDiff(false);
       setTargetBranch(defaultTargetBranch || 'main');
     }
@@ -55,8 +59,16 @@ export default function CreatePRDialog({
     setDiffLoading(true);
     githubApi
       .getGitDiff(projectId, { base: targetBranch, head: sourceBranch })
-      .then(({ diff: d }) => setDiff(d || ''))
-      .catch(() => setDiff(''))
+      .then((data) => {
+        setDiff(data?.diff || '');
+        setDiffBinary(Boolean(data?.binary));
+        setDiffTruncated(Boolean(data?.truncated));
+      })
+      .catch(() => {
+        setDiff('');
+        setDiffBinary(false);
+        setDiffTruncated(false);
+      })
       .finally(() => setDiffLoading(false));
   }, [open, projectId, sourceBranch, targetBranch]);
 
@@ -162,8 +174,15 @@ export default function CreatePRDialog({
                   <Loader2 className="h-3.5 w-3.5 animate-spin" />
                   Loading diff…
                 </div>
+              ) : diffBinary ? (
+                <p className="text-xs text-[#5F6368]" data-testid="pr-diff-binary">Binary files are omitted from this preview.</p>
               ) : diff ? (
-                <pre className="whitespace-pre-wrap font-mono text-xs text-[#3C4043]">{diff}</pre>
+                <>
+                  <pre className="whitespace-pre-wrap font-mono text-xs text-[#3C4043]">{diff}</pre>
+                  {diffTruncated && (
+                    <p className="mt-2 text-xs text-amber-700" data-testid="pr-diff-truncated">Diff truncated due to size.</p>
+                  )}
+                </>
               ) : (
                 <p className="text-xs text-[#5F6368]">No diff available.</p>
               )}

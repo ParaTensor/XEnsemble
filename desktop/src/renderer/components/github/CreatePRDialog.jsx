@@ -29,6 +29,8 @@ export default function CreatePRDialog({
   const [title, setTitle] = useState('');
   const [body, setBody] = useState('');
   const [diff, setDiff] = useState('');
+  const [diffBinary, setDiffBinary] = useState(false);
+  const [diffTruncated, setDiffTruncated] = useState(false);
   const [showDiff, setShowDiff] = useState(false);
   const [diffLoading, setDiffLoading] = useState(false);
   const [creating, setCreating] = useState(false);

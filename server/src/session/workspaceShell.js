@@ -93,6 +93,12 @@ class WorkspaceShellManager {
         }
     }
 
+    deleteAll() {
+        for (const shellId of [...this.shells.keys()]) {
+            this.delete(shellId);
+        }
+    }
+
     addSubscriber(shellId) {
         const shell = this.shells.get(shellId);
         if (!shell) return;

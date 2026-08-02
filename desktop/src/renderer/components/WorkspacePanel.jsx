@@ -209,6 +209,8 @@ const WorkspacePanel = memo(function WorkspacePanel({
                     modified={gitDiffView.modified}
                     path={gitDiffView.path}
                     loading={gitDiffView.loading}
+                    binary={gitDiffView.binary}
+                    truncated={gitDiffView.truncated}
                     onClose={onCloseGitDiff}
                   />
                 </Suspense>

@@ -313,6 +313,10 @@ class TranscriptStore {
         }
     }
 
+    flushAllSync() {
+        this._flushAllStates();
+    }
+
     _maybeWriteSessionMeta(state, force) {
         if (!state.sessionId || !this.db) return;
         const shouldWrite = force

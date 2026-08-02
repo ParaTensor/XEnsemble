@@ -4,6 +4,8 @@
 
 执行面迁移到独立云环境、Runtime 抽象、Workspace 存储、Preview/Deployment 服务等所有后端实现，必须以 **`docs/Architecture.md`** 为唯一规范。开发或评审相关代码前须阅读该文档；任何直接依赖本机 FS/PTY 的假设仅限 Local 实现内部。
 
+**状态存储（强制）**：禁止引入 Redis 等额外中间件。热路径用进程内内存；需持久化或跨实例共享的状态写入 PostgreSQL。细则见 `.cursor/rules/no-redis-pg-persistence.mdc`。
+
 ## 前端 UI
 
 `web/` 的布局、组件与交互以根目录 **`DESIGN.md`** 为唯一规范入口（Console 面、对齐 ParaRouter `DESIGN.md`）；完整细则见 **`docs/Designs.md`**。实现或评审前端前须阅读上述文档；**勿在本文重复 UI 细则。**

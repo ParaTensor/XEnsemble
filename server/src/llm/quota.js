@@ -1,4 +1,5 @@
 const policy = require('../auth/PolicyService');
+const PlatformSettings = require('../admin/PlatformSettings');
 
 const TIER_QPS = {
     basic: 12,
@@ -16,6 +17,10 @@ function bucketKey(userId) {
     return `${userId}:${slot}`;
 }
 
+function settingsKey(bucket) {
+    return `llm_quota_bucket:${bucket}`;
+}
+
 function cleanupExpiredBuckets() {
     const now = Date.now();
     if (now - _lastCleanup < WINDOW_MS) return;
@@ -30,13 +35,31 @@ function cleanupExpiredBuckets() {
     }
 }
 
+async function loadBucketCount(key) {
+    if (buckets.has(key)) return buckets.get(key);
+    try {
+        const stored = await PlatformSettings.get(settingsKey(key));
+        const count = Number(stored);
+        const value = Number.isFinite(count) && count > 0 ? count : 0;
+        buckets.set(key, value);
+        return value;
+    } catch {
+        buckets.set(key, 0);
+        return 0;
+    }
+}
+
+function persistBucketCount(key, count) {
+    PlatformSettings.set(settingsKey(key), count).catch(() => { /* best-effort */ });
+}
+
 async function checkLlmRequestQuota(userId, role) {
     if (role === 'admin') return { ok: true };
 
     const quotaRow = await policy.ensureUserQuota(userId);
     const limit = TIER_QPS[quotaRow.resourceTier] ?? TIER_QPS.basic;
     const key = bucketKey(userId);
-    const current = buckets.get(key) ?? 0;
+    const current = await loadBucketCount(key);
     if (current >= limit) {
         return {
             ok: false,
@@ -46,7 +69,9 @@ async function checkLlmRequestQuota(userId, role) {
             window_seconds: WINDOW_MS / 1000,
         };
     }
-    buckets.set(key, current + 1);
+    const next = current + 1;
+    buckets.set(key, next);
+    persistBucketCount(key, next);
     cleanupExpiredBuckets();
     return { ok: true, limit };
 }

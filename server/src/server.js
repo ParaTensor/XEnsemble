@@ -50,6 +50,7 @@ const { registerWorkspaceRoutes } = require('./routes/workspace');
 const { registerTerminalHttpRoutes } = require('./routes/terminalHttp');
 const { registerGitHubRoutes } = require('./routes/github');
 const { registerGitRoutes } = require('./routes/git');
+const { registerProjectGitRoutes } = require('./routes/projectGit');
 const { registerGitHubAppRoutes } = require('./routes/githubApp');
 const { registerCustomImageRoutes } = require('./routes/customImages');
 const { LocalGitService } = require('./git/LocalGitService');
@@ -57,8 +58,21 @@ const { applyTerminalMessage, subscribeTerminal } = require('./session/terminalB
 const { resumeSession, registerSessionLifecycle } = require('./session/resumeSession');
 const { createIdleHibernateMonitor, stopSession, waitForAgentExit } = require('./session/idleHibernate');
 const { terminateDetachedSessionProcess } = require('./session/sessionTermination');
+const {
+    gracefulShutdownSessions,
+    installProcessShutdownHooks,
+} = require('./session/gracefulShutdown');
 const { buildResumeSessionContext } = require('./session/resumeSessionContext');
 const transcriptStore = require('./runtime/TranscriptStore');
+const activeWebSockets = new Set();
+
+function trackWebSocket(ws) {
+    if (!ws) return;
+    activeWebSockets.add(ws);
+    const forget = () => activeWebSockets.delete(ws);
+    ws.once('close', forget);
+    ws.once('error', forget);
+}
 const unigateway = require('./gateway/unigatewayManager');
 const { registerGatewayAdminRoutes } = require('./gateway/adminProxy');
 const { deleteProjectForUser } = require('./projects/deleteProject');
@@ -157,6 +171,7 @@ registerTerminalHttpRoutes(fastify);
 registerGatewayAdminRoutes(fastify);
 registerGitHubRoutes(fastify);
 registerGitRoutes(fastify);
+registerProjectGitRoutes(fastify);
 registerGitHubAppRoutes(fastify);
 registerCustomImageRoutes(fastify);
 
@@ -1737,6 +1752,7 @@ function createWsSender(ws) {
 fastify.register(async function terminalWsRoutes(app) {
     app.get('/ws/v1/terminal', { websocket: true }, async (connection, req) => {
         const ws = connection.socket;
+        trackWebSocket(ws);
         const stopHeartbeat = startWsHeartbeat(ws);
         const sendJson = createWsSender(ws);
 
@@ -1874,6 +1890,7 @@ fastify.register(async function terminalWsRoutes(app) {
 fastify.register(async function workspaceTerminalWsRoutes(app) {
     app.get('/ws/v1/workspace-terminal', { websocket: true }, async (connection, req) => {
         const ws = connection.socket;
+        trackWebSocket(ws);
         const stopHeartbeat = startWsHeartbeat(ws);
         const sendJson = createWsSender(ws);
 
@@ -2504,7 +2521,17 @@ async function startServer() {
     idleHibernateMonitor.start();
     fastify.addHook('onClose', async () => {
         idleHibernateMonitor.stop();
+        await gracefulShutdownSessions({
+            db,
+            schema,
+            runtime,
+            sessionManager,
+            workspaceShellManager: WorkspaceShellManager,
+            fastifyLog: fastify.log,
+            activeWebSockets,
+        });
     });
+    installProcessShutdownHooks(fastify);
 
     try {
         const sync = await userAdmin.syncInstalledAgentGrantsForAllUsers();

@@ -253,8 +253,37 @@ class GitConnectionService {
         const rows = await db.select().from(schema.gitConnections)
             .where(and(...where))
             .orderBy(desc(schema.gitConnections.connectedAt));
+        if (rows.length > 0) return this._formatConnection(rows[0]);
+
+        // Legacy fallback: users who only connected via /api/v1/github/*
+        if (providerName === 'github' || !providerName) {
+            const legacy = await this._getLegacyGithubConnection(userId);
+            if (legacy) return legacy;
+        }
+        return null;
+    }
+
+    async _getLegacyGithubConnection(userId) {
+        const rows = await db.select().from(schema.githubConnections)
+            .where(and(
+                eq(schema.githubConnections.userId, userId),
+                isNull(schema.githubConnections.revokedAt),
+            ))
+            .orderBy(desc(schema.githubConnections.connectedAt));
         if (rows.length === 0) return null;
-        return this._formatConnection(rows[0]);
+        const row = rows[0];
+        return this._formatConnection({
+            id: row.id,
+            userId: row.userId,
+            provider: 'github',
+            providerConfig: null,
+            remoteUserId: String(row.githubUserId ?? ''),
+            remoteUsername: row.githubUsername,
+            remoteAvatar: row.githubAvatar,
+            tokenScope: row.tokenScope,
+            connectedAt: row.connectedAt,
+            lastUsedAt: row.lastUsedAt,
+        });
     }
 
     async listConnections(userId) {
@@ -284,9 +313,28 @@ class GitConnectionService {
             where.push(eq(schema.gitConnections.provider, providerName));
         }
 
-        const rows = await db.select().from(schema.gitConnections)
+        let rows = await db.select().from(schema.gitConnections)
             .where(and(...where))
             .orderBy(desc(schema.gitConnections.connectedAt));
+        if (rows.length === 0 && (providerName === 'github' || !providerName)) {
+            const legacyRows = await db.select().from(schema.githubConnections)
+                .where(and(
+                    eq(schema.githubConnections.userId, userId),
+                    isNull(schema.githubConnections.revokedAt),
+                ))
+                .orderBy(desc(schema.githubConnections.connectedAt));
+            if (legacyRows.length > 0) {
+                const legacy = legacyRows[0];
+                const secrets = auth.decryptSecrets(legacy.accessTokenEnc);
+                const token = secrets.token ?? null;
+                tokenCache.set(cacheKey, {
+                    token,
+                    connectionId: legacy.id,
+                    expiresAt: Date.now() + TOKEN_CACHE_TTL_MS,
+                });
+                return token;
+            }
+        }
         if (rows.length === 0) throw new Error(`${providerName || 'git'}_not_connected`);
 
         const row = rows[0];
@@ -339,8 +387,6 @@ class GitConnectionService {
 
         const rows = await db.select().from(schema.gitConnections)
             .where(and(...where));
-        if (rows.length === 0) return;
-
         const now = Date.now();
         for (const row of rows) {
             await db.update(schema.gitConnections)
@@ -354,6 +400,17 @@ class GitConnectionService {
                 type: 'git.disconnected',
                 data: { provider: row.provider },
             });
+        }
+
+        if (providerName === 'github' || !providerName) {
+            try {
+                await db.update(schema.githubConnections)
+                    .set({ revokedAt: now })
+                    .where(and(
+                        eq(schema.githubConnections.userId, userId),
+                        isNull(schema.githubConnections.revokedAt),
+                    ));
+            } catch { /* legacy table optional */ }
         }
     }
 
