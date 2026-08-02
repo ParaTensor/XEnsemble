@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useToast } from '../components/Toast';
+import { getApiBase } from '../lib/api';
 import * as gitApi from '../lib/gitApi';
 import { openExternal } from '../lib/githubApi';
 import { isOAuthNotConfiguredError } from '../lib/gitLabels';
@@ -73,6 +74,11 @@ export function useGitProvider(providerName, { onChange } = {}) {
     setError(null);
     try {
       const { auth_url: authUrl } = await gitApi.connectProvider(providerName);
+      // Callback HTML is served by the control plane, not the OAuth provider.
+      let expectedOrigin = window.location.origin;
+      try {
+        expectedOrigin = new URL(getApiBase() || window.location.origin, window.location.origin).origin;
+      } catch (_) { /* keep window origin */ }
       const popup = openOAuthPopup(authUrl);
       if (!popup) openExternal(authUrl);
       showToast('loading', `Waiting for ${providerName} authorization…`);
@@ -85,6 +91,7 @@ export function useGitProvider(providerName, { onChange } = {}) {
       };
 
       const onMessage = async (event) => {
+        if (expectedOrigin && event.origin !== expectedOrigin) return;
         const data = event.data;
         if (!data || data.type !== 'git-oauth-result') return;
         if (data.provider && data.provider !== providerName) return;

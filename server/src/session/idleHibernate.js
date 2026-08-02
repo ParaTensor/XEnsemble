@@ -1,4 +1,5 @@
 const { eq } = require('drizzle-orm');
+const { terminateDetachedSessionProcess } = require('./sessionTermination');
 
 const AGENT_EXIT_TIMEOUT_MS = 5000;
 
@@ -90,17 +91,40 @@ async function stopSession({
     }
 
     if (!sessionManager.isAlive(sessionId)) {
-        if (session.status === 'running') {
-            try {
-                await db.update(schema.sessions)
-                    .set({
-                        status: 'idle',
-                        streamRef: session.streamRef || null,
-                        stateDirRef: session.stateDirRef || null,
-                    })
-                    .where(eq(schema.sessions.id, sessionId));
-            } catch (err) {
-                fastifyLog?.warn?.(err, '[sessions] failed to persist idle status');
+        if (session.status === 'running' || session.status === 'idle') {
+            let runtimeRef = session.runtimeRef || null;
+            if (!runtimeRef && session.runtimeId && db && schema?.runtimes) {
+                try {
+                    const runtimeRows = await db.select().from(schema.runtimes)
+                        .where(eq(schema.runtimes.id, session.runtimeId));
+                    runtimeRef = runtimeRows[0]?.runtimeRef || null;
+                } catch (_) { /* best-effort */ }
+            }
+            await terminateDetachedSessionProcess({
+                session: { ...session, runtimeRef },
+                runtime,
+                waitForAgentExit,
+                fastifyLog,
+            });
+            if (runtime?.provider?.supportsHibernate?.() && runtimeRef) {
+                try {
+                    await runtime.provider.hibernate(runtimeRef);
+                } catch (err) {
+                    fastifyLog?.warn?.(err, '[sessions] failed to hibernate detached runtime');
+                }
+            }
+            if (session.status === 'running') {
+                try {
+                    await db.update(schema.sessions)
+                        .set({
+                            status: 'idle',
+                            streamRef: session.streamRef || null,
+                            stateDirRef: session.stateDirRef || null,
+                        })
+                        .where(eq(schema.sessions.id, sessionId));
+                } catch (err) {
+                    fastifyLog?.warn?.(err, '[sessions] failed to persist idle status');
+                }
             }
             return { stopped: true, detached: true, status: 'idle' };
         }
@@ -227,6 +251,7 @@ function createIdleHibernateMonitor({
 
 module.exports = {
     shouldHibernateSession,
+    waitForAgentExit,
     stopSession,
     hibernateSession,
     createIdleHibernateMonitor,

@@ -24,6 +24,82 @@ class MergeRequestService {
         return 'open';
     }
 
+    _sameBranch(a, b) {
+        if (!a || !b) return false;
+        const norm = (s) => String(s).replace(/^[^:]+:/, '').trim();
+        return norm(a) === norm(b);
+    }
+
+    async _findLocalOpen(projectId, providerName, src, tgt) {
+        const rows = await db.select().from(schema.mergeRequests)
+            .where(and(
+                eq(schema.mergeRequests.projectId, projectId),
+                eq(schema.mergeRequests.provider, providerName),
+                eq(schema.mergeRequests.status, 'open'),
+            ));
+        return rows.find((row) => this._sameBranch(row.sourceBranch, src) && this._sameBranch(row.targetBranch, tgt)) || null;
+    }
+
+    async _findRemoteOpen(provider, token, repoFullName, src, tgt, apiBase) {
+        const open = await provider.listPRs(token, repoFullName, {
+            state: provider.name === 'gitlab' ? 'opened' : 'open',
+            perPage: 50,
+            apiBase,
+        });
+        return open.find((pr) => this._sameBranch(pr.headRef, src) && this._sameBranch(pr.baseRef, tgt)) || null;
+    }
+
+    async _upsertFromRemote(project, providerName, prInfo, { title, body, src, tgt, actorUserId }) {
+        const now = Date.now();
+        const existingByNumber = await db.select().from(schema.mergeRequests)
+            .where(and(
+                eq(schema.mergeRequests.projectId, project.id),
+                eq(schema.mergeRequests.provider, providerName),
+                eq(schema.mergeRequests.remoteMrNumber, prInfo.number),
+            ));
+        if (existingByNumber[0]) {
+            await db.update(schema.mergeRequests)
+                .set({
+                    remoteMrUrl: prInfo.url,
+                    title: title || prInfo.title || existingByNumber[0].title,
+                    description: body ?? prInfo.body ?? existingByNumber[0].description,
+                    sourceBranch: src,
+                    targetBranch: tgt,
+                    status: this._mapStatus({ state: prInfo.state, merged: prInfo.merged }),
+                    remoteState: prInfo.state,
+                    mergeSha: prInfo.mergeCommitSha ?? null,
+                    updatedAt: now,
+                    lastSyncedAt: now,
+                })
+                .where(eq(schema.mergeRequests.id, existingByNumber[0].id));
+            const rows = await db.select().from(schema.mergeRequests)
+                .where(eq(schema.mergeRequests.id, existingByNumber[0].id));
+            return rows[0];
+        }
+
+        const id = this._generateId();
+        const record = {
+            id,
+            projectId: project.id,
+            provider: providerName,
+            remoteMrNumber: prInfo.number,
+            remoteMrUrl: prInfo.url,
+            title: title || prInfo.title || `${src} → ${tgt}`,
+            description: body ?? prInfo.body ?? null,
+            sourceBranch: src,
+            targetBranch: tgt,
+            status: this._mapStatus({ state: prInfo.state, merged: prInfo.merged }),
+            remoteState: prInfo.state,
+            mergeSha: prInfo.mergeCommitSha ?? null,
+            createdBy: actorUserId ?? null,
+            createdAt: now,
+            updatedAt: now,
+            lastSyncedAt: now,
+        };
+        await db.insert(schema.mergeRequests).values(record);
+        return record;
+    }
+
     async create(project, { title, body, sourceBranch, source_branch, targetBranch, target_branch }, actorUserId) {
         const providerName = project.repoProvider;
         if (!providerName || providerName === 'none' || providerName === 'local_git') {
@@ -42,44 +118,49 @@ class MergeRequestService {
         if (!src) throw new Error('sourceBranch is required and project.currentBranch is not set');
         if (!title) throw new Error('title is required');
 
+        const localOpen = await this._findLocalOpen(project.id, providerName, src, tgt);
+        if (localOpen) return localOpen;
+
+        const remoteOpen = await this._findRemoteOpen(
+            provider, token, repoFullName, src, tgt, config?.apiBase,
+        );
+        if (remoteOpen) {
+            return this._upsertFromRemote(project, providerName, remoteOpen, {
+                title, body, src, tgt, actorUserId,
+            });
+        }
+
         await this.gitOperationService.pushBranch(project, src);
 
-        const prInfo = await provider.createPR(token, repoFullName, {
-            title,
-            body,
-            head: src,
-            base: tgt,
-            apiBase: config?.apiBase,
+        let prInfo;
+        try {
+            prInfo = await provider.createPR(token, repoFullName, {
+                title,
+                body,
+                head: src,
+                base: tgt,
+                apiBase: config?.apiBase,
+            });
+        } catch (err) {
+            // Another client may have created the same PR between list and create.
+            const raced = await this._findRemoteOpen(
+                provider, token, repoFullName, src, tgt, config?.apiBase,
+            );
+            if (!raced) throw err;
+            return this._upsertFromRemote(project, providerName, raced, {
+                title, body, src, tgt, actorUserId,
+            });
+        }
+
+        const record = await this._upsertFromRemote(project, providerName, prInfo, {
+            title, body, src, tgt, actorUserId,
         });
-
-        const now = Date.now();
-        const id = this._generateId();
-        const record = {
-            id,
-            projectId: project.id,
-            provider: providerName,
-            remoteMrNumber: prInfo.number,
-            remoteMrUrl: prInfo.url,
-            title,
-            description: body ?? null,
-            sourceBranch: src,
-            targetBranch: tgt,
-            status: this._mapStatus({ state: prInfo.state, merged: prInfo.merged }),
-            remoteState: prInfo.state,
-            mergeSha: prInfo.mergeCommitSha ?? null,
-            createdBy: actorUserId ?? null,
-            createdAt: now,
-            updatedAt: now,
-            lastSyncedAt: now,
-        };
-
-        await db.insert(schema.mergeRequests).values(record);
 
         await recordEvent({
             userId: actorUserId ?? project.userId,
             projectId: project.id,
             subjectType: 'merge_request',
-            subjectId: id,
+            subjectId: record.id,
             type: 'mr.created',
             data: {
                 provider: providerName,

@@ -42,18 +42,22 @@ async function registerSessionLifecycle({
     project,
     fastifyLog,
 }) {
+    const live = sessionManager.getSession(sessionId);
+    if (live?.lifecycleRegistered) return;
+    if (live) live.lifecycleRegistered = true;
+
     sessionManager.onExit(sessionId, () => {
-        const live = sessionManager.getSession(sessionId);
-        if (live && !live.hibernating) {
-            const uptime = Date.now() - (live.spawnedAt || 0);
+        const current = sessionManager.getSession(sessionId);
+        if (current && !current.hibernating) {
+            const uptime = Date.now() - (current.spawnedAt || 0);
             if (uptime < CRASH_UPTIME_MS) {
-                live.crashCount = (live.crashCount || 0) + 1;
+                current.crashCount = (current.crashCount || 0) + 1;
             } else {
-                live.crashCount = 0;
+                current.crashCount = 0;
             }
         }
-        const circuitTripped = live && (live.crashCount || 0) >= CRASH_THRESHOLD;
-        const nextStatus = live && !live.hibernating && !circuitTripped && isSessionRecoverable(live) ? 'idle' : 'exited';
+        const circuitTripped = current && (current.crashCount || 0) >= CRASH_THRESHOLD;
+        const nextStatus = current && !current.hibernating && !circuitTripped && isSessionRecoverable(current) ? 'idle' : 'exited';
         db.update(schema.sessions)
             .set({ status: nextStatus })
             .where(eq(schema.sessions.id, sessionId))

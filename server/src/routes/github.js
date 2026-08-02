@@ -51,7 +51,18 @@ function callbackHtml(success, message) {
   </div>
 <script>
 (function(){
-  try{if(window.opener&&!window.opener.closed){window.opener.postMessage(${payload},'*');}}catch(e){}
+  try{
+    if(window.opener&&!window.opener.closed){
+      var origins=${JSON.stringify(
+        (process.env.ALLOWED_ORIGINS || '')
+          .split(',')
+          .map((s) => s.trim())
+          .filter(Boolean),
+      )};
+      if(!origins.length){window.opener.postMessage(${payload},'*');}
+      else{for(var i=0;i<origins.length;i++){try{window.opener.postMessage(${payload},origins[i]);}catch(e){}}}
+    }
+  }catch(e){}
   if(${success ? 'true' : 'false'}){setTimeout(function(){window.close();},1200);}
 })();
 </script>

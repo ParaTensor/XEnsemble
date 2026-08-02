@@ -31,7 +31,7 @@ const { reconcileCustomImageBuilds } = require('./runtime/reconcileCustomImageBu
 
 const { db } = require('./db/index');
 const schema = require('./db/schema');
-const { eq, and, ne, sql } = require('drizzle-orm');
+const { eq, and, ne, sql, inArray } = require('drizzle-orm');
 const auth = require('./auth/index');
 const { assertActiveUser } = require('./auth/assertActiveUser');
 const {
@@ -55,7 +55,8 @@ const { registerCustomImageRoutes } = require('./routes/customImages');
 const { LocalGitService } = require('./git/LocalGitService');
 const { applyTerminalMessage, subscribeTerminal } = require('./session/terminalBridge');
 const { resumeSession, registerSessionLifecycle } = require('./session/resumeSession');
-const { createIdleHibernateMonitor, stopSession } = require('./session/idleHibernate');
+const { createIdleHibernateMonitor, stopSession, waitForAgentExit } = require('./session/idleHibernate');
+const { terminateDetachedSessionProcess } = require('./session/sessionTermination');
 const { buildResumeSessionContext } = require('./session/resumeSessionContext');
 const transcriptStore = require('./runtime/TranscriptStore');
 const unigateway = require('./gateway/unigatewayManager');
@@ -69,9 +70,25 @@ const { resolveRuntimeProvider, DEFAULT_RUNTIME_PROVIDER } = require('./config/r
 const runtime = getRuntime();
 
 async function markSessionFailed(sessionId, errMsg, log) {
-    await db.update(schema.sessions).set({ status: 'failed', provisioningError: errMsg }).where(eq(schema.sessions.id, sessionId));
+    // Never overwrite a user-cancelled / deleted session (exited) or an already-terminal row.
+    const updated = await db.update(schema.sessions)
+        .set({ status: 'failed', provisioningError: errMsg })
+        .where(and(
+            eq(schema.sessions.id, sessionId),
+            inArray(schema.sessions.status, ['pending', 'running']),
+        ))
+        .returning({ id: schema.sessions.id });
+    if (!updated.length) return false;
     if (log) log({ sessionId }, `[sessions] provisioning failed: ${errMsg}`);
     try { broadcastSse({ type: 'session_status', sessionId, status: 'failed' }); } catch (_) {}
+    return true;
+}
+
+async function isSessionStillPending(sessionId) {
+    const rows = await db.select({ status: schema.sessions.status })
+        .from(schema.sessions)
+        .where(eq(schema.sessions.id, sessionId));
+    return Boolean(rows[0] && rows[0].status === 'pending');
 }
 
 function formatAgentRow(a) {
@@ -1023,10 +1040,39 @@ fastify.delete('/api/v1/sessions/:sessionId', { preValidation: [fastify.authenti
     if (rows.length === 0) return reply.code(404).send({ error: 'Session not found' });
 
     const session = rows[0];
-    sessionManager.deleteSession(sessionId);
+
+    // Mark exited first so in-flight provisioning observes cancellation.
     await db.update(schema.sessions)
         .set({ status: 'exited' })
         .where(eq(schema.sessions.id, sessionId));
+
+    const live = sessionManager.getSession(sessionId);
+    if (live?.handle) {
+        try { live.handle.kill(); } catch (err) {
+            request.log.warn({ err, sessionId }, '[sessions] failed to kill live handle on delete');
+        }
+        const runtimeRef = live.runtimeRef || live.runtimeId || null;
+        if (runtimeRef) {
+            await waitForAgentExit(runtime, runtimeRef, live.agentId || session.agentId).catch(() => {});
+        }
+    } else if (session.status === 'running' || session.status === 'idle' || session.status === 'pending') {
+        let runtimeRef = null;
+        if (session.runtimeId) {
+            try {
+                const runtimeRows = await db.select().from(schema.runtimes)
+                    .where(eq(schema.runtimes.id, session.runtimeId));
+                runtimeRef = runtimeRows[0]?.runtimeRef || null;
+            } catch (_) { /* best-effort */ }
+        }
+        await terminateDetachedSessionProcess({
+            session: { ...session, runtimeRef },
+            runtime,
+            waitForAgentExit,
+            fastifyLog: request.log,
+        });
+    }
+
+    sessionManager.deleteSession(sessionId);
 
     // Destroy the boxlite/blink VM if no other live session for this project still
     // uses the same runtime. Without this, deleting a session leaves an orphan VM
@@ -1038,6 +1084,7 @@ fastify.delete('/api/v1/sessions/:sessionId', { preValidation: [fastify.authenti
                     eq(schema.sessions.runtimeId, session.runtimeId),
                     ne(schema.sessions.id, sessionId),
                     ne(schema.sessions.status, 'exited'),
+                    ne(schema.sessions.status, 'failed'),
                 ));
             if (siblings.length === 0) {
                 const runtimeRows = await db.select().from(schema.runtimes)
@@ -1396,6 +1443,11 @@ fastify.post('/api/v1/session/start', { preValidation: [fastify.authenticate] },
             return;
         }
 
+        if (!(await isSessionStillPending(sessionId))) {
+            fastify.log.info({ sessionId }, '[sessions] session cancelled after runtime prepare');
+            return;
+        }
+
         // Update cwd and runtimeId now that the VM is ready.
         // Defer the DB write to merge with stateDirRef below (reduces serial DB writes).
 
@@ -1476,6 +1528,11 @@ fastify.post('/api/v1/session/start', { preValidation: [fastify.authenticate] },
                     runtimeRef,
                 }).catch((err) => fastify.log.warn({ err, sessionId }, '[sessions] prepareHomeRedirect failed'));
             }
+        }
+
+        if (!(await isSessionStillPending(sessionId))) {
+            fastify.log.info({ sessionId }, '[sessions] session cancelled before spawn');
+            return;
         }
 
         // Single DB update: merge cwd + runtimeId + stateDirRef (was 2 separate writes).
