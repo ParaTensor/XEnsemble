@@ -10,17 +10,70 @@ const { testProviderConnectivity } = require('./testProviderConnectivity');
 const { readProviderCredentials } = require('./readProviderSecrets');
 const { maskApiKey } = require('./maskApiKey');
 
+function httpRequestOnce(url, { method = 'GET', headers = {}, timeoutMs = 2500 } = {}) {
+    const client = url.protocol === 'https:' ? https : http;
+    return new Promise((resolve) => {
+        const req = client.request(url, { method, headers }, (res) => {
+            res.resume();
+            resolve({ statusCode: res.statusCode || 0, error: null });
+        });
+        req.on('error', (err) => resolve({ statusCode: 0, error: err.message }));
+        req.setTimeout(timeoutMs, () => {
+            req.destroy();
+            resolve({ statusCode: 0, error: 'timeout' });
+        });
+        req.end();
+    });
+}
+
+async function probeExternalGateway(baseUrl, adminToken) {
+    const normalized = String(baseUrl || '').replace(/\/+$/, '');
+    const health = await httpRequestOnce(new URL('/health', normalized));
+    const healthOk = health.statusCode === 200;
+    let adminAuthOk = false;
+    let adminStatusCode = null;
+    let lastError = null;
+
+    if (!healthOk) {
+        lastError = health.error === 'timeout'
+            ? 'External UniGateway health check timed out'
+            : (health.error || `External UniGateway health failed (status ${health.statusCode || 'n/a'})`);
+    } else if (!adminToken) {
+        lastError = 'UNIGATEWAY_ADMIN_TOKEN is required for external UniGateway admin access';
+    } else {
+        const admin = await httpRequestOnce(new URL('/api/admin/providers', normalized), {
+            headers: { 'x-admin-token': adminToken },
+        });
+        adminStatusCode = admin.statusCode || null;
+        adminAuthOk = admin.statusCode === 200;
+        if (!adminAuthOk) {
+            lastError = admin.statusCode === 401
+                ? 'External UniGateway admin token mismatch'
+                : (admin.error === 'timeout'
+                    ? 'External UniGateway admin probe timed out'
+                    : `External UniGateway admin probe failed (status ${admin.statusCode || 'n/a'})`);
+        }
+    }
+
+    return {
+        running: healthOk && adminAuthOk,
+        baseUrl: normalized,
+        adminToken: adminToken || '',
+        external: true,
+        health_ok: healthOk,
+        admin_auth_ok: adminAuthOk,
+        admin_status_code: adminStatusCode,
+        lastError,
+    };
+}
+
 async function resolveGatewayAdminTarget(log) {
     const config = await gatewaySettings.getConfig();
     const externalUrl = process.env.LLM_GATEWAY_UPSTREAM_URL?.trim() || config.upstream_url?.trim();
     if (externalUrl) {
         const secrets = unigateway.ensureGatewaySecrets();
-        return {
-            running: true,
-            baseUrl: externalUrl.replace(/\/+$/, ''),
-            adminToken: process.env.UNIGATEWAY_ADMIN_TOKEN || secrets.adminToken,
-            external: true,
-        };
+        const adminToken = process.env.UNIGATEWAY_ADMIN_TOKEN || secrets.adminToken;
+        return probeExternalGateway(externalUrl, adminToken);
     }
     return unigateway.ensureRunning(log);
 }
@@ -90,7 +143,19 @@ function registerGatewayAdminRoutes(fastify) {
         }
     }
 
-    fastify.get('/api/v1/admin/gateway/status', { preValidation: adminPre }, async () => {
+    fastify.get('/api/v1/admin/gateway/status', { preValidation: adminPre }, async (request) => {
+        const target = await resolveGatewayAdminTarget(request.log);
+        if (target.external) {
+            return enrichLlmProxyStatus({
+                running: Boolean(target.running),
+                external: true,
+                baseUrl: target.baseUrl,
+                health_ok: Boolean(target.health_ok),
+                admin_auth_ok: Boolean(target.admin_auth_ok),
+                admin_status_code: target.admin_status_code ?? null,
+                lastError: target.lastError || null,
+            });
+        }
         return enrichLlmProxyStatus(await unigateway.refreshRunningState());
     });
 
@@ -339,4 +404,9 @@ function registerGatewayAdminRoutes(fastify) {
     });
 }
 
-module.exports = { registerGatewayAdminRoutes, requestGateway, resolveGatewayAdminTarget };
+module.exports = {
+    registerGatewayAdminRoutes,
+    requestGateway,
+    resolveGatewayAdminTarget,
+    probeExternalGateway,
+};

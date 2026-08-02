@@ -1,0 +1,19 @@
+---
+description: Prohibit Redis; prefer in-memory hot path with PostgreSQL persistence
+alwaysApply: true
+---
+
+# 状态与缓存：禁止 Redis
+
+XEnsemble 控制面保持依赖单一：**不要引入 Redis**（或其它独立缓存中间件）作为协调、限流、锁或会话状态后端。
+
+## 强制约定
+
+1. **热路径用进程内内存**：singleflight、mutation lock、短期令牌缓存、LLM 配额窗口计数等可放在本机 `Map` / 异步队列。
+2. **需要跨重启或跨实例可见的状态，写入 PostgreSQL**：会话、连接、配额计数、OAuth state、配置等以现有 DB（`DATABASE_URL`）为准；可用 `platform_settings` 或专用表做 upsert，勿新增外部存储依赖。
+3. **多实例**：以共享 PostgreSQL 为真相源；内存结构仅作本地加速，重启后从 DB 恢复或安全失效。
+4. **评审拒绝项**：新增 `redis` / `ioredis` / `bull`（依赖 Redis）等包，或文档/架构把 Redis 写成必选组件。
+
+## 例外
+
+无。本地开发与生产同一约束。

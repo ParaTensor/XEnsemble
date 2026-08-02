@@ -422,11 +422,13 @@ class GitOperationService {
         const safePath = assertRepoRelativePath(filePath);
         const { stdout } = await this._execGit(project, ['diff', 'HEAD', '--', safePath]).catch(() => ({ stdout: '' }));
         if (stdout.trim()) {
-            return limitDiffText(stdout).diff;
+            return limitDiffText(stdout);
         }
 
         const tracked = await this._execGit(project, ['ls-files', '--error-unmatch', '--', safePath]).then(() => true).catch(() => false);
-        if (tracked) return '';
+        if (tracked) {
+            return { diff: '', truncated: false, binary: false, omittedBytes: 0 };
+        }
 
         const ready = await this.ensureProjectRuntime(project);
         const runtimeRef = ready.runtime ? ready.runtime.runtimeRef : undefined;
@@ -435,7 +437,12 @@ class GitOperationService {
             .then((s) => s && s.type === 'directory')
             .catch(() => false);
         if (isDir) {
-            return '(Contains a nested git repository)';
+            return {
+                diff: '(Contains a nested git repository)',
+                truncated: false,
+                binary: false,
+                omittedBytes: 0,
+            };
         }
 
         const content = await this.fs.fsRead(ready.workspacePath, safePath, {
@@ -443,11 +450,23 @@ class GitOperationService {
             encoding: 'utf8',
         }).catch(() => '');
         const side = limitFileSide(content);
-        if (side.binary) return '[binary file omitted]';
+        if (side.binary) {
+            return {
+                diff: '[binary file omitted]',
+                truncated: true,
+                binary: true,
+                omittedBytes: side.omittedBytes,
+            };
+        }
         const expanded = side.content.split('\n').map((l) => '+' + l).join('\n');
-        return side.truncated
-            ? `${expanded}\n\n[diff truncated: omitted ${side.omittedBytes} bytes]\n`
-            : expanded;
+        return {
+            diff: side.truncated
+                ? `${expanded}\n\n[diff truncated: omitted ${side.omittedBytes} bytes]\n`
+                : expanded,
+            truncated: side.truncated,
+            binary: false,
+            omittedBytes: side.omittedBytes,
+        };
     }
 
     async getFileContentAtRef(project, filePath, ref = 'HEAD') {

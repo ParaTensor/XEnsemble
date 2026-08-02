@@ -10,6 +10,8 @@ web/dist
 !.cursor/environment.json
 !.cursor/install.sh
 !.cursor/start.sh
+!.cursor/rules/
+!.cursor/rules/**
 .kimi-code/
 server/test.db
 deploy/logs/
