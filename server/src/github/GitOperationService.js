@@ -2,6 +2,7 @@ const { getRuntime } = require('../runtime/registry');
 const { ensureProjectRuntime } = require('../runtime/RuntimeService');
 const { stripCredentialFromUrl, buildCredentialEnv } = require('./gitCredentialHelper');
 const workspace = require('../workspace');
+const { assertRepoRelativePath, assertGitRef, assertGitBranch } = require('../git/gitValidation');
 
 class GitError extends Error {
     constructor(message, code) {
@@ -16,8 +17,8 @@ async function defaultGetToken(project) {
     if (!provider || provider === 'none' || provider === 'local_git') {
         return undefined;
     }
-    const { GitConnectionService } = require('./GitConnectionService');
-    return new GitConnectionService().getDecryptedToken(project.userId);
+    const { GitConnectionService } = require('../git/GitConnectionService');
+    return new GitConnectionService().getDecryptedToken(project.userId, provider);
 }
 
 class GitOperationService {
@@ -125,9 +126,9 @@ class GitOperationService {
     }
 
     async createBranch(project, branchName, baseBranch) {
-        const args = ['checkout', '-b', branchName];
+        const args = ['checkout', '-b', assertGitBranch(branchName)];
         if (baseBranch) {
-            args.push(baseBranch);
+            args.push(assertGitRef(baseBranch));
         }
         await this._execGit(project, args);
         const sha = await this._revParse(project, 'HEAD');
@@ -135,13 +136,14 @@ class GitOperationService {
     }
 
     async switchBranch(project, branchName) {
+        const safeBranch = assertGitBranch(branchName);
         try {
-            await this._execGit(project, ['checkout', branchName]);
+            await this._execGit(project, ['checkout', safeBranch]);
         } catch (err) {
-            const remoteRef = `origin/${branchName}`;
+            const remoteRef = `origin/${safeBranch}`;
             try {
                 await this._execGit(project, ['rev-parse', '--verify', '--quiet', remoteRef]);
-                await this._execGit(project, ['checkout', '-b', branchName, remoteRef]);
+                await this._execGit(project, ['checkout', '-b', safeBranch, remoteRef]);
             } catch {
                 throw err;
             }
@@ -152,7 +154,7 @@ class GitOperationService {
     }
 
     async deleteBranch(project, branchName) {
-        await this._execGit(project, ['branch', '-D', branchName]);
+        await this._execGit(project, ['branch', '-D', assertGitBranch(branchName)]);
     }
 
     async listBranches(project) {
@@ -366,15 +368,15 @@ class GitOperationService {
     }
 
     async stageFiles(project, filePaths) {
-        await this._execGit(project, ['add', ...filePaths]);
+        await this._execGit(project, ['add', '--', ...filePaths.map(assertRepoRelativePath)]);
     }
 
     async unstageFiles(project, filePaths) {
-        await this._execGit(project, ['reset', 'HEAD', '--', ...filePaths]);
+        await this._execGit(project, ['reset', 'HEAD', '--', ...filePaths.map(assertRepoRelativePath)]);
     }
 
     async pushBranch(project, branchName, { force = false } = {}) {
-        const args = ['push', '-u', 'origin', branchName];
+        const args = ['push', '-u', 'origin', assertGitBranch(branchName)];
         if (force) {
             args.push('--force');
         }
@@ -386,32 +388,33 @@ class GitOperationService {
     async getDiff(project, { base, head } = {}) {
         const args = ['diff'];
         if (base && head) {
-            args.push(base, head);
+            args.push(assertGitRef(base), assertGitRef(head));
         } else if (base) {
-            args.push(base);
+            args.push(assertGitRef(base));
         }
         const { stdout } = await this._execGit(project, args);
         return stdout;
     }
 
     async getFileDiff(project, filePath) {
-        const { stdout } = await this._execGit(project, ['diff', 'HEAD', '--', filePath]).catch(() => ({ stdout: '' }));
+        const safePath = assertRepoRelativePath(filePath);
+        const { stdout } = await this._execGit(project, ['diff', 'HEAD', '--', safePath]).catch(() => ({ stdout: '' }));
         if (stdout.trim()) return stdout;
 
-        const tracked = await this._execGit(project, ['ls-files', '--error-unmatch', filePath]).then(() => true).catch(() => false);
+        const tracked = await this._execGit(project, ['ls-files', '--error-unmatch', '--', safePath]).then(() => true).catch(() => false);
         if (tracked) return '';
 
         const ready = await this.ensureProjectRuntime(project);
         const runtimeRef = ready.runtime ? ready.runtime.runtimeRef : undefined;
 
-        const isDir = await this.fs.fsStat(ready.workspacePath, filePath, { runtimeRef })
+        const isDir = await this.fs.fsStat(ready.workspacePath, safePath, { runtimeRef })
             .then((s) => s && s.type === 'directory')
             .catch(() => false);
         if (isDir) {
             return '(Contains a nested git repository)';
         }
 
-        const content = await this.fs.fsRead(ready.workspacePath, filePath, {
+        const content = await this.fs.fsRead(ready.workspacePath, safePath, {
             runtimeRef,
             encoding: 'utf8',
         }).catch(() => '');
@@ -419,7 +422,8 @@ class GitOperationService {
     }
 
     async getFileContentAtRef(project, filePath, ref = 'HEAD') {
-        const { stdout } = await this._execGit(project, ['show', `${ref}:${filePath}`]);
+        const safePath = assertRepoRelativePath(filePath);
+        const { stdout } = await this._execGit(project, ['show', `${assertGitRef(ref)}:${safePath}`]);
         return stdout;
     }
 
@@ -430,14 +434,16 @@ class GitOperationService {
      * 新增文件（HEAD 无记录）或已删除文件（工作区无文件）时对应一侧返回空串。
      */
     async getFileDiffView(project, filePath, ref = 'HEAD') {
+        const safePath = assertRepoRelativePath(filePath);
+        const safeRef = assertGitRef(ref);
         const ready = await this.ensureProjectRuntime(project);
         const workspacePath = ready.workspacePath;
         const runtimeRef = ready.runtime ? ready.runtime.runtimeRef : undefined;
         const fsAdapter = this.fs;
 
         const [headResult, currentResult] = await Promise.allSettled([
-            this._execGit(project, ['show', `${ref}:${filePath}`]),
-            fsAdapter.fsRead(workspacePath, filePath, { runtimeRef, encoding: 'utf8' }),
+            this._execGit(project, ['show', `${safeRef}:${safePath}`]),
+            fsAdapter.fsRead(workspacePath, safePath, { runtimeRef, encoding: 'utf8' }),
         ]);
 
         const original = headResult.status === 'fulfilled' ? headResult.value.stdout : '';
