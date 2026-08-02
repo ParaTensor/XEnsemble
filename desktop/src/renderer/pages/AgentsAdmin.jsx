@@ -23,7 +23,7 @@ import {
   consoleTableBodyCellClass,
   consoleTableHeadCellClass,
   consoleTableShellClass,
-} from '../lib/consoleTokens';
+} from '../lib/consoleTheme';
 import { loadAdminAgentsCache, saveAdminAgentsCache } from '../lib/adminAgentsCache';
 import { getSecretLabel, isSecretPasswordField } from '../lib/secretLabels';
 import { apiFetch } from '../lib/api';
