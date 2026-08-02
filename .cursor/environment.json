@@ -1,0 +1,10 @@
+{
+  "name": "XEnsemble Node 20 + PostgreSQL 16 + Rust 1.92",
+  "build": {
+    "dockerfile": "Dockerfile",
+    "context": ".."
+  },
+  "user": "ubuntu",
+  "install": "bash .cursor/install.sh",
+  "start": "bash .cursor/start.sh"
+}
