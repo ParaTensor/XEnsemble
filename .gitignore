@@ -5,7 +5,11 @@ deploy/xensemble.env
 server/data/
 gateway/target/
 web/dist
-.cursor/
+.cursor/*
+!.cursor/Dockerfile
+!.cursor/environment.json
+!.cursor/install.sh
+!.cursor/start.sh
 .kimi-code/
 server/test.db
 deploy/logs/
