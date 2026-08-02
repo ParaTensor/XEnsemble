@@ -52,3 +52,23 @@ test('decodeExecutionFrame deterministically parses seq-framed payloads', () => 
     assert.equal(decoded.rseq, 99);
     assert.equal(decoded.payload, 'ansi-\u001b[31mred\u001b[0m\nABCDEFGH');
 });
+
+test('BoxLiteExecAdapter forwards command output and timeout limits', async () => {
+    const adapter = new BoxLiteExecAdapter();
+    let observed = null;
+    adapter.client = {
+        async execForResult(...args) {
+            observed = args;
+            return { exitCode: 0, stdout: '', stderr: '' };
+        },
+    };
+
+    await adapter.exec('git', ['diff'], {}, {
+        runtimeRef: 'runtime-1',
+        cwd: '/workspace',
+        maxBuffer: 1024,
+        timeoutMs: 5000,
+    });
+
+    assert.deepEqual(observed[5], { maxBuffer: 1024, timeoutMs: 5000 });
+});
