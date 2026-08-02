@@ -1,6 +1,7 @@
 const crypto = require('crypto');
 const unigateway = require('../gateway/unigatewayManager');
 const { requestGateway } = require('../gateway/adminProxy');
+const { resolveExternalGatewayUrl } = require('./gatewayUpstream');
 
 const agentApiKeyCache = new Map();
 
@@ -19,11 +20,20 @@ async function ensureAgentApiKey(agentId, log) {
 
     const secrets = unigateway.ensureGatewaySecrets();
     const key = deriveAgentApiKey(serviceId, secrets.gatewayKey);
+    // External UniGateway instances cannot consume this control plane's local
+    // TOML service bindings. Route per-agent keys through their configured
+    // default service; local managed gateways keep the per-agent service.
+    const gatewayServiceId = await resolveExternalGatewayUrl() ? 'default' : serviceId;
 
-    await requestGateway('POST', '/api/admin/api-keys', {
-        body: { key, service_id: serviceId },
+    const result = await requestGateway('POST', '/api/admin/api-keys', {
+        body: { key, service_id: gatewayServiceId },
         log,
     });
+    if (result.statusCode < 200 || result.statusCode >= 300) {
+        const error = new Error(`Failed to register agent API key (status ${result.statusCode})`);
+        error.statusCode = result.statusCode;
+        throw error;
+    }
 
     agentApiKeyCache.set(serviceId, key);
     return key;

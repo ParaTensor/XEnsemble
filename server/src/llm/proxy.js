@@ -6,6 +6,8 @@ const { resolveGatewayUpstreamUrl } = require('./gatewayUpstream');
 const serviceRouter = require('./serviceRouter');
 const { checkLlmRequestQuota } = require('./quota');
 const { recordEvent } = require('../events/recordEvent');
+const { assertActiveUser } = require('../auth/assertActiveUser');
+const policy = require('../auth/PolicyService');
 const { db } = require('../db/index');
 const schema = require('../db/schema');
 const { eq } = require('drizzle-orm');
@@ -65,6 +67,20 @@ async function assertSessionAuthorized(claims) {
     const row = rows[0];
     if (row.userId !== claims.uid) return { ok: false, status: 403, error: 'Forbidden' };
     if (row.status !== 'running') return { ok: false, status: 401, error: 'Session is not active' };
+    if (!claims.aid || row.agentId !== claims.aid) {
+        return { ok: false, status: 403, error: 'Agent mismatch' };
+    }
+    if (claims.pid && row.projectId !== claims.pid) {
+        return { ok: false, status: 403, error: 'Project mismatch' };
+    }
+    const activeUser = await assertActiveUser({ id: claims.uid });
+    if (activeUser.error) {
+        return { ok: false, status: activeUser.status, error: activeUser.error };
+    }
+    const agentAccess = await policy.checkAgentAccess(claims.uid, row.agentId, claims.role);
+    if (!agentAccess.ok) {
+        return { ok: false, status: agentAccess.status || 403, error: agentAccess.error || 'Agent access denied' };
+    }
     return { ok: true, session: row };
 }
 
@@ -112,15 +128,15 @@ async function proxyLlmRequest(request, reply) {
         return reply.code(401).send({ error: 'Invalid or expired session token' });
     }
 
-    const [authz, quota, gateway] = await Promise.all([
-        assertSessionAuthorized(claims),
-        checkLlmRequestQuota(claims.uid, claims.role),
-        resolveGatewayTarget(request.log),
-    ]);
-
+    const authz = await assertSessionAuthorized(claims);
     if (!authz.ok) {
         return reply.code(authz.status).send({ error: authz.error });
     }
+
+    const [quota, gateway] = await Promise.all([
+        checkLlmRequestQuota(claims.uid, claims.role),
+        resolveGatewayTarget(request.log),
+    ]);
 
     if (!quota.ok) {
         return reply.code(quota.status).send({

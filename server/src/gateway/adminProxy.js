@@ -10,8 +10,23 @@ const { testProviderConnectivity } = require('./testProviderConnectivity');
 const { readProviderCredentials } = require('./readProviderSecrets');
 const { maskApiKey } = require('./maskApiKey');
 
+async function resolveGatewayAdminTarget(log) {
+    const config = await gatewaySettings.getConfig();
+    const externalUrl = process.env.LLM_GATEWAY_UPSTREAM_URL?.trim() || config.upstream_url?.trim();
+    if (externalUrl) {
+        const secrets = unigateway.ensureGatewaySecrets();
+        return {
+            running: true,
+            baseUrl: externalUrl.replace(/\/+$/, ''),
+            adminToken: process.env.UNIGATEWAY_ADMIN_TOKEN || secrets.adminToken,
+            external: true,
+        };
+    }
+    return unigateway.ensureRunning(log);
+}
+
 async function requestGateway(method, pathname, { body, query, log } = {}) {
-    const status = await unigateway.ensureRunning(log);
+    const status = await resolveGatewayAdminTarget(log);
     if (!status.running) {
         const message = status.lastError || 'UniGateway is not running';
         return Promise.reject(Object.assign(new Error(message), { statusCode: 503 }));
@@ -52,6 +67,9 @@ async function requestGateway(method, pathname, { body, query, log } = {}) {
             },
         );
         req.on('error', reject);
+        req.setTimeout(10000, () => {
+            req.destroy(Object.assign(new Error('UniGateway admin request timed out'), { statusCode: 504 }));
+        });
         if (payload) req.write(payload);
         req.end();
     });
@@ -321,4 +339,4 @@ function registerGatewayAdminRoutes(fastify) {
     });
 }
 
-module.exports = { registerGatewayAdminRoutes, requestGateway };
+module.exports = { registerGatewayAdminRoutes, requestGateway, resolveGatewayAdminTarget };

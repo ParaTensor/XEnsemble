@@ -11,6 +11,15 @@ const CONFIG_PATH = path.join(DATA_DIR, 'unigateway.toml');
 async function syncAgentServiceBinding(agentId, log = console) {
     const cfg = await agentGatewayConfig.getForAgent(agentId);
     if (!cfg || cfg.llm_auth_mode !== 'gateway') return { synced: false, reason: 'not_gateway_mode' };
+    const { resolveExternalGatewayUrl } = require('./gatewayUpstream');
+    if (await resolveExternalGatewayUrl()) {
+        return {
+            synced: true,
+            changed: false,
+            agentId,
+            reason: 'external_default_service',
+        };
+    }
 
     const providerName = cfg.provider?.trim();
     if (!providerName) return { synced: false, reason: 'no_provider' };

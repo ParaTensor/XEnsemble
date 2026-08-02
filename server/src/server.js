@@ -62,6 +62,7 @@ const unigateway = require('./gateway/unigatewayManager');
 const { registerGatewayAdminRoutes } = require('./gateway/adminProxy');
 const { deleteProjectForUser } = require('./projects/deleteProject');
 const { getAgentResume, getAgentResumeLevel, buildStateArgs } = require('./agents/agentResume');
+const { applyProjectGitEnv } = require('./agents/projectGitEnv');
 const { ensureSessionStateDir, prepareHomeRedirect } = require('./session/stateDir');
 const { resolveRuntimeProvider, DEFAULT_RUNTIME_PROVIDER } = require('./config/runtimeProvider');
 
@@ -1308,7 +1309,16 @@ fastify.post('/api/v1/session/start', { preValidation: [fastify.authenticate] },
         });
     }
 
-    const { resolveSpawnEnv } = require('./agents/agentEnv');
+    const { resolveSpawnEnv, GATEWAY_MANAGED_ENV_KEYS } = require('./agents/agentEnv');
+    if (authMode === 'gateway' && custom_env && typeof custom_env === 'object') {
+        const blockedKeys = Object.keys(custom_env)
+            .filter((key) => GATEWAY_MANAGED_ENV_KEYS.includes(key));
+        if (blockedKeys.length > 0) {
+            return reply.code(400).send({
+                error: `Gateway mode manages these environment variables: ${blockedKeys.join(', ')}`,
+            });
+        }
+    }
     const resolved = await resolveSpawnEnv({
         userId: request.user.id,
         agentId: agentMeta.id,
@@ -1478,11 +1488,7 @@ fastify.post('/api/v1/session/start', { preValidation: [fastify.authenticate] },
         }
         await db.update(schema.sessions).set(sessionUpdate).where(eq(schema.sessions.id, sessionId));
 
-        if (project && project.repoProvider === 'github') {
-            resolved.env.XENSEMBLE_GIT_BRANCH = project.currentBranch || '';
-            resolved.env.XENSEMBLE_GIT_BASE_BRANCH = project.repoDefaultBranch || '';
-            resolved.env.XENSEMBLE_REPO_URL = project.githubFullName || '';
-        }
+        applyProjectGitEnv(resolved.env, project);
 
         let handle;
         const spawnOpts = {
@@ -1495,7 +1501,9 @@ fastify.post('/api/v1/session/start', { preValidation: [fastify.authenticate] },
 
         // Merge user-provided custom env (config files already written above)
         if (Object.keys(userSessionConfig.customEnv).length) {
-            resolved.env = applyCustomEnv(resolved.env, userSessionConfig.customEnv);
+            resolved.env = applyCustomEnv(resolved.env, userSessionConfig.customEnv, {
+                blockedKeys: authMode === 'gateway' ? GATEWAY_MANAGED_ENV_KEYS : [],
+            });
         }
 
         try {

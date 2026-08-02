@@ -1,6 +1,19 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { resolveAgentSpawnArgs, getAgentConfigSchema } = require('./sessionConfig');
+const { applyCustomEnv, resolveAgentSpawnArgs, getAgentConfigSchema } = require('./sessionConfig');
+
+test('applyCustomEnv preserves gateway-managed values when overrides are blocked', () => {
+    const result = applyCustomEnv(
+        { ANTHROPIC_API_KEY: 'xel_session', ANTHROPIC_BASE_URL: 'https://control/llm' },
+        { ANTHROPIC_API_KEY: 'sk-user', ANTHROPIC_BASE_URL: 'https://api.anthropic.com', CUSTOM_FLAG: 'on' },
+        { blockedKeys: ['ANTHROPIC_API_KEY', 'ANTHROPIC_BASE_URL'] },
+    );
+    assert.deepEqual(result, {
+        ANTHROPIC_API_KEY: 'xel_session',
+        ANTHROPIC_BASE_URL: 'https://control/llm',
+        CUSTOM_FLAG: 'on',
+    });
+});
 
 test('resolveAgentSpawnArgs: droid extracts --model from first customModel', () => {
     const configFiles = [{
