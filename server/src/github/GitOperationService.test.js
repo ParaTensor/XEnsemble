@@ -323,10 +323,11 @@ describe('GitOperationService (mock exec)', () => {
         const exec = makeMockExec(() => 'diff-output');
         const service = createService(exec);
         const diff = await service.getDiff({ id: 'p1', userId: 'u1' }, { base: 'HEAD~1' });
-        assert.strictEqual(diff, 'diff-output');
+        assert.strictEqual(diff.diff, 'diff-output');
+        assert.strictEqual(diff.truncated, false);
         assert.deepStrictEqual(findCall(exec.calls, 'diff').args, ['diff', 'HEAD~1']);
 
-        const diff2 = await service.getDiff({ id: 'p1', userId: 'u1' }, { base: 'main', head: 'feature' });
+        await service.getDiff({ id: 'p1', userId: 'u1' }, { base: 'main', head: 'feature' });
         assert.deepStrictEqual(findCall(exec.calls, 'diff', 'main', 'feature').args, [
             'diff',
             'main',
@@ -509,7 +510,7 @@ describe('GitOperationService (real git)', { skip: !hasGit() }, () => {
 
         fs.writeFileSync(path.join(workspacePath, 'README.md'), 'changed');
         const diff = await service.getDiff({ id: 'p1', userId: 'u1' });
-        assert.ok(diff.includes('README.md'));
+        assert.ok(diff.diff.includes('README.md'));
     });
 
     it('getFileDiffView returns HEAD and working tree content for modified file', async () => {

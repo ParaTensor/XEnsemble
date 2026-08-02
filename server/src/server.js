@@ -31,9 +31,14 @@ const { reconcileCustomImageBuilds } = require('./runtime/reconcileCustomImageBu
 
 const { db } = require('./db/index');
 const schema = require('./db/schema');
-const { eq, and, ne, sql } = require('drizzle-orm');
+const { eq, and, ne, sql, inArray } = require('drizzle-orm');
 const auth = require('./auth/index');
 const { assertActiveUser } = require('./auth/assertActiveUser');
+const {
+    closeUnauthorizedWebSocket,
+    closeForbiddenWebSocket,
+    sendWebSocketReady,
+} = require('./auth/websocket');
 const { addSseClient, broadcastSse } = require('./session/sseManager');
 const { getProjectForUser, invalidateProjectCache } = require('./projects/getProjectForUser');
 const { registerAuthHooks } = require('./auth/hooks');
@@ -50,22 +55,40 @@ const { registerCustomImageRoutes } = require('./routes/customImages');
 const { LocalGitService } = require('./git/LocalGitService');
 const { applyTerminalMessage, subscribeTerminal } = require('./session/terminalBridge');
 const { resumeSession, registerSessionLifecycle } = require('./session/resumeSession');
-const { createIdleHibernateMonitor, stopSession } = require('./session/idleHibernate');
+const { createIdleHibernateMonitor, stopSession, waitForAgentExit } = require('./session/idleHibernate');
+const { terminateDetachedSessionProcess } = require('./session/sessionTermination');
 const { buildResumeSessionContext } = require('./session/resumeSessionContext');
 const transcriptStore = require('./runtime/TranscriptStore');
 const unigateway = require('./gateway/unigatewayManager');
 const { registerGatewayAdminRoutes } = require('./gateway/adminProxy');
 const { deleteProjectForUser } = require('./projects/deleteProject');
 const { getAgentResume, getAgentResumeLevel, buildStateArgs } = require('./agents/agentResume');
+const { applyProjectGitEnv } = require('./agents/projectGitEnv');
 const { ensureSessionStateDir, prepareHomeRedirect } = require('./session/stateDir');
 const { resolveRuntimeProvider, DEFAULT_RUNTIME_PROVIDER } = require('./config/runtimeProvider');
 
 const runtime = getRuntime();
 
 async function markSessionFailed(sessionId, errMsg, log) {
-    await db.update(schema.sessions).set({ status: 'failed', provisioningError: errMsg }).where(eq(schema.sessions.id, sessionId));
+    // Never overwrite a user-cancelled / deleted session (exited) or an already-terminal row.
+    const updated = await db.update(schema.sessions)
+        .set({ status: 'failed', provisioningError: errMsg })
+        .where(and(
+            eq(schema.sessions.id, sessionId),
+            inArray(schema.sessions.status, ['pending', 'running']),
+        ))
+        .returning({ id: schema.sessions.id });
+    if (!updated.length) return false;
     if (log) log({ sessionId }, `[sessions] provisioning failed: ${errMsg}`);
     try { broadcastSse({ type: 'session_status', sessionId, status: 'failed' }); } catch (_) {}
+    return true;
+}
+
+async function isSessionStillPending(sessionId) {
+    const rows = await db.select({ status: schema.sessions.status })
+        .from(schema.sessions)
+        .where(eq(schema.sessions.id, sessionId));
+    return Boolean(rows[0] && rows[0].status === 'pending');
 }
 
 function formatAgentRow(a) {
@@ -1017,10 +1040,39 @@ fastify.delete('/api/v1/sessions/:sessionId', { preValidation: [fastify.authenti
     if (rows.length === 0) return reply.code(404).send({ error: 'Session not found' });
 
     const session = rows[0];
-    sessionManager.deleteSession(sessionId);
+
+    // Mark exited first so in-flight provisioning observes cancellation.
     await db.update(schema.sessions)
         .set({ status: 'exited' })
         .where(eq(schema.sessions.id, sessionId));
+
+    const live = sessionManager.getSession(sessionId);
+    if (live?.handle) {
+        try { live.handle.kill(); } catch (err) {
+            request.log.warn({ err, sessionId }, '[sessions] failed to kill live handle on delete');
+        }
+        const runtimeRef = live.runtimeRef || live.runtimeId || null;
+        if (runtimeRef) {
+            await waitForAgentExit(runtime, runtimeRef, live.agentId || session.agentId).catch(() => {});
+        }
+    } else if (session.status === 'running' || session.status === 'idle' || session.status === 'pending') {
+        let runtimeRef = null;
+        if (session.runtimeId) {
+            try {
+                const runtimeRows = await db.select().from(schema.runtimes)
+                    .where(eq(schema.runtimes.id, session.runtimeId));
+                runtimeRef = runtimeRows[0]?.runtimeRef || null;
+            } catch (_) { /* best-effort */ }
+        }
+        await terminateDetachedSessionProcess({
+            session: { ...session, runtimeRef },
+            runtime,
+            waitForAgentExit,
+            fastifyLog: request.log,
+        });
+    }
+
+    sessionManager.deleteSession(sessionId);
 
     // Destroy the boxlite/blink VM if no other live session for this project still
     // uses the same runtime. Without this, deleting a session leaves an orphan VM
@@ -1032,6 +1084,7 @@ fastify.delete('/api/v1/sessions/:sessionId', { preValidation: [fastify.authenti
                     eq(schema.sessions.runtimeId, session.runtimeId),
                     ne(schema.sessions.id, sessionId),
                     ne(schema.sessions.status, 'exited'),
+                    ne(schema.sessions.status, 'failed'),
                 ));
             if (siblings.length === 0) {
                 const runtimeRows = await db.select().from(schema.runtimes)
@@ -1303,7 +1356,16 @@ fastify.post('/api/v1/session/start', { preValidation: [fastify.authenticate] },
         });
     }
 
-    const { resolveSpawnEnv } = require('./agents/agentEnv');
+    const { resolveSpawnEnv, GATEWAY_MANAGED_ENV_KEYS } = require('./agents/agentEnv');
+    if (authMode === 'gateway' && custom_env && typeof custom_env === 'object') {
+        const blockedKeys = Object.keys(custom_env)
+            .filter((key) => GATEWAY_MANAGED_ENV_KEYS.includes(key));
+        if (blockedKeys.length > 0) {
+            return reply.code(400).send({
+                error: `Gateway mode manages these environment variables: ${blockedKeys.join(', ')}`,
+            });
+        }
+    }
     const resolved = await resolveSpawnEnv({
         userId: request.user.id,
         agentId: agentMeta.id,
@@ -1378,6 +1440,11 @@ fastify.post('/api/v1/session/start', { preValidation: [fastify.authenticate] },
         } catch (err) {
             fastify.log.error({ err, sessionId }, '[sessions] async provisioning: ensureProjectRuntime failed');
             await markSessionFailed(sessionId, err instanceof RuntimeError ? err.message : (err.message || 'Failed to prepare project runtime'));
+            return;
+        }
+
+        if (!(await isSessionStillPending(sessionId))) {
+            fastify.log.info({ sessionId }, '[sessions] session cancelled after runtime prepare');
             return;
         }
 
@@ -1463,6 +1530,11 @@ fastify.post('/api/v1/session/start', { preValidation: [fastify.authenticate] },
             }
         }
 
+        if (!(await isSessionStillPending(sessionId))) {
+            fastify.log.info({ sessionId }, '[sessions] session cancelled before spawn');
+            return;
+        }
+
         // Single DB update: merge cwd + runtimeId + stateDirRef (was 2 separate writes).
         const sessionUpdate = {
             cwd: workspacePath,
@@ -1473,11 +1545,7 @@ fastify.post('/api/v1/session/start', { preValidation: [fastify.authenticate] },
         }
         await db.update(schema.sessions).set(sessionUpdate).where(eq(schema.sessions.id, sessionId));
 
-        if (project && project.repoProvider === 'github') {
-            resolved.env.XENSEMBLE_GIT_BRANCH = project.currentBranch || '';
-            resolved.env.XENSEMBLE_GIT_BASE_BRANCH = project.repoDefaultBranch || '';
-            resolved.env.XENSEMBLE_REPO_URL = project.githubFullName || '';
-        }
+        applyProjectGitEnv(resolved.env, project);
 
         let handle;
         const spawnOpts = {
@@ -1490,7 +1558,9 @@ fastify.post('/api/v1/session/start', { preValidation: [fastify.authenticate] },
 
         // Merge user-provided custom env (config files already written above)
         if (Object.keys(userSessionConfig.customEnv).length) {
-            resolved.env = applyCustomEnv(resolved.env, userSessionConfig.customEnv);
+            resolved.env = applyCustomEnv(resolved.env, userSessionConfig.customEnv, {
+                blockedKeys: authMode === 'gateway' ? GATEWAY_MANAGED_ENV_KEYS : [],
+            });
         }
 
         try {
@@ -1538,9 +1608,12 @@ fastify.post('/api/v1/session/start', { preValidation: [fastify.authenticate] },
                             stateDirPath: sessionStateDir?.stateDirPath || null,
                         }).catch(() => {});
                     }
+                    const retryStateArgs = sessionStateDir?.stateDirPath
+                        ? buildStateArgs(resumeSpec, sessionStateDir.stateDirPath)
+                        : [];
                     handle = await runtime.exec.spawn(
                         agentMeta.cmd,
-                        [...agentMeta.args, ...resolveAgentSpawnArgs(agent_id, userSessionConfig.configFiles)],
+                        [...retryStateArgs, ...agentMeta.args, ...resolveAgentSpawnArgs(agent_id, userSessionConfig.configFiles)],
                         resolved.env,
                         spawnOpts,
                     );
@@ -1616,7 +1689,9 @@ function startWsHeartbeat(ws) {
         try { ws.ping(); } catch (_) { ws.terminate(); }
     }, WS_PING_INTERVAL_MS);
     timer.unref();
-    return () => clearInterval(timer);
+    const stop = () => clearInterval(timer);
+    ws.once('close', stop);
+    return stop;
 }
 
 function createWsSender(ws) {
@@ -1682,22 +1757,19 @@ fastify.register(async function terminalWsRoutes(app) {
             }
 
             if (!accessToken) {
-                sendJson({ type: 'error', data: 'access_token is required' });
-                ws.close();
+                closeUnauthorizedWebSocket(ws, sendJson, 'access_token is required');
                 return;
             }
 
             const payload = auth.verifyAccessToken(accessToken);
             if (!payload?.id) {
-                sendJson({ type: 'error', data: 'Invalid access token' });
-                ws.close();
+                closeUnauthorizedWebSocket(ws, sendJson);
                 return;
             }
 
             const active = await assertActiveUser(payload);
             if (active.error) {
-                sendJson({ type: 'error', data: active.error });
-                ws.close();
+                closeForbiddenWebSocket(ws, sendJson, active.error);
                 return;
             }
 
@@ -1759,6 +1831,7 @@ fastify.register(async function terminalWsRoutes(app) {
                 ws.close();
                 return;
             }
+            sendWebSocketReady(sendJson);
 
             ws.on('message', (message) => {
                 if (!sessionManager.isAlive(sessionId)) return;
@@ -1817,22 +1890,19 @@ fastify.register(async function workspaceTerminalWsRoutes(app) {
             }
 
             if (!accessToken) {
-                sendJson({ type: 'error', data: 'access_token is required' });
-                ws.close();
+                closeUnauthorizedWebSocket(ws, sendJson, 'access_token is required');
                 return;
             }
 
             const payload = auth.verifyAccessToken(accessToken);
             if (!payload?.id) {
-                sendJson({ type: 'error', data: 'Invalid access token' });
-                ws.close();
+                closeUnauthorizedWebSocket(ws, sendJson);
                 return;
             }
 
             const active = await assertActiveUser(payload);
             if (active.error) {
-                sendJson({ type: 'error', data: active.error });
-                ws.close();
+                closeForbiddenWebSocket(ws, sendJson, active.error);
                 return;
             }
 
@@ -1931,6 +2001,7 @@ fastify.register(async function workspaceTerminalWsRoutes(app) {
                 ws.close();
                 return;
             }
+            sendWebSocketReady(sendJson);
 
             ws.on('message', (message) => {
                 if (!WorkspaceShellManager.isAlive(shellId)) return;

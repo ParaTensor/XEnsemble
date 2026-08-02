@@ -1,6 +1,6 @@
 const jwt = require('jsonwebtoken');
+const { getJwtSecret } = require('../auth/index');
 
-const JWT_SECRET = process.env.JWT_SECRET || 'super-secret-emdash-key-for-mvp';
 const TOKEN_PREFIX = 'xel_';
 const TOKEN_TYPE = 'llm_session';
 const TOKEN_TTL = '24h';
@@ -17,7 +17,7 @@ function issueSessionToken({ sessionId, userId, projectId, agentId, model, role 
     if (trimmedModel) payload.model = trimmedModel;
     if (role?.trim()) payload.role = role.trim();
 
-    const signed = jwt.sign(payload, JWT_SECRET, { expiresIn: TOKEN_TTL });
+    const signed = jwt.sign(payload, getJwtSecret(), { expiresIn: TOKEN_TTL });
     return `${TOKEN_PREFIX}${signed}`;
 }
 
@@ -32,9 +32,9 @@ function verifySessionToken(raw) {
     const token = stripTokenPrefix(raw);
     if (!token) return null;
     try {
-        const claims = jwt.verify(token, JWT_SECRET);
+        const claims = jwt.verify(token, getJwtSecret());
         if (claims.typ !== TOKEN_TYPE) return null;
-        if (!claims.sid || !claims.uid) return null;
+        if (!claims.sid || !claims.uid || !claims.aid) return null;
         return claims;
     } catch {
         return null;

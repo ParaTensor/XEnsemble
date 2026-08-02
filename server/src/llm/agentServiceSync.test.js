@@ -4,6 +4,8 @@ const {
     hasServiceBlock,
     hasBinding,
     appendAgentService,
+    upsertAgentServiceBinding,
+    removeBindingsForService,
 } = require('./agentServiceToml');
 
 const TOML_WITH_SERVICE = `
@@ -67,4 +69,23 @@ test('appendAgentService escapes quotes in agent id', () => {
     const after = appendAgentService('', 'weird"id', 'p');
     assert.equal(hasServiceBlock(after, 'weird"id'), false);
     assert.ok(after.includes('id = "weirdid"'));
+});
+
+test('upsertAgentServiceBinding replaces provider when agent switches', () => {
+    const after = upsertAgentServiceBinding(TOML_WITH_SERVICE, 'kimi-code', 'qwen-main');
+    assert.equal(hasBinding(after, 'kimi-code', 'qwen-main'), true);
+    assert.equal(hasBinding(after, 'kimi-code', 'deepseek-main'), false);
+    assert.equal(after.match(/\[\[bindings\]\]\nservice_id = "kimi-code"/g).length, 1);
+});
+
+test('removeBindingsForService leaves unrelated bindings intact', () => {
+    const withExtra = `${TOML_WITH_SERVICE}
+[[bindings]]
+service_id = "other"
+provider_name = "deepseek-main"
+priority = 0
+`;
+    const after = removeBindingsForService(withExtra, 'kimi-code');
+    assert.equal(hasBinding(after, 'kimi-code', 'deepseek-main'), false);
+    assert.equal(hasBinding(after, 'other', 'deepseek-main'), true);
 });

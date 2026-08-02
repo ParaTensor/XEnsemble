@@ -182,7 +182,7 @@ class BoxLiteClient {
         return new WebSocket(wsUrl);
     }
 
-    async execForResult(sessionName, command, args = [], env = {}, workingDir = null) {
+    async execForResult(sessionName, command, args = [], env = {}, workingDir = null, options = {}) {
         const spec = {
             command,
             args: args || [],
@@ -195,8 +195,18 @@ class BoxLiteClient {
         return new Promise((resolve, reject) => {
             let stdout = '';
             let stderr = '';
+            let outputBytes = 0;
             let settled = false;
+            const maxBuffer = options.maxBuffer || 2 * 1024 * 1024;
+            const timeoutMs = options.timeoutMs || 120000;
             const decoders = { 0x01: new TextDecoder('utf-8'), 0x02: new TextDecoder('utf-8') };
+            const fail = (error) => {
+                if (settled) return;
+                settled = true;
+                try { ws.send(JSON.stringify({ type: 'signal', signal: 15 })); } catch (_) {}
+                try { ws.close(); } catch (_) {}
+                reject(error);
+            };
             const done = (code) => {
                 if (settled) return;
                 settled = true;
@@ -211,6 +221,13 @@ class BoxLiteClient {
                     const decoded = decodeExecutionFrameRaw(buf, true);
                     if (decoded.channel === 0x01 || decoded.channel === 0x02) {
                         const str = decoders[decoded.channel].decode(decoded.payload, { stream: true });
+                        outputBytes += Buffer.byteLength(str);
+                        if (outputBytes > maxBuffer) {
+                            const error = new Error('Command output exceeded maxBuffer');
+                            error.statusCode = 504;
+                            fail(error);
+                            return;
+                        }
                         if (decoded.channel === 0x01) stdout += str;
                         else stderr += str;
                     }
@@ -220,29 +237,22 @@ class BoxLiteClient {
                         if (msg.type === 'exit') {
                             done(msg.exit_code);
                         } else if (msg.type === 'error') {
-                            if (!settled) {
-                                settled = true;
-                                try { ws.close(); } catch (_) {}
-                                reject(new Error(msg.message || 'blink exec error'));
-                            }
+                            fail(new Error(msg.message || 'blink exec error'));
                         }
                     } catch (_) {}
                 }
             });
             ws.on('error', (e) => {
-                if (!settled) {
-                    settled = true;
-                    reject(e);
-                }
+                fail(e);
             });
             ws.on('close', () => done(-1));
             setTimeout(() => {
                 if (!settled) {
-                    settled = true;
-                    try { ws.close(); } catch (_) {}
-                    resolve({ exitCode: -1, stdout, stderr });
+                    const error = new Error(`Command timed out after ${timeoutMs}ms`);
+                    error.statusCode = 504;
+                    fail(error);
                 }
-            }, 120000);
+            }, timeoutMs);
         });
     }
 

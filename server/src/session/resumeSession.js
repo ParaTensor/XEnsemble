@@ -1,6 +1,8 @@
 const { eq } = require('drizzle-orm');
 const { sessionStateDirExists, prepareHomeRedirect } = require('./stateDir');
 const { getAgentResume, getAgentResumeLevel, isSessionRecoverable, buildStateArgs } = require('../agents/agentResume');
+const { applyProjectGitEnv } = require('../agents/projectGitEnv');
+const transcriptStore = require('../runtime/TranscriptStore');
 
 const CRASH_UPTIME_MS = 30000;
 const CRASH_THRESHOLD = 3;
@@ -40,18 +42,22 @@ async function registerSessionLifecycle({
     project,
     fastifyLog,
 }) {
+    const live = sessionManager.getSession(sessionId);
+    if (live?.lifecycleRegistered) return;
+    if (live) live.lifecycleRegistered = true;
+
     sessionManager.onExit(sessionId, () => {
-        const live = sessionManager.getSession(sessionId);
-        if (live && !live.hibernating) {
-            const uptime = Date.now() - (live.spawnedAt || 0);
+        const current = sessionManager.getSession(sessionId);
+        if (current && !current.hibernating) {
+            const uptime = Date.now() - (current.spawnedAt || 0);
             if (uptime < CRASH_UPTIME_MS) {
-                live.crashCount = (live.crashCount || 0) + 1;
+                current.crashCount = (current.crashCount || 0) + 1;
             } else {
-                live.crashCount = 0;
+                current.crashCount = 0;
             }
         }
-        const circuitTripped = live && (live.crashCount || 0) >= CRASH_THRESHOLD;
-        const nextStatus = live && !live.hibernating && !circuitTripped && isSessionRecoverable(live) ? 'idle' : 'exited';
+        const circuitTripped = current && (current.crashCount || 0) >= CRASH_THRESHOLD;
+        const nextStatus = current && !current.hibernating && !circuitTripped && isSessionRecoverable(current) ? 'idle' : 'exited';
         db.update(schema.sessions)
             .set({ status: nextStatus })
             .where(eq(schema.sessions.id, sessionId))
@@ -245,11 +251,7 @@ async function resumeSession({
             }
         }
 
-        if (project && project.repoProvider === 'github' && resolvedSpawnEnv?.env) {
-            resolvedSpawnEnv.env.XENSEMBLE_GIT_BRANCH = project.currentBranch || '';
-            resolvedSpawnEnv.env.XENSEMBLE_GIT_BASE_BRANCH = project.repoDefaultBranch || '';
-            resolvedSpawnEnv.env.XENSEMBLE_REPO_URL = project.githubFullName || '';
-        }
+        applyProjectGitEnv(resolvedSpawnEnv?.env, project);
 
         // ensureKimiConfig (VM exec) runs AFTER sessionStateDirExists completes
         // to avoid concurrent VM execs triggering the zygote race on a freshly
@@ -293,7 +295,10 @@ async function resumeSession({
             });
         }
         if (Object.keys(userConfig.customEnv).length && resolvedSpawnEnv?.env) {
-            resolvedSpawnEnv.env = applyCustomEnv(resolvedSpawnEnv.env, userConfig.customEnv);
+            const { GATEWAY_MANAGED_ENV_KEYS } = require('../agents/agentEnv');
+            resolvedSpawnEnv.env = applyCustomEnv(resolvedSpawnEnv.env, userConfig.customEnv, {
+                blockedKeys: authMode === 'gateway' ? GATEWAY_MANAGED_ENV_KEYS : [],
+            });
         }
 
         let sessionToken = null;

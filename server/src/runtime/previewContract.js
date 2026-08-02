@@ -56,11 +56,18 @@ function readJsonSafe(filePath) {
  * Idempotent: ensure `.agents/preview.json` (and starter index.html) exist for new workspaces.
  */
 function ensurePreviewContractFile(workspacePath) {
+    const existingWorkspaceFiles = fs.existsSync(workspacePath)
+        ? fs.readdirSync(workspacePath).filter((name) => !['.agents', '.xensemble', '.git', '.gitignore'].includes(name))
+        : [];
     const agentsDir = path.join(workspacePath, '.agents');
     const agentsPath = path.join(agentsDir, 'preview.json');
     if (!fs.existsSync(agentsPath)) {
         fs.mkdirSync(agentsDir, { recursive: true });
         fs.writeFileSync(agentsPath, `${JSON.stringify(DEFAULT_PREVIEW_JSON, null, 2)}\n`, 'utf8');
+    }
+    const indexPath = path.join(workspacePath, 'index.html');
+    if (existingWorkspaceFiles.length === 0 && !fs.existsSync(indexPath)) {
+        fs.writeFileSync(indexPath, DEFAULT_INDEX_HTML, 'utf8');
     }
 }
 

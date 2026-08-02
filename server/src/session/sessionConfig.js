@@ -77,10 +77,12 @@ async function writeConfigFilesToVM(fsAdapter, { workspaceRoot, runtimeRef, conf
  * Merge custom env into the resolved spawn env.
  * Custom env values are added on top of existing env (highest priority).
  */
-function applyCustomEnv(env, customEnv) {
+function applyCustomEnv(env, customEnv, { blockedKeys = [] } = {}) {
     if (!customEnv || typeof customEnv !== 'object') return env;
+    const blocked = new Set(blockedKeys);
     const result = { ...env };
     for (const [key, raw] of Object.entries(customEnv)) {
+        if (blocked.has(key)) continue;
         const trimmed = raw != null ? String(raw).trim() : '';
         if (trimmed) result[key] = trimmed;
         else delete result[key];

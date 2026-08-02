@@ -5,7 +5,7 @@ import WorkspaceFileTree from '../components/WorkspaceFileTree';
 import WorkspaceShell from '../components/WorkspaceShell';
 import WorkspacePanel from '../components/WorkspacePanel';
 import RepoImportDialog from '../components/git/RepoImportDialog';
-import GitStatusBar from '../components/git/GitStatusBar';
+import GitStatusBar from '../components/github/GitStatusBar';
 import { apiFetch } from '../lib/api';
 import * as githubApi from '../lib/githubApi';
 import {

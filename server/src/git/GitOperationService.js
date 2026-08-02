@@ -2,6 +2,7 @@ const { getRuntime } = require('../runtime/registry');
 const { ensureProjectRuntime } = require('../runtime/RuntimeService');
 const workspace = require('../workspace');
 const { stripCredentialFromUrl, buildCredentialEnv } = require('./gitCredentialHelper');
+const { assertGitRef, assertGitBranch } = require('./gitValidation');
 
 // Default token resolver uses the new multi-provider GitConnectionService.
 // Falls back to the legacy GitHub-specific service if the new one isn't available.
@@ -142,9 +143,9 @@ class GitOperationService {
     }
 
     async createBranch(project, branchName, baseBranch) {
-        const args = ['checkout', '-b', branchName];
+        const args = ['checkout', '-b', assertGitBranch(branchName)];
         if (baseBranch) {
-            args.push(baseBranch);
+            args.push(assertGitRef(baseBranch));
         }
         await this._execGit(project, args);
         const sha = await this._revParse(project, 'HEAD');
@@ -152,13 +153,14 @@ class GitOperationService {
     }
 
     async switchBranch(project, branchName) {
+        const safeBranch = assertGitBranch(branchName);
         try {
-            await this._execGit(project, ['checkout', branchName]);
+            await this._execGit(project, ['checkout', safeBranch]);
         } catch (err) {
-            const remoteRef = `origin/${branchName}`;
+            const remoteRef = `origin/${safeBranch}`;
             try {
                 await this._execGit(project, ['rev-parse', '--verify', '--quiet', remoteRef]);
-                await this._execGit(project, ['checkout', '-b', branchName, remoteRef]);
+                await this._execGit(project, ['checkout', '-b', safeBranch, remoteRef]);
             } catch {
                 throw err;
             }
@@ -169,7 +171,7 @@ class GitOperationService {
     }
 
     async deleteBranch(project, branchName) {
-        await this._execGit(project, ['branch', '-D', branchName]);
+        await this._execGit(project, ['branch', '-D', assertGitBranch(branchName)]);
     }
 
     async listBranches(project) {
@@ -259,7 +261,7 @@ class GitOperationService {
     }
 
     async pushBranch(project, branchName, { force = false } = {}) {
-        const args = ['push', '-u', 'origin', branchName];
+        const args = ['push', '-u', 'origin', assertGitBranch(branchName)];
         if (force) {
             args.push('--force');
         }
@@ -271,9 +273,9 @@ class GitOperationService {
     async getDiff(project, { base, head } = {}) {
         const args = ['diff'];
         if (base && head) {
-            args.push(base, head);
+            args.push(assertGitRef(base), assertGitRef(head));
         } else if (base) {
-            args.push(base);
+            args.push(assertGitRef(base));
         }
         const { stdout } = await this._execGit(project, args);
         return stdout;

@@ -39,11 +39,10 @@ function registerGitHubAppRoutes(fastify) {
             }
         } catch (err) {
             if (err.statusCode === 503) {
-                // Webhook secret not configured — accept but log warning
-                request.log.warn('Webhook secret not configured, skipping verification');
-            } else {
-                throw err;
+                request.log.error('Webhook secret not configured; rejecting unsigned webhook');
+                return reply.code(503).send({ error: 'GitHub webhook is not configured' });
             }
+            throw err;
         }
 
         const payload = typeof request.body === 'string'

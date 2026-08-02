@@ -1,4 +1,5 @@
 const { eq, inArray } = require('drizzle-orm');
+const { isSessionRecoverable } = require('../agents/agentResume');
 
 function parseLocalPid(streamRef) {
     if (typeof streamRef !== 'string' || !streamRef.startsWith('local:pty:')) {
@@ -37,11 +38,18 @@ async function reconcileRunningSessions(db, schema, opts = {}) {
     const processExists = opts.processExists ?? defaultProcessExists;
 
     const running = await db
-        .select({ id: schema.sessions.id, streamRef: schema.sessions.streamRef })
+        .select({
+            id: schema.sessions.id,
+            agentId: schema.sessions.agentId,
+            streamRef: schema.sessions.streamRef,
+            stateDirRef: schema.sessions.stateDirRef,
+            recoverable: schema.sessions.recoverable,
+        })
         .from(schema.sessions)
         .where(eq(schema.sessions.status, 'running'));
 
-    const staleIds = [];
+    const staleIdleIds = [];
+    const staleExitedIds = [];
     for (const row of running) {
         if (typeof row.streamRef === 'string' && row.streamRef.startsWith('boxlite:')) {
             continue;
@@ -49,18 +57,26 @@ async function reconcileRunningSessions(db, schema, opts = {}) {
         const pid = parseLocalPid(row.streamRef);
         const alive = pid != null && processExists(pid);
         if (!alive) {
-            staleIds.push(row.id);
+            if (isSessionRecoverable(row)) staleIdleIds.push(row.id);
+            else staleExitedIds.push(row.id);
         }
     }
 
-    if (staleIds.length > 0) {
+    if (staleIdleIds.length > 0) {
+        await db
+            .update(schema.sessions)
+            .set({ status: 'idle' })
+            .where(inArray(schema.sessions.id, staleIdleIds));
+    }
+    if (staleExitedIds.length > 0) {
         await db
             .update(schema.sessions)
             .set({ status: 'exited' })
-            .where(inArray(schema.sessions.id, staleIds));
+            .where(inArray(schema.sessions.id, staleExitedIds));
     }
 
-    return { reconciled: staleIds.length, ids: staleIds };
+    const ids = [...staleIdleIds, ...staleExitedIds];
+    return { reconciled: ids.length, ids };
 }
 
 module.exports = { reconcileRunningSessions, parseLocalPid, defaultProcessExists };

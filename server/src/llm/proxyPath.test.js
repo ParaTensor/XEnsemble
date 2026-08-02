@@ -1,6 +1,6 @@
 const { describe, it } = require('node:test');
 const assert = require('node:assert/strict');
-const { stripLlmPrefix, normalizeUpstreamPath } = require('./proxy');
+const { stripLlmPrefix, normalizeUpstreamPath, isQuotaExemptPath } = require('./proxy');
 
 describe('LLM proxy path normalization', () => {
     it('rewrites OpenAI chat path missing /v1 prefix (Kimi Code gateway mode)', () => {
@@ -26,5 +26,12 @@ describe('LLM proxy path normalization', () => {
 
     it('rewrites /embeddings without /v1 prefix', () => {
         assert.equal(normalizeUpstreamPath('/embeddings'), '/v1/embeddings');
+    });
+
+    it('marks health and models as quota-exempt', () => {
+        assert.equal(isQuotaExemptPath('/health'), true);
+        assert.equal(isQuotaExemptPath('/v1/models'), true);
+        assert.equal(isQuotaExemptPath('/v1/models/foo'), true);
+        assert.equal(isQuotaExemptPath('/v1/chat/completions'), false);
     });
 });

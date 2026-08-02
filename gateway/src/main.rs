@@ -26,7 +26,7 @@ use unigateway_sdk::host::{
     PoolHost, PoolLookupOutcome, PoolLookupResult, dispatch_request,
 };
 use unigateway_sdk::protocol::{
-    ProtocolHttpResponse, ProtocolResponseBody, anthropic_payload_to_chat_request,
+    ProtocolResponseBody, anthropic_payload_to_chat_request,
     openai_model_object, openai_payload_to_chat_request, openai_payload_to_embed_request,
 };
 
@@ -265,21 +265,6 @@ fn runtime_limit_error(error: RuntimeLimitError) -> ApiError {
     }
 }
 
-fn into_axum_response(response: ProtocolHttpResponse) -> Response {
-    let (status, body) = response.into_parts();
-    match body {
-        ProtocolResponseBody::Json(value) => (status, Json(value)).into_response(),
-        ProtocolResponseBody::ServerSentEvents(stream) => (
-            status,
-            [(header::CONTENT_TYPE, "text/event-stream")],
-            Body::from_stream(stream.map(|chunk| {
-                chunk.map_err(|error| std::io::Error::other(error.to_string()))
-            })),
-        )
-            .into_response(),
-    }
-}
-
 async fn dispatch_for_service(
     state: &AppState,
     service_id: &str,
@@ -296,19 +281,34 @@ async fn dispatch_for_service(
         .await
         .map_err(|error| ApiError::internal(error.to_string()))?;
 
-    state
-        .gateway
-        .record_stat(endpoint, 200, started.elapsed().as_millis() as i64)
-        .await;
-
+    let latency_ms = started.elapsed().as_millis() as i64;
     match outcome {
-        HostDispatchOutcome::Response(response) => Ok(into_axum_response(response)),
+        HostDispatchOutcome::Response(response) => {
+            let (status, body) = response.into_parts();
+            state
+                .gateway
+                .record_stat(endpoint, status.as_u16() as i32, latency_ms)
+                .await;
+            Ok(match body {
+                ProtocolResponseBody::Json(value) => (status, Json(value)).into_response(),
+                ProtocolResponseBody::ServerSentEvents(stream) => (
+                    status,
+                    [(header::CONTENT_TYPE, "text/event-stream")],
+                    Body::from_stream(stream.map(|chunk| {
+                        chunk.map_err(|error| std::io::Error::other(error.to_string()))
+                    })),
+                )
+                    .into_response(),
+            })
+        }
         other => {
             if matches!(other, HostDispatchOutcome::PoolNotFound) {
+                state.gateway.record_stat(endpoint, 400, latency_ms).await;
                 Err(ApiError::bad_request(format!(
                     "service '{service_id}' has no configured providers"
                 )))
             } else {
+                state.gateway.record_stat(endpoint, 500, latency_ms).await;
                 Err(ApiError::internal("unsupported gateway dispatch outcome"))
             }
         }

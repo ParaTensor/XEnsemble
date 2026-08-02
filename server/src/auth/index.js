@@ -10,6 +10,10 @@ if (NODE_ENV === 'production' && (!JWT_SECRET || JWT_SECRET.length < 32)) {
 }
 const EFFECTIVE_JWT_SECRET = JWT_SECRET || 'dev-only-jwt-secret-do-not-use-in-production';
 
+function getJwtSecret() {
+    return EFFECTIVE_JWT_SECRET;
+}
+
 function resolveEncryptionKey() {
     const raw = process.env.ENCRYPTION_KEY?.trim();
     if (NODE_ENV === 'production' && !raw) {
@@ -127,6 +131,7 @@ function decryptSecrets(encryptedStr) {
 }
 
 module.exports = {
+    getJwtSecret,
     hashPassword,
     verifyPassword,
     needsRehash,

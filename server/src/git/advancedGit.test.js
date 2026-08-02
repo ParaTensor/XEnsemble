@@ -6,6 +6,22 @@ const path = require('path');
 const { spawnSync } = require('child_process');
 
 const { LocalGitService, parseBlameOutput, parseDetailedLog } = require('./LocalGitService');
+const { assertRepoRelativePath, assertGitRef, assertGitBranch } = require('./gitValidation');
+
+describe('Git input validation', () => {
+    it('rejects workspace escapes and option-like refs', () => {
+        assert.throws(() => assertRepoRelativePath('../../etc/passwd'), /inside the workspace/);
+        assert.throws(() => assertRepoRelativePath('/etc/passwd'), /inside the workspace/);
+        assert.throws(() => assertGitRef('--no-index'), /Invalid Git ref/);
+        assert.throws(() => assertGitBranch('../main'), /Invalid Git ref/);
+    });
+
+    it('accepts repository paths and common branch refs', () => {
+        assert.equal(assertRepoRelativePath('src/index.js'), 'src/index.js');
+        assert.equal(assertGitRef('HEAD~1'), 'HEAD~1');
+        assert.equal(assertGitBranch('feature/terminal-fix'), 'feature/terminal-fix');
+    });
+});
 
 function hasGit() {
     return spawnSync('git', ['--version']).status === 0;

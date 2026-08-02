@@ -277,61 +277,63 @@ class LocalGitService {
      * Restore workspace to a specific checkpoint's git SHA.
      */
     async restoreCheckpoint(project, checkpointId, options = {}) {
-        const rows = await db.select().from(schema.workspaceCheckpoints)
-            .where(and(
-                eq(schema.workspaceCheckpoints.id, checkpointId),
-                eq(schema.workspaceCheckpoints.projectId, project.id),
-            ));
+        return singleflight(`local-git-restore:${project.id}`, async () => {
+            const rows = await db.select().from(schema.workspaceCheckpoints)
+                .where(and(
+                    eq(schema.workspaceCheckpoints.id, checkpointId),
+                    eq(schema.workspaceCheckpoints.projectId, project.id),
+                ));
 
-        if (rows.length === 0) {
-            const err = new Error('Checkpoint not found');
-            err.statusCode = 404;
-            throw err;
-        }
+            if (rows.length === 0) {
+                const err = new Error('Checkpoint not found');
+                err.statusCode = 404;
+                throw err;
+            }
 
-        const checkpoint = rows[0];
-        if (!checkpoint.gitSha) {
-            const err = new Error('Checkpoint has no git_sha');
-            err.statusCode = 409;
-            throw err;
-        }
+            const checkpoint = rows[0];
+            if (!checkpoint.gitSha) {
+                const err = new Error('Checkpoint has no git_sha');
+                err.statusCode = 409;
+                throw err;
+            }
 
-        const { workspacePath } = await this.ensureProjectRuntime(project);
+            const { workspacePath } = await this.ensureProjectRuntime(project);
 
-        // Verify SHA exists in repo
-        try {
-            await this._git(workspacePath, ['cat-file', '-t', checkpoint.gitSha]);
-        } catch {
-            const err = new Error(`SHA ${checkpoint.gitSha} not found in repository`);
-            err.statusCode = 409;
-            throw err;
-        }
+            // Verify SHA exists in repo
+            try {
+                await this._git(workspacePath, ['cat-file', '-t', checkpoint.gitSha]);
+            } catch {
+                const err = new Error(`SHA ${checkpoint.gitSha} not found in repository`);
+                err.statusCode = 409;
+                throw err;
+            }
 
-        await this._git(workspacePath, ['reset', '--hard', checkpoint.gitSha], { timeoutMs: 60_000 });
+            await this._git(workspacePath, ['reset', '--hard', checkpoint.gitSha], { timeoutMs: 60_000 });
 
-        if (options.cleanUntracked !== false) {
-            await this._git(workspacePath, ['clean', '-fd']);
-        }
+            if (options.cleanUntracked !== false) {
+                await this._git(workspacePath, ['clean', '-fd']);
+            }
 
-        await db.update(schema.projects).set({
-            lastSyncSha: checkpoint.gitSha,
-        }).where(eq(schema.projects.id, project.id));
+            await db.update(schema.projects).set({
+                lastSyncSha: checkpoint.gitSha,
+            }).where(eq(schema.projects.id, project.id));
 
-        await recordEvent({
-            userId: project.userId,
-            projectId: project.id,
-            subjectType: 'workspace_checkpoint',
-            subjectId: checkpointId,
-            type: 'workspace_checkpoint.restored',
-            data: { gitSha: checkpoint.gitSha, cleanUntracked: options.cleanUntracked !== false },
+            await recordEvent({
+                userId: project.userId,
+                projectId: project.id,
+                subjectType: 'workspace_checkpoint',
+                subjectId: checkpointId,
+                type: 'workspace_checkpoint.restored',
+                data: { gitSha: checkpoint.gitSha, cleanUntracked: options.cleanUntracked !== false },
+            });
+
+            return {
+                id: checkpointId,
+                project_id: project.id,
+                git_sha: checkpoint.gitSha,
+                restored: true,
+            };
         });
-
-        return {
-            id: checkpointId,
-            project_id: project.id,
-            git_sha: checkpoint.gitSha,
-            restored: true,
-        };
     }
 
     // ── Introspection ──

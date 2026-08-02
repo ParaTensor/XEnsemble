@@ -22,6 +22,15 @@ export function getWsUrl(sessionId: string, accessToken: string | null): string 
   return `${wsProtocol}${httpProtocolRemoved}/ws/v1/terminal?${qs.toString()}`;
 }
 
+export function getWorkspaceShellWsUrl(projectId: string, accessToken: string | null): string {
+  const base = getBackendURL();
+  const wsProtocol = base.startsWith('https:') ? 'wss:' : 'ws:';
+  const httpProtocolRemoved = base.replace(/^https?:/, '');
+  const qs = new URLSearchParams({ project_id: projectId });
+  if (accessToken) qs.set('access_token', accessToken);
+  return `${wsProtocol}${httpProtocolRemoved}/ws/v1/workspace-terminal?${qs.toString()}`;
+}
+
 export function publicFetch(path: string, options: RequestInit = {}): Promise<Response> {
   return fetch(`${getApiBase()}${path}`, options);
 }

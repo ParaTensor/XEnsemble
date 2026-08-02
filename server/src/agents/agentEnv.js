@@ -6,6 +6,7 @@ const unigateway = require('../gateway/unigatewayManager');
 const agentGatewayConfig = require('../admin/AgentGatewayConfig');
 const { resolveLlmPublicRouterBase } = require('../llm/publicUrl');
 const { TOKEN_PREFIX } = require('../llm/sessionToken');
+const { resolveExternalGatewayUrl } = require('../llm/gatewayUpstream');
 const { db } = require('../db/index');
 const schema = require('../db/schema');
 const { eq } = require('drizzle-orm');
@@ -72,6 +73,9 @@ const GATEWAY_API_KEY_KEYS = [
     'HERMES_API_KEY',
     'OPENCLAW_KEY',
 ];
+const GATEWAY_MANAGED_ENV_KEYS = Object.freeze([
+    ...new Set([...GATEWAY_BASE_URL_KEYS, ...GATEWAY_API_KEY_KEYS]),
+]);
 
 async function getLlmAuthMode() {
     return platformSettings.getLlmAuthMode();
@@ -429,7 +433,7 @@ async function isAgentKeysReady(envRequired, userId, agentId) {
         : 'byok';
     if (mode === 'gateway') {
         if (!cfg?.model?.trim()) return false;
-        return unigateway.getStatus().running;
+        return Boolean(await resolveExternalGatewayUrl()) || unigateway.getStatus().running;
     }
     const effectiveRequired = computeEffectiveRequired(envRequired, cfg);
     if (effectiveRequired.length === 0) return true;
@@ -459,6 +463,7 @@ async function previewGatewaySpawnEnv(agentId, { envRequired = [], cmd, args = [
         : 'byok';
     const mode = draftAuthMode === 'gateway' || draftAuthMode === 'byok' ? draftAuthMode : savedMode;
     const gateway = unigateway.getStatus();
+    const externalGatewayUrl = await resolveExternalGatewayUrl();
 
     if (mode !== 'gateway') {
         return {
@@ -508,7 +513,7 @@ async function previewGatewaySpawnEnv(agentId, { envRequired = [], cmd, args = [
     const ready = Boolean(model)
         && missingKeys.length === 0
         && Boolean(routerUrl)
-        && gateway.running;
+        && (gateway.running || Boolean(externalGatewayUrl));
 
     return {
         mode,
@@ -530,6 +535,7 @@ async function previewGatewaySpawnEnv(agentId, { envRequired = [], cmd, args = [
 }
 
 module.exports = {
+    GATEWAY_MANAGED_ENV_KEYS,
     getLlmAuthMode,
     resolveAgentAuthMode,
     getUserSecrets,

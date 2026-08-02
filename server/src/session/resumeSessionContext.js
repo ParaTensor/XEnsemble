@@ -1,6 +1,7 @@
 const { eq } = require('drizzle-orm');
 const { getAgentResume, getAgentResumeLevel } = require('../agents/agentResume');
 const { resolveSpawnEnv } = require('../agents/agentEnv');
+const { applyProjectGitEnv } = require('../agents/projectGitEnv');
 
 async function buildResumeSessionContext({
     requestUser,
@@ -69,11 +70,7 @@ async function buildResumeSessionContext({
         throw error;
     }
 
-    if (project.repoProvider === 'github') {
-        resolvedSpawnEnv.env.XENSEMBLE_GIT_BRANCH = project.currentBranch || '';
-        resolvedSpawnEnv.env.XENSEMBLE_GIT_BASE_BRANCH = project.repoDefaultBranch || '';
-        resolvedSpawnEnv.env.XENSEMBLE_REPO_URL = project.githubFullName || '';
-    }
+    applyProjectGitEnv(resolvedSpawnEnv.env, project);
 
     return {
         project,

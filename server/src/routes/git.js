@@ -16,7 +16,8 @@ const { GitOperationService } = require('../git/GitOperationService');
 const { listProviders, getProvider, hasProvider } = require('../git/providers/registry');
 const { projectDir } = require('../workspace');
 const policy = require('../auth/PolicyService');
-const { scaffoldXEnsemble } = require('../repositories/RepositoryEnvironmentService');
+const { scaffoldXEnsembleWithFs } = require('../repositories/RepositoryEnvironmentService');
+const { getRuntime } = require('../runtime/registry');
 
 function escapeHtml(str) {
     return String(str)
@@ -45,7 +46,18 @@ function callbackHtml(success, message, provider) {
 </head><body class="${success ? '' : 'error'}"><div class="card"><h1>${title}</h1><p>${body}</p></div>
 <script>
 (function(){
-  try{if(window.opener&&!window.opener.closed){window.opener.postMessage(${payload},'*');}}catch(e){}
+  try{
+    if(window.opener&&!window.opener.closed){
+      var origins=${JSON.stringify(
+        (process.env.ALLOWED_ORIGINS || '')
+          .split(',')
+          .map((s) => s.trim())
+          .filter(Boolean),
+      )};
+      if(!origins.length){window.opener.postMessage(${payload},'*');}
+      else{for(var i=0;i<origins.length;i++){try{window.opener.postMessage(${payload},origins[i]);}catch(e){}}}
+    }
+  }catch(e){}
   if(${success ? 'true' : 'false'}){setTimeout(function(){window.close();},1200);}
 })();
 </script>
@@ -62,6 +74,7 @@ function registerGitRoutes(fastify) {
     const connectionService = new GitConnectionService();
     const mergeRequestService = new MergeRequestService();
     const gitOperationService = new GitOperationService();
+    const runtime = getRuntime();
 
     // ── Provider discovery ──
 
@@ -324,9 +337,10 @@ function registerGitRoutes(fastify) {
                     branchSha = createResult.sha;
                 }
 
-                await scaffoldXEnsemble(serverPath, {
+                await scaffoldXEnsembleWithFs(runtime.fs, ready.workspacePath, {
                     baseBranch,
                     autoCommitOnExit: true,
+                    runtimeRef: ready.runtime?.runtimeRef,
                 });
 
                 await db.update(schema.projects)

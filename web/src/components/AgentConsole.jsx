@@ -5,10 +5,15 @@ import { Unicode11Addon } from '@xterm/addon-unicode11';
 import { WebglAddon } from '@xterm/addon-webgl';
 import '@xterm/xterm/css/xterm.css';
 
-import { getAccessToken, getWsUrl, apiFetch } from '../lib/api';
+import { getAccessToken, getWsUrl, apiFetch, refreshAccessToken } from '../lib/api';
 import { useTerminalTheme } from '../hooks/useTerminalTheme.jsx';
 import { usePreview, PreviewControlGroup } from './PreviewPanel';
 import { Loader2 } from 'lucide-react';
+import {
+  createTerminalReconnectState,
+  isTerminalAuthFailure,
+  refreshTokenForTerminalFailure,
+} from '../../../shared/terminalReconnect.mjs';
 
 const FALLBACK_XTERM_THEME = {
   background: '#09090b',
@@ -323,28 +328,28 @@ function AgentConsole({
         }
       })();
     } else {
-      let reconnectAttempts = 0;
+      const reconnectState = createTerminalReconnectState();
       const MAX_RECONNECTS = 5;
 
       const scheduleReconnect = (reason) => {
         if (disposed || serverEnded) return;
-        if (reconnectAttempts >= MAX_RECONNECTS) {
+        const next = reconnectState.nextReconnect();
+        if (next.exhausted) {
           terminal.write(`\r\n\x1b[31m[System] Terminal could not be restored${reason ? ` (${reason})` : ''}. Click Restart to retry.\x1b[0m\r\n`);
           setEnded(true);
           return;
         }
-        reconnectAttempts += 1;
-        const delay = Math.min(500 * reconnectAttempts, 3000);
-        terminal.write(`\r\n\x1b[33m[System] Reconnecting terminal… (${reconnectAttempts}/${MAX_RECONNECTS})\x1b[0m\r\n`);
+        terminal.write(`\r\n\x1b[33m[System] Reconnecting terminal… (${next.attempt}/${MAX_RECONNECTS})\x1b[0m\r\n`);
         setConnected(false);
         reconnectTimer = setTimeout(() => {
+          reconnectTimer = null;
           if (!disposed) connect();
-        }, delay);
+        }, next.delayMs);
       };
 
-      var connect = () => {
+      var connect = async () => {
         try {
-          if (reconnectAttempts === 0) showOverlay();
+          if (reconnectState.snapshot().attempts === 0) showOverlay();
           // On first connect (session switch/initial load), use after=0 to get
           // the tail replay. On reconnect (WS drop), use cached seq for delta.
           const isFirstConnect = firstConnectRef.current;
@@ -352,6 +357,8 @@ function AgentConsole({
           const cachedSeq = isFirstConnect ? 0 : getCachedSeq(sessionId);
           const ws = new WebSocket(getWsUrl(sessionId, getAccessToken(), cachedSeq));
           wsRef.current = ws;
+          let failureHandled = false;
+          let authenticated = false;
           let replayDone = false;
           let writeBuffer = '';
           let pendingSeq = null;
@@ -459,13 +466,29 @@ function AgentConsole({
             });
           };
 
-          ws.onopen = () => {
-            if (disposed) return;
+          const markAuthenticated = () => {
+            if (authenticated || disposed || wsRef.current !== ws) return;
+            authenticated = true;
+            reconnectState.authenticationSucceeded();
             connectedRef.current = true;
-            reconnectAttempts = 0;
             setConnected(true);
             setEnded(false);
             onSessionConnectedRef.current?.(sessionId);
+          };
+
+          const handleConnectionFailure = async (reason, failure = {}) => {
+            if (failureHandled || disposed || serverEnded || wsRef.current !== ws) return;
+            failureHandled = true;
+            connectedRef.current = false;
+            await refreshTokenForTerminalFailure(failure, refreshAccessToken);
+            if (!disposed && !serverEnded && wsRef.current === ws) {
+              scheduleReconnect(reason);
+            }
+          };
+
+          ws.onopen = () => {
+            if (disposed) return;
+            reconnectState.socketOpened();
             requestAnimationFrame(() => {
               requestAnimationFrame(() => {
                 if (!disposed) fitTerminal(true);
@@ -477,6 +500,10 @@ function AgentConsole({
           ws.onmessage = (event) => {
             if (disposed) return;
             const msg = parseMessage(event.data);
+            if (msg.type === 'ready') {
+              markAuthenticated();
+              return;
+            }
             if (msg.type === 'output') {
               if (msg.seq != null) pendingSeq = msg.seq;
               writeBuffer += msg.data;
@@ -489,8 +516,9 @@ function AgentConsole({
               if (writeRafId !== null) { cancelAnimationFrame(writeRafId); clearTimeout(writeRafId); writeRafId = null; flushWriteBuffer(); }
               hideOverlay();
               connectedRef.current = false;
+              const failure = { message: msg.data };
+              void handleConnectionFailure(msg.data || 'error', failure);
               try { ws.close(); } catch { /* ignore */ }
-              scheduleReconnect(msg.data || 'error');
               return;
             }
             if (msg.type === 'exit') {
@@ -518,8 +546,13 @@ function AgentConsole({
             hideOverlay();
             const wasConnected = connectedRef.current;
             connectedRef.current = false;
+            const failure = { code: event.code, reason: event.reason };
+            if (isTerminalAuthFailure(failure)) {
+              void handleConnectionFailure(event.reason || 'Invalid access token', failure);
+              return;
+            }
             if (event.wasClean) return;
-            scheduleReconnect(wasConnected ? 'disconnected' : 'connection failed');
+            void handleConnectionFailure(wasConnected ? 'disconnected' : 'connection failed', failure);
           };
         } catch (error) {
           if (!disposed) {

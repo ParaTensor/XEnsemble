@@ -2,6 +2,9 @@ const { getRuntime } = require('../runtime/registry');
 const { ensureProjectRuntime } = require('../runtime/RuntimeService');
 const { stripCredentialFromUrl, buildCredentialEnv } = require('./gitCredentialHelper');
 const workspace = require('../workspace');
+const { assertRepoRelativePath, assertGitRef, assertGitBranch } = require('../git/gitValidation');
+const { withProjectGitLock } = require('../git/gitMutationLock');
+const { limitDiffText, limitFileSide } = require('../git/diffUtils');
 
 class GitError extends Error {
     constructor(message, code) {
@@ -16,8 +19,8 @@ async function defaultGetToken(project) {
     if (!provider || provider === 'none' || provider === 'local_git') {
         return undefined;
     }
-    const { GitConnectionService } = require('./GitConnectionService');
-    return new GitConnectionService().getDecryptedToken(project.userId);
+    const { GitConnectionService } = require('../git/GitConnectionService');
+    return new GitConnectionService().getDecryptedToken(project.userId, provider);
 }
 
 class GitOperationService {
@@ -77,6 +80,10 @@ class GitOperationService {
         return this.getToken(project);
     }
 
+    _mutate(project, fn) {
+        return withProjectGitLock(project?.id, fn);
+    }
+
     async _revParse(project, ref) {
         const { stdout } = await this._execGit(project, ['rev-parse', ref]);
         return stdout.trim();
@@ -125,34 +132,41 @@ class GitOperationService {
     }
 
     async createBranch(project, branchName, baseBranch) {
-        const args = ['checkout', '-b', branchName];
-        if (baseBranch) {
-            args.push(baseBranch);
-        }
-        await this._execGit(project, args);
-        const sha = await this._revParse(project, 'HEAD');
-        return { branch: branchName, sha };
+        return this._mutate(project, async () => {
+            const args = ['checkout', '-b', assertGitBranch(branchName)];
+            if (baseBranch) {
+                args.push(assertGitRef(baseBranch));
+            }
+            await this._execGit(project, args);
+            const sha = await this._revParse(project, 'HEAD');
+            return { branch: branchName, sha };
+        });
     }
 
     async switchBranch(project, branchName) {
-        try {
-            await this._execGit(project, ['checkout', branchName]);
-        } catch (err) {
-            const remoteRef = `origin/${branchName}`;
+        return this._mutate(project, async () => {
+            const safeBranch = assertGitBranch(branchName);
             try {
-                await this._execGit(project, ['rev-parse', '--verify', '--quiet', remoteRef]);
-                await this._execGit(project, ['checkout', '-b', branchName, remoteRef]);
-            } catch {
-                throw err;
+                await this._execGit(project, ['checkout', safeBranch]);
+            } catch (err) {
+                const remoteRef = `origin/${safeBranch}`;
+                try {
+                    await this._execGit(project, ['rev-parse', '--verify', '--quiet', remoteRef]);
+                    await this._execGit(project, ['checkout', '-b', safeBranch, remoteRef]);
+                } catch {
+                    throw err;
+                }
             }
-        }
 
-        const sha = await this._revParse(project, 'HEAD');
-        return { branch: branchName, sha };
+            const sha = await this._revParse(project, 'HEAD');
+            return { branch: branchName, sha };
+        });
     }
 
     async deleteBranch(project, branchName) {
-        await this._execGit(project, ['branch', '-D', branchName]);
+        return this._mutate(project, async () => {
+            await this._execGit(project, ['branch', '-D', assertGitBranch(branchName)]);
+        });
     }
 
     async listBranches(project) {
@@ -346,80 +360,99 @@ class GitOperationService {
     }
 
     async commitAll(project, message) {
-        await this._execGit(project, ['add', '-A']);
-        await this._execGit(project, ['commit', '-m', message]);
-        const sha = await this._revParse(project, 'HEAD');
-        return { sha };
+        return this._mutate(project, async () => {
+            await this._execGit(project, ['add', '-A']);
+            await this._execGit(project, ['commit', '-m', message]);
+            const sha = await this._revParse(project, 'HEAD');
+            return { sha };
+        });
     }
 
     async commitStaged(project, message, author = {}) {
-        const args = ['commit', '-m', message];
-        if (author.name) {
-            args.unshift('-c', `user.name=${author.name}`);
-        }
-        if (author.email) {
-            args.unshift('-c', `user.email=${author.email}`);
-        }
-        await this._execGit(project, args);
-        const sha = await this._revParse(project, 'HEAD');
-        return { sha };
+        return this._mutate(project, async () => {
+            const args = ['commit', '-m', message];
+            if (author.name) {
+                args.unshift('-c', `user.name=${author.name}`);
+            }
+            if (author.email) {
+                args.unshift('-c', `user.email=${author.email}`);
+            }
+            await this._execGit(project, args);
+            const sha = await this._revParse(project, 'HEAD');
+            return { sha };
+        });
     }
 
     async stageFiles(project, filePaths) {
-        await this._execGit(project, ['add', ...filePaths]);
+        return this._mutate(project, async () => {
+            await this._execGit(project, ['add', '--', ...filePaths.map(assertRepoRelativePath)]);
+        });
     }
 
     async unstageFiles(project, filePaths) {
-        await this._execGit(project, ['reset', 'HEAD', '--', ...filePaths]);
+        return this._mutate(project, async () => {
+            await this._execGit(project, ['reset', 'HEAD', '--', ...filePaths.map(assertRepoRelativePath)]);
+        });
     }
 
     async pushBranch(project, branchName, { force = false } = {}) {
-        const args = ['push', '-u', 'origin', branchName];
-        if (force) {
-            args.push('--force');
-        }
-        await this._execGit(project, args);
-        const sha = await this._revParse(project, 'HEAD');
-        return { sha };
+        return this._mutate(project, async () => {
+            const args = ['push', '-u', 'origin', assertGitBranch(branchName)];
+            if (force) {
+                args.push('--force');
+            }
+            await this._execGit(project, args);
+            const sha = await this._revParse(project, 'HEAD');
+            return { sha };
+        });
     }
 
     async getDiff(project, { base, head } = {}) {
         const args = ['diff'];
         if (base && head) {
-            args.push(base, head);
+            args.push(assertGitRef(base), assertGitRef(head));
         } else if (base) {
-            args.push(base);
+            args.push(assertGitRef(base));
         }
         const { stdout } = await this._execGit(project, args);
-        return stdout;
+        return limitDiffText(stdout);
     }
 
     async getFileDiff(project, filePath) {
-        const { stdout } = await this._execGit(project, ['diff', 'HEAD', '--', filePath]).catch(() => ({ stdout: '' }));
-        if (stdout.trim()) return stdout;
+        const safePath = assertRepoRelativePath(filePath);
+        const { stdout } = await this._execGit(project, ['diff', 'HEAD', '--', safePath]).catch(() => ({ stdout: '' }));
+        if (stdout.trim()) {
+            return limitDiffText(stdout).diff;
+        }
 
-        const tracked = await this._execGit(project, ['ls-files', '--error-unmatch', filePath]).then(() => true).catch(() => false);
+        const tracked = await this._execGit(project, ['ls-files', '--error-unmatch', '--', safePath]).then(() => true).catch(() => false);
         if (tracked) return '';
 
         const ready = await this.ensureProjectRuntime(project);
         const runtimeRef = ready.runtime ? ready.runtime.runtimeRef : undefined;
 
-        const isDir = await this.fs.fsStat(ready.workspacePath, filePath, { runtimeRef })
+        const isDir = await this.fs.fsStat(ready.workspacePath, safePath, { runtimeRef })
             .then((s) => s && s.type === 'directory')
             .catch(() => false);
         if (isDir) {
             return '(Contains a nested git repository)';
         }
 
-        const content = await this.fs.fsRead(ready.workspacePath, filePath, {
+        const content = await this.fs.fsRead(ready.workspacePath, safePath, {
             runtimeRef,
             encoding: 'utf8',
         }).catch(() => '');
-        return content.split('\n').map((l) => '+' + l).join('\n');
+        const side = limitFileSide(content);
+        if (side.binary) return '[binary file omitted]';
+        const expanded = side.content.split('\n').map((l) => '+' + l).join('\n');
+        return side.truncated
+            ? `${expanded}\n\n[diff truncated: omitted ${side.omittedBytes} bytes]\n`
+            : expanded;
     }
 
     async getFileContentAtRef(project, filePath, ref = 'HEAD') {
-        const { stdout } = await this._execGit(project, ['show', `${ref}:${filePath}`]);
+        const safePath = assertRepoRelativePath(filePath);
+        const { stdout } = await this._execGit(project, ['show', `${assertGitRef(ref)}:${safePath}`]);
         return stdout;
     }
 
@@ -430,27 +463,51 @@ class GitOperationService {
      * 新增文件（HEAD 无记录）或已删除文件（工作区无文件）时对应一侧返回空串。
      */
     async getFileDiffView(project, filePath, ref = 'HEAD') {
+        const safePath = assertRepoRelativePath(filePath);
+        const safeRef = assertGitRef(ref);
         const ready = await this.ensureProjectRuntime(project);
         const workspacePath = ready.workspacePath;
         const runtimeRef = ready.runtime ? ready.runtime.runtimeRef : undefined;
         const fsAdapter = this.fs;
 
         const [headResult, currentResult] = await Promise.allSettled([
-            this._execGit(project, ['show', `${ref}:${filePath}`]),
-            fsAdapter.fsRead(workspacePath, filePath, { runtimeRef, encoding: 'utf8' }),
+            this._execGit(project, ['show', `${safeRef}:${safePath}`]),
+            fsAdapter.fsRead(workspacePath, safePath, { runtimeRef, encoding: 'utf8' }),
         ]);
 
-        const original = headResult.status === 'fulfilled' ? headResult.value.stdout : '';
-        const modified = currentResult.status === 'fulfilled' ? currentResult.value : '';
+        const originalRaw = headResult.status === 'fulfilled' ? headResult.value.stdout : '';
+        const modifiedRaw = currentResult.status === 'fulfilled' ? currentResult.value : '';
+        const originalSide = limitFileSide(originalRaw);
+        const modifiedSide = limitFileSide(modifiedRaw);
 
-        return { original, modified };
+        return {
+            original: originalSide.binary ? '' : originalSide.content,
+            modified: modifiedSide.binary ? '' : modifiedSide.content,
+            truncated: originalSide.truncated || modifiedSide.truncated,
+            binary: originalSide.binary || modifiedSide.binary,
+        };
     }
 
     async mergeBranch(project, fromBranch, toBranch) {
-        await this.switchBranch(project, toBranch);
-        await this._execGit(project, ['merge', fromBranch, '-m', `Merge ${fromBranch} into ${toBranch}`]);
-        const sha = await this._revParse(project, 'HEAD');
-        return { sha };
+        return this._mutate(project, async () => {
+            // switchBranch also locks; nested same-key lock would deadlock, so call inner git ops directly.
+            const safeTo = assertGitBranch(toBranch);
+            const safeFrom = assertGitBranch(fromBranch);
+            try {
+                await this._execGit(project, ['checkout', safeTo]);
+            } catch (err) {
+                const remoteRef = `origin/${safeTo}`;
+                try {
+                    await this._execGit(project, ['rev-parse', '--verify', '--quiet', remoteRef]);
+                    await this._execGit(project, ['checkout', '-b', safeTo, remoteRef]);
+                } catch {
+                    throw err;
+                }
+            }
+            await this._execGit(project, ['merge', safeFrom, '-m', `Merge ${safeFrom} into ${safeTo}`]);
+            const sha = await this._revParse(project, 'HEAD');
+            return { sha };
+        });
     }
 
     async getLog(project, { branch, limit = 20 } = {}) {

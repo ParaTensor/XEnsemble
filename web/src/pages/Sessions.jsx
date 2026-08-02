@@ -706,6 +706,8 @@ export default React.forwardRef(function Sessions({
         original: data.original || '',
         modified: data.modified || '',
         loading: false,
+        binary: Boolean(data.binary),
+        truncated: Boolean(data.truncated),
       });
     } catch (err) {
       setGitDiffView(null);

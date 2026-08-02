@@ -14,6 +14,20 @@ function hasBinding(content, agentId, providerName) {
     return servicePattern.test(content);
 }
 
+function removeBindingsForService(content, agentId) {
+    const safeId = String(agentId || '').replace(/"/g, '');
+    if (!safeId) return content;
+    // Remove each [[bindings]] table whose service_id matches the agent.
+    const bindingBlock = /(?:^|\n)\[\[bindings\]\][^\[]*/g;
+    return content.replace(bindingBlock, (block) => {
+        const serviceMatch = block.match(/service_id\s*=\s*"([^"]+)"/);
+        if (serviceMatch && serviceMatch[1] === safeId) {
+            return block.startsWith('\n') ? '\n' : '';
+        }
+        return block;
+    }).replace(/\n{3,}/g, '\n\n');
+}
+
 function appendAgentService(content, agentId, providerName) {
     const safeId = agentId.replace(/"/g, '');
     const safeProvider = providerName.replace(/"/g, '');
@@ -41,8 +55,19 @@ function appendAgentService(content, agentId, providerName) {
     return `${content.replace(/\s*$/, '')}\n${blocks.join('\n')}\n`;
 }
 
+/**
+ * Ensure the agent has exactly one active provider binding (replace, not append).
+ * Switching provider A → B removes the stale A binding.
+ */
+function upsertAgentServiceBinding(content, agentId, providerName) {
+    const withoutStale = removeBindingsForService(content, agentId);
+    return appendAgentService(withoutStale, agentId, providerName);
+}
+
 module.exports = {
     hasServiceBlock,
     hasBinding,
+    removeBindingsForService,
     appendAgentService,
+    upsertAgentServiceBinding,
 };

@@ -18,7 +18,15 @@ function inferLanguage(path) {
   return LANG_MAP[ext] || 'plaintext';
 }
 
-export default function DiffViewer({ original, modified, path, loading, onClose }) {
+export default function DiffViewer({
+  original,
+  modified,
+  path,
+  loading,
+  onClose,
+  binary = false,
+  truncated = false,
+}) {
   const displayName = path ? path.split('/').pop() : '';
   const language = inferLanguage(path);
   const [diffReady, setDiffReady] = useState(false);
@@ -74,11 +82,11 @@ export default function DiffViewer({ original, modified, path, loading, onClose 
     );
   }
 
-  const noDiff = original === modified;
+  const noDiff = !binary && original === modified;
   // Show loading overlay until Monaco's async diff computation completes.
   // This ensures the file text and diff markers (red/green) appear together
   // instead of text first, markers 1-2s later.
-  const showOverlay = !noDiff && !diffReady;
+  const showOverlay = !binary && !noDiff && !diffReady;
 
   return (
     <div className="flex flex-col h-full w-full">
@@ -92,7 +100,11 @@ export default function DiffViewer({ original, modified, path, loading, onClose 
           <X className="h-4 w-4" />
         </button>
       </div>
-      {noDiff ? (
+      {binary ? (
+        <div className="flex-1 flex items-center justify-center text-sm text-zinc-400" data-testid="diff-binary">
+          二进制文件，无法显示文本对比
+        </div>
+      ) : noDiff ? (
         <div className="flex-1 flex items-center justify-center text-sm text-zinc-400">
           无差异
         </div>
@@ -119,6 +131,11 @@ export default function DiffViewer({ original, modified, path, loading, onClose 
           {showOverlay && (
             <div className="absolute inset-0 flex items-center justify-center bg-white/80 z-10" data-testid="diff-computing">
               <Loader2 className="animate-spin h-6 w-6 text-zinc-400" />
+            </div>
+          )}
+          {truncated && (
+            <div className="absolute bottom-3 left-3 right-3 text-xs text-amber-700 bg-amber-50 border border-amber-200 px-3 py-2" data-testid="diff-truncated">
+              内容过大，已截断显示
             </div>
           )}
         </div>

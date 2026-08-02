@@ -16,6 +16,7 @@ let registerLlmProxy;
 
 const TEST_SESSION_ID = 'sess_proxy_models_test';
 const TEST_AGENT_ID = 'proxy-models-test';
+const TEST_PROJECT_ID = 'proj_proxy_models_test';
 
 const GATEWAY_MODELS = {
     object: 'list',
@@ -31,6 +32,7 @@ describe('LLM proxy /v1/models', () => {
     let originalConfig;
     let originalEnsureRunning;
     let originalEnsureSecrets;
+    let insertedAgent = false;
     const received = [];
 
     let originalUpstreamUrl;
@@ -85,6 +87,25 @@ describe('LLM proxy /v1/models', () => {
                 createdAt: Date.now(),
             });
         }
+        const agentRows = await db.select().from(schema.agents).where(eq(schema.agents.id, TEST_AGENT_ID));
+        if (agentRows.length === 0) {
+            insertedAgent = true;
+            await db.insert(schema.agents).values({
+                id: TEST_AGENT_ID,
+                name: 'Proxy Models Test',
+                cmd: 'proxy-models-test',
+                args: '[]',
+                envRequired: '[]',
+            });
+        }
+        await db.delete(schema.projects).where(eq(schema.projects.id, TEST_PROJECT_ID));
+        await db.insert(schema.projects).values({
+            id: TEST_PROJECT_ID,
+            userId: testUserId,
+            name: 'Proxy Models Project',
+            serverPath: '/tmp',
+            createdAt: Date.now(),
+        });
 
         const cfgRows = await db
             .select()
@@ -103,6 +124,7 @@ describe('LLM proxy /v1/models', () => {
         await db.insert(schema.sessions).values({
             id: TEST_SESSION_ID,
             userId: testUserId,
+            projectId: TEST_PROJECT_ID,
             agentId: TEST_AGENT_ID,
             cwd: '/tmp',
             status: 'running',
@@ -126,6 +148,10 @@ describe('LLM proxy /v1/models', () => {
             process.env.LLM_GATEWAY_UPSTREAM_URL = originalUpstreamUrl;
         }
         await db.delete(schema.sessions).where(eq(schema.sessions.id, TEST_SESSION_ID));
+        await db.delete(schema.projects).where(eq(schema.projects.id, TEST_PROJECT_ID));
+        if (insertedAgent) {
+            await db.delete(schema.agents).where(eq(schema.agents.id, TEST_AGENT_ID));
+        }
         const cfgRows = await db
             .select()
             .from(schema.platformSettings)
@@ -145,7 +171,7 @@ describe('LLM proxy /v1/models', () => {
         const token = issueSessionToken({
             sessionId: TEST_SESSION_ID,
             userId: testUserId,
-            projectId: 'proj_test',
+            projectId: TEST_PROJECT_ID,
             agentId: TEST_AGENT_ID,
             role: 'admin',
         });

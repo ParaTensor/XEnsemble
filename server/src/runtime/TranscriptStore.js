@@ -225,13 +225,9 @@ class TranscriptStore {
         const state = this._state(streamRef);
         if (!state) return 0;
 
-        if (!state.exited || state.exitSeq == null) return 0;
-
         let cursor = 0;
         let sawOut = false;
-        for (let i = 0; i < state.frames.length; i += 1) {
-            const frame = state.frames[i];
-            if (frame.seq <= (state.exitSeq || 0)) continue;
+        for (const frame of state.frames) {
             if (frame.kind !== 'out') continue;
             if (!Number.isInteger(frame.rseq) || frame.rseq < 0) {
                 return null;

@@ -11,7 +11,8 @@
     "build:web": "cd web && npm run build",
     "build:gateway": "cd gateway && cargo build --release",
     "build:agent-images": "bash boxlite/build-images.sh",
-    "build:boxlite-images": "npm run build:agent-images"
+    "build:boxlite-images": "npm run build:agent-images",
+    "test:terminal-reconnect": "node --test shared/terminalReconnect.test.mjs"
   },
   "devDependencies": {
     "concurrently": "^8.2.2",

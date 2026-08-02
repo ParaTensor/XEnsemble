@@ -6,6 +6,8 @@ const { resolveGatewayUpstreamUrl } = require('./gatewayUpstream');
 const serviceRouter = require('./serviceRouter');
 const { checkLlmRequestQuota } = require('./quota');
 const { recordEvent } = require('../events/recordEvent');
+const { assertActiveUser } = require('../auth/assertActiveUser');
+const policy = require('../auth/PolicyService');
 const { db } = require('../db/index');
 const schema = require('../db/schema');
 const { eq } = require('drizzle-orm');
@@ -59,12 +61,38 @@ function normalizeUpstreamPath(path) {
     return qs ? `${normalized}?${qs}` : normalized;
 }
 
+function pathnameOnly(path) {
+    return String(path || '').split('?')[0] || '/';
+}
+
+/** Read-only discovery paths that must not consume inference quota. */
+function isQuotaExemptPath(path) {
+    const pathname = pathnameOnly(path);
+    return pathname === '/health'
+        || pathname === '/v1/models'
+        || pathname.startsWith('/v1/models/');
+}
+
 async function assertSessionAuthorized(claims) {
     const rows = await db.select().from(schema.sessions).where(eq(schema.sessions.id, claims.sid));
     if (rows.length === 0) return { ok: false, status: 401, error: 'Session not found' };
     const row = rows[0];
     if (row.userId !== claims.uid) return { ok: false, status: 403, error: 'Forbidden' };
     if (row.status !== 'running') return { ok: false, status: 401, error: 'Session is not active' };
+    if (!claims.aid || row.agentId !== claims.aid) {
+        return { ok: false, status: 403, error: 'Agent mismatch' };
+    }
+    if (claims.pid && row.projectId !== claims.pid) {
+        return { ok: false, status: 403, error: 'Project mismatch' };
+    }
+    const activeUser = await assertActiveUser({ id: claims.uid });
+    if (activeUser.error) {
+        return { ok: false, status: activeUser.status, error: activeUser.error };
+    }
+    const agentAccess = await policy.checkAgentAccess(claims.uid, row.agentId, claims.role);
+    if (!agentAccess.ok) {
+        return { ok: false, status: agentAccess.status || 403, error: agentAccess.error || 'Agent access denied' };
+    }
     return { ok: true, session: row };
 }
 
@@ -83,6 +111,19 @@ function forwardToGateway(request, reply, { targetBaseUrl, gatewayKey, path }) {
         reply.hijack();
         request.raw.url = path;
         request.raw.headers.authorization = `Bearer ${gatewayKey}`;
+        // UniGateway prefers x-api-key over Authorization. Drop the session
+        // token header so the upstream key is the one that wins.
+        delete request.raw.headers['x-api-key'];
+        delete request.raw.headers['X-Api-Key'];
+
+        let statusCode = null;
+        const onProxyRes = (proxyRes, req) => {
+            if (req !== request.raw) return;
+            statusCode = proxyRes.statusCode || null;
+            proxy.off('proxyRes', onProxyRes);
+        };
+        proxy.on('proxyRes', onProxyRes);
+
         const options = { target: targetBaseUrl, changeOrigin: true };
         // Fastify's content-type parser already drained request.raw, so hand the
         // buffered body to http-proxy explicitly; otherwise the upstream waits
@@ -95,8 +136,9 @@ function forwardToGateway(request, reply, { targetBaseUrl, gatewayKey, path }) {
             options.buffer = bodyStream;
         }
         proxy.web(request.raw, reply.raw, options, (err) => {
+            proxy.off('proxyRes', onProxyRes);
             if (err) reject(err);
-            else resolve();
+            else resolve({ statusCode });
         });
     });
 }
@@ -112,15 +154,20 @@ async function proxyLlmRequest(request, reply) {
         return reply.code(401).send({ error: 'Invalid or expired session token' });
     }
 
-    const [authz, quota, gateway] = await Promise.all([
-        assertSessionAuthorized(claims),
-        checkLlmRequestQuota(claims.uid, claims.role),
-        resolveGatewayTarget(request.log),
-    ]);
-
+    const authz = await assertSessionAuthorized(claims);
     if (!authz.ok) {
         return reply.code(authz.status).send({ error: authz.error });
     }
+
+    const path = stripLlmPrefix(request.url);
+    const quotaExempt = isQuotaExemptPath(path);
+
+    const gatewayPromise = resolveGatewayTarget(request.log);
+    const quotaPromise = quotaExempt
+        ? Promise.resolve({ ok: true })
+        : checkLlmRequestQuota(claims.uid, claims.role);
+
+    const [quota, gateway] = await Promise.all([quotaPromise, gatewayPromise]);
 
     if (!quota.ok) {
         return reply.code(quota.status).send({
@@ -130,7 +177,6 @@ async function proxyLlmRequest(request, reply) {
         });
     }
 
-    const path = stripLlmPrefix(request.url);
     if (gateway.error) {
         return reply.code(gateway.status).send({ error: gateway.error });
     }
@@ -144,18 +190,27 @@ async function proxyLlmRequest(request, reply) {
             model: claims.model || null,
             path,
             method: request.method,
+            quota_exempt: quotaExempt,
         },
         '[llm-proxy] forwarding',
     );
 
+    let forwardResult = null;
+    let forwardError = null;
     try {
         const agentGatewayKey = await serviceRouter.getAgentGatewayKey(claims.aid, request.log);
-        await forwardToGateway(request, reply, {
+        forwardResult = await forwardToGateway(request, reply, {
             targetBaseUrl: gateway.baseUrl,
             gatewayKey: agentGatewayKey,
             path,
         });
-
+    } catch (err) {
+        forwardError = err;
+        request.log.error(err, '[llm-proxy] forward failed');
+        if (!reply.sent && !reply.raw.writableEnded) {
+            return reply.code(502).send({ error: 'LLM proxy error' });
+        }
+    } finally {
         recordEvent({
             userId: claims.uid,
             projectId: claims.pid,
@@ -166,14 +221,13 @@ async function proxyLlmRequest(request, reply) {
                 agent_id: claims.aid,
                 path,
                 method: request.method,
+                ok: !forwardError,
+                status_code: forwardResult?.statusCode ?? (forwardError ? 502 : null),
+                error: forwardError ? String(forwardError.message || forwardError) : null,
                 latency_ms: Date.now() - started,
+                quota_exempt: quotaExempt,
             },
         }).catch((err) => request.log.warn(err, '[llm-proxy] failed to record event'));
-    } catch (err) {
-        request.log.error(err, '[llm-proxy] forward failed');
-        if (!reply.sent) {
-            return reply.code(502).send({ error: 'LLM proxy error' });
-        }
     }
 }
 
@@ -199,4 +253,10 @@ async function registerLlmProxy(fastify) {
     });
 }
 
-module.exports = { registerLlmProxy, LLM_PROXY_PREFIX, stripLlmPrefix, normalizeUpstreamPath };
+module.exports = {
+    registerLlmProxy,
+    LLM_PROXY_PREFIX,
+    stripLlmPrefix,
+    normalizeUpstreamPath,
+    isQuotaExemptPath,
+};

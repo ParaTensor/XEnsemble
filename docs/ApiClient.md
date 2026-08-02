@@ -298,11 +298,13 @@ Web Console 默认 `auto`：先连 WS，约 4s 内未建立则自动切 HTTP。�
 ### 5.1 WebSocket
 
 ```
-ws://127.0.0.1:3888/ws/v1/terminal?sessionId=<session_id>     # 开发
-wss://xensemble.dev/ws/v1/terminal?sessionId=<session_id>     # 生产
+ws://127.0.0.1:3888/ws/v1/terminal?sessionId=<session_id>&access_token=<jwt>     # 开发
+wss://xensemble.dev/ws/v1/terminal?sessionId=<session_id>&access_token=<jwt>     # 生产
 ```
 
-- 无需在 WS 握手时传 JWT；通过 `sessionId` 关联已启动的 Session
+- WS 必须通过 query `access_token` 携带短期 Access Token，并通过 `sessionId` 关联已启动的 Session
+- TCP/HTTP upgrade 完成不代表应用鉴权成功；收到 `{"type":"ready"}` 后才可重置重连计数
+- Access Token 无效或过期时，服务端发送 `error` 并以 `4401` 关闭；客户端须先用 Refresh Token 换取新 Access Token，再发起有上限的重连
 - Session 不存在或已结束会收到 error 后关闭
 - 可选 `after=<seq>` 用于从终端 transcript 游标恢复；`output` / `exit` 下行会附带 `seq`
 
@@ -359,6 +361,7 @@ Content-Type: application/json
 
 | type | 字段 | 说明 |
 |------|------|------|
+| `ready` | — | WebSocket 应用鉴权及终端订阅已成功 |
 | `output` | `data`, `seq?` | PTY 输出（含 ANSI）；带 transcript 时附游标 |
 | `metrics` | `data` | `{ "cpu": 0.12, "memory": 45678912 }`，约 3s 一次 |
 | `error` | `data` | 错误说明；连接随后关闭 |

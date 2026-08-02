@@ -320,7 +320,17 @@ class BoxLiteExecAdapter extends ExecAdapter {
             throw new AgentSpawnError('BoxLite exec requires runtimeRef');
         }
         const working = options.cwd || '/workspace';
-        return this.client.execForResult(blinkName, String(cmd || 'sh'), Array.isArray(args) ? args : [], env || {}, working);
+        return this.client.execForResult(
+            blinkName,
+            String(cmd || 'sh'),
+            Array.isArray(args) ? args : [],
+            env || {},
+            working,
+            {
+                maxBuffer: options.maxBuffer,
+                timeoutMs: options.timeoutMs,
+            },
+        );
     }
 }
 
