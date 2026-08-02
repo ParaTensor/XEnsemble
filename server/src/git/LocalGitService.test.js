@@ -295,8 +295,28 @@ describe('LocalGitService (real git)', { skip: !hasGit() && 'git not available' 
     });
 
     it('ensureGitInit returns false for already initialized repo', async () => {
-        const wasInit = await service.ensureGitInit({ id: 'p1', userId: 'u1' });
-        assert.strictEqual(wasInit, false);
+        // local/boxlite ensureGitInit checks the host workspace path, not the
+        // mocked ensureProjectRuntime cwd used by getLog/getDiff above.
+        const workspace = require('../workspace');
+        const hostWs = workspace.createProjectDirectory('u1', 'p1');
+        const hostGitDir = path.join(hostWs, '.git');
+        const createdHostGit = !fs.existsSync(hostGitDir);
+        try {
+            if (createdHostGit) {
+                spawnSync('git', ['init', '-b', 'main'], { cwd: hostWs });
+            }
+            const wasInit = await service.ensureGitInit({
+                id: 'p1',
+                userId: 'u1',
+                repoProvider: 'local_git',
+                workspaceMode: 'git',
+            });
+            assert.strictEqual(wasInit, false);
+        } finally {
+            if (createdHostGit && fs.existsSync(hostGitDir)) {
+                fs.rmSync(hostGitDir, { recursive: true, force: true });
+            }
+        }
     });
 
     it('diffRange produces diff between HEAD and working tree', async () => {
