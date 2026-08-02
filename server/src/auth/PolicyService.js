@@ -48,7 +48,10 @@ async function getUsage(userId) {
             .where(eq(schema.projects.userId, userId)),
         db.select({ count: sql`count(*)` })
             .from(schema.sessions)
-            .where(and(eq(schema.sessions.userId, userId), eq(schema.sessions.status, 'running'))),
+            .where(and(
+                eq(schema.sessions.userId, userId),
+                inArray(schema.sessions.status, ['pending', 'running', 'idle']),
+            )),
         db.select({ count: sql`count(*)` })
             .from(schema.deployments)
             .where(and(

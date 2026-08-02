@@ -89,6 +89,28 @@ function makeFakeHandle(cmd, args, env, cwd) {
     };
 }
 
+function makeMemoryHandle(streamRef) {
+    const dataListeners = new Set();
+    const exitListeners = new Set();
+    return {
+        streamRef,
+        onData(cb) {
+            dataListeners.add(cb);
+            return { dispose: () => dataListeners.delete(cb) };
+        },
+        onExit(cb) {
+            exitListeners.add(cb);
+            return { dispose: () => exitListeners.delete(cb) };
+        },
+        write() {},
+        resize() {},
+        kill() {},
+        async getMetrics() {
+            return { cpu: 0, memory: 0 };
+        },
+    };
+}
+
 function waitForExit(sessionId) {
     return new Promise((resolve) => {
         const off = sessionManager.onExit(sessionId, () => {
@@ -276,6 +298,124 @@ test('resumeSession reuses state dir and continues transcript seqs', async () =>
             await db.delete(schema.users).where(eq(schema.users.id, userId));
         } catch (_) {
         }
+        cleanup(root);
+    }
+});
+
+test('resumeSession reattaches a live execution from the persisted transcript cursor', async () => {
+    const root = makeTempDir();
+    const projectDir = path.join(root, 'project');
+    const sessionId = `sess_reattach_${Date.now()}_${Math.random().toString(16).slice(2)}`;
+    const userId = `usr_reattach_${Date.now()}_${Math.random().toString(16).slice(2)}`;
+    const projectId = `proj_reattach_${Date.now()}_${Math.random().toString(16).slice(2)}`;
+    const stateDirRef = buildSessionStateDirRef(sessionId);
+    const { stateDirPath } = localFs.resolveStateDir(projectDir, sessionId);
+    const streamRef = `boxlite:p_${projectId}:exec_1`;
+    const now = Date.now();
+
+    fs.mkdirSync(stateDirPath, { recursive: true });
+    fs.mkdirSync(projectDir, { recursive: true });
+
+    try {
+        await db.insert(schema.users).values({
+            id: userId,
+            username: `reattach_${now}`,
+            passwordHash: 'hash',
+            role: 'user',
+            status: 'active',
+            createdAt: now,
+            updatedAt: now,
+        });
+        await db.insert(schema.projects).values({
+            id: projectId,
+            userId,
+            name: 'Reattach Project',
+            serverPath: projectDir,
+            createdAt: now,
+        });
+        await db.insert(schema.sessions).values({
+            id: sessionId,
+            userId,
+            projectId,
+            agentId: 'kimi-code',
+            cwd: projectDir,
+            streamRef,
+            stateDirRef,
+            recoverable: true,
+            status: 'idle',
+            createdAt: now,
+        });
+
+        transcriptStore.bindSession(sessionId, streamRef);
+        transcriptStore.append(streamRef, { kind: 'out', data: 'before disconnect\n', rseq: 2 });
+
+        let observedAfter = null;
+        const handle = makeMemoryHandle(streamRef);
+        const runtime = {
+            fs: localFs,
+            exec: {
+                async exec() {
+                    return { exitCode: 0, stdout: '', stderr: '' };
+                },
+                async spawn() {
+                    throw new Error('reattach should avoid spawning a replacement process');
+                },
+            },
+            provider: {
+                async attachSession(id, ref, options) {
+                    assert.equal(id, sessionId);
+                    assert.equal(ref, streamRef);
+                    observedAfter = options.after;
+                    return handle;
+                },
+            },
+        };
+
+        const result = await resumeSession({
+            db,
+            schema,
+            sessionManager,
+            runtime,
+            project: {
+                id: projectId,
+                userId,
+                serverPath: projectDir,
+                repoProvider: 'none',
+                workspaceMode: 'local',
+            },
+            session: (await db.select().from(schema.sessions).where(eq(schema.sessions.id, sessionId)))[0],
+            agentMeta: {
+                id: 'kimi-code',
+                name: 'Kimi Code',
+                cmd: 'kimi',
+                args: [],
+                env_required: [],
+            },
+            terminalThemeId: null,
+            resolvedSpawnEnv: { env: {}, spawn_env_preview: {} },
+            requestLog: { warn() {}, error() {} },
+            fastifyLog: { warn() {}, error() {} },
+            ensureProjectRuntime: async () => ({
+                runtime: { id: 'rt_reattach', runtimeRef: 'runtime_ref_reattach' },
+                workspacePath: projectDir,
+            }),
+            issueSessionToken: () => null,
+            agentGatewayConfig: {
+                async getAgentAuthMode() { return 'byok'; },
+                async getForAgent() { return null; },
+            },
+            requestUser: { id: userId, role: 'user' },
+        });
+
+        assert.equal(result.reattached, true);
+        assert.equal(result.status, 'running');
+        assert.equal(observedAfter, 2);
+        assert.equal(sessionManager.isAlive(sessionId), true);
+    } finally {
+        sessionManager.deleteSession(sessionId);
+        await db.delete(schema.sessions).where(eq(schema.sessions.id, sessionId));
+        await db.delete(schema.projects).where(eq(schema.projects.id, projectId));
+        await db.delete(schema.users).where(eq(schema.users.id, userId));
         cleanup(root);
     }
 });

@@ -1,6 +1,7 @@
 const { eq } = require('drizzle-orm');
 const { sessionStateDirExists, prepareHomeRedirect } = require('./stateDir');
 const { getAgentResume, getAgentResumeLevel, isSessionRecoverable, buildStateArgs } = require('../agents/agentResume');
+const transcriptStore = require('../runtime/TranscriptStore');
 
 const CRASH_UPTIME_MS = 30000;
 const CRASH_THRESHOLD = 3;

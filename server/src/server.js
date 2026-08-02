@@ -1543,9 +1543,12 @@ fastify.post('/api/v1/session/start', { preValidation: [fastify.authenticate] },
                             stateDirPath: sessionStateDir?.stateDirPath || null,
                         }).catch(() => {});
                     }
+                    const retryStateArgs = sessionStateDir?.stateDirPath
+                        ? buildStateArgs(resumeSpec, sessionStateDir.stateDirPath)
+                        : [];
                     handle = await runtime.exec.spawn(
                         agentMeta.cmd,
-                        [...agentMeta.args, ...resolveAgentSpawnArgs(agent_id, userSessionConfig.configFiles)],
+                        [...retryStateArgs, ...agentMeta.args, ...resolveAgentSpawnArgs(agent_id, userSessionConfig.configFiles)],
                         resolved.env,
                         spawnOpts,
                     );

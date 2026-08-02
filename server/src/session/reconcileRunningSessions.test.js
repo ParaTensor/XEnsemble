@@ -48,6 +48,29 @@ describe('reconcileRunningSessions', () => {
         assert.equal(rows[0].status, 'exited');
     });
 
+    it('demotes recoverable sessions with dead local pids to idle', async () => {
+        await db.insert(schema.sessions).values({
+            id: 'sess_recoverable_dead',
+            userId: 'u1',
+            agentId: 'kimi-code',
+            cwd: '/tmp',
+            status: 'running',
+            streamRef: 'local:pty:1234567890123_a1b2c3d4_99999998',
+            stateDirRef: '.xensemble/state/sess_recoverable_dead',
+            recoverable: true,
+            createdAt: Date.now(),
+        });
+
+        const result = await reconcileRunningSessions(db, schema, {
+            processExists: () => false,
+        });
+
+        assert.equal(result.reconciled, 1);
+        const rows = await db.select().from(schema.sessions)
+            .where(eq(schema.sessions.id, 'sess_recoverable_dead'));
+        assert.equal(rows[0].status, 'idle');
+    });
+
     it('keeps running sessions with alive local pids as running', async () => {
         await db.insert(schema.sessions).values({
             id: 'sess_alive',
