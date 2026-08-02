@@ -72,8 +72,11 @@ class SessionManager {
                 ? transcriptStore.append(session.transcriptRef, { kind: 'out', data, rseq })
                 : null;
             session.history += data;
-            if (session.history.length > 100000) {
-                session.history = session.history.slice(-100000);
+            // Keep only the most recent 32 KB in memory. The TranscriptStore
+            // is the durable source of truth; this buffer only serves title
+            // generation and short-lived initial-history loads.
+            if (session.history.length > 32768) {
+                session.history = session.history.slice(-32768);
             }
             if (session.outputListeners.size > 0) {
                 const payload = { data, seq: frame?.seq ?? null, rseq: frame?.rseq ?? (rseq ?? null), kind: 'out' };

@@ -1,0 +1,37 @@
+---
+description: 下拉框必须使用 SelectMenu / MultiSelectMenu 组件，禁止原生 HTML select
+alwaysApply: true
+---
+
+# 下拉框组件规范
+
+**禁止**使用原生 HTML `<select>` / `<option>` 实现下拉选择。
+
+## 必须使用
+
+| 场景 | 组件 | 路径 |
+|------|------|------|
+| 单选 | `SelectMenu` | `web/src/components/SelectMenu.jsx` |
+| 多选 | `MultiSelectMenu` | `web/src/components/MultiSelectMenu.jsx` |
+
+样式与交互以 `DESIGN.md`、`docs/Designs.md` 为准（触发器同 console input、Portal 下拉、`Check` 选中态等）。
+
+## 示例
+
+```jsx
+// ❌ BAD
+<select value={id} onChange={(e) => setId(e.target.value)}>
+  <option value="">Select…</option>
+  {items.map((i) => <option key={i.id} value={i.id}>{i.name}</option>)}
+</select>
+
+// ✅ GOOD
+<SelectMenu
+  value={id}
+  onChange={setId}
+  options={items.map((i) => ({ value: i.id, label: i.name }))}
+  placeholder="Select…"
+/>
+```
+
+多选场景用 `MultiSelectMenu`；需要搜索时用 `SelectMenu` 的 `searchable` prop。

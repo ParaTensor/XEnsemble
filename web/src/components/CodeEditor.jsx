@@ -1,8 +1,7 @@
 import { useCallback, useRef, useState, useEffect, useMemo } from 'react';
 import Editor, { DiffEditor } from '@monaco-editor/react';
-import { FileWarning, Loader2, Save, X } from 'lucide-react';
+import { FileWarning, Loader2, X } from 'lucide-react';
 import { consoleButtonFocusClass } from '@/lib/consoleTheme';
-import { buttonClass } from '@/lib/buttonStyles';
 import '@/lib/monacoSetup'; // Configure Monaco to load from local bundle, not CDN
 
 const LANG_MAP = {
@@ -99,19 +98,27 @@ export default function CodeEditor({ content, originalContent, path, readOnly: r
 
   const isLarge = content && content.length > LARGE_FILE_THRESHOLD;
 
+  const showToolbar = isReadOnly || isDirty || isLarge || saving;
+
   return (
     <div className="flex flex-col h-full w-full" onKeyDown={handleKeyDown}>
-      <div className="flex items-center justify-between px-4 py-2 border-b border-[#E8EAED] bg-[#FAFBFC]">
-        <div className="flex items-center gap-2 text-xs text-zinc-500">
-          {isReadOnly ? <span>只读</span> : isDirty ? <span className="text-[#C06C5D]">未保存</span> : <span>已保存</span>}
-          {isLarge && (
-            <span className="inline-flex items-center gap-1 text-amber-700">
-              <FileWarning className="h-3 w-3" />
-              文件较大（{Math.round(content.length / MEGABYTE)} MB），编辑可能卡顿
-            </span>
-          )}
-        </div>
-        <div className="flex items-center gap-1">
+      {showToolbar && (
+        <div className="flex items-center justify-between px-4 py-1.5 border-b border-[#E8EAED] bg-[#FAFBFC]">
+          <div className="flex items-center gap-2 text-xs text-zinc-500">
+            {isReadOnly ? <span>只读</span> : isDirty ? <span className="text-[#C06C5D]">未保存</span> : null}
+            {saving && (
+              <span className="inline-flex items-center gap-1">
+                <Loader2 className="h-3 w-3 animate-spin" />
+                保存中…
+              </span>
+            )}
+            {isLarge && (
+              <span className="inline-flex items-center gap-1 text-amber-700">
+                <FileWarning className="h-3 w-3" />
+                文件较大（{Math.round(content.length / MEGABYTE)} MB），编辑可能卡顿
+              </span>
+            )}
+          </div>
           {canEdit && isDirty && (
             <button
               onClick={() => setShowDiff((v) => !v)}
@@ -124,27 +131,8 @@ export default function CodeEditor({ content, originalContent, path, readOnly: r
               {showDiff ? '编辑' : '对比'}
             </button>
           )}
-          {canEdit && (
-            <button
-              onClick={() => onSave?.()}
-              disabled={saving || !isDirty}
-              className={buttonClass('primary', 'sm') + ' ' + consoleButtonFocusClass + (!isDirty ? ' opacity-50 pointer-events-none' : '')}
-            >
-              {saving ? (
-                <>
-                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                  保存中…
-                </>
-              ) : (
-                <>
-                  <Save className="h-3.5 w-3.5" />
-                  保存
-                </>
-              )}
-            </button>
-          )}
         </div>
-      </div>
+      )}
       <div className="flex-1 min-h-0">
         {showDiff && isDirty ? (
           <DiffEditor

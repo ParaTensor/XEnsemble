@@ -62,9 +62,9 @@ async function gracefulShutdownSessions({
     }
 }
 
-function installProcessShutdownHooks(fastify, { timeoutMs = 10_000 } = {}) {
+function installProcessShutdownHooks(fastify, { timeoutMs = 10_000, onShutdown } = {}) {
     let shuttingDown = false;
-    const shutdown = (signal) => {
+    const shutdown = async (signal) => {
         if (shuttingDown) return;
         shuttingDown = true;
         fastify.log?.info?.(`[shutdown] received ${signal}, closing`);
@@ -73,12 +73,18 @@ function installProcessShutdownHooks(fastify, { timeoutMs = 10_000 } = {}) {
             process.exit(1);
         }, timeoutMs);
         if (typeof timer.unref === 'function') timer.unref();
-        Promise.resolve(fastify.close())
-            .then(() => process.exit(0))
-            .catch((err) => {
-                fastify.log?.error?.(err, '[shutdown] close failed');
-                process.exit(1);
-            });
+        try {
+            // Run optional pre-close shutdown work (e.g. graceful session stop)
+            // before fastify.close() so the timeout covers the full sequence.
+            if (typeof onShutdown === 'function') {
+                await onShutdown();
+            }
+            await fastify.close();
+            process.exit(0);
+        } catch (err) {
+            fastify.log?.error?.(err, '[shutdown] close failed');
+            process.exit(1);
+        }
     };
     process.once('SIGTERM', () => shutdown('SIGTERM'));
     process.once('SIGINT', () => shutdown('SIGINT'));

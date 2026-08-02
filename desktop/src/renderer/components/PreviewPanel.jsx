@@ -194,17 +194,22 @@ export function usePreview(projectId, token) {
     showToast('error', deployment.last_error_message);
   }, [deployment?.id, deployment?.last_error_message, showToast, status]);
 
+  const resolveEmbedUrl = useCallback(async () => {
+    if (!previewUrl || !deployment?.id) return null;
+    const res = await apiFetch(
+      `/api/v1/deployments/${encodeURIComponent(deployment.id)}/preview-token`,
+      { method: 'POST' },
+    );
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Failed to issue preview token');
+    if (!data.preview_token || !deployment.public_url) return null;
+    return `${deployment.public_url}${deployment.public_url.includes('?') ? '&' : '?'}preview_token=${encodeURIComponent(data.preview_token)}`;
+  }, [deployment?.id, deployment?.public_url, previewUrl]);
+
   const openPreview = async () => {
-    if (!previewUrl || !deployment?.id) return;
     try {
-      const res = await apiFetch(
-        `/api/v1/deployments/${encodeURIComponent(deployment.id)}/preview-token`,
-        { method: 'POST' },
-      );
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Failed to issue preview token');
-      if (!data.preview_token || !deployment.public_url) return;
-      const url = `${deployment.public_url}${deployment.public_url.includes('?') ? '&' : '?'}preview_token=${encodeURIComponent(data.preview_token)}`;
+      const url = await resolveEmbedUrl();
+      if (!url) return;
       if (!openPreviewWindow(url, previewWindowRef)) {
         showToast('error', 'Allow pop-ups to open the preview window.');
       }
@@ -224,6 +229,7 @@ export function usePreview(projectId, token) {
     stopPreview,
     restartPreview,
     openPreview,
+    resolveEmbedUrl,
   };
 }
 

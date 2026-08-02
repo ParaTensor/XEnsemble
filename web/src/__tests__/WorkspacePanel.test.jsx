@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { ToastProvider } from '@/components/Toast';
 
 vi.mock('@monaco-editor/react', () => ({
   default: function MockEditor({ value, onChange, options }) {
@@ -17,7 +18,17 @@ vi.mock('@monaco-editor/react', () => ({
   loader: { init: vi.fn() },
 }));
 
+vi.mock('@/components/WorkspacePreviewPane', () => ({
+  default: function MockPreview({ mode }) {
+    return <div data-testid={`workspace-${mode}-pane`}>{mode}</div>;
+  },
+}));
+
 const WorkspacePanel = (await import('@/components/WorkspacePanel')).default;
+
+function renderPanel(ui) {
+  return render(<ToastProvider>{ui}</ToastProvider>);
+}
 
 describe('WorkspacePanel', () => {
   const defaultProps = {
@@ -42,7 +53,7 @@ describe('WorkspacePanel', () => {
   });
 
   it('renders empty state when no file is open', async () => {
-    render(<WorkspacePanel {...defaultProps} />);
+    renderPanel(<WorkspacePanel {...defaultProps} />);
     await waitFor(() => {
       expect(screen.getByText(/从左侧文件树选择一个文件打开/)).toBeInTheDocument();
     });
@@ -52,12 +63,12 @@ describe('WorkspacePanel', () => {
     const tabs = [
       { path: 'src/index.js', content: 'hello', originalContent: 'hello', isBinary: false },
     ];
-    render(<WorkspacePanel {...defaultProps} tabs={tabs} activePath="src/index.js" />);
+    renderPanel(<WorkspacePanel {...defaultProps} tabs={tabs} activePath="src/index.js" />);
     expect(screen.getByText('index.js')).toBeInTheDocument();
   });
 
   it('opens new file dialog with autoFocus', () => {
-    render(<WorkspacePanel {...defaultProps} />);
+    renderPanel(<WorkspacePanel {...defaultProps} />);
     fireEvent.click(screen.getByTitle('新建文件'));
     const input = screen.getByPlaceholderText(/文件名/);
     expect(input).toBeInTheDocument();
@@ -67,7 +78,7 @@ describe('WorkspacePanel', () => {
   it('creates new file on confirm', async () => {
     const onCreateFile = vi.fn().mockResolvedValue({ ok: true });
     const onFetchDir = vi.fn().mockResolvedValue([]);
-    render(<WorkspacePanel {...defaultProps} onCreateFile={onCreateFile} onFetchDir={onFetchDir} />);
+    renderPanel(<WorkspacePanel {...defaultProps} onCreateFile={onCreateFile} onFetchDir={onFetchDir} />);
 
     fireEvent.click(screen.getByTitle('新建文件'));
     const input = screen.getByPlaceholderText(/文件名/);
@@ -80,7 +91,7 @@ describe('WorkspacePanel', () => {
   });
 
   it('opens new folder dialog with autoFocus', () => {
-    render(<WorkspacePanel {...defaultProps} />);
+    renderPanel(<WorkspacePanel {...defaultProps} />);
     fireEvent.click(screen.getByTitle('新建文件夹'));
     const input = screen.getByPlaceholderText(/文件夹名/);
     expect(input).toBeInTheDocument();
@@ -90,7 +101,7 @@ describe('WorkspacePanel', () => {
   it('creates new folder on confirm', async () => {
     const onCreateDir = vi.fn().mockResolvedValue({ ok: true });
     const onFetchDir = vi.fn().mockResolvedValue([]);
-    render(<WorkspacePanel {...defaultProps} onCreateDir={onCreateDir} onFetchDir={onFetchDir} />);
+    renderPanel(<WorkspacePanel {...defaultProps} onCreateDir={onCreateDir} onFetchDir={onFetchDir} />);
 
     fireEvent.click(screen.getByTitle('新建文件夹'));
     const input = screen.getByPlaceholderText(/文件夹名/);
@@ -103,26 +114,28 @@ describe('WorkspacePanel', () => {
   });
 
   it('shows file tree on the left side', async () => {
-    render(<WorkspacePanel {...defaultProps} />);
+    renderPanel(<WorkspacePanel {...defaultProps} />);
     await waitFor(() => {
       expect(screen.getByTestId('workspace-panel')).toBeInTheDocument();
     });
   });
 
-  it('shows git changes badge on activity bar', () => {
-    const gitChanges = {
-      stagedFiles: [{ path: 'src/a.js', status: 'M ' }],
-      unstagedFiles: [{ path: 'src/b.js', status: ' M' }],
-      dirty: true,
-      branch: 'main',
-      ahead: 0,
-      behind: 0,
-    };
-    render(<WorkspacePanel {...defaultProps} gitChanges={gitChanges} />);
-    expect(screen.getByText('2')).toBeInTheDocument();
+  it('toggles file tree with a single header button', async () => {
+    renderPanel(<WorkspacePanel {...defaultProps} />);
+    const collapseBtn = screen.getByTitle('收起文件树');
+    expect(collapseBtn).toBeInTheDocument();
+
+    fireEvent.click(collapseBtn);
+    const expandBtn = await screen.findByTitle('展开文件树');
+    expect(expandBtn).toBeInTheDocument();
+    expect(screen.queryByTitle('收起文件树')).not.toBeInTheDocument();
+
+    fireEvent.click(expandBtn);
+    expect(await screen.findByTitle('收起文件树')).toBeInTheDocument();
+    expect(screen.queryByTitle('展开文件树')).not.toBeInTheDocument();
   });
 
-  it('shows staged and unstaged files in source control panel', async () => {
+  it('shows changes badge and opens Changes tab', async () => {
     const gitChanges = {
       stagedFiles: [{ path: 'src/a.js', status: 'M ' }],
       unstagedFiles: [{ path: 'src/b.js', status: ' M' }],
@@ -131,37 +144,30 @@ describe('WorkspacePanel', () => {
       ahead: 0,
       behind: 0,
     };
-    render(<WorkspacePanel {...defaultProps} gitChanges={gitChanges} />);
-    fireEvent.click(screen.getByTitle(/源代码管理/));
+    renderPanel(<WorkspacePanel {...defaultProps} gitChanges={gitChanges} />);
+    expect(screen.getByText('2')).toBeInTheDocument();
+    fireEvent.click(screen.getByText('Changes'));
     await waitFor(() => {
       expect(screen.getByText('a.js')).toBeInTheDocument();
       expect(screen.getByText('b.js')).toBeInTheDocument();
     });
   });
 
-  it('shows empty state in source control when no git files', async () => {
+  it('shows empty state in changes when no git files', async () => {
     const gitChanges = { stagedFiles: [], unstagedFiles: [], dirty: false, branch: 'main', ahead: 0, behind: 0 };
-    render(<WorkspacePanel {...defaultProps} gitChanges={gitChanges} />);
-    fireEvent.click(screen.getByTitle(/源代码管理/));
+    renderPanel(<WorkspacePanel {...defaultProps} gitChanges={gitChanges} />);
+    fireEvent.click(screen.getByText('Changes'));
     await waitFor(() => {
       expect(screen.getByText(/暂无已保存的更改/)).toBeInTheDocument();
     });
   });
 
-  it('calls onGitFileClick when clicking git file', async () => {
-    const onGitFileClick = vi.fn();
-    const gitChanges = {
-      stagedFiles: [],
-      unstagedFiles: [{ path: 'src/a.js', status: ' M' }],
-      dirty: true,
-      branch: 'main',
-      ahead: 0,
-      behind: 0,
-    };
-    render(<WorkspacePanel {...defaultProps} gitChanges={gitChanges} onGitFileClick={onGitFileClick} />);
-    fireEvent.click(screen.getByTitle(/源代码管理/));
-    await waitFor(() => { expect(screen.getByText('a.js')).toBeInTheDocument(); });
-    fireEvent.click(screen.getByText('a.js'));
-    expect(onGitFileClick).toHaveBeenCalledWith('src/a.js');
+  it('adds Terminal from plus menu', async () => {
+    renderPanel(<WorkspacePanel {...defaultProps} />);
+    fireEvent.click(screen.getByTitle('添加面板'));
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'Terminal' }));
+    await waitFor(() => {
+      expect(screen.getAllByText('Terminal').length).toBeGreaterThan(0);
+    });
   });
 });

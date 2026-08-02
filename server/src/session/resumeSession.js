@@ -320,15 +320,6 @@ async function resumeSession({
             throw error;
         }
 
-        await db.update(schema.sessions)
-            .set({
-                status: 'running',
-                streamRef: session.streamRef || null,
-                stateDirRef: session.stateDirRef || null,
-                recoverable: true,
-            })
-            .where(eq(schema.sessions.id, session.id));
-
         let handle;
         try {
 
@@ -407,9 +398,12 @@ async function resumeSession({
             }
 
             // Kill any lingering agent process from a previous run.
+            // Use exact-name match first (-x) to avoid collateral kills;
+            // fall back to -f only when -x finds no match (pkill exits 1).
             if (runtimeRef) {
+                const agentBin = agentMeta.cmd || agentMeta.id;
                 try {
-                    await runtime.exec.exec('pkill', ['-f', agentMeta.cmd || agentMeta.id], {}, {
+                    await runtime.exec.exec('sh', ['-c', `pkill -x "$1" 2>/dev/null || pkill -f "$1" 2>/dev/null || true`, 'sh', agentBin], {}, {
                         runtimeRef, cwd: '/', timeoutMs: 5000,
                     });
                 } catch (_) { /* best-effort */ }
@@ -452,7 +446,7 @@ async function resumeSession({
             fastifyLog,
         });
 
-        // Single DB update with the final streamRef (merged from 2 writes).
+        // Persist 'running' status only after the process has been successfully spawned.
         await db.update(schema.sessions)
             .set({
                 status: 'running',

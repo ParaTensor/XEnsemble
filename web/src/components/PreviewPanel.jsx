@@ -10,12 +10,12 @@ import { apiFetch } from '../lib/api';
 import { useToast } from './Toast';
 
 const STATUS_STYLES = {
-  pending: 'bg-zinc-700 text-zinc-300',
-  building: 'bg-amber-900/60 text-amber-400',
-  running: 'bg-green-900/60 text-green-400',
-  failed: 'bg-red-900/60 text-red-400',
-  stopped: 'bg-zinc-800 text-zinc-400',
-  expired: 'bg-zinc-800 text-zinc-500',
+  pending: 'bg-[#E8EAED] text-[#5F6368]',
+  building: 'bg-[#FEF3C7] text-[#B45309]',
+  running: 'bg-[#E8F5E9] text-[#4A7C59]',
+  failed: 'bg-[#FDECEA] text-[#C06C5D]',
+  stopped: 'bg-[#E8EAED] text-[#9AA0A6]',
+  expired: 'bg-[#E8EAED] text-[#9AA0A6]',
 };
 
 function pickActiveDeployment(list) {
@@ -194,17 +194,22 @@ export function usePreview(projectId, token) {
     showToast('error', deployment.last_error_message);
   }, [deployment?.id, deployment?.last_error_message, showToast, status]);
 
+  const resolveEmbedUrl = useCallback(async () => {
+    if (!previewUrl || !deployment?.id) return null;
+    const res = await apiFetch(
+      `/api/v1/deployments/${encodeURIComponent(deployment.id)}/preview-token`,
+      { method: 'POST' },
+    );
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Failed to issue preview token');
+    if (!data.preview_token || !deployment.public_url) return null;
+    return `${deployment.public_url}${deployment.public_url.includes('?') ? '&' : '?'}preview_token=${encodeURIComponent(data.preview_token)}`;
+  }, [deployment?.id, deployment?.public_url, previewUrl]);
+
   const openPreview = async () => {
-    if (!previewUrl || !deployment?.id) return;
     try {
-      const res = await apiFetch(
-        `/api/v1/deployments/${encodeURIComponent(deployment.id)}/preview-token`,
-        { method: 'POST' },
-      );
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Failed to issue preview token');
-      if (!data.preview_token || !deployment.public_url) return;
-      const url = `${deployment.public_url}${deployment.public_url.includes('?') ? '&' : '?'}preview_token=${encodeURIComponent(data.preview_token)}`;
+      const url = await resolveEmbedUrl();
+      if (!url) return;
       if (!openPreviewWindow(url, previewWindowRef)) {
         showToast('error', 'Allow pop-ups to open the preview window.');
       }
@@ -224,11 +229,12 @@ export function usePreview(projectId, token) {
     stopPreview,
     restartPreview,
     openPreview,
+    resolveEmbedUrl,
   };
 }
 
 const ICON_BTN =
-  'rounded-md p-1.5 text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200 disabled:opacity-50';
+  'rounded-md p-1.5 text-[#5F6368] hover:bg-[#E8EAED] hover:text-[#202124] disabled:opacity-50';
 
 export function PreviewStatus({ deployment, status }) {
   if (!deployment) return null;
@@ -240,7 +246,7 @@ export function PreviewStatus({ deployment, status }) {
         {status}
       </span>
       {deployment.expires_at && status === 'running' && (
-        <span className="text-[10px] text-zinc-500 font-mono hidden xl:inline">
+        <span className="text-[10px] text-[#9AA0A6] font-mono hidden xl:inline">
           TTL {formatTtl(deployment.expires_at)}
         </span>
       )}

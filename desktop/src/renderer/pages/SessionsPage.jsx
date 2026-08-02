@@ -115,8 +115,10 @@ export default React.forwardRef(function Sessions({
   const [panelWidth, setPanelWidth] = useState(() => {
     const saved = typeof window !== 'undefined' ? window.localStorage.getItem('xensemble.panel.width') : null;
     const w = saved ? parseInt(saved, 10) : NaN;
-    const maxW = typeof window !== 'undefined' ? Math.max(480, window.innerWidth - 320) : 640;
-    return Number.isFinite(w) && w >= 200 && w <= maxW ? w : 420;
+    const maxW = typeof window !== 'undefined' ? Math.max(720, window.innerWidth - 240) : 800;
+    const preferred = Math.min(640, maxW);
+    if (!Number.isFinite(w) || w < 480 || w > 720) return preferred;
+    return w <= maxW ? w : preferred;
   });
   const resizingRef = useRef(null);
   const [isLoadingFiles, setIsLoadingFiles] = useState(false);
@@ -167,8 +169,8 @@ export default React.forwardRef(function Sessions({
   const [customImages, setCustomImages] = useState([]);
 
   useEffect(() => {
-    const maxW = typeof window !== 'undefined' ? Math.max(480, window.innerWidth - 320) : 640;
-    if (panelWidth >= 200 && panelWidth <= maxW) {
+    const maxW = typeof window !== 'undefined' ? Math.max(720, window.innerWidth - 240) : 800;
+    if (panelWidth >= 420 && panelWidth <= maxW) {
       window.localStorage.setItem('xensemble.panel.width', String(panelWidth));
     }
   }, [panelWidth]);
@@ -177,10 +179,10 @@ export default React.forwardRef(function Sessions({
     e.preventDefault();
     const startX = e.clientX;
     const startW = panelWidth;
-    const maxW = Math.max(480, window.innerWidth - 320);
+    const maxW = Math.max(720, window.innerWidth - 240);
     const onMove = (ev) => {
       const delta = startX - ev.clientX;
-      const next = Math.min(maxW, Math.max(200, startW + delta));
+      const next = Math.min(maxW, Math.max(420, startW + delta));
       setPanelWidth(next);
     };
     const onUp = () => {
@@ -208,6 +210,8 @@ export default React.forwardRef(function Sessions({
     if (!activeSession?.projectId) {
       setPanelOpen(false);
       setShellMounted(false);
+    } else {
+      setPanelOpen(true);
     }
     setViewingFile(null);
     setFileContent('');
@@ -629,8 +633,12 @@ export default React.forwardRef(function Sessions({
   // Stabilized callbacks for WorkspacePanel to prevent re-renders on every keystroke.
   const handleSaveTab = useCallback((path) => {
     if (!activeSession?.projectId) return;
-    return editorTabs.saveTab(activeSession.projectId, path);
-  }, [activeSession?.projectId, editorTabs.saveTab]);
+    return editorTabs.saveTab(activeSession.projectId, path)
+      .then((result) => {
+        gitChanges?.fetchStatus?.({ silent: true });
+        return result;
+      });
+  }, [activeSession?.projectId, editorTabs.saveTab, gitChanges]);
 
   const handleEditorOpenFile = useCallback((file) => {
     if (!activeSession?.projectId) return;
@@ -640,13 +648,21 @@ export default React.forwardRef(function Sessions({
   const handleCreateFile = useCallback((projectId, name) => {
     return editorTabs.handleCreateFile(projectId, name)
       .then(() => editorTabs.openFile(projectId, { path: name, type: 'file' }))
+      .then((result) => {
+        gitChanges?.fetchStatus?.({ silent: true });
+        return result;
+      })
       .catch((e) => showToast('error', e.message));
-  }, [editorTabs.handleCreateFile, editorTabs.openFile, showToast]);
+  }, [editorTabs.handleCreateFile, editorTabs.openFile, showToast, gitChanges]);
 
   const handleCreateDir = useCallback((projectId, name) => {
     return editorTabs.handleCreateDir(projectId, name)
+      .then((result) => {
+        gitChanges?.fetchStatus?.({ silent: true });
+        return result;
+      })
       .catch((e) => showToast('error', e.message));
-  }, [editorTabs.handleCreateDir, showToast]);
+  }, [editorTabs.handleCreateDir, showToast, gitChanges]);
 
   const handleShowDiff = useCallback((path) => {
     if (!activeSession?.projectId) return;

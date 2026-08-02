@@ -362,9 +362,18 @@ class GitOperationService {
     async commitAll(project, message) {
         return this._mutate(project, async () => {
             await this._execGit(project, ['add', '-A']);
+
+            // Skip the commit when there is nothing staged — avoids a noisy
+            // "nothing to commit" GitError that callers would have to swallow.
+            const statusOut = await this._execGit(project, ['status', '--porcelain']);
+            if (!statusOut.stdout || !statusOut.stdout.trim()) {
+                const sha = await this._revParse(project, 'HEAD');
+                return { sha, committed: false };
+            }
+
             await this._execGit(project, ['commit', '-m', message]);
             const sha = await this._revParse(project, 'HEAD');
-            return { sha };
+            return { sha, committed: true };
         });
     }
 

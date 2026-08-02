@@ -78,7 +78,7 @@ function AgentConsole({
   sessionId,
   reconnectVersion = 0,
   projectId,
-  /* agentName kept for API compat */
+  agentName,
   onSessionEnd,
   onSessionConnected,
   sessionLive = true,
@@ -88,6 +88,7 @@ function AgentConsole({
   const xtermTheme = preset?.xterm || FALLBACK_XTERM_THEME;
 
   const preview = usePreview(projectId, true);
+  const title = agentName || 'Agent';
 
   const hostRef = useRef(null);
   const overlayRef = useRef(null);
@@ -591,19 +592,31 @@ function AgentConsole({
   }, [sessionId, reconnectVersion]);
 
   return (
-    <div className="relative flex h-full min-h-0 flex-col overflow-hidden bg-transparent">
-      {projectId && <PreviewControlGroup {...preview} />}
-      <div
-        ref={overlayRef}
-        className="absolute inset-0 z-10 flex items-center justify-center bg-zinc-900/90 backdrop-blur-sm"
-        style={{ display: 'none' }}
-      >
-        <div className="flex items-center gap-2 text-sm text-zinc-400">
-          <Loader2 className="h-4 w-4 animate-spin" />
-          Loading history…
+    <div className="flex h-full min-h-0 flex-col overflow-hidden bg-transparent">
+      <div className="h-10 shrink-0 border-b border-[#E8EAED] bg-[#FAFBFC] flex items-center justify-between px-4">
+        <div className="flex min-w-0 items-center gap-2">
+          <div
+            className={`h-2 w-2 shrink-0 rounded-full ${ended ? 'bg-[#9AA0A6]' : 'bg-[#4A7C59] animate-pulse'}`}
+          />
+          <span className="truncate text-xs font-mono font-medium text-[#202124]">{title}</span>
         </div>
+        {projectId ? (
+          <div className="flex items-center gap-0.5 shrink-0 text-[#5F6368] [&_button]:text-[#5F6368] [&_button]:hover:bg-[#E8EAED] [&_button]:hover:text-[#202124]">
+            <PreviewControlGroup {...preview} />
+          </div>
+        ) : null}
       </div>
-      <div className="flex min-h-0 flex-1 flex-col overflow-hidden p-0">
+      <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
+        <div
+          ref={overlayRef}
+          className="absolute inset-0 z-10 flex items-center justify-center bg-zinc-900/90 backdrop-blur-sm"
+          style={{ display: 'none' }}
+        >
+          <div className="flex items-center gap-2 text-sm text-zinc-400">
+            <Loader2 className="h-4 w-4 animate-spin" />
+            Loading history…
+          </div>
+        </div>
         <div ref={hostRef} className="min-h-0 w-full flex-1" />
       </div>
     </div>

@@ -21,6 +21,8 @@ import {
   Container,
   GitBranch,
   Loader2,
+  PanelLeftClose,
+  PanelLeft,
 } from 'lucide-react';
 import { apiFetch } from '../lib/api';
 import { getProviderLabel, getWorkspaceRepoLabel, isGitLinkedProject, isWorkspaceClonePending } from '../lib/gitLabels';
@@ -35,6 +37,7 @@ import {
   selectActiveSession,
 } from '../lib/sidebarPrefs';
 import { useToast } from '../components/Toast';
+import BrandMark from './BrandMark';
 import {
   textPrimary,
   textSecondary,
@@ -47,9 +50,12 @@ import {
   hoverBgTertiary,
   bgSecondary,
   bgCanvas,
+  consoleButtonFocusClass,
   consoleMenuDropdownZClass,
   consoleDropdownPanelClass,
 } from '../lib/consoleTheme.js';
+
+const SIDEBAR_COLLAPSED_KEY = 'xensemble.sidebar.collapsed';
 
 const SESSION_PREVIEW_LIMIT = 8;
 
@@ -110,7 +116,7 @@ function buildWorkspaces(projects, sessions, prefs) {
   });
 }
 
-function SidebarAccountMenu({ user, onOpenSettings, onLogout, adminLinkClass }) {
+function SidebarAccountMenu({ user, onOpenSettings, onLogout, adminLinkClass, collapsed = false }) {
   const [open, setOpen] = useState(false);
   const [menuRect, setMenuRect] = useState(null);
   const rootRef = useRef(null);
@@ -240,25 +246,30 @@ function SidebarAccountMenu({ user, onOpenSettings, onLogout, adminLinkClass }) 
         aria-expanded={open}
         aria-haspopup="menu"
         aria-label={isAdmin ? 'Admin menu' : 'Account menu'}
-        className={`flex w-full items-center gap-2 rounded-lg px-2 py-2 text-left ${transitionBase} hover:bg-[#FAFBFC] ${
+        title={isAdmin ? 'Admin' : (user?.username || 'User')}
+        className={`flex w-full items-center rounded-lg text-left ${transitionBase} hover:bg-[#FAFBFC] ${
           open ? 'bg-[#FAFBFC]' : ''
-        }`}
+        } ${collapsed ? `justify-center p-2 ${consoleButtonFocusClass}` : 'gap-2 px-2 py-2'}`}
       >
         <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[#FDECEA] text-[#C06C5D] text-xs font-semibold">
           {(user?.username || 'U').charAt(0).toUpperCase()}
         </div>
-        <div className="min-w-0 flex-1">
-          <p className="truncate text-[13px] font-medium text-[#202124]">
-            {isAdmin ? 'Admin' : (user?.username || 'User')}
-          </p>
-          {isAdmin && (
-            <p className="truncate text-[10px] text-[#9AA0A6]">{user?.username || 'User'}</p>
-          )}
-        </div>
-        <ChevronDown
-          className={`h-4 w-4 shrink-0 text-[#9AA0A6] transition-transform duration-150 ${open ? 'rotate-180' : ''}`}
-          strokeWidth={2}
-        />
+        {!collapsed && (
+          <>
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-[13px] font-medium text-[#202124]">
+                {isAdmin ? 'Admin' : (user?.username || 'User')}
+              </p>
+              {isAdmin && (
+                <p className="truncate text-[10px] text-[#9AA0A6]">{user?.username || 'User'}</p>
+              )}
+            </div>
+            <ChevronDown
+              className={`h-4 w-4 shrink-0 text-[#9AA0A6] transition-transform duration-150 ${open ? 'rotate-180' : ''}`}
+              strokeWidth={2}
+            />
+          </>
+        )}
       </button>
       {menu && createPortal(menu, document.body)}
     </div>
@@ -283,6 +294,13 @@ export default function AppSidebar({
   onLogout,
 }) {
   const [sidebarPrefs, setSidebarPrefs] = useState(() => loadSidebarPrefs());
+  const [collapsed, setCollapsed] = useState(() => {
+    try {
+      return window.localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === '1';
+    } catch {
+      return false;
+    }
+  });
   const [expandedWorkspaces, setExpandedWorkspaces] = useState(() => {
     const ids = new Set();
     if (activeSession?.projectId) ids.add(activeSession.projectId);
@@ -290,6 +308,15 @@ export default function AppSidebar({
   });
   const [expandedSessionLists, setExpandedSessionLists] = useState(() => new Set());
   const [searchQuery, setSearchQuery] = useState('');
+
+  const setSidebarCollapsed = useCallback((next) => {
+    setCollapsed(next);
+    try {
+      window.localStorage.setItem(SIDEBAR_COLLAPSED_KEY, next ? '1' : '0');
+    } catch {
+      /* ignore */
+    }
+  }, []);
   const [activeOnlyFilter, setActiveOnlyFilter] = useState(false);
   const [resumingSessionId, setResumingSessionId] = useState(null);
   const [customImageMap, setCustomImageMap] = useState({});
@@ -626,28 +653,85 @@ export default function AppSidebar({
   const sidebarNavItemClass =
     `flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-[13px] font-medium text-[#3C4043] ${hoverBgTertiary} ${transitionBase}`;
 
+  if (collapsed) {
+    return (
+      <aside
+        className={`h-full w-14 ${bgSecondary} border-r border-[#E8EAED] flex flex-col flex-shrink-0 select-none`}
+        data-testid="app-sidebar-collapsed"
+      >
+        <div className="shrink-0 flex flex-col items-center gap-1 px-1.5 pt-3 pb-2 border-b border-[#E8EAED]">
+          <BrandMark className="h-8 w-8" iconClassName="h-4 w-4" />
+          <button
+            type="button"
+            title="Expand sidebar"
+            aria-label="Expand sidebar"
+            onClick={() => setSidebarCollapsed(false)}
+            className={`mt-1 p-2 rounded-lg ${textPlaceholder} hover:text-[#202124] ${hoverBgTertiary} ${transitionBase} ${consoleButtonFocusClass}`}
+          >
+            <PanelLeft className="w-4 h-4" strokeWidth={1.75} />
+          </button>
+          <button
+            type="button"
+            disabled={!onNewAgent}
+            onClick={onNewAgent}
+            title="New Agent"
+            aria-label="New Agent"
+            className={`p-2 rounded-lg text-[#3C4043] hover:text-[#202124] ${hoverBgTertiary} ${transitionBase} disabled:opacity-40 ${consoleButtonFocusClass}`}
+          >
+            <PenSquare className="w-4 h-4" strokeWidth={1.75} />
+          </button>
+        </div>
+        <div className="flex-1 min-h-0" />
+        <div className="shrink-0 border-t border-[#E8EAED] px-1.5 py-2">
+          <SidebarAccountMenu
+            user={user}
+            onOpenSettings={onOpenSettings}
+            onLogout={onLogout}
+            adminLinkClass={adminLinkClass}
+            collapsed
+          />
+        </div>
+      </aside>
+    );
+  }
+
   return (
     <aside className={`h-full w-[272px] ${bgSecondary} border-r border-[#E8EAED] flex flex-col flex-shrink-0 select-none`}>
-      <div className="shrink-0 px-2 pt-2 pb-2 space-y-0.5 border-b border-[#E8EAED]">
-        <button
-          type="button"
-          disabled={!onNewAgent}
-          onClick={onNewAgent}
-          className={`${sidebarNavItemClass} disabled:opacity-40`}
-        >
-          <PenSquare className="w-4 h-4 shrink-0" strokeWidth={1.75} />
-          New Agent
-        </button>
-        <label className={`${sidebarNavItemClass} cursor-text`}>
-          <Search className="w-4 h-4 shrink-0 text-[#9AA0A6]" strokeWidth={1.75} />
-          <input
-            type="search"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search"
-            className="min-w-0 flex-1 bg-transparent text-[13px] text-[#3C4043] placeholder:text-[#9AA0A6] outline-none"
-          />
-        </label>
+      <div className="shrink-0 px-3 pt-3 pb-2 border-b border-[#E8EAED]">
+        <div className="flex items-center gap-2 px-0.5 mb-2">
+          <BrandMark className="h-7 w-7" iconClassName="h-3.5 w-3.5" />
+          <span className="min-w-0 flex-1 truncate text-sm font-bold text-[#202124]">XEnsemble</span>
+          <button
+            type="button"
+            title="Collapse sidebar"
+            aria-label="Collapse sidebar"
+            onClick={() => setSidebarCollapsed(true)}
+            className={`p-1.5 rounded-md ${textPlaceholder} hover:text-[#202124] ${hoverBgTertiary} ${transitionBase} ${consoleButtonFocusClass}`}
+          >
+            <PanelLeftClose className="w-4 h-4" strokeWidth={1.75} />
+          </button>
+        </div>
+        <div className="space-y-0.5">
+          <button
+            type="button"
+            disabled={!onNewAgent}
+            onClick={onNewAgent}
+            className={`${sidebarNavItemClass} disabled:opacity-40`}
+          >
+            <PenSquare className="w-4 h-4 shrink-0" strokeWidth={1.75} />
+            New Agent
+          </button>
+          <label className={`${sidebarNavItemClass} cursor-text`}>
+            <Search className="w-4 h-4 shrink-0 text-[#9AA0A6]" strokeWidth={1.75} />
+            <input
+              type="search"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search"
+              className="min-w-0 flex-1 bg-transparent text-[13px] text-[#3C4043] placeholder:text-[#9AA0A6] outline-none"
+            />
+          </label>
+        </div>
       </div>
 
       <div className="flex-1 min-h-0 overflow-auto px-2 py-3">

@@ -4,19 +4,71 @@
  * Provides per-project Git version tracking without any external provider.
  * All git commands run through the Runtime exec adapter (Local/BoxLite/K8s).
  *
+ * Local-only scope:
+ *   - Bare repos are stored on the server's local filesystem (BARE_REPO_ROOT).
+ *     This is intentional: bare repos are server-side metadata, not workspace data.
+ *   - Workspace filesystem operations (e.g. .gitignore creation) are routed
+ *     through the FsAdapter so they work correctly on BoxLite/K8s runtimes
+ *     where the workspace lives inside a sandbox.
+ *
  * See docs/LocalGit.md for the full specification.
  */
 
 const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
+const { spawn } = require('child_process');
 const { eq, and } = require('drizzle-orm');
 const { getRuntime } = require('../runtime/registry');
 const { ensureProjectRuntime } = require('../runtime/RuntimeService');
+const { resolveRuntimeProvider } = require('../config/runtimeProvider');
+const workspace = require('../workspace');
 const { db } = require('../db/index');
 const schema = require('../db/schema');
 const { recordEvent } = require('../events/recordEvent');
 const { singleflight } = require('../runtime/singleflight');
+
+/** Providers whose workspace lives on (or is virtiofs-mounted from) the host. */
+function usesHostWorkspace() {
+    const provider = resolveRuntimeProvider();
+    return provider === 'local' || provider === 'boxlite';
+}
+
+/**
+ * Run git on the host filesystem (bare repos + BoxLite-mounted workspace bootstrap).
+ * Must not be used for guest-only paths that are not visible on the host.
+ */
+function hostGit(cwd, args, options = {}) {
+    return new Promise((resolve, reject) => {
+        const child = spawn('git', args, {
+            cwd,
+            env: { ...process.env, GIT_TERMINAL_PROMPT: '0', ...(options.env || {}) },
+            stdio: ['ignore', 'pipe', 'pipe'],
+        });
+        let stdout = '';
+        let stderr = '';
+        const timer = setTimeout(() => {
+            child.kill('SIGKILL');
+            reject(new Error(`git ${args[0]} timed out`));
+        }, options.timeoutMs || 30_000);
+        child.stdout.on('data', (d) => { stdout += d; });
+        child.stderr.on('data', (d) => { stderr += d; });
+        child.on('error', (err) => {
+            clearTimeout(timer);
+            reject(err);
+        });
+        child.on('close', (code) => {
+            clearTimeout(timer);
+            if (code !== 0) {
+                const err = new Error(`git ${args[0]} failed: ${stderr || stdout}`);
+                err.exitCode = code;
+                reject(err);
+                return;
+            }
+            resolve({ exitCode: 0, stdout, stderr });
+        });
+    });
+}
 
 const BARE_REPO_ROOT = process.env.BARE_REPO_ROOT
     || path.join(__dirname, '../../data/repos');
@@ -46,6 +98,9 @@ venv/
 *.log
 .npm/
 .cache/
+
+# XEnsemble internal (git credential helpers, etc.)
+.xensemble/
 `;
 
 function newId(prefix) {
@@ -110,61 +165,149 @@ class LocalGitService {
     /**
      * Initialize a bare repo + workspace git repo for a new project.
      * Called during project creation when repoProvider = 'local_git'.
+     *
+     * Bare repos always live on the host. For local/boxlite the workspace is also
+     * on the host (BoxLite virtiofs-mounts it), so bootstrap uses host `git` and
+     * must NOT call ensureProjectRuntime — that would pin a premature box-base VM.
+     * K8s keeps the runtime-exec path because the workspace is not host-local.
      */
     async initRepo(project) {
         return singleflight(`local-git-init:${project.id}`, async () => {
-            const bare = bareRepoPath(project.id);
-
-            // Create bare repo directory
-            fs.mkdirSync(bare, { recursive: true });
-            await this._git(bare, ['init', '--bare', '-b', 'main']);
-
-            // Set up working copy in workspace
-            const { workspacePath } = await this.ensureProjectRuntime(project);
-            await this._git(workspacePath, ['init', '-b', 'main']);
-            await this._git(workspacePath, ['config', 'user.email', 'xensemble@local']);
-            await this._git(workspacePath, ['config', 'user.name', 'XEnsemble']);
-            await this._git(workspacePath, ['remote', 'add', 'origin', bare]);
-
-            // Write .gitignore
-            const ignorePath = path.join(workspacePath, '.gitignore');
-            if (!fs.existsSync(ignorePath)) {
-                fs.writeFileSync(ignorePath, GITIGNORE_TEMPLATE, 'utf8');
+            if (usesHostWorkspace()) {
+                return this._initRepoOnHost(project);
             }
+            return this._initRepoViaRuntime(project);
+        });
+    }
 
-            // Initial commit
-            await this._git(workspacePath, ['add', '-A']);
+    async _initRepoOnHost(project) {
+        const bare = bareRepoPath(project.id);
+        const hostWorkspacePath = workspace.createProjectDirectory(project.userId, project.id);
+
+        fs.mkdirSync(bare, { recursive: true });
+        if (!fs.existsSync(path.join(bare, 'HEAD'))) {
+            await hostGit(bare, ['init', '--bare', '-b', 'main']);
+        }
+
+        const gitDir = path.join(hostWorkspacePath, '.git');
+        if (!fs.existsSync(gitDir)) {
+            await hostGit(hostWorkspacePath, ['init', '-b', 'main']);
+        }
+        await hostGit(hostWorkspacePath, ['config', 'user.email', 'xensemble@local']);
+        await hostGit(hostWorkspacePath, ['config', 'user.name', 'XEnsemble']);
+
+        try {
+            await hostGit(hostWorkspacePath, ['remote', 'add', 'origin', bare]);
+        } catch (err) {
+            if (!/remote origin already exists/i.test(String(err.message))) throw err;
+            await hostGit(hostWorkspacePath, ['remote', 'set-url', 'origin', bare]);
+        }
+
+        const ignorePath = path.join(hostWorkspacePath, '.gitignore');
+        if (!fs.existsSync(ignorePath)) {
+            fs.writeFileSync(ignorePath, GITIGNORE_TEMPLATE, 'utf8');
+        }
+
+        // Stage only .gitignore so a late backfill does not swallow agent-created
+        // files into the initial commit (they should remain visible in Changes).
+        await hostGit(hostWorkspacePath, ['add', '--', '.gitignore']);
+        const headBefore = await hostGit(hostWorkspacePath, ['rev-parse', '--verify', 'HEAD']).catch(() => null);
+        if (!headBefore) {
+            await hostGit(hostWorkspacePath, [
+                'commit', '--allow-empty', '-m', 'chore: initialize workspace',
+            ]);
+        }
+
+        try {
+            await hostGit(hostWorkspacePath, ['push', '-u', 'origin', 'main']);
+        } catch {
+            // Best-effort: bare mirror is optional for Changes / status.
+        }
+
+        await db.update(schema.projects).set({
+            repoProvider: 'local_git',
+            workspaceMode: 'git',
+            repoUrl: bare,
+            repoDefaultBranch: 'main',
+            cloneStatus: 'ready',
+            cloneError: null,
+            serverPath: project.serverPath || hostWorkspacePath,
+        }).where(eq(schema.projects.id, project.id));
+
+        const headResult = await hostGit(hostWorkspacePath, ['rev-parse', 'HEAD']);
+        const sha = headResult.stdout.trim();
+
+        await recordEvent({
+            userId: project.userId,
+            projectId: project.id,
+            subjectType: 'project',
+            subjectId: project.id,
+            type: 'local_git.initialized',
+            data: { bareRepoPath: bare, initialSha: sha, hostWorkspacePath },
+        });
+
+        return { bareRepoPath: bare, workspacePath: hostWorkspacePath, initialSha: sha };
+    }
+
+    async _initRepoViaRuntime(project) {
+        const bare = bareRepoPath(project.id);
+
+        fs.mkdirSync(bare, { recursive: true });
+        await hostGit(bare, ['init', '--bare', '-b', 'main']);
+
+        const { workspacePath } = await this.ensureProjectRuntime(project);
+        await this._git(workspacePath, ['init', '-b', 'main']);
+        await this._git(workspacePath, ['config', 'user.email', 'xensemble@local']);
+        await this._git(workspacePath, ['config', 'user.name', 'XEnsemble']);
+        try {
+            await this._git(workspacePath, ['remote', 'add', 'origin', bare]);
+        } catch (err) {
+            if (!/remote origin already exists/i.test(String(err.message))) throw err;
+            await this._git(workspacePath, ['remote', 'set-url', 'origin', bare]);
+        }
+
+        const runtimeFs = getRuntime().fs;
+        const ignoreExists = await runtimeFs.exists(workspacePath, '.gitignore');
+        if (!ignoreExists) {
+            await runtimeFs.fsWrite(workspacePath, '.gitignore', GITIGNORE_TEMPLATE);
+        }
+
+        await this._git(workspacePath, ['add', '--', '.gitignore']);
+        const headBefore = await this._git(workspacePath, ['rev-parse', '--verify', 'HEAD']).catch(() => null);
+        if (!headBefore) {
             await this._git(workspacePath, [
                 'commit', '--allow-empty', '-m', 'chore: initialize workspace',
             ]);
+        }
 
-            // Push to bare repo
+        try {
             await this._git(workspacePath, ['push', '-u', 'origin', 'main']);
+        } catch {
+            // Best-effort
+        }
 
-            // Update project DB fields
-            await db.update(schema.projects).set({
-                repoProvider: 'local_git',
-                workspaceMode: 'git',
-                repoUrl: bare,
-                repoDefaultBranch: 'main',
-                cloneStatus: 'ready',
-                cloneError: null,
-            }).where(eq(schema.projects.id, project.id));
+        await db.update(schema.projects).set({
+            repoProvider: 'local_git',
+            workspaceMode: 'git',
+            repoUrl: bare,
+            repoDefaultBranch: 'main',
+            cloneStatus: 'ready',
+            cloneError: null,
+        }).where(eq(schema.projects.id, project.id));
 
-            const headResult = await this._git(workspacePath, ['rev-parse', 'HEAD']);
-            const sha = headResult.stdout.trim();
+        const headResult = await this._git(workspacePath, ['rev-parse', 'HEAD']);
+        const sha = headResult.stdout.trim();
 
-            await recordEvent({
-                userId: project.userId,
-                projectId: project.id,
-                subjectType: 'project',
-                subjectId: project.id,
-                type: 'local_git.initialized',
-                data: { bareRepoPath: bare, initialSha: sha },
-            });
-
-            return { bareRepoPath: bare, workspacePath, initialSha: sha };
+        await recordEvent({
+            userId: project.userId,
+            projectId: project.id,
+            subjectType: 'project',
+            subjectId: project.id,
+            type: 'local_git.initialized',
+            data: { bareRepoPath: bare, initialSha: sha },
         });
+
+        return { bareRepoPath: bare, workspacePath, initialSha: sha };
     }
 
     /**
@@ -172,10 +315,39 @@ class LocalGitService {
      * Returns true if init was performed, false if already initialized.
      */
     async ensureGitInit(project) {
+        if (usesHostWorkspace()) {
+            const hostWorkspacePath = workspace.createProjectDirectory(project.userId, project.id);
+            if (fs.existsSync(path.join(hostWorkspacePath, '.git'))) {
+                if (project.repoProvider !== 'local_git' || project.workspaceMode !== 'git') {
+                    await db.update(schema.projects).set({
+                        repoProvider: 'local_git',
+                        workspaceMode: 'git',
+                        repoUrl: project.repoUrl || bareRepoPath(project.id),
+                        repoDefaultBranch: project.repoDefaultBranch || 'main',
+                        cloneStatus: 'ready',
+                        cloneError: null,
+                    }).where(eq(schema.projects.id, project.id));
+                }
+                return false;
+            }
+            await this.initRepo(project);
+            return true;
+        }
+
         const { workspacePath } = await this.ensureProjectRuntime(project);
         try {
             await this._git(workspacePath, ['rev-parse', '--git-dir']);
-            return false; // already initialized
+            if (project.repoProvider !== 'local_git' || project.workspaceMode !== 'git') {
+                await db.update(schema.projects).set({
+                    repoProvider: 'local_git',
+                    workspaceMode: 'git',
+                    repoUrl: project.repoUrl || bareRepoPath(project.id),
+                    repoDefaultBranch: project.repoDefaultBranch || 'main',
+                    cloneStatus: 'ready',
+                    cloneError: null,
+                }).where(eq(schema.projects.id, project.id));
+            }
+            return false;
         } catch {
             await this.initRepo(project);
             return true;
@@ -306,6 +478,22 @@ class LocalGitService {
                 const err = new Error(`SHA ${checkpoint.gitSha} not found in repository`);
                 err.statusCode = 409;
                 throw err;
+            }
+
+            // Auto-checkpoint current state before destructive restore
+            // so uncommitted work is not lost (git reset --hard + clean).
+            try {
+                const statusResult = await this._git(workspacePath, ['status', '--porcelain']);
+                if (statusResult.stdout && statusResult.stdout.trim()) {
+                    await this._git(workspacePath, ['add', '-A']);
+                    const autoMsg = `auto-checkpoint: pre-restore safety snapshot ${new Date().toISOString()}`;
+                    await this._git(workspacePath, ['commit', '-m', autoMsg]);
+                    // Best-effort push to bare repo for backup.
+                    try { await this._git(workspacePath, ['push', 'origin', 'HEAD']); } catch { /* non-fatal */ }
+                }
+            } catch (autoCkptErr) {
+                // Non-fatal: log but proceed with restore even if auto-checkpoint fails.
+                console.warn('[LocalGitService] auto-checkpoint before restore failed:', autoCkptErr.message);
             }
 
             await this._git(workspacePath, ['reset', '--hard', checkpoint.gitSha], { timeoutMs: 60_000 });

@@ -1,9 +1,26 @@
 const { eq, and } = require('drizzle-orm');
 const { GitOperationService } = require('../github/GitOperationService');
+const { LocalGitService } = require('../git/LocalGitService');
 const { db } = require('../db/index');
 const schema = require('../db/schema');
 const { getProjectForUser } = require('../projects/getProjectForUser');
 const { withProjectGitLock } = require('../git/gitMutationLock');
+
+async function ensureLocalGitReady(project, log) {
+    // Built-in workspace git should always be available for Changes. Backfill
+    // projects where create-time initRepo failed (common on BoxLite).
+    if (project.repoProvider && project.repoProvider !== 'none' && project.repoProvider !== 'local_git') {
+        return project;
+    }
+    try {
+        const localGit = new LocalGitService();
+        await localGit.ensureGitInit(project);
+        return (await getProjectForUser(project.userId, project.id)) || project;
+    } catch (err) {
+        log?.warn?.({ err, projectId: project.id }, 'ensureGitInit before git status failed');
+        return project;
+    }
+}
 
 function registerProjectGitRoutes(fastify) {
     const gitOperationService = new GitOperationService();
@@ -12,9 +29,10 @@ function registerProjectGitRoutes(fastify) {
     fastify.get('/api/v1/projects/:id/git/status', {
         preValidation: [fastify.authenticate, fastify.requireActive],
     }, async (request, reply) => {
-        const project = await getProjectForUser(request.user.id, request.params.id);
+        let project = await getProjectForUser(request.user.id, request.params.id);
         if (!project) return reply.code(404).send({ error: 'Project not found' });
         try {
+            project = await ensureLocalGitReady(project, request.log);
             const mode = request.query.mode === 'light' ? 'light' : 'full';
             const status = mode === 'light'
                 ? await gitOperationService.getStatusLight(project)
