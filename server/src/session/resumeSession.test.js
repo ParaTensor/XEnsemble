@@ -414,6 +414,7 @@ test('resumeSession reattaches a live execution from the persisted transcript cu
     } finally {
         sessionManager.deleteSession(sessionId);
         await db.delete(schema.sessions).where(eq(schema.sessions.id, sessionId));
+        await db.delete(schema.runtimes).where(eq(schema.runtimes.projectId, projectId));
         await db.delete(schema.projects).where(eq(schema.projects.id, projectId));
         await db.delete(schema.users).where(eq(schema.users.id, userId));
         cleanup(root);
