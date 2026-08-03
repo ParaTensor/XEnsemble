@@ -114,6 +114,8 @@ describe('GitOperationService (mock exec)', () => {
             exec,
             ensureProjectRuntime: async () => ({ workspacePath: '/workspace' }),
             getToken: async () => 'mock_token',
+            // 单测走 mock exec，避免默认 boxlite 走 host git
+            usesHostWorkspace: () => false,
         });
     }
 
@@ -389,6 +391,7 @@ describe('GitOperationService (mock exec)', () => {
             fs: mockFs,
             ensureProjectRuntime: async () => ({ workspacePath: '/workspace' }),
             getToken: async () => undefined,
+            usesHostWorkspace: () => false,
         });
 
         const result = await service.getFileDiffView({ id: 'p1', userId: 'u1' }, 'src/app.js');
@@ -407,6 +410,7 @@ describe('GitOperationService (mock exec)', () => {
             fs: mockFs,
             ensureProjectRuntime: async () => ({ workspacePath: '/workspace' }),
             getToken: async () => undefined,
+            usesHostWorkspace: () => false,
         });
 
         const result = await service.getFileDiffView({ id: 'p1', userId: 'u1' }, 'new.txt');
@@ -422,6 +426,7 @@ describe('GitOperationService (mock exec)', () => {
             fs: mockFs,
             ensureProjectRuntime: async () => ({ workspacePath: '/workspace' }),
             getToken: async () => undefined,
+            usesHostWorkspace: () => false,
         });
 
         const result = await service.getFileDiffView({ id: 'p1', userId: 'u1' }, 'deleted.txt');
@@ -468,6 +473,7 @@ describe('GitOperationService (real git)', { skip: !hasGit() }, () => {
             getToken: async () => undefined,
             exec: makeLocalExec(),
             fs: new LocalFsAdapter(),
+            usesHostWorkspace: () => false,
         });
 
         await service.cloneRepo({ id: 'p1', userId: 'u1' }, { repoUrl: origin, branch: 'main' });

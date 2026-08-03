@@ -178,9 +178,15 @@
   }
 }
 
-/* xterm: prevent scrollbar from changing terminal width and causing resize cascades.
-   overflow-y:scroll makes scrollbar always present (inline), so content growth
-   doesn't change available width -> no ResizeObserver -> no resize storm. */
+/* xterm: hide scrollbar visually but keep scrolling.
+   scrollbar-gutter:stable keeps width fixed so content growth doesn't trigger
+   ResizeObserver / fit resize storms (overflow-y:scroll reserves the gutter). */
 .xterm-viewport {
   scrollbar-gutter: stable !important;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.xterm-viewport::-webkit-scrollbar {
+  display: none;
 }

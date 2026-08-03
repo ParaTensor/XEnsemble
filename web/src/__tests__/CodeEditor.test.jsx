@@ -88,11 +88,17 @@ describe('CodeEditor', () => {
     render(<CodeEditor content="hello" originalContent="hello" path="app.js" />);
     expect(screen.queryByText('已保存')).not.toBeInTheDocument();
     expect(screen.queryByText('保存')).not.toBeInTheDocument();
+    expect(screen.queryByText('未保存')).not.toBeInTheDocument();
   });
 
-  it('shows unsaved status when content differs from original', () => {
+  it('does not show unsaved status for dirty content (autosave)', () => {
     render(<CodeEditor content="hello" originalContent="world" path="app.js" />);
-    expect(screen.getByText('未保存')).toBeInTheDocument();
+    expect(screen.queryByText('未保存')).not.toBeInTheDocument();
     expect(screen.queryByText('保存')).not.toBeInTheDocument();
+  });
+
+  it('shows saving status when saving=true', () => {
+    render(<CodeEditor content="hello" originalContent="world" path="app.js" saving />);
+    expect(screen.getByText('保存中…')).toBeInTheDocument();
   });
 });

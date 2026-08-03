@@ -1,7 +1,6 @@
-import { useCallback, useRef, useState, useEffect, useMemo } from 'react';
-import Editor, { DiffEditor } from '@monaco-editor/react';
-import { FileWarning, Loader2, X } from 'lucide-react';
-import { consoleButtonFocusClass } from '@/lib/consoleTheme';
+import { useCallback, useRef } from 'react';
+import Editor from '@monaco-editor/react';
+import { FileWarning, Loader2 } from 'lucide-react';
 import '@/lib/monacoSetup'; // Configure Monaco to load from local bundle, not CDN
 
 const LANG_MAP = {
@@ -56,18 +55,13 @@ function inferLanguage(path) {
 const MEGABYTE = 1024 * 1024;
 const LARGE_FILE_THRESHOLD = MEGABYTE;
 
-export default function CodeEditor({ content, originalContent, path, readOnly: readOnlyProp, isBinary, onSave, onChange, saving }) {
-  const [showDiff, setShowDiff] = useState(false);
+export default function CodeEditor({ content, path, readOnly: readOnlyProp, isBinary, onSave, onChange, saving }) {
   const editorRef = useRef(null);
-  const decorationsRef = useRef([]);
   const onSaveRef = useRef(onSave);
   onSaveRef.current = onSave;
 
-  useEffect(() => { setShowDiff(false); }, [path]);
-
   const canEdit = !readOnlyProp && !isBinary;
   const isReadOnly = !canEdit;
-  const isDirty = canEdit && content !== originalContent;
 
   const handleMount = useCallback((editor, monaco) => {
     editorRef.current = editor;
@@ -97,15 +91,14 @@ export default function CodeEditor({ content, originalContent, path, readOnly: r
   }
 
   const isLarge = content && content.length > LARGE_FILE_THRESHOLD;
-
-  const showToolbar = isReadOnly || isDirty || isLarge || saving;
+  const showToolbar = isReadOnly || isLarge || saving;
 
   return (
     <div className="flex flex-col h-full w-full" onKeyDown={handleKeyDown}>
       {showToolbar && (
         <div className="flex items-center justify-between px-4 py-1.5 border-b border-[#E8EAED] bg-[#FAFBFC]">
           <div className="flex items-center gap-2 text-xs text-zinc-500">
-            {isReadOnly ? <span>只读</span> : isDirty ? <span className="text-[#C06C5D]">未保存</span> : null}
+            {isReadOnly ? <span>只读</span> : null}
             {saving && (
               <span className="inline-flex items-center gap-1">
                 <Loader2 className="h-3 w-3 animate-spin" />
@@ -119,70 +112,38 @@ export default function CodeEditor({ content, originalContent, path, readOnly: r
               </span>
             )}
           </div>
-          {canEdit && isDirty && (
-            <button
-              onClick={() => setShowDiff((v) => !v)}
-              className={`inline-flex items-center gap-1.5 text-xs px-3 py-1 rounded-md transition-colors ${consoleButtonFocusClass} ${
-                showDiff ? 'text-[#5B8DB8] bg-[#F4F5F6]' : 'text-[#5F6368] hover:bg-[#F4F5F6]'
-              }`}
-              title={showDiff ? '返回编辑' : '对比已保存版本'}
-            >
-              {showDiff ? <X className="h-3 w-3" /> : null}
-              {showDiff ? '编辑' : '对比'}
-            </button>
-          )}
         </div>
       )}
       <div className="flex-1 min-h-0">
-        {showDiff && isDirty ? (
-          <DiffEditor
-            height="100%"
-            language={language}
-            original={originalContent || ''}
-            modified={content}
-            theme="vs"
-            options={{
-              readOnly: true,
-              renderSideBySide: true,
-              ignoreTrimWhitespace: false,
-              minimap: { enabled: false },
-              scrollBeyondLastLine: false,
-              fontSize: 13,
-              fontFamily: "'Noto Sans Mono', 'Fira Code', monospace",
-              automaticLayout: true,
-            }}
-          />
-        ) : (
-          <Editor
-            height="100%"
-            language={language}
-            value={content}
-            onChange={onChange}
-            onMount={handleMount}
-            theme="vs"
-            loading={
-              <div className="flex items-center justify-center h-full gap-2">
-                <Loader2 className="h-4 w-4 animate-spin text-zinc-400" />
-                <span className="text-sm text-zinc-400">加载编辑器…</span>
-              </div>
-            }
-            options={{
-              readOnly: isReadOnly,
-              minimap: { enabled: false },
-              lineNumbers: 'on',
-              scrollBeyondLastLine: false,
-              wordWrap: 'on',
-              fontSize: 13,
-              fontFamily: "'Noto Sans Mono', 'Fira Code', monospace",
-              tabSize: 2,
-              automaticLayout: true,
-              renderLineHighlight: 'all',
-              cursorBlinking: 'smooth',
-              smoothScrolling: true,
-              padding: { top: 12, bottom: 12 },
-            }}
-          />
-        )}
+        <Editor
+          height="100%"
+          language={language}
+          value={content}
+          onChange={onChange}
+          onMount={handleMount}
+          theme="vs"
+          loading={
+            <div className="flex items-center justify-center h-full gap-2">
+              <Loader2 className="h-4 w-4 animate-spin text-zinc-400" />
+              <span className="text-sm text-zinc-400">加载编辑器…</span>
+            </div>
+          }
+          options={{
+            readOnly: isReadOnly,
+            minimap: { enabled: false },
+            lineNumbers: 'on',
+            scrollBeyondLastLine: false,
+            wordWrap: 'on',
+            fontSize: 13,
+            fontFamily: "'Noto Sans Mono', 'Fira Code', monospace",
+            tabSize: 2,
+            automaticLayout: true,
+            renderLineHighlight: 'all',
+            cursorBlinking: 'smooth',
+            smoothScrolling: true,
+            padding: { top: 12, bottom: 12 },
+          }}
+        />
       </div>
     </div>
   );
