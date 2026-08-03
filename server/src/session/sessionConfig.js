@@ -117,6 +117,9 @@ function resolveAgentSpawnArgs(agentId, configFiles, options = {}) {
 
     if (agentId === 'hermes' && authMode === 'gateway') {
         prepend.push('--ignore-user-config');
+        if (gatewayModel) {
+            prepend.push('-m', gatewayModel);
+        }
     }
 
     if (agentId === 'droid') {

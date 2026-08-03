@@ -34,6 +34,7 @@ const GATEWAY_MODEL_ENV_KEYS = [
     'LLM_MODEL',
     'KIMI_MODEL',
     'MOONSHOT_MODEL',
+    'ZAI_MODEL',
 ];
 
 const KIMI_CODE_AGENT_IDS = new Set(['kimi-code']);

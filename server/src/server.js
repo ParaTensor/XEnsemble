@@ -1380,12 +1380,8 @@ fastify.post('/api/v1/session/start', { preValidation: [fastify.authenticate] },
 
     const { resolveSpawnEnv, GATEWAY_MANAGED_ENV_KEYS } = require('./agents/agentEnv');
     if (authMode === 'gateway' && custom_env && typeof custom_env === 'object') {
-        const blockedKeys = Object.keys(custom_env)
-            .filter((key) => GATEWAY_MANAGED_ENV_KEYS.includes(key));
-        if (blockedKeys.length > 0) {
-            return reply.code(400).send({
-                error: `Gateway mode manages these environment variables: ${blockedKeys.join(', ')}`,
-            });
+        for (const key of Object.keys(custom_env)) {
+            if (GATEWAY_MANAGED_ENV_KEYS.includes(key)) delete custom_env[key];
         }
     }
     const resolved = await resolveSpawnEnv({

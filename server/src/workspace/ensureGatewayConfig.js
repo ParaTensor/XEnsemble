@@ -11,6 +11,7 @@ const GATEWAY_CONFIG_AGENTS = new Set([
     'qoder',
     'openclaw',
     'minimax-cli',
+    'pi',
 ]);
 
 function buildGatewayConfigSpec(agentId, { stateDirPath, sessionToken, routerUrl, modelTarget }) {
@@ -114,6 +115,26 @@ function buildGatewayConfigSpec(agentId, { stateDirPath, sessionToken, routerUrl
                 }, null, 2),
             };
 
+        case 'pi':
+            return {
+                dirPath: '$HOME/.pi/agent',
+                filePath: '$HOME/.pi/agent/models.json',
+                content: JSON.stringify({
+                    providers: {
+                        gateway: {
+                            baseUrl: `${routerUrl}/v1`,
+                            api: 'openai-completions',
+                            apiKey: sessionToken,
+                            models: [{
+                                id: modelTarget,
+                                name: modelTarget,
+                                contextWindow: 64000,
+                            }],
+                        },
+                    },
+                }, null, 2),
+            };
+
         default:
             return null;
     }
@@ -122,7 +143,9 @@ function buildGatewayConfigSpec(agentId, { stateDirPath, sessionToken, routerUrl
 function buildWriteScript(spec) {
     const encoded = Buffer.from(spec.content, 'utf8').toString('base64');
     const lines = ['set -e'];
-    if (spec.dirPath) {
+    if (spec.dirPath && spec.dirPath.includes('$')) {
+        lines.push(`mkdir -p "${spec.dirPath}"`);
+    } else if (spec.dirPath) {
         lines.push(`mkdir -p '${spec.dirPath.replace(/'/g, "'\\''")}'`);
     } else {
         lines.push('mkdir -p "$HOME/.mmx"');
@@ -148,8 +171,8 @@ async function ensureGatewayConfig({ runtime, runtimeRef, agentId, authMode, sta
     if (!runtime?.exec?.exec) {
         return { skipped: true, reason: 'no_runtime_exec' };
     }
-    // minimax-cli uses $HOME (no state dir); all others require a state dir path.
-    if (agentId !== 'minimax-cli' && !stateDirPath) {
+    // minimax-cli and pi use $HOME (no state dir); all others require a state dir path.
+    if (agentId !== 'minimax-cli' && agentId !== 'pi' && !stateDirPath) {
         return { skipped: true, reason: 'no_state_dir' };
     }
 

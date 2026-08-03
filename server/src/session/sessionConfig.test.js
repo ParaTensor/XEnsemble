@@ -43,9 +43,9 @@ test('resolveAgentSpawnArgs: droid returns empty on invalid json (no throw)', ()
     assert.deepEqual(resolveAgentSpawnArgs('droid', configFiles), { prepend: [], append: [] });
 });
 
-test('resolveAgentSpawnArgs: hermes gateway mode prepends --ignore-user-config', () => {
-    const result = resolveAgentSpawnArgs('hermes', [], { authMode: 'gateway' });
-    assert.deepEqual(result, { prepend: ['--ignore-user-config'], append: [] });
+test('resolveAgentSpawnArgs: hermes gateway mode prepends --ignore-user-config and -m', () => {
+    const result = resolveAgentSpawnArgs('hermes', [], { authMode: 'gateway', gatewayModel: 'zxs_deepseek/deepseek-v4-flash' });
+    assert.deepEqual(result, { prepend: ['--ignore-user-config', '-m', 'zxs_deepseek/deepseek-v4-flash'], append: [] });
 });
 
 test('resolveAgentSpawnArgs: hermes BYOK mode does not prepend --ignore-user-config', () => {
