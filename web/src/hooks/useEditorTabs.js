@@ -36,22 +36,24 @@ export function useEditorTabs(projectId) {
   const openFile = useCallback(async (projectId, file) => {
     if (!file || file.type !== 'file') return;
     const path = file.path;
-    const existing = tabsRef.current.find((t) => t.path === path);
-    if (existing) {
+    const current = tabsRef.current[0];
+    // 单文件模式：右侧同时只保留一个已打开文件
+    if (current?.path === path) {
       setActivePath(path);
       return;
     }
     try {
       const result = await readFile(projectId, path);
       const now = Date.now();
-      const newTab = {
+      const next = {
         path,
         content: result.isBinary ? '' : (result.content || ''),
         originalContent: result.isBinary ? '' : (result.content || ''),
         isBinary: !!result.isBinary,
         loadedAt: now,
       };
-      setTabs((prev) => [...prev, newTab]);
+      tabsRef.current = [next];
+      setTabs([next]);
       setActivePath(path);
     } catch (err) {
       throw err;
@@ -59,35 +61,43 @@ export function useEditorTabs(projectId) {
   }, [readFile]);
 
   const closeTab = useCallback((path) => {
-    setTabs((prev) => {
-      const idx = prev.findIndex((t) => t.path === path);
-      if (idx === -1) return prev;
-      const next = prev.filter((t) => t.path !== path);
-      if (activePathRef.current === path) {
-        const newActive = next[idx] || next[idx - 1] || null;
-        setActivePath(newActive ? newActive.path : null);
-      }
-      return next;
-    });
+    const current = tabsRef.current[0];
+    if (!current || (path && current.path !== path)) return;
+    tabsRef.current = [];
+    activePathRef.current = null;
+    setTabs([]);
+    setActivePath(null);
   }, []);
 
   const selectTab = useCallback((path, newContent) => {
     setActivePath(path);
+    activePathRef.current = path;
     if (newContent !== undefined) {
-      setTabs((prev) => prev.map((t) =>
-        t.path === path ? { ...t, content: newContent } : t
-      ));
+      // 同步更新 tabsRef，避免自动保存读到过期 content
+      setTabs((prev) => {
+        const next = prev.map((t) =>
+          t.path === path ? { ...t, content: newContent } : t
+        );
+        tabsRef.current = next;
+        return next;
+      });
     }
   }, []);
 
   const saveTab = useCallback(async (projectId, path) => {
     const tab = tabsRef.current.find((t) => t.path === path);
     if (!tab) return;
+    if (tab.content === tab.originalContent) return;
     await writeFile(projectId, path, tab.content, { loadedAt: tab.loadedAt });
     // 保存成功：更新 originalContent 和 loadedAt
-    setTabs((prev) => prev.map((t) =>
-      t.path === path ? { ...t, originalContent: t.content, loadedAt: Date.now() } : t
-    ));
+    const savedAt = Date.now();
+    setTabs((prev) => {
+      const next = prev.map((t) =>
+        t.path === path ? { ...t, originalContent: t.content, loadedAt: savedAt } : t
+      );
+      tabsRef.current = next;
+      return next;
+    });
   }, [writeFile]);
 
   const showDiff = useCallback(async (projectId, path) => {

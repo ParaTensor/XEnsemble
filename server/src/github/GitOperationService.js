@@ -1,3 +1,4 @@
+const fs = require('fs');
 const { getRuntime } = require('../runtime/registry');
 const { ensureProjectRuntime } = require('../runtime/RuntimeService');
 const { stripCredentialFromUrl, buildCredentialEnv } = require('./gitCredentialHelper');
@@ -5,6 +6,7 @@ const workspace = require('../workspace');
 const { assertRepoRelativePath, assertGitRef, assertGitBranch } = require('../git/gitValidation');
 const { withProjectGitLock } = require('../git/gitMutationLock');
 const { limitDiffText, limitFileSide } = require('../git/diffUtils');
+const { hostGit, usesHostWorkspace } = require('../git/hostGit');
 
 class GitError extends Error {
     constructor(message, code) {
@@ -29,6 +31,10 @@ class GitOperationService {
         this.fs = deps.fs ?? getRuntime().fs;
         this.ensureProjectRuntime = deps.ensureProjectRuntime ?? ensureProjectRuntime;
         this.getToken = deps.getToken ?? defaultGetToken;
+        // local/boxlite：workspace 在宿主机（BoxLite virtiofs），Changes 用 host git，
+        // 避免依赖 VM 内是否安装 git / runtime 是否 ready。
+        this.usesHostWorkspace = deps.usesHostWorkspace ?? usesHostWorkspace;
+        this.hostGit = deps.hostGit ?? hostGit;
     }
 
     _execFn() {
@@ -42,11 +48,32 @@ class GitOperationService {
     }
 
     async _execGit(project, args, options = {}) {
+        const token = await this._resolveToken(project);
+        const hostPath = workspace.projectDir(project.userId, project.id);
+
+        if (this.usesHostWorkspace()) {
+            fs.mkdirSync(hostPath, { recursive: true });
+            const credentials = token ? buildCredentialEnv(token, hostPath, hostPath) : null;
+            try {
+                const result = await this.hostGit(hostPath, args, {
+                    timeoutMs: options.timeoutMs || 120_000,
+                    env: credentials ? credentials.env : {},
+                });
+                return { ...result, workspacePath: hostPath };
+            } catch (err) {
+                const code = err.exitCode ?? 1;
+                throw new GitError(
+                    `git ${args.join(' ')} failed (${code}): ${err.message}`,
+                    code,
+                );
+            } finally {
+                if (credentials) credentials.cleanup();
+            }
+        }
+
         const ready = await this.ensureProjectRuntime(project);
         const workspacePath = ready.workspacePath;
         const runtimeRef = ready.runtime ? ready.runtime.runtimeRef : undefined;
-        const token = await this._resolveToken(project);
-        const hostPath = workspace.projectDir(project.userId, project.id);
         const credentials = token ? buildCredentialEnv(token, hostPath, workspacePath) : null;
 
         try {

@@ -17,6 +17,7 @@ import { useToast } from '../components/Toast';
 import { useTerminalTheme } from '../hooks/useTerminalTheme.jsx';
 import { useEditorTabs } from '../hooks/useEditorTabs';
 import { useGitChanges } from '../hooks/useGitChanges';
+import { usePreview, PreviewControlGroup } from '../components/PreviewPanel';
 import {
   TerminalSquare,
   Play,
@@ -141,9 +142,10 @@ export default React.forwardRef(function Sessions({
   const sessionAlive = activeSessionMeta?.alive === true;
 
   const editorTabs = useEditorTabs(activeSession?.projectId);
-  // Only poll git status when the session is running so we don't trigger
-  // a premature box-base VM creation on the server.
-  const gitChanges = useGitChanges(sessionAlive ? activeSession?.projectId : null);
+  // Changes 与 Files 共用同一 workspace attach 路径；不能再按 sessionAlive 关掉，
+  // 否则编辑器已能保存、Changes 却一直空白（分支显示 —）。
+  const gitChanges = useGitChanges(activeSession?.projectId || null);
+  const preview = usePreview(activeSession?.projectId, Boolean(activeSession?.projectId));
   const [gitDiffView, setGitDiffView] = useState(null);
 
   const [configEnvVars, setConfigEnvVars] = useState([{ key: '', value: '' }]);
@@ -1473,6 +1475,12 @@ export default React.forwardRef(function Sessions({
                   >
                     {panelOpen ? <PanelRightClose className="w-4 h-4" strokeWidth={1.75} /> : <PanelRightOpen className="w-4 h-4" strokeWidth={1.75} />}
                   </button>
+                  {activeSession.projectId ? (
+                    <>
+                      <div className="mx-0.5 h-5 w-px bg-[#E8EAED]" />
+                      <PreviewControlGroup {...preview} />
+                    </>
+                  ) : null}
                 </>
               )}
             </div>
@@ -1516,23 +1524,19 @@ export default React.forwardRef(function Sessions({
             ) : (
 <div className="flex min-h-0 min-w-0 flex-1 flex-row overflow-hidden">
               <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
-                <div className="flex min-h-0 flex-1 flex-col p-4">
-                  <div
-                     className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-[#E8EAED] shadow-sm"
-                     style={{ backgroundColor: preset.xterm.background }}
-                   >
-                      <AgentConsole
-                        key={activeSession.sessionId}
-                        sessionId={activeSession.sessionId}
-                        reconnectVersion={reconnectVersion}
-                        agentName={activeSession.agentName}
-                        projectId={activeSession.projectId}
-                        onSessionEnd={handleSessionEnd}
-                        onSessionConnected={handleSessionConnected}
-                        sessionLive={sessionAlive}
-                        sessionWakeable={sessionWakeable}
-                      />
-                   </div>
+                <div
+                  className="flex min-h-0 flex-1 flex-col overflow-hidden"
+                  style={{ backgroundColor: preset.xterm.background }}
+                >
+                  <AgentConsole
+                    key={activeSession.sessionId}
+                    sessionId={activeSession.sessionId}
+                    reconnectVersion={reconnectVersion}
+                    onSessionEnd={handleSessionEnd}
+                    onSessionConnected={handleSessionConnected}
+                    sessionLive={sessionAlive}
+                    sessionWakeable={sessionWakeable}
+                  />
                 </div>
                 <GitStatusBar projectId={activeSession.projectId} project={activeProject} git={gitChanges} />
               </div>
@@ -1549,7 +1553,6 @@ export default React.forwardRef(function Sessions({
                     tabs={editorTabs.tabs}
                     activePath={editorTabs.activePath}
                     onSelectTab={editorTabs.selectTab}
-                    onCloseTab={editorTabs.closeTab}
                     onSaveTab={handleSaveTab}
                     onOpenFile={handleEditorOpenFile}
                     onFetchDir={editorTabs.fetchDir}

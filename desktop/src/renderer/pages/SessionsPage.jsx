@@ -139,9 +139,9 @@ export default React.forwardRef(function Sessions({
   const sessionAlive = activeSessionMeta?.alive === true;
 
   const editorTabs = useEditorTabs(activeSession?.projectId);
-  // Only poll git status when the session is running so we don't trigger
-  // a premature box-base VM creation on the server.
-  const gitChanges = useGitChanges(sessionAlive ? activeSession?.projectId : null);
+  // Changes 与 Files 共用同一 workspace attach 路径；不能再按 sessionAlive 关掉，
+  // 否则编辑器已能保存、Changes 却一直空白（分支显示 —）。
+  const gitChanges = useGitChanges(activeSession?.projectId || null);
   const [gitDiffView, setGitDiffView] = useState(null);
 
   const [showConfigModal, setShowConfigModal] = useState(false);
@@ -1407,7 +1407,6 @@ sessionLive={sessionAlive}
                     tabs={editorTabs.tabs}
                     activePath={editorTabs.activePath}
                     onSelectTab={editorTabs.selectTab}
-                    onCloseTab={editorTabs.closeTab}
                     onSaveTab={handleSaveTab}
                     onOpenFile={handleEditorOpenFile}
                     onFetchDir={editorTabs.fetchDir}

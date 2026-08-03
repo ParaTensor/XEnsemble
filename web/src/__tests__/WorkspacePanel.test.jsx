@@ -59,12 +59,14 @@ describe('WorkspacePanel', () => {
     });
   });
 
-  it('renders editor with tabs when files are open', () => {
+  it('renders editor content when a file is open, without file tabs', async () => {
     const tabs = [
       { path: 'src/index.js', content: 'hello', originalContent: 'hello', isBinary: false },
     ];
     renderPanel(<WorkspacePanel {...defaultProps} tabs={tabs} activePath="src/index.js" />);
-    expect(screen.getByText('index.js')).toBeInTheDocument();
+    expect(await screen.findByTestId('monaco-editor')).toBeInTheDocument();
+    expect(screen.queryByTestId('tab-list')).not.toBeInTheDocument();
+    expect(screen.queryByText('index.js')).not.toBeInTheDocument();
   });
 
   it('opens new file dialog with autoFocus', () => {

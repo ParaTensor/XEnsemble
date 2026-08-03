@@ -5,7 +5,6 @@ import {
   Terminal, Globe, Monitor, GitBranch, X,
 } from 'lucide-react';
 import WorkspaceFileTree from './WorkspaceFileTree';
-import EditorTabs from './EditorTabs';
 import CodeEditor from './CodeEditorLazy';
 import { ConsoleDialogShell } from './ConsoleDialog';
 import SourceControlPanel from './SourceControlPanel';
@@ -72,7 +71,6 @@ const WorkspacePanel = memo(function WorkspacePanel({
   tabs,
   activePath,
   onSelectTab,
-  onCloseTab,
   onSaveTab,
   onOpenFile,
   onFetchDir,
@@ -137,6 +135,8 @@ const WorkspacePanel = memo(function WorkspacePanel({
     }
   }, [mainTab, onShellMount]);
 
+  const fetchGitStatus = gitChanges?.fetchStatus;
+
   useEffect(() => {
     if (!addMenuOpen) {
       setAddMenuRect(null);
@@ -187,7 +187,11 @@ const WorkspacePanel = memo(function WorkspacePanel({
     }
   }, [newName, projectId, onCreateDir]);
 
+  const autosaveTimerRef = useRef(null);
+  const pendingAutosavePathRef = useRef(null);
+
   const handleSave = useCallback(async (path) => {
+    if (!path) return;
     setSaving(true);
     try {
       await onSaveTab?.(path);
@@ -195,6 +199,54 @@ const WorkspacePanel = memo(function WorkspacePanel({
       setSaving(false);
     }
   }, [onSaveTab]);
+
+  const flushAutosave = useCallback(async () => {
+    if (autosaveTimerRef.current) {
+      clearTimeout(autosaveTimerRef.current);
+      autosaveTimerRef.current = null;
+    }
+    const path = pendingAutosavePathRef.current;
+    pendingAutosavePathRef.current = null;
+    if (path) await handleSave(path);
+  }, [handleSave]);
+
+  const scheduleAutosave = useCallback((path) => {
+    if (!path) return;
+    pendingAutosavePathRef.current = path;
+    if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current);
+    autosaveTimerRef.current = setTimeout(() => {
+      autosaveTimerRef.current = null;
+      const pendingPath = pendingAutosavePathRef.current;
+      pendingAutosavePathRef.current = null;
+      if (pendingPath) handleSave(pendingPath).catch(() => {});
+    }, 500);
+  }, [handleSave]);
+
+  useEffect(() => () => {
+    if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current);
+  }, []);
+
+  const handleOpenFile = useCallback(async (file) => {
+    await flushAutosave();
+    return onOpenFile?.(file);
+  }, [flushAutosave, onOpenFile]);
+
+  const handleImmediateSave = useCallback(async (path) => {
+    if (autosaveTimerRef.current) {
+      clearTimeout(autosaveTimerRef.current);
+      autosaveTimerRef.current = null;
+    }
+    pendingAutosavePathRef.current = null;
+    await handleSave(path);
+  }, [handleSave]);
+
+  const selectMainTab = useCallback(async (key) => {
+    if (key === 'changes') {
+      await flushAutosave().catch(() => {});
+      await fetchGitStatus?.({ silent: true });
+    }
+    setMainTab(key);
+  }, [flushAutosave, fetchGitStatus]);
 
   const addTab = useCallback((key) => {
     setExtraTabs((prev) => (prev.includes(key) ? prev : [...prev, key]));
@@ -241,7 +293,7 @@ const WorkspacePanel = memo(function WorkspacePanel({
               <div key={tab.key} className="relative flex items-center group">
                 <button
                   type="button"
-                  onClick={() => setMainTab(tab.key)}
+                  onClick={() => { void selectMainTab(tab.key); }}
                   className={`relative flex items-center gap-1.5 px-3 py-2 text-xs font-medium border-b-2 -mb-px transition-colors ${
                     isActive
                       ? 'border-[#202124] text-[#202124]'
@@ -347,7 +399,7 @@ const WorkspacePanel = memo(function WorkspacePanel({
               <div className="w-44 shrink-0 border-r border-[#E8EAED] bg-[#F4F5F6] flex flex-col min-h-0">
                 <div className="flex-1 min-h-0 overflow-y-auto px-2 py-1">
                   <WorkspaceFileTree lazy projectId={projectId} onFetchDir={onFetchDir}
-                    selectedPath={activePath} onOpenFile={onOpenFile} />
+                    selectedPath={activePath} onOpenFile={handleOpenFile} />
                 </div>
               </div>
             )}
@@ -364,33 +416,22 @@ const WorkspacePanel = memo(function WorkspacePanel({
                     onClose={onCloseGitDiff}
                   />
                 </Suspense>
-              ) : tabs.length > 0 ? (
-                <>
-                  <EditorTabs
-                    tabs={tabs}
-                    activePath={activePath}
-                    onSelectTab={onSelectTab}
-                    onCloseTab={onCloseTab}
-                    onSaveTab={handleSave}
+              ) : activeTab ? (
+                <div className="flex-1 min-h-0 overflow-hidden">
+                  <CodeEditor
+                    content={activeTab.content}
+                    path={activeTab.path}
+                    isBinary={activeTab.isBinary}
+                    readOnly={activeTab.isBinary}
+                    saving={saving}
+                    onSave={() => handleImmediateSave(activeTab.path)}
+                    onChange={(value) => {
+                      const currentPath = activePathRef.current;
+                      onSelectTab?.(currentPath, value);
+                      scheduleAutosave(currentPath);
+                    }}
                   />
-                  <div className="flex-1 min-h-0 overflow-hidden">
-                    {activeTab && (
-                      <CodeEditor
-                        content={activeTab.content}
-                        originalContent={activeTab.originalContent}
-                        path={activeTab.path}
-                        isBinary={activeTab.isBinary}
-                        readOnly={activeTab.isBinary}
-                        saving={saving}
-                        onSave={() => handleSave(activeTab.path)}
-                        onChange={(value) => {
-                          const currentPath = activePathRef.current;
-                          onSelectTab?.(currentPath, value);
-                        }}
-                      />
-                    )}
-                  </div>
-                </>
+                </div>
               ) : (
                 <div className="flex-1 flex flex-col items-center justify-center gap-3 text-zinc-400">
                   <FileText className="h-12 w-12" />
@@ -408,7 +449,7 @@ const WorkspacePanel = memo(function WorkspacePanel({
             onGitFileClick={onGitFileClick}
             onJumpToFile={(filePath) => {
               setMainTab('files');
-              onOpenFile?.(projectId, filePath);
+              handleOpenFile?.({ path: filePath, type: 'file' });
             }}
             provider={provider}
             sessionLive={sessionLive}

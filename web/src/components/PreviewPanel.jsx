@@ -259,7 +259,7 @@ export function PreviewControlGroup(props) {
   return (
     <div className="flex items-center gap-0.5 shrink-0">
       <PreviewStatus {...props} />
-      {deployment && <div className="h-3.5 w-px bg-zinc-600 mx-0.5 shrink-0" aria-hidden />}
+      {deployment && <div className="h-3.5 w-px bg-[#E8EAED] mx-0.5 shrink-0" aria-hidden />}
       <PreviewActions {...props} />
     </div>
   );
