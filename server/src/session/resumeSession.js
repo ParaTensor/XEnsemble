@@ -397,6 +397,30 @@ async function resumeSession({
                 }
             }
 
+            // Gateway mode: write agent-specific config files to route through the gateway.
+            if (authMode === 'gateway') {
+                try {
+                    const { ensureGatewayConfig } = require('../workspace/ensureGatewayConfig');
+                    await ensureGatewayConfig({
+                        runtime,
+                        runtimeRef,
+                        agentId: agentMeta.id,
+                        authMode,
+                        stateDirPath,
+                        sessionToken: resolvedSpawnEnv.env.LLM_ROUTER_API_KEY,
+                        routerUrl: resolvedSpawnEnv.env.LLM_ROUTER_URL,
+                        modelTarget: resolvedSpawnEnv.env.OPENAI_MODEL,
+                        warn: (msg) => {
+                            if (fastifyLog?.warn) fastifyLog.warn(msg);
+                            else if (requestLog?.warn) requestLog.warn(msg);
+                        },
+                    });
+                } catch (err) {
+                    if (fastifyLog?.warn) fastifyLog.warn({ err }, '[sessions] resume gateway config bootstrap failed');
+                    else if (requestLog?.warn) requestLog.warn({ err }, '[sessions] resume gateway config bootstrap failed');
+                }
+            }
+
             // Kill any lingering agent process from a previous run.
             // Use exact-name match first (-x) to avoid collateral kills;
             // fall back to -f only when -x finds no match (pkill exits 1).
@@ -409,9 +433,13 @@ async function resumeSession({
                 } catch (_) { /* best-effort */ }
             }
 
+            const resumeSpawnArgs = resolveAgentSpawnArgs(agentMeta.id, userConfig.configFiles, {
+                authMode,
+                gatewayModel: resolvedSpawnEnv.env.OPENAI_MODEL,
+            });
             handle = await runtime.exec.spawn(
                 agentMeta.cmd,
-                [...stateArgs, ...agentMeta.args, ...resumeArgs, ...resolveAgentSpawnArgs(agentMeta.id, userConfig.configFiles)],
+                [...resumeSpawnArgs.prepend, ...stateArgs, ...agentMeta.args, ...resumeArgs, ...resumeSpawnArgs.append],
                 resolvedSpawnEnv.env,
                 {
                     name: agentMeta.name,

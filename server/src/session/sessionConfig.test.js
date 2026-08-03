@@ -15,7 +15,7 @@ test('applyCustomEnv preserves gateway-managed values when overrides are blocked
     });
 });
 
-test('resolveAgentSpawnArgs: droid extracts --model from first customModel', () => {
+test('resolveAgentSpawnArgs: droid extracts --model from first customModel (BYOK)', () => {
     const configFiles = [{
         path: '${STATE_DIR}/.factory/settings.json',
         content: JSON.stringify({
@@ -24,28 +24,44 @@ test('resolveAgentSpawnArgs: droid extracts --model from first customModel', () 
             ],
         }),
     }];
-    assert.deepEqual(resolveAgentSpawnArgs('droid', configFiles), ['--model', 'deepseek-chat']);
+    const result = resolveAgentSpawnArgs('droid', configFiles);
+    assert.deepEqual(result, { prepend: [], append: ['--model', 'deepseek-chat'] });
 });
 
-test('resolveAgentSpawnArgs: droid returns [] when no customModels', () => {
+test('resolveAgentSpawnArgs: droid gateway mode uses gatewayModel', () => {
+    const result = resolveAgentSpawnArgs('droid', [], { authMode: 'gateway', gatewayModel: 'deepseek/deepseek-chat' });
+    assert.deepEqual(result, { prepend: [], append: ['--model', 'deepseek/deepseek-chat'] });
+});
+
+test('resolveAgentSpawnArgs: droid returns empty when no customModels (BYOK)', () => {
     const configFiles = [{ path: '${STATE_DIR}/.factory/settings.json', content: '{}' }];
-    assert.deepEqual(resolveAgentSpawnArgs('droid', configFiles), []);
+    assert.deepEqual(resolveAgentSpawnArgs('droid', configFiles), { prepend: [], append: [] });
 });
 
-test('resolveAgentSpawnArgs: droid returns [] on invalid json (no throw)', () => {
+test('resolveAgentSpawnArgs: droid returns empty on invalid json (no throw)', () => {
     const configFiles = [{ path: '${STATE_DIR}/.factory/settings.json', content: 'not-json' }];
-    assert.deepEqual(resolveAgentSpawnArgs('droid', configFiles), []);
+    assert.deepEqual(resolveAgentSpawnArgs('droid', configFiles), { prepend: [], append: [] });
 });
 
-test('resolveAgentSpawnArgs: non-droid agents are unaffected', () => {
+test('resolveAgentSpawnArgs: hermes gateway mode prepends --ignore-user-config', () => {
+    const result = resolveAgentSpawnArgs('hermes', [], { authMode: 'gateway' });
+    assert.deepEqual(result, { prepend: ['--ignore-user-config'], append: [] });
+});
+
+test('resolveAgentSpawnArgs: hermes BYOK mode does not prepend --ignore-user-config', () => {
+    const result = resolveAgentSpawnArgs('hermes', [], { authMode: 'byok' });
+    assert.deepEqual(result, { prepend: [], append: [] });
+});
+
+test('resolveAgentSpawnArgs: non-droid/hermes agents are unaffected', () => {
     const configFiles = [{ path: '${STATE_DIR}/.factory/settings.json', content: '{"customModels":[{"model":"x"}]}' }];
-    assert.deepEqual(resolveAgentSpawnArgs('kimi-code', configFiles), []);
-    assert.deepEqual(resolveAgentSpawnArgs('claude-code', configFiles), []);
+    assert.deepEqual(resolveAgentSpawnArgs('kimi-code', configFiles), { prepend: [], append: [] });
+    assert.deepEqual(resolveAgentSpawnArgs('claude-code', configFiles), { prepend: [], append: [] });
 });
 
-test('resolveAgentSpawnArgs: empty configFiles returns []', () => {
-    assert.deepEqual(resolveAgentSpawnArgs('droid', []), []);
-    assert.deepEqual(resolveAgentSpawnArgs('droid', null), []);
+test('resolveAgentSpawnArgs: empty configFiles returns empty', () => {
+    assert.deepEqual(resolveAgentSpawnArgs('droid', []), { prepend: [], append: [] });
+    assert.deepEqual(resolveAgentSpawnArgs('droid', null), { prepend: [], append: [] });
 });
 
 test('droid agent catalog exposes a configSchema with .factory/settings.json', () => {

@@ -1560,6 +1560,27 @@ fastify.post('/api/v1/session/start', { preValidation: [fastify.authenticate] },
             }
         }
 
+        // Gateway mode: write agent-specific config files to route through the gateway.
+        // Runs AFTER user config files and state dir env so gateway config can override.
+        if (authMode === 'gateway') {
+            try {
+                const { ensureGatewayConfig } = require('./workspace/ensureGatewayConfig');
+                await ensureGatewayConfig({
+                    runtime,
+                    runtimeRef: ready.runtime ? ready.runtime.runtimeRef : undefined,
+                    agentId: agentMeta.id,
+                    authMode,
+                    stateDirPath: sessionStateDir?.stateDirPath || null,
+                    sessionToken: resolved.env.LLM_ROUTER_API_KEY,
+                    routerUrl: resolved.env.LLM_ROUTER_URL,
+                    modelTarget: resolved.env.OPENAI_MODEL,
+                    warn: (msg) => fastify.log.warn(msg),
+                });
+            } catch (err) {
+                fastify.log.warn({ err, sessionId }, '[sessions] gateway config bootstrap failed');
+            }
+        }
+
         if (!(await isSessionStillPending(sessionId))) {
             fastify.log.info({ sessionId }, '[sessions] session cancelled before spawn');
             return;
@@ -1597,10 +1618,13 @@ fastify.post('/api/v1/session/start', { preValidation: [fastify.authenticate] },
             const stateArgs = sessionStateDir?.stateDirPath
                 ? buildStateArgs(resumeSpec, sessionStateDir.stateDirPath)
                 : [];
-            const configSpawnArgs = resolveAgentSpawnArgs(agent_id, userSessionConfig.configFiles);
+            const spawnArgs = resolveAgentSpawnArgs(agent_id, userSessionConfig.configFiles, {
+                authMode,
+                gatewayModel: resolved.env.OPENAI_MODEL,
+            });
             handle = await runtime.exec.spawn(
                 agentMeta.cmd,
-                [...stateArgs, ...agentMeta.args, ...configSpawnArgs],
+                [...spawnArgs.prepend, ...stateArgs, ...agentMeta.args, ...spawnArgs.append],
                 resolved.env,
                 spawnOpts,
             );
@@ -1641,9 +1665,13 @@ fastify.post('/api/v1/session/start', { preValidation: [fastify.authenticate] },
                     const retryStateArgs = sessionStateDir?.stateDirPath
                         ? buildStateArgs(resumeSpec, sessionStateDir.stateDirPath)
                         : [];
+                    const retrySpawnArgs = resolveAgentSpawnArgs(agent_id, userSessionConfig.configFiles, {
+                        authMode,
+                        gatewayModel: resolved.env.OPENAI_MODEL,
+                    });
                     handle = await runtime.exec.spawn(
                         agentMeta.cmd,
-                        [...retryStateArgs, ...agentMeta.args, ...resolveAgentSpawnArgs(agent_id, userSessionConfig.configFiles)],
+                        [...retrySpawnArgs.prepend, ...retryStateArgs, ...agentMeta.args, ...retrySpawnArgs.append],
                         resolved.env,
                         spawnOpts,
                     );

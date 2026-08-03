@@ -91,30 +91,52 @@ function applyCustomEnv(env, customEnv, { blockedKeys = [] } = {}) {
 }
 
 /**
- * Resolve extra spawn args derived from user-configured config files.
+ * Resolve extra spawn args derived from gateway config or user-configured config files.
  *
- * droid: the first customModel's `model` field in .factory/settings.json is
- * passed as `--model <name>` so droid actually selects the configured custom
- * provider instead of its Factory default (which requires Factory org binding).
+ * Returns { prepend: string[], append: string[] } so callers can place
+ * global flags (e.g. hermes --ignore-user-config) before the subcommand
+ * and model flags (e.g. droid --model) after it.
+ *
+ * hermes (gateway): prepends --ignore-user-config so env vars take effect
+ *   instead of config.yaml.
+ * droid (gateway): appends --model <gatewayModel> from the gateway config.
+ * droid (byok): appends --model <name> from the first customModel in
+ *   .factory/settings.json (user-provided config file).
  *
  * @param {string} agentId
- * @param {Array} configFiles - [{ path, content }]
- * @returns {string[]} extra spawn args (may be empty)
+ * @param {Array} configFiles - [{ path, content }] (may be null/empty)
+ * @param {object} [options]
+ * @param {string} [options.authMode] - 'gateway' | 'byok'
+ * @param {string} [options.gatewayModel] - gateway model target (provider/model)
+ * @returns {{ prepend: string[], append: string[] }}
  */
-function resolveAgentSpawnArgs(agentId, configFiles) {
-    if (!configFiles?.length) return [];
-    if (agentId === 'droid') {
-        const cfg = configFiles.find((cf) => cf.path && cf.path.endsWith('.factory/settings.json'));
-        if (!cfg?.content) return [];
-        try {
-            const parsed = JSON.parse(cfg.content);
-            const model = parsed?.customModels?.[0]?.model;
-            if (typeof model === 'string' && model.trim()) {
-                return ['--model', model.trim()];
-            }
-        } catch (_) { /* invalid json - ignore */ }
+function resolveAgentSpawnArgs(agentId, configFiles, options = {}) {
+    const { authMode, gatewayModel } = options;
+    const prepend = [];
+    const append = [];
+
+    if (agentId === 'hermes' && authMode === 'gateway') {
+        prepend.push('--ignore-user-config');
     }
-    return [];
+
+    if (agentId === 'droid') {
+        if (authMode === 'gateway' && gatewayModel) {
+            append.push('--model', gatewayModel);
+        } else if (configFiles?.length) {
+            const cfg = configFiles.find((cf) => cf.path && cf.path.endsWith('.factory/settings.json'));
+            if (cfg?.content) {
+                try {
+                    const parsed = JSON.parse(cfg.content);
+                    const model = parsed?.customModels?.[0]?.model;
+                    if (typeof model === 'string' && model.trim()) {
+                        append.push('--model', model.trim());
+                    }
+                } catch (_) { /* invalid json - ignore */ }
+            }
+        }
+    }
+
+    return { prepend, append };
 }
 
 /**

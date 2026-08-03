@@ -28,6 +28,13 @@ describe('LLM proxy path normalization', () => {
         assert.equal(normalizeUpstreamPath('/embeddings'), '/v1/embeddings');
     });
 
+    it('rewrites minimax-cli /anthropic/v1/messages to /v1/messages', () => {
+        assert.equal(
+            stripLlmPrefix('/api/v1/llm/anthropic/v1/messages'),
+            '/v1/messages',
+        );
+    });
+
     it('marks health and models as quota-exempt', () => {
         assert.equal(isQuotaExemptPath('/health'), true);
         assert.equal(isQuotaExemptPath('/v1/models'), true);

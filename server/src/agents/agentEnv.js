@@ -18,6 +18,7 @@ const GATEWAY_BASE_URL_KEYS = [
     'KIMI_BASE_URL',
     'MOONSHOT_BASE_URL',
     'OPENROUTER_BASE_URL',
+    'ZAI_BASE_URL',
 ];
 
 /** Injected at spawn when not in the user/platform vault (official CLI defaults). */
@@ -37,6 +38,7 @@ const GATEWAY_MODEL_ENV_KEYS = [
 
 const KIMI_CODE_AGENT_IDS = new Set(['kimi-code']);
 const KIMI_CODE_DEFAULT_MAX_CONTEXT = String(256 * 1024);
+const OPENCODE_AGENT_IDS = new Set(['opencode']);
 
 // When an env_overrides key is present (non-empty), these env_required keys
 // are suppressed because the agent will use the override instead.
@@ -182,6 +184,33 @@ function applyKimiCodeGatewayEnv(env) {
     };
 }
 
+function applyOpencodeGatewayEnv(env, modelTarget) {
+    const routerUrl = env.LLM_ROUTER_URL?.trim();
+    const routerKey = env.LLM_ROUTER_API_KEY?.trim();
+    if (!routerUrl || !routerKey || !modelTarget) return env;
+    const config = {
+        autoupdate: false,
+        model: `gateway/${modelTarget}`,
+        provider: {
+            gateway: {
+                npm: '@ai-sdk/openai-compatible',
+                name: 'gateway',
+                options: {
+                    baseURL: routerUrl,
+                    apiKey: routerKey,
+                },
+                models: {
+                    [modelTarget]: { name: modelTarget },
+                },
+            },
+        },
+    };
+    return {
+        ...env,
+        OPENCODE_CONFIG_CONTENT: JSON.stringify(config),
+    };
+}
+
 /**
  * Compose the routing target the agent sends to the gateway as the `model` field.
  * The gateway host resolves `provider/model` by selecting the provider via the
@@ -208,6 +237,9 @@ async function applyAgentGatewayModel(agentId, env) {
     }
     if (KIMI_CODE_AGENT_IDS.has(agentId)) {
         return applyKimiCodeGatewayEnv(out);
+    }
+    if (OPENCODE_AGENT_IDS.has(agentId)) {
+        return applyOpencodeGatewayEnv(out, target);
     }
     return out;
 }
@@ -309,6 +341,10 @@ async function buildGatewaySpawnEnv(agentId, envRequired, { draftModel, draftPro
 
     if (KIMI_CODE_AGENT_IDS.has(agentId)) {
         env = applyKimiCodeGatewayEnv(env);
+    }
+    if (OPENCODE_AGENT_IDS.has(agentId) && model) {
+        const target = composeGatewayModelTarget(provider, model);
+        env = applyOpencodeGatewayEnv(env, target);
     }
 
     return { env, cfg, model, platform, defaults };

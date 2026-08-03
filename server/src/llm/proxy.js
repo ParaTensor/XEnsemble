@@ -54,6 +54,7 @@ function normalizeUpstreamPath(path) {
     const aliases = {
         '/chat/completions': '/v1/chat/completions',
         '/embeddings': '/v1/embeddings',
+        '/anthropic/v1/messages': '/v1/messages',
     };
     const normalized = aliases[pathname] || pathname;
     if (!search) return normalized;
