@@ -287,7 +287,7 @@ async fn dispatch_for_service(
             let (status, body) = response.into_parts();
             state
                 .gateway
-                .record_stat(endpoint, status.as_u16() as i32, latency_ms)
+                .record_stat(endpoint, status.as_u16(), latency_ms)
                 .await;
             Ok(match body {
                 ProtocolResponseBody::Json(value) => (status, Json(value)).into_response(),
