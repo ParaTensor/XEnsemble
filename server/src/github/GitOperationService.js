@@ -259,9 +259,18 @@ class GitOperationService {
 
     async getStatus(project) {
         const [branchOut, shaOut, statusOut] = await Promise.all([
-            this._execGit(project, ['rev-parse', '--abbrev-ref', 'HEAD']).catch(() => ({ stdout: 'HEAD' })),
-            this._execGit(project, ['rev-parse', 'HEAD']).catch(() => ({ stdout: '' })),
-            this._execGit(project, ['status', '--porcelain=v1', '-uall']).catch(() => ({ stdout: '' })),
+            this._execGit(project, ['rev-parse', '--abbrev-ref', 'HEAD']).catch((err) => {
+                console.warn('[GitOperationService] getStatus rev-parse branch failed:', err.message);
+                return { stdout: 'HEAD' };
+            }),
+            this._execGit(project, ['rev-parse', 'HEAD']).catch((err) => {
+                console.warn('[GitOperationService] getStatus rev-parse HEAD failed:', err.message);
+                return { stdout: '' };
+            }),
+            this._execGit(project, ['status', '--porcelain=v1', '-uall']).catch((err) => {
+                console.warn('[GitOperationService] getStatus status failed:', err.message);
+                return { stdout: '' };
+            }),
         ]);
 
         let branch = branchOut.stdout.trim();

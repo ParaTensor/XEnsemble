@@ -101,6 +101,9 @@ venv/
 
 # XEnsemble internal (git credential helpers, etc.)
 .xensemble/
+
+# XEnsemble platform metadata
+.agents/
 `;
 
 function newId(prefix) {

@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import {
   GitBranch, GitCommit, GitPullRequest, RefreshCw, PanelLeftClose, ArrowUp, ArrowDown,
   Plus, Minus, Loader2, ChevronRight, ChevronDown, ChevronsDownUp, ChevronsUpDown, FileText,
-  Upload,
+  Upload, Download,
 } from 'lucide-react';
 import {
   consoleButtonFocusClass,
@@ -39,11 +39,12 @@ const GIT_STATUS_DESC = {
   'R ': '重命名',
 };
 
-export default function SourceControlPanel({ projectId, gitChanges, onJumpToFile, onCollapse }) {
+export default function SourceControlPanel({ projectId, gitChanges, onJumpToFile, onCollapse, provider, sessionLive }) {
   const { showToast } = useToast();
   const [commitMessage, setCommitMessage] = useState('');
   const [committing, setCommitting] = useState(false);
   const [pushing, setPushing] = useState(false);
+  const [pulling, setPulling] = useState(false);
   const [showAuthorDialog, setShowAuthorDialog] = useState(false);
   const [createPROpen, setCreatePROpen] = useState(false);
   const [actionMenuOpen, setActionMenuOpen] = useState(false);
@@ -94,6 +95,7 @@ export default function SourceControlPanel({ projectId, gitChanges, onJumpToFile
   const gitHasChanges = gitStagedFiles.length + gitUnstagedFiles.length > 0;
   const changeCount = gitStagedFiles.length + gitUnstagedFiles.length;
   const branch = gitChanges?.branch || '';
+  const isLocalGit = !provider || provider === 'none' || provider === 'local_git';
 
   const handleStageAll = useCallback(async () => {
     const paths = gitUnstagedFiles.map((f) => f.path);
@@ -112,17 +114,40 @@ export default function SourceControlPanel({ projectId, gitChanges, onJumpToFile
   const handleStageFile = useCallback(async (path) => {
     setFileDiffs((prev) => { const next = { ...prev }; delete next[path]; return next; });
     await gitChanges?.stage([path]);
-  }, [gitChanges]);
+    if (expandedFiles.has(path)) {
+      try {
+        const data = await getGitFileDiff(projectId, path);
+        const diff = data && typeof data === 'object' && !Array.isArray(data)
+          ? (typeof data.diff === 'string' ? data.diff : '') : (typeof data === 'string' ? data : '');
+        setFileDiffs((prev) => ({ ...prev, [path]: { diff, binary: false, truncated: false } }));
+      } catch (_) {}
+    }
+  }, [gitChanges, expandedFiles, projectId]);
 
   const handleUnstageFile = useCallback(async (path) => {
     setFileDiffs((prev) => { const next = { ...prev }; delete next[path]; return next; });
     await gitChanges?.unstage([path]);
-  }, [gitChanges]);
+    if (expandedFiles.has(path)) {
+      try {
+        const data = await getGitFileDiff(projectId, path);
+        const diff = data && typeof data === 'object' && !Array.isArray(data)
+          ? (typeof data.diff === 'string' ? data.diff : '') : (typeof data === 'string' ? data : '');
+        setFileDiffs((prev) => ({ ...prev, [path]: { diff, binary: false, truncated: false } }));
+      } catch (_) {}
+    }
+  }, [gitChanges, expandedFiles, projectId]);
 
   const handleCommit = useCallback(async () => {
     if (!commitMessage.trim()) return;
     setCommitting(true);
     try {
+      // Auto-stage all unstaged files when nothing is staged yet (VS Code-like UX)
+      if (gitStagedFiles.length === 0 && gitUnstagedFiles.length > 0) {
+        const paths = gitUnstagedFiles.map((f) => f.path).filter(Boolean);
+        if (paths.length > 0) {
+          await gitChanges?.stage(paths);
+        }
+      }
       const author = authorName && authorEmail ? { name: authorName, email: authorEmail } : undefined;
       await gitChanges?.commit(commitMessage.trim(), author);
       setCommitMessage('');
@@ -134,7 +159,20 @@ export default function SourceControlPanel({ projectId, gitChanges, onJumpToFile
     } finally {
       setCommitting(false);
     }
-  }, [commitMessage, gitChanges, authorName, authorEmail]);
+  }, [commitMessage, gitChanges, authorName, authorEmail, gitStagedFiles, gitUnstagedFiles]);
+
+  const handlePull = useCallback(async () => {
+    setActionMenuOpen(false);
+    setPulling(true);
+    try {
+      await gitChanges?.pull();
+      showToast('success', 'Pulled latest changes.');
+    } catch (err) {
+      showToast('error', err.message || 'Pull failed');
+    } finally {
+      setPulling(false);
+    }
+  }, [gitChanges, showToast]);
 
   const handleAuthorConfirm = useCallback(async () => {
     if (!authorName.trim() || !authorEmail.trim()) return;
@@ -504,12 +542,12 @@ export default function SourceControlPanel({ projectId, gitChanges, onJumpToFile
                 <button
                   type="button"
                   onClick={handleCommit}
-                  disabled={!commitMessage.trim() || gitStagedFiles.length === 0 || committing || gitChanges?.operation === 'commit'}
+                  disabled={!commitMessage.trim() || (gitStagedFiles.length === 0 && gitUnstagedFiles.length === 0) || committing || gitChanges?.operation === 'commit'}
                   className={`${buttonClass('primary', 'sm')} h-7 rounded-r-none px-3 text-xs ${consoleButtonFocusClass}`}
                 >
                   {committing || gitChanges?.operation === 'commit' ? (
                     <Loader2 className="h-3 w-3 animate-spin" />
-                  ) : 'Commit'}
+                  ) : gitStagedFiles.length === 0 && gitUnstagedFiles.length > 0 ? 'Stage All & Commit' : 'Commit'}
                 </button>
                 <button
                   ref={actionMenuBtnRef}
@@ -522,7 +560,7 @@ export default function SourceControlPanel({ projectId, gitChanges, onJumpToFile
                 </button>
               </div>
             </div>
-            {gitStagedFiles.length > 0 && (
+            {gitStagedFiles.length + gitUnstagedFiles.length > 0 && (
               <textarea
                 placeholder="Commit message"
                 value={commitMessage}
@@ -551,37 +589,58 @@ export default function SourceControlPanel({ projectId, gitChanges, onJumpToFile
           <button
             type="button"
             role="menuitem"
-            disabled={!commitMessage.trim() || gitStagedFiles.length === 0 || committing}
+            disabled={!commitMessage.trim() || (gitStagedFiles.length === 0 && gitUnstagedFiles.length === 0) || committing}
             onClick={() => { setActionMenuOpen(false); handleCommit(); }}
             className={`w-full flex items-center gap-2 px-3 py-2 text-sm text-left text-zinc-700 hover:bg-zinc-50 disabled:opacity-40 ${consoleButtonFocusClass}`}
           >
             <GitCommit className="h-3.5 w-3.5" />
-            Commit
+            {gitStagedFiles.length === 0 && gitUnstagedFiles.length > 0 ? 'Stage All & Commit' : 'Commit'}
           </button>
-          <button
-            type="button"
-            role="menuitem"
-            disabled={pushing || gitChanges?.operation === 'push'}
-            onClick={handlePush}
-            className={`w-full flex items-center gap-2 px-3 py-2 text-sm text-left text-zinc-700 hover:bg-zinc-50 disabled:opacity-40 ${consoleButtonFocusClass}`}
-          >
-            {pushing || gitChanges?.operation === 'push' ? (
-              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-            ) : (
-              <Upload className="h-3.5 w-3.5" />
-            )}
-            Push{gitChanges?.ahead > 0 ? ` (${gitChanges.ahead})` : ''}
-          </button>
-          <button
-            type="button"
-            role="menuitem"
-            disabled={!branch}
-            onClick={handleOpenCreatePR}
-            className={`w-full flex items-center gap-2 px-3 py-2 text-sm text-left text-zinc-700 hover:bg-zinc-50 disabled:opacity-40 ${consoleButtonFocusClass}`}
-          >
-            <GitPullRequest className="h-3.5 w-3.5" />
-            Create PR
-          </button>
+          {gitChanges?.behind > 0 && (
+            <button
+              type="button"
+              role="menuitem"
+              disabled={pulling || gitChanges?.operation === 'pull'}
+              onClick={handlePull}
+              className={`w-full flex items-center gap-2 px-3 py-2 text-sm text-left text-zinc-700 hover:bg-zinc-50 disabled:opacity-40 ${consoleButtonFocusClass}`}
+            >
+              {pulling || gitChanges?.operation === 'pull' ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <Download className="h-3.5 w-3.5" />
+              )}
+              Pull ({gitChanges.behind})
+            </button>
+          )}
+          {!isLocalGit && (
+            <button
+              type="button"
+              role="menuitem"
+              disabled={pushing || gitChanges?.operation === 'push'}
+              onClick={handlePush}
+              className={`w-full flex items-center gap-2 px-3 py-2 text-sm text-left text-zinc-700 hover:bg-zinc-50 disabled:opacity-40 ${consoleButtonFocusClass}`}
+            >
+              {pushing || gitChanges?.operation === 'push' ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <Upload className="h-3.5 w-3.5" />
+              )}
+              Push{gitChanges?.ahead > 0 ? ` (${gitChanges.ahead})` : ''}
+            </button>
+          )}
+          {!isLocalGit && (
+            <button
+              type="button"
+              role="menuitem"
+              disabled={!branch}
+              onClick={handleOpenCreatePR}
+              title="将自动 Push 并创建 Pull Request"
+              className={`w-full flex items-center gap-2 px-3 py-2 text-sm text-left text-zinc-700 hover:bg-zinc-50 disabled:opacity-40 ${consoleButtonFocusClass}`}
+            >
+              <GitPullRequest className="h-3.5 w-3.5" />
+              Create PR
+            </button>
+          )}
         </div>,
         document.body,
       )}
