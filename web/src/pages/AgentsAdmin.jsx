@@ -453,6 +453,17 @@ export default function AgentsAdmin() {
     }));
   }, [gatewayPreview]);
 
+  // Auto-select first provider when gateway providers load and none is selected
+  useEffect(() => {
+    if (gatewayProviders.length === 0) return;
+    setAuthDraft((d) => {
+      if (d.llm_auth_mode === 'gateway' && !d.provider) {
+        return { ...d, provider: gatewayProviders[0].name };
+      }
+      return d;
+    });
+  }, [gatewayProviders]);
+
   const buildEnvOverridesPayload = () => {
     const out = {};
     for (const { key, value } of spawnDraft.envVars) {
@@ -467,6 +478,10 @@ export default function AgentsAdmin() {
     e.preventDefault();
     if (!keysAgent) return;
     const mode = authDraft.llm_auth_mode;
+    if (mode === 'gateway' && !authDraft.provider?.trim()) {
+      showToast('error', 'Select a provider for gateway mode.');
+      return;
+    }
     if (mode === 'gateway' && !authDraft.model?.trim()) {
       showToast('error', 'Select a model for gateway mode.');
       return;
@@ -690,10 +705,7 @@ export default function AgentsAdmin() {
   );
 
   const providerOptions = useMemo(
-    () => [
-      { value: '', label: 'Any provider' },
-      ...gatewayProviders.map((p) => ({ value: p.name, label: p.name })),
-    ],
+    () => gatewayProviders.map((p) => ({ value: p.name, label: p.name })),
     [gatewayProviders],
   );
 
@@ -856,7 +868,7 @@ export default function AgentsAdmin() {
                     onChange={(v) => setAuthDraft((d) => ({
                       ...d,
                       llm_auth_mode: v,
-                      provider: v === 'gateway' ? d.provider : '',
+                      provider: v === 'gateway' ? (d.provider || gatewayProviders[0]?.name || '') : '',
                       model: v === 'gateway' ? d.model : '',
                     }))}
                     options={[
