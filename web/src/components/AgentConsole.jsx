@@ -374,7 +374,22 @@ function AgentConsole({
             if (hasClear) {
               for (let y = 0; y < VS_ROWS; y++) vsScreen[y] = '';
             }
-            const cursorUpMatch = data.match(/^\x1b\[(\d+)A/);
+            // Skip leading DEC private mode sequences (e.g. \x1b[?25l, \x1b[?2026h)
+            // and OSC sequences before looking for cursor-up pattern.
+            let dataOffset = 0;
+            while (dataOffset < data.length) {
+              if (data[dataOffset] === '\x1b' && data[dataOffset + 1] === '[' && data[dataOffset + 2] === '?') {
+                let j = dataOffset + 3;
+                while (j < data.length && !/[A-Za-z]/.test(data[j])) j++;
+                dataOffset = j + 1;
+              } else if (data[dataOffset] === '\x1b' && data[dataOffset + 1] === ']') {
+                const e = data.indexOf('\x07', dataOffset + 2);
+                dataOffset = e >= 0 ? e + 1 : data.length;
+              } else {
+                break;
+              }
+            }
+            const cursorUpMatch = data.slice(dataOffset).match(/^\x1b\[(\d+)A/);
             if (!cursorUpMatch) {
               let i = 0, cx = 0, cy = vsCursorY;
               while (i < data.length) {
@@ -410,13 +425,14 @@ function AgentConsole({
             }
             const upCount = parseInt(cursorUpMatch[1]);
             let startRow = Math.max(0, vsCursorY - upCount);
-            const rest = data.slice(cursorUpMatch[0].length);
+            const prefix = data.slice(0, dataOffset + cursorUpMatch[0].length);
+            const rest = data.slice(dataOffset + cursorUpMatch[0].length);
             const segments = rest.match(/\x1b\[2K[^\r\n]*/g);
             if (!segments || segments.length === 0) {
               vsCursorY = startRow;
               return data;
             }
-            let output = '';
+            let output = prefix;
             let currentRow = startRow;
             let anyChanged = false;
             for (const seg of segments) {
@@ -431,7 +447,7 @@ function AgentConsole({
               currentRow++;
             }
             vsCursorY = currentRow - 1;
-            return anyChanged ? output : '\x1b[H';
+            return anyChanged ? output : prefix + '\x1b[H';
           }
 
           // Fallback: hide overlay after 5s even if no output was received
