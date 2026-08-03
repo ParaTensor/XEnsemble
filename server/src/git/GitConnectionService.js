@@ -58,22 +58,24 @@ async function getProviderConfig(providerName) {
         try { return JSON.parse(raw); } catch { /* fall through */ }
     }
 
-    // Fallback: read legacy GitHub-specific settings
-    if (providerName === 'github') {
-        const clientId = await PlatformSettings.get('GITHUB_CLIENT_ID');
-        const encryptedSecret = await PlatformSettings.get('GITHUB_CLIENT_SECRET');
+    // Fallback: read legacy provider-specific settings
+    const legacyProviders = ['github', 'gitlab', 'gitea'];
+    if (legacyProviders.includes(providerName)) {
+        const prefix = providerName.toUpperCase();
+        const clientId = await PlatformSettings.get(`${prefix}_CLIENT_ID`);
+        const encryptedSecret = await PlatformSettings.get(`${prefix}_CLIENT_SECRET`);
         const clientSecret = encryptedSecret ? PlatformSecrets.getPlatformSecret(encryptedSecret) : null;
-        const apiBase = await PlatformSettings.get('GITHUB_API_BASE');
-        const callbackUrl = await PlatformSettings.get('GITHUB_CALLBACK_URL');
+        const apiBase = await PlatformSettings.get(`${prefix}_API_BASE`);
+        const callbackUrl = await PlatformSettings.get(`${prefix}_CALLBACK_URL`);
         if (clientId) {
             return {
-                provider: 'github',
+                provider: providerName,
                 enabled: true,
                 clientId: String(clientId).trim(),
                 clientSecret: clientSecret ? String(clientSecret).trim() : null,
                 apiBase: apiBase ? String(apiBase).trim() : undefined,
                 callbackUrl: callbackUrl ? String(callbackUrl) : undefined,
-                scope: 'repo',
+                scope: providerName === 'github' ? 'repo' : 'api',
             };
         }
     }

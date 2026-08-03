@@ -197,7 +197,9 @@ function registerAdminRoutes(fastify) {
     fastify.get('/api/v1/admin/platform-settings', { preValidation: adminPre }, async () => {
         const MASK = '••••••••';
         const settings = await platformSettings.getAll();
-        settings.GITHUB_CLIENT_SECRET = settings.GITHUB_CLIENT_SECRET ? MASK : '';
+        for (const p of ['GITHUB', 'GITLAB', 'GITEA']) {
+            settings[`${p}_CLIENT_SECRET`] = settings[`${p}_CLIENT_SECRET`] ? MASK : '';
+        }
         settings.GITHUB_APP_PRIVATE_KEY = settings.GITHUB_APP_PRIVATE_KEY ? MASK : '';
         settings.GITHUB_APP_WEBHOOK_SECRET = settings.GITHUB_APP_WEBHOOK_SECRET ? MASK : '';
         return settings;
@@ -237,23 +239,42 @@ function registerAdminRoutes(fastify) {
         if (request.body?.GITHUB_API_BASE && !isValidUrl(request.body.GITHUB_API_BASE)) {
             return reply.code(400).send({ error: 'invalid_url', field: 'GITHUB_API_BASE' });
         }
+        if (request.body?.GITLAB_CALLBACK_URL && !isValidUrl(request.body.GITLAB_CALLBACK_URL)) {
+            return reply.code(400).send({ error: 'invalid_url', field: 'GITLAB_CALLBACK_URL' });
+        }
+        if (request.body?.GITLAB_API_BASE && !isValidUrl(request.body.GITLAB_API_BASE)) {
+            return reply.code(400).send({ error: 'invalid_url', field: 'GITLAB_API_BASE' });
+        }
+        if (request.body?.GITEA_CALLBACK_URL && !isValidUrl(request.body.GITEA_CALLBACK_URL)) {
+            return reply.code(400).send({ error: 'invalid_url', field: 'GITEA_CALLBACK_URL' });
+        }
+        if (request.body?.GITEA_API_BASE && !isValidUrl(request.body.GITEA_API_BASE)) {
+            return reply.code(400).send({ error: 'invalid_url', field: 'GITEA_API_BASE' });
+        }
         const body = { ...(request.body || {}) };
         const MASK = '••••••••';
-        const githubKeys = ['GITHUB_CLIENT_ID', 'GITHUB_CLIENT_SECRET', 'GITHUB_CALLBACK_URL', 'GITHUB_API_BASE'];
-        for (const key of githubKeys) {
-            if (body[key] !== undefined) {
-                if (key === 'GITHUB_CLIENT_SECRET') {
-                    if (body[key] === MASK) {
-                        // preserve existing secret
-                    } else if (body[key] === '') {
-                        await platformSettings.set(key, '');
-                    } else if (body[key]) {
-                        await platformSettings.set(key, platformSecrets.setPlatformSecret(key, body[key]));
+        const gitProviderConfigKeys = [
+            { prefix: 'GITHUB', fields: ['CLIENT_ID', 'CLIENT_SECRET', 'CALLBACK_URL', 'API_BASE'] },
+            { prefix: 'GITLAB', fields: ['CLIENT_ID', 'CLIENT_SECRET', 'CALLBACK_URL', 'API_BASE'] },
+            { prefix: 'GITEA', fields: ['CLIENT_ID', 'CLIENT_SECRET', 'CALLBACK_URL', 'API_BASE'] },
+        ];
+        for (const { prefix, fields } of gitProviderConfigKeys) {
+            for (const field of fields) {
+                const key = `${prefix}_${field}`;
+                if (body[key] !== undefined) {
+                    if (field === 'CLIENT_SECRET') {
+                        if (body[key] === MASK) {
+                            // preserve existing secret
+                        } else if (body[key] === '') {
+                            await platformSettings.set(key, '');
+                        } else if (body[key]) {
+                            await platformSettings.set(key, platformSecrets.setPlatformSecret(key, body[key]));
+                        }
+                    } else {
+                        await platformSettings.set(key, body[key]);
                     }
-                } else {
-                    await platformSettings.set(key, body[key]);
+                    delete body[key];
                 }
-                delete body[key];
             }
         }
         // GitHub App config keys
@@ -276,7 +297,9 @@ function registerAdminRoutes(fastify) {
         }
         try {
             const settings = await platformSettings.updateAll(body);
-            settings.GITHUB_CLIENT_SECRET = settings.GITHUB_CLIENT_SECRET ? MASK : '';
+            for (const p of ['GITHUB', 'GITLAB', 'GITEA']) {
+                settings[`${p}_CLIENT_SECRET`] = settings[`${p}_CLIENT_SECRET`] ? MASK : '';
+            }
             settings.GITHUB_APP_PRIVATE_KEY = settings.GITHUB_APP_PRIVATE_KEY ? MASK : '';
             settings.GITHUB_APP_WEBHOOK_SECRET = settings.GITHUB_APP_WEBHOOK_SECRET ? MASK : '';
             return settings;
