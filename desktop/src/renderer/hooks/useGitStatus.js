@@ -57,7 +57,7 @@ export function useGitStatus(projectId) {
     if (!projectId || !message?.trim()) return;
     setOperation('commit');
     try {
-      const result = await githubApi.commitAll(projectId, message.trim(), author);
+      const result = await githubApi.commitStaged(projectId, message.trim(), author);
       showToast('success', 'Changes committed.');
       fetchStatus({ silent: true });
       return result;

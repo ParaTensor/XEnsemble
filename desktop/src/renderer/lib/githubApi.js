@@ -21,7 +21,7 @@ export function openExternal(url) {
 export const getGitStatus = (projectId) =>
   request(`/api/v1/projects/${encodeURIComponent(projectId)}/git/status`);
 
-export const commitAll = (projectId, message, author) => {
+export const commitStaged = (projectId, message, author) => {
   const body = { message };
   if (author) body.author = author;
   return request(`/api/v1/projects/${encodeURIComponent(projectId)}/git/commit`, {
