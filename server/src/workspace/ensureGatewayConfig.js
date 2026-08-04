@@ -14,6 +14,7 @@ const GATEWAY_CONFIG_AGENTS = new Set([
     'pi',
     'cline',
     'glm-agent',
+    'hermes',
 ]);
 
 function buildGatewayConfigSpec(agentId, { stateDirPath, sessionToken, routerUrl, modelTarget }) {
@@ -178,6 +179,30 @@ function buildGatewayConfigSpec(agentId, { stateDirPath, sessionToken, routerUrl
                     enableHistory: true,
                     apiKey: sessionToken,
                 }, null, 2),
+            };
+
+        case 'hermes':
+            // hermes loads $HERMES_HOME/config.yaml and its _resolve_openrouter_runtime
+            // prioritises config.yaml base_url over OPENROUTER_BASE_URL env var when
+            // provider is "auto" and cfg_base_url is set. The hermes installer creates
+            // a default config.yaml with base_url: "https://openrouter.ai/api/v1",
+            // which overrides the gateway env vars. We must write a config.yaml that
+            // points at the gateway so requests route correctly.
+            //
+            // provider must be "auto" (not "openrouter") because
+            // _resolve_openrouter_runtime only honours cfg_base_url when
+            // cfg_provider is empty or "auto". With provider: "openrouter",
+            // the env var OPENROUTER_BASE_URL would win instead.
+            return {
+                dirPath: stateDirPath,
+                filePath: `${stateDirPath}/config.yaml`,
+                content: [
+                    'model:',
+                    `  default: "${modelTarget}"`,
+                    '  provider: "auto"',
+                    `  base_url: "${routerUrl}/v1"`,
+                    `  api_key: "${sessionToken}"`,
+                ].join('\n') + '\n',
             };
 
         default:

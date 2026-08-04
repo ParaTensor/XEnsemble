@@ -116,7 +116,11 @@ function resolveAgentSpawnArgs(agentId, configFiles, options = {}) {
     const append = [];
 
     if (agentId === 'hermes' && authMode === 'gateway') {
-        prepend.push('--ignore-user-config');
+        // hermes chat subcommand accepts -m directly; the gateway config.yaml
+        // is written by ensureGatewayConfig to route through the gateway URL.
+        // --ignore-user-config was removed: it's a no-op in hermes (the CLI flag
+        // exists but never sets HERMES_IGNORE_USER_CONFIG env var), and we now
+        // overwrite config.yaml with gateway credentials instead.
         if (gatewayModel) {
             prepend.push('-m', gatewayModel);
         }
