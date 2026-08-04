@@ -478,53 +478,50 @@ function AgentConsole({
             if (!writeBuffer && !syncTermPending) return;
 
             // Prepend any incomplete sync-term block from the previous flush.
-            let data = syncTermPending + (writeBuffer || '');
+            let remaining = syncTermPending + (writeBuffer || '');
             syncTermPending = '';
             writeBuffer = '';
 
-            // Buffer incomplete sync-term blocks.  When complete, strip the
-            // sync-term wrappers and write directly to xterm.js, bypassing
-            // vsProcess.  Pi puts cursor-up AFTER \x1b[?2026l (not inside the
-            // block), so vsProcess can't find it at the start and falls through
-            // to passthrough, causing content to be appended instead of
-            // overwritten.  Writing the complete block in a single
-            // terminal.write() lets xterm.js process all cursor movements and
-            // line clears atomically (no flicker).
-            const syncStart = data.indexOf('\x1b[?2026h');
-            if (syncStart !== -1) {
-              const syncEnd = data.indexOf('\x1b[?2026l', syncStart);
-              if (syncEnd === -1) {
-                // Block not yet complete: process data before it, buffer the rest.
-                if (syncStart > 0) {
-                  writeTerminalData(data.slice(0, syncStart));
-                }
-                syncTermPending = data.slice(syncStart);
-                return;
+            // Process all sync-term blocks in a loop.  Each complete block
+            // (\x1b[?2026h...\x1b[?2026l) is stripped of its wrappers and
+            // \x1b[2J (clear-screen), then written directly to xterm.js,
+            // bypassing vsProcess.  Non-sync-term data between blocks goes
+            // through vsProcess as before.  Incomplete trailing blocks are
+            // buffered in syncTermPending for the next flush.
+            //
+            // Why bypass vsProcess for sync-term blocks:
+            // - Pi puts cursor-up AFTER \x1b[?2026l, not inside the block, so
+            //   vsProcess can't find it at the start and falls through to
+            //   passthrough, appending content instead of overwriting.
+            // - qwen-code emits \x1b[2J (clear-screen) inside ~38% of blocks,
+            //   causing visible full-screen flashes without sync-term support.
+            // - Writing the complete stripped block in a single terminal.write()
+            //   lets xterm.js process all cursor movements and line clears
+            //   atomically (no flicker, correct overwrite).
+            while (remaining.length > 0) {
+              const syncStart = remaining.indexOf('\x1b[?2026h');
+              if (syncStart === -1) {
+                // No more sync-term blocks: pass through vsProcess.
+                writeTerminalData(vsProcess(remaining));
+                break;
               }
-              // Complete block: process data before it, then the stripped block.
+              // Write any non-sync-term data before the block via vsProcess.
               if (syncStart > 0) {
-                writeTerminalData(data.slice(0, syncStart));
+                writeTerminalData(vsProcess(remaining.slice(0, syncStart)));
               }
-              const blockEnd = syncEnd + '\x1b[?2026l'.length;
-              // Strip \x1b[2J (clear-screen) from sync-term content.  qwen-code
-              // emits \x1b[2J on ~38% of updates (417/1085 in a typical session).
-              // Without sync-term support in xterm.js, each clear is visible as a
-              // full-screen flash.  The cursor-up + \x1b[2K (clear-line) pattern
-              // already handles updating individual rows, so the clear-screen is
-              // redundant and only causes flicker.
-              const stripped = data.slice(syncStart + '\x1b[?2026h'.length, syncEnd)
-                .replace(/\x1b\[2J/g, '');
-              if (stripped) {
-                writeTerminalData(stripped);
+              const syncEnd = remaining.indexOf('\x1b[?2026l', syncStart);
+              if (syncEnd === -1) {
+                // Block not yet complete: buffer and wait for more data.
+                syncTermPending = remaining.slice(syncStart);
+                break;
               }
-              // Process any remaining data after the block.
-              if (blockEnd < data.length) {
-                writeTerminalData(data.slice(blockEnd));
-              }
-              return;
+              // Complete block: strip wrappers + clear-screen, write directly.
+              const stripped = remaining.slice(
+                syncStart + '\x1b[?2026h'.length, syncEnd,
+              ).replace(/\x1b\[2J/g, '');
+              if (stripped) writeTerminalData(stripped);
+              remaining = remaining.slice(syncEnd + '\x1b[?2026l'.length);
             }
-
-            writeTerminalData(vsProcess(data));
           };
 
           function writeTerminalData(processed) {

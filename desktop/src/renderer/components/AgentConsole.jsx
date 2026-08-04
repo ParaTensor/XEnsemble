@@ -311,39 +311,32 @@ function AgentConsole({
                 if (disposedRef.current) return;
                 if (!writeBuffer && !syncTermPending) return;
 
-                let data = syncTermPending + (writeBuffer || '');
+                let remaining = syncTermPending + (writeBuffer || '');
                 syncTermPending = '';
                 writeBuffer = '';
 
-                // Buffer incomplete sync-term blocks.  When complete, strip
-                // wrappers and write directly, bypassing vsProcess.  See web
-                // AgentConsole for full rationale.
-                const syncStart = data.indexOf('\x1b[?2026h');
-                if (syncStart !== -1) {
-                    const syncEnd = data.indexOf('\x1b[?2026l', syncStart);
-                    if (syncEnd === -1) {
-                        if (syncStart > 0) {
-                            writeTerminalData(data.slice(0, syncStart));
-                        }
-                        syncTermPending = data.slice(syncStart);
-                        return;
+                // Process all sync-term blocks in a loop.  See web AgentConsole
+                // for full rationale.
+                while (remaining.length > 0) {
+                    const syncStart = remaining.indexOf('\x1b[?2026h');
+                    if (syncStart === -1) {
+                        writeTerminalData(vsProcess(remaining));
+                        break;
                     }
                     if (syncStart > 0) {
-                        writeTerminalData(data.slice(0, syncStart));
+                        writeTerminalData(vsProcess(remaining.slice(0, syncStart)));
                     }
-                    const blockEnd = syncEnd + '\x1b[?2026l'.length;
-                    const stripped = data.slice(syncStart + '\x1b[?2026h'.length, syncEnd)
-                        .replace(/\x1b\[2J/g, '');
-                    if (stripped) {
-                        writeTerminalData(stripped);
+                    const syncEnd = remaining.indexOf('\x1b[?2026l', syncStart);
+                    if (syncEnd === -1) {
+                        syncTermPending = remaining.slice(syncStart);
+                        break;
                     }
-                    if (blockEnd < data.length) {
-                        writeTerminalData(data.slice(blockEnd));
-                    }
-                    return;
+                    const stripped = remaining.slice(
+                        syncStart + '\x1b[?2026h'.length, syncEnd,
+                    ).replace(/\x1b\[2J/g, '');
+                    if (stripped) writeTerminalData(stripped);
+                    remaining = remaining.slice(syncEnd + '\x1b[?2026l'.length);
                 }
-
-                writeTerminalData(vsProcess(data));
             };
 
             function writeTerminalData(processed) {
