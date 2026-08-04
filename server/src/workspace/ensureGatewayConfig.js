@@ -183,16 +183,21 @@ function buildGatewayConfigSpec(agentId, { stateDirPath, sessionToken, routerUrl
                 }, null, 2),
             };
 
-        case 'codebuddy':
-            // CodeBuddy reads ~/.codebuddy/models.json (OpenAI-compatible API).
-            // Its default official models (gemini/gpt/deepseek-v3-2-volc/...) require
-            // a Tencent CodeBuddy login; a custom model in models.json bypasses auth
-            // and routes to the gateway. The url must be a full /chat/completions path.
-            // trustAll/trustedDirectories avoid the interactive "trust this folder?"
-            // prompt (CodeBuddy treats /tmp, /root and $HOME as dangerous).
+        case 'codebuddy': {
+            // CodeBuddy reads models.json from $CODEBUDDY_CONFIG_DIR — which
+            // resumeSession sets to the session state dir (stateEnv) — NOT from
+            // ~/.codebuddy. Writes must target that dir, otherwise the custom
+            // model is not registered and CodeBuddy falls back to its official
+            // models (gemini/gpt/deepseek-v3-2-volc/...), which require a Tencent
+            // CodeBuddy login; CODEBUDDY_API_KEY then overrides /login (blocked)
+            // and the gateway JWT is rejected. The url must be a full
+            // /chat/completions path. trustAll/trustedDirectories avoid the
+            // interactive "trust this folder?" prompt (CodeBuddy treats /tmp,
+            // /root and $HOME as dangerous).
+            const configDir = stateDirPath || '$HOME/.codebuddy';
             return {
-                dirPath: '$HOME/.codebuddy',
-                filePath: '$HOME/.codebuddy/models.json',
+                dirPath: configDir,
+                filePath: `${configDir}/models.json`,
                 content: JSON.stringify([{
                     id: modelTarget,
                     name: modelTarget,
@@ -203,14 +208,15 @@ function buildGatewayConfigSpec(agentId, { stateDirPath, sessionToken, routerUrl
                     maxOutputTokens: 8192,
                 }], null, 2),
                 extraFiles: [{
-                    dirPath: '$HOME/.codebuddy',
-                    filePath: '$HOME/.codebuddy/settings.json',
+                    dirPath: configDir,
+                    filePath: `${configDir}/settings.json`,
                     content: JSON.stringify({
                         trustAll: true,
                         trustedDirectories: ['/workspace', '/tmp'],
                     }, null, 2),
                 }],
             };
+        }
 
         case 'hermes':
             // hermes loads $HERMES_HOME/config.yaml and its _resolve_openrouter_runtime
@@ -280,7 +286,9 @@ async function ensureGatewayConfig({ runtime, runtimeRef, agentId, authMode, sta
     if (!runtime?.exec?.exec) {
         return { skipped: true, reason: 'no_runtime_exec' };
     }
-    // minimax-cli, pi and codebuddy use $HOME (no state dir); all others require a state dir path.
+    // minimax-cli and pi use $HOME (no state dir); codebuddy prefers the
+    // state dir (CODEBUDDY_CONFIG_DIR) but falls back to $HOME/.codebuddy;
+    // all others require a state dir path.
     if (agentId !== 'minimax-cli' && agentId !== 'pi' && agentId !== 'codebuddy' && !stateDirPath) {
         return { skipped: true, reason: 'no_state_dir' };
     }
