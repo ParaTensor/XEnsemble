@@ -153,6 +153,15 @@ function resolveAgentSpawnArgs(agentId, configFiles, options = {}) {
         }
     }
 
+    if (agentId === 'pi' && authMode === 'gateway' && gatewayModel) {
+        // Pi defaults to provider "google"; without this the interactive UI
+        // opens on a built-in model and the gateway model (models.json) has to
+        // be picked manually with /model every session. Force the gateway
+        // provider + model so the UI opens on the gateway model.
+        prepend.push('--provider', 'gateway');
+        prepend.push('--model', gatewayModel);
+    }
+
     return { prepend, append };
 }
 

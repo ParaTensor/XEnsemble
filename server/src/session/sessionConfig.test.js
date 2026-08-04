@@ -84,3 +84,15 @@ test('droid agent catalog exposes a configSchema with .factory/settings.json', (
     assert.ok(file.example, 'should provide an example');
     assert.doesNotThrow(() => JSON.parse(file.example), 'example should be valid JSON');
 });
+
+test('resolveAgentSpawnArgs: pi gateway mode forces gateway provider + model', () => {
+    const result = resolveAgentSpawnArgs('pi', [], { authMode: 'gateway', gatewayModel: 'zxs_deepseek/deepseek-v4-flash' });
+    assert.deepEqual(result, {
+        prepend: ['--provider', 'gateway', '--model', 'zxs_deepseek/deepseek-v4-flash'],
+        append: [],
+    });
+});
+
+test('resolveAgentSpawnArgs: pi non-gateway mode adds no args', () => {
+    assert.deepEqual(resolveAgentSpawnArgs('pi', [], { authMode: 'byok' }), { prepend: [], append: [] });
+});
