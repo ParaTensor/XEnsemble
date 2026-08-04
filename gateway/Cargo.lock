@@ -1441,8 +1441,6 @@ checksum = "e6e4313cd5fcd3dad5cafa179702e2b244f760991f45397d14d4ebf38247da75"
 [[package]]
 name = "unigateway-config"
 version = "2.5.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8247ae8c41c5483cb8e72cb8097cbee0facbdfec7703012e11bf7569a00a5c31"
 dependencies = [
  "anyhow",
  "llm_providers",

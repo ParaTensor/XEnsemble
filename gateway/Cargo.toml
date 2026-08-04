@@ -22,3 +22,6 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 unigateway-config = "2.5.0"
 unigateway-sdk = { version = "2.5.0", features = ["host"] }
+
+[patch.crates-io]
+unigateway-config = { path = "vendor/unigateway-config" }

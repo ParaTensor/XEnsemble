@@ -139,6 +139,7 @@ async fn main() -> Result<()> {
             "/api/admin/providers/:name",
             patch(admin_update_provider).delete(admin_delete_provider),
         )
+        .route("/api/admin/reload", post(admin_reload))
         .layer(CorsLayer::permissive())
         .layer(TraceLayer::new_for_http())
         .with_state(state);
@@ -784,6 +785,26 @@ async fn admin_delete_provider(
         .map_err(|error| ApiError::bad_request(error.to_string()))?;
     state.gateway.persist_if_dirty().await.ok();
     Ok(Json(AdminResponse::ok(json!({ "name": name }))))
+}
+
+/// Reload the on-disk TOML (merging externally-added services/bindings into
+/// memory) and rebuild core pools. This lets the Node control plane push new
+/// service bindings without restarting the process, avoiding interruption of
+/// in-flight LLM requests.
+async fn admin_reload(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Json<AdminResponse<Value>>, ApiError> {
+    require_admin(&headers, &state.admin_token)?;
+    state
+        .gateway
+        .reload_from_disk()
+        .await
+        .map_err(|error| ApiError::bad_request(error.to_string()))?;
+    sync_core_pools(&state.gateway, state.engine.as_ref())
+        .await
+        .map_err(|error| ApiError::bad_request(error.to_string()))?;
+    Ok(Json(AdminResponse::ok(json!({ "reloaded": true }))))
 }
 
 #[derive(Debug, serde::Serialize)]

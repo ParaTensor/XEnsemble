@@ -40,6 +40,30 @@ async function providerExistsInGateway(providerName, log) {
     return false;
 }
 
+/**
+ * Push the updated TOML into the running UniGateway WITHOUT restarting.
+ * The gateway merges externally-added services/bindings from the on-disk TOML
+ * into memory and rebuilds its routing pools atomically, so in-flight LLM
+ * requests are not interrupted.
+ */
+async function reloadGateway(log = console) {
+    const status = unigateway.getStatus();
+    if (!status.running) return { ok: false, reason: 'not_running' };
+    try {
+        const { requestGateway } = require('../gateway/adminProxy');
+        const result = await requestGateway('POST', '/api/admin/reload', { log });
+        if (result.statusCode >= 200 && result.statusCode < 300) {
+            log.info?.('[llm] UniGateway config reloaded (no restart)');
+            return { ok: true };
+        }
+        log.warn?.(`[llm] UniGateway reload failed (status ${result.statusCode})`);
+        return { ok: false, reason: `http_${result.statusCode}` };
+    } catch (err) {
+        log.warn?.(`[llm] UniGateway reload failed: ${err.message}`);
+        return { ok: false, reason: err.message };
+    }
+}
+
 async function syncAgentServiceBinding(agentId, log = console) {
     const cfg = await agentGatewayConfig.getForAgent(agentId);
     if (!cfg || cfg.llm_auth_mode !== 'gateway') return { synced: false, reason: 'not_gateway_mode' };
@@ -72,14 +96,9 @@ async function syncAgentServiceBinding(agentId, log = console) {
     fs.writeFileSync(CONFIG_PATH, after, { mode: 0o600 });
     log.info?.(`[llm] synced UniGateway service binding agent=${agentId} provider=${providerName}`);
 
-    // Always restart so UniGateway reloads the updated TOML. Gating on
-    // status.running leaves a stale process (loaded with old config) serving
-    // and overwriting the new binding via persist_if_dirty().
-    try {
-        await unigateway.restart(log);
-    } catch (err) {
-        log.warn?.(`[llm] restart UniGateway failed: ${err.message}`);
-    }
+    // Hot-reload the running gateway so the new binding takes effect without
+    // interrupting in-flight requests.
+    await reloadGateway(log);
     return { synced: true, changed: true, agentId, providerName };
 }
 
@@ -140,14 +159,9 @@ async function syncAllAgentServiceBindings(log = console) {
         fs.writeFileSync(CONFIG_PATH, before, { mode: 0o600 });
         log.info?.(`[llm] wrote ${toSync.length} bindings to UniGateway TOML`);
 
-        // Always restart so UniGateway reloads the updated TOML. Do NOT gate on
-        // status.running: a stale process (loaded with old config) would keep
-        // serving and its persist_if_dirty() would overwrite the new bindings.
-        try {
-            await unigateway.restart(log);
-        } catch (err) {
-            log.warn?.(`[llm] restart UniGateway failed: ${err.message}`);
-        }
+        // Hot-reload the running gateway (no restart) so the new bindings take
+        // effect without interrupting in-flight requests.
+        await reloadGateway(log);
     }
 
     return results;
