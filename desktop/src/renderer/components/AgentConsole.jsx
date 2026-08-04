@@ -315,33 +315,43 @@ function AgentConsole({
                 syncTermPending = '';
                 writeBuffer = '';
 
-                // Buffer incomplete sync-term blocks so vsProcess sees the full
-                // cursor-up pattern and can do row-level diffing correctly.
+                // Buffer incomplete sync-term blocks.  When complete, strip
+                // wrappers and write directly, bypassing vsProcess.  See web
+                // AgentConsole for full rationale.
                 const syncStart = data.indexOf('\x1b[?2026h');
                 if (syncStart !== -1) {
                     const syncEnd = data.indexOf('\x1b[?2026l', syncStart);
                     if (syncEnd === -1) {
                         if (syncStart > 0) {
-                            const before = data.slice(0, syncStart);
-                            const processed0 = vsProcess(before);
-                            const viewport0 = containerRef.current?.querySelector('.xterm-viewport');
-                            const atBottom0 = !viewport0 || viewport0.scrollTop + viewport0.clientHeight >= viewport0.scrollHeight - 5;
-                            terminal.write(processed0, () => {
-                                if (atBottom0 && !disposedRef.current) terminal.scrollToBottom();
-                            });
+                            writeTerminalData(data.slice(0, syncStart));
                         }
                         syncTermPending = data.slice(syncStart);
                         return;
                     }
+                    if (syncStart > 0) {
+                        writeTerminalData(data.slice(0, syncStart));
+                    }
+                    const blockEnd = syncEnd + '\x1b[?2026l'.length;
+                    const stripped = data.slice(syncStart + '\x1b[?2026h'.length, syncEnd);
+                    if (stripped) {
+                        writeTerminalData(stripped);
+                    }
+                    if (blockEnd < data.length) {
+                        writeTerminalData(data.slice(blockEnd));
+                    }
+                    return;
                 }
 
-                const processed = vsProcess(data);
+                writeTerminalData(vsProcess(data));
+            };
+
+            function writeTerminalData(processed) {
                 const viewport = containerRef.current?.querySelector('.xterm-viewport');
                 const atBottom = !viewport || viewport.scrollTop + viewport.clientHeight >= viewport.scrollHeight - 5;
                 terminal.write(processed, () => {
                     if (atBottom && !disposedRef.current) terminal.scrollToBottom();
                 });
-            };
+            }
 
             const markAuthenticated = () => {
                 if (authenticated || disposedRef.current || wsRef.current !== ws) return;

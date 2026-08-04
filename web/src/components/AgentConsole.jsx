@@ -482,37 +482,52 @@ function AgentConsole({
             syncTermPending = '';
             writeBuffer = '';
 
-            // Buffer incomplete sync-term blocks so vsProcess sees the full
-            // cursor-up pattern and can do row-level diffing correctly.
+            // Buffer incomplete sync-term blocks.  When complete, strip the
+            // sync-term wrappers and write directly to xterm.js, bypassing
+            // vsProcess.  Pi puts cursor-up AFTER \x1b[?2026l (not inside the
+            // block), so vsProcess can't find it at the start and falls through
+            // to passthrough, causing content to be appended instead of
+            // overwritten.  Writing the complete block in a single
+            // terminal.write() lets xterm.js process all cursor movements and
+            // line clears atomically (no flicker).
             const syncStart = data.indexOf('\x1b[?2026h');
             if (syncStart !== -1) {
               const syncEnd = data.indexOf('\x1b[?2026l', syncStart);
               if (syncEnd === -1) {
                 // Block not yet complete: process data before it, buffer the rest.
                 if (syncStart > 0) {
-                  const before = data.slice(0, syncStart);
-                  const processed = vsProcess(before);
-                  const buf0 = terminal.buffer.active;
-                  const atBottom0 = buf0.baseY + terminal.rows >= buf0.length;
-                  terminal.write(processed, () => {
-                    if (!replayDone && !disposed) { replayDone = true; hideOverlay(); }
-                    if (atBottom0 && !disposed) terminal.scrollToBottom();
-                  });
+                  writeTerminalData(data.slice(0, syncStart));
                 }
                 syncTermPending = data.slice(syncStart);
                 return;
               }
-              // Complete block found — fall through and let vsProcess handle it.
+              // Complete block: process data before it, then the stripped block.
+              if (syncStart > 0) {
+                writeTerminalData(data.slice(0, syncStart));
+              }
+              const blockEnd = syncEnd + '\x1b[?2026l'.length;
+              const stripped = data.slice(syncStart + '\x1b[?2026h'.length, syncEnd);
+              if (stripped) {
+                writeTerminalData(stripped);
+              }
+              // Process any remaining data after the block.
+              if (blockEnd < data.length) {
+                writeTerminalData(data.slice(blockEnd));
+              }
+              return;
             }
 
-            const processed = vsProcess(data);
+            writeTerminalData(vsProcess(data));
+          };
+
+          function writeTerminalData(processed) {
             const buf = terminal.buffer.active;
             const atBottom = buf.baseY + terminal.rows >= buf.length;
             terminal.write(processed, () => {
               if (!replayDone && !disposed) { replayDone = true; hideOverlay(); }
               if (atBottom && !disposed) terminal.scrollToBottom();
             });
-          };
+          }
 
           const markAuthenticated = () => {
             if (authenticated || disposed || wsRef.current !== ws) return;
