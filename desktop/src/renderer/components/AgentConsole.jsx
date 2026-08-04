@@ -315,28 +315,40 @@ function AgentConsole({
                 syncTermPending = '';
                 writeBuffer = '';
 
-                // Process all sync-term blocks in a loop.  See web AgentConsole
-                // for full rationale.
+                // See web AgentConsole for full rationale.
+                let output = '';
+                let hasOutput = false;
+
                 while (remaining.length > 0) {
                     const syncStart = remaining.indexOf('\x1b[?2026h');
                     if (syncStart === -1) {
-                        writeTerminalData(vsProcess(remaining));
+                        output += vsProcess(remaining);
+                        hasOutput = true;
                         break;
                     }
                     if (syncStart > 0) {
-                        writeTerminalData(vsProcess(remaining.slice(0, syncStart)));
+                        output += vsProcess(remaining.slice(0, syncStart));
+                        hasOutput = true;
                     }
                     const syncEnd = remaining.indexOf('\x1b[?2026l', syncStart);
                     if (syncEnd === -1) {
                         syncTermPending = remaining.slice(syncStart);
                         break;
                     }
-                    const stripped = remaining.slice(
+                    const blockContent = remaining.slice(
                         syncStart + '\x1b[?2026h'.length, syncEnd,
-                    ).replace(/\x1b\[2J/g, '');
-                    if (stripped) writeTerminalData(stripped);
+                    );
+                    const stripped = blockContent.includes('\x1b[2K')
+                        ? blockContent.replace(/\x1b\[2J/g, '')
+                        : blockContent;
+                    if (stripped) {
+                        output += stripped;
+                        hasOutput = true;
+                    }
                     remaining = remaining.slice(syncEnd + '\x1b[?2026l'.length);
                 }
+
+                if (hasOutput) writeTerminalData(output);
             };
 
             function writeTerminalData(processed) {
