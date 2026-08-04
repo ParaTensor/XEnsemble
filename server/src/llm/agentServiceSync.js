@@ -142,7 +142,7 @@ async function syncAllAgentServiceBindings(log = console) {
         return results;
     }
 
-    // Phase 2: apply ALL bindings in a single TOML write, then restart once
+    // Phase 2: apply ALL bindings in a single TOML write, then hot-reload once
     let before = fs.readFileSync(CONFIG_PATH, 'utf8');
     let changed = false;
     for (const { agentId, providerName } of toSync) {
