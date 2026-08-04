@@ -230,6 +230,9 @@ function AgentConsole({
             let vsCursorY = 0;
             const VS_ROWS = 32;
             for (let y = 0; y < VS_ROWS; y++) vsScreen[y] = '';
+            // Buffer for incomplete sync-term (DECSET 2026) blocks so vsProcess
+            // sees the full cursor-up pattern.  See web AgentConsole for details.
+            let syncTermPending = '';
             function vsStripAnsi(text) {
                 return text.replace(/\x1b\[[0-9;?]*[a-zA-Z]/g, '').replace(/\x1b\].*?\x07/g, '');
             }
@@ -305,12 +308,37 @@ function AgentConsole({
             }
             const flushWriteBuffer = () => {
                 writeRafId = null;
-                if (disposedRef.current || !writeBuffer) return;
-                const data = vsProcess(writeBuffer);
+                if (disposedRef.current) return;
+                if (!writeBuffer && !syncTermPending) return;
+
+                let data = syncTermPending + (writeBuffer || '');
+                syncTermPending = '';
                 writeBuffer = '';
+
+                // Buffer incomplete sync-term blocks so vsProcess sees the full
+                // cursor-up pattern and can do row-level diffing correctly.
+                const syncStart = data.indexOf('\x1b[?2026h');
+                if (syncStart !== -1) {
+                    const syncEnd = data.indexOf('\x1b[?2026l', syncStart);
+                    if (syncEnd === -1) {
+                        if (syncStart > 0) {
+                            const before = data.slice(0, syncStart);
+                            const processed0 = vsProcess(before);
+                            const viewport0 = containerRef.current?.querySelector('.xterm-viewport');
+                            const atBottom0 = !viewport0 || viewport0.scrollTop + viewport0.clientHeight >= viewport0.scrollHeight - 5;
+                            terminal.write(processed0, () => {
+                                if (atBottom0 && !disposedRef.current) terminal.scrollToBottom();
+                            });
+                        }
+                        syncTermPending = data.slice(syncStart);
+                        return;
+                    }
+                }
+
+                const processed = vsProcess(data);
                 const viewport = containerRef.current?.querySelector('.xterm-viewport');
                 const atBottom = !viewport || viewport.scrollTop + viewport.clientHeight >= viewport.scrollHeight - 5;
-                terminal.write(data, () => {
+                terminal.write(processed, () => {
                     if (atBottom && !disposedRef.current) terminal.scrollToBottom();
                 });
             };

@@ -365,6 +365,15 @@ function AgentConsole({
           const VS_ROWS = 32;
           for (let y = 0; y < VS_ROWS; y++) vsScreen[y] = '';
 
+          // Buffer for incomplete sync-term (DECSET 2026) blocks.  Pi and
+          // qwen-code wrap UI redraws in \x1b[?2026h ... \x1b[?2026l.  xterm.js
+          // 5.x ignores these sequences, so vsProcess must see the *entire*
+          // block (cursor-up at the start) to do row-level diffing.  When the
+          // server's 33ms flush splits a block across WS messages, the second
+          // fragment has no cursor-up and falls through to passthrough, causing
+          // content to be appended as new lines instead of overwriting.
+          let syncTermPending = '';
+
           function vsStripAnsi(text) {
             return text.replace(/\x1b\[[0-9;?]*[a-zA-Z]/g, '').replace(/\x1b\].*?\x07/g, '');
           }
@@ -466,12 +475,40 @@ function AgentConsole({
               setCachedSeq(sessionId, pendingSeq);
               pendingSeq = null;
             }
-            if (!writeBuffer) return;
-            const data = vsProcess(writeBuffer);
+            if (!writeBuffer && !syncTermPending) return;
+
+            // Prepend any incomplete sync-term block from the previous flush.
+            let data = syncTermPending + (writeBuffer || '');
+            syncTermPending = '';
             writeBuffer = '';
+
+            // Buffer incomplete sync-term blocks so vsProcess sees the full
+            // cursor-up pattern and can do row-level diffing correctly.
+            const syncStart = data.indexOf('\x1b[?2026h');
+            if (syncStart !== -1) {
+              const syncEnd = data.indexOf('\x1b[?2026l', syncStart);
+              if (syncEnd === -1) {
+                // Block not yet complete: process data before it, buffer the rest.
+                if (syncStart > 0) {
+                  const before = data.slice(0, syncStart);
+                  const processed = vsProcess(before);
+                  const buf0 = terminal.buffer.active;
+                  const atBottom0 = buf0.baseY + terminal.rows >= buf0.length;
+                  terminal.write(processed, () => {
+                    if (!replayDone && !disposed) { replayDone = true; hideOverlay(); }
+                    if (atBottom0 && !disposed) terminal.scrollToBottom();
+                  });
+                }
+                syncTermPending = data.slice(syncStart);
+                return;
+              }
+              // Complete block found — fall through and let vsProcess handle it.
+            }
+
+            const processed = vsProcess(data);
             const buf = terminal.buffer.active;
             const atBottom = buf.baseY + terminal.rows >= buf.length;
-            terminal.write(data, () => {
+            terminal.write(processed, () => {
               if (!replayDone && !disposed) { replayDone = true; hideOverlay(); }
               if (atBottom && !disposed) terminal.scrollToBottom();
             });
