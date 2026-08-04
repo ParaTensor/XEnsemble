@@ -53,7 +53,17 @@ test('resolveAgentSpawnArgs: hermes BYOK mode does not prepend --ignore-user-con
     assert.deepEqual(result, { prepend: [], append: [] });
 });
 
-test('resolveAgentSpawnArgs: non-droid/hermes agents are unaffected', () => {
+test('resolveAgentSpawnArgs: cline gateway mode prepends -P openai-compatible', () => {
+    const result = resolveAgentSpawnArgs('cline', [], { authMode: 'gateway', gatewayModel: 'zxs_deepseek/deepseek-v4-flash' });
+    assert.deepEqual(result, { prepend: ['-P', 'openai-compatible', '-m', 'zxs_deepseek/deepseek-v4-flash'], append: [] });
+});
+
+test('resolveAgentSpawnArgs: cline BYOK mode does not prepend -P', () => {
+    const result = resolveAgentSpawnArgs('cline', [], { authMode: 'byok' });
+    assert.deepEqual(result, { prepend: [], append: [] });
+});
+
+test('resolveAgentSpawnArgs: non-droid/hermes/cline agents are unaffected', () => {
     const configFiles = [{ path: '${STATE_DIR}/.factory/settings.json', content: '{"customModels":[{"model":"x"}]}' }];
     assert.deepEqual(resolveAgentSpawnArgs('kimi-code', configFiles), { prepend: [], append: [] });
     assert.deepEqual(resolveAgentSpawnArgs('claude-code', configFiles), { prepend: [], append: [] });

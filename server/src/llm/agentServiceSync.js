@@ -81,10 +81,67 @@ async function syncAgentServiceBinding(agentId, log = console) {
 
 async function syncAllAgentServiceBindings(log = console) {
     const all = await agentGatewayConfig.getAll();
+    const { resolveExternalGatewayUrl } = require('./gatewayUpstream');
+    const isExternal = await resolveExternalGatewayUrl();
+
+    // Phase 1: validate all agents and collect bindings to add
+    const toSync = [];
     const results = [];
     for (const agentId of Object.keys(all)) {
-        results.push(await syncAgentServiceBinding(agentId, log));
+        const cfg = all[agentId];
+        if (!cfg || cfg.llm_auth_mode !== 'gateway') {
+            results.push({ agentId, synced: false, reason: 'not_gateway_mode' });
+            continue;
+        }
+        if (isExternal) {
+            results.push({ agentId, synced: true, changed: false, reason: 'external_default_service' });
+            continue;
+        }
+        const providerName = cfg.provider?.trim();
+        if (!providerName) {
+            results.push({ agentId, synced: false, reason: 'no_provider' });
+            continue;
+        }
+        const exists = await providerExistsInGateway(providerName, log);
+        if (!exists) {
+            results.push({ agentId, synced: false, reason: 'provider_not_found', providerName });
+            continue;
+        }
+        toSync.push({ agentId, providerName });
     }
+
+    if (toSync.length === 0 || !fs.existsSync(CONFIG_PATH)) {
+        if (toSync.length > 0) {
+            for (const { agentId } of toSync) {
+                results.push({ agentId, synced: false, reason: 'missing_config' });
+            }
+        }
+        return results;
+    }
+
+    // Phase 2: apply ALL bindings in a single TOML write, then restart once
+    let before = fs.readFileSync(CONFIG_PATH, 'utf8');
+    let changed = false;
+    for (const { agentId, providerName } of toSync) {
+        const after = upsertAgentServiceBinding(before, agentId, providerName);
+        if (after !== before) {
+            before = after;
+            changed = true;
+            log.info?.(`[llm] queued binding agent=${agentId} provider=${providerName}`);
+        }
+        results.push({ agentId, synced: true, changed: after !== before, providerName });
+    }
+
+    if (changed) {
+        fs.writeFileSync(CONFIG_PATH, before, { mode: 0o600 });
+        log.info?.(`[llm] wrote ${toSync.length} bindings to UniGateway TOML`);
+
+        const status = unigateway.getStatus();
+        if (status.running) {
+            await unigateway.restart(log);
+        }
+    }
+
     return results;
 }
 

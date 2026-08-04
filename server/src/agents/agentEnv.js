@@ -131,7 +131,7 @@ function applyGatewaySynthesis(platform) {
     const token = platform.LLM_ROUTER_API_KEY?.trim();
     if (token) {
         for (const key of GATEWAY_API_KEY_KEYS) {
-            if (!out[key]?.trim()) out[key] = token;
+            out[key] = token;
         }
     }
     return out;

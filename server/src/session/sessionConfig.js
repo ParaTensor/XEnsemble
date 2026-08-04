@@ -122,6 +122,16 @@ function resolveAgentSpawnArgs(agentId, configFiles, options = {}) {
         }
     }
 
+    if (agentId === 'cline' && authMode === 'gateway') {
+        // cline default provider is "cline" (its own API); force it to use the
+        // openai-compatible provider configured in settings/providers.json so
+        // requests route through the gateway.
+        prepend.push('-P', 'openai-compatible');
+        if (gatewayModel) {
+            prepend.push('-m', gatewayModel);
+        }
+    }
+
     if (agentId === 'droid') {
         if (authMode === 'gateway' && gatewayModel) {
             append.push('--model', gatewayModel);

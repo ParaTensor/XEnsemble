@@ -12,6 +12,7 @@ const GATEWAY_CONFIG_AGENTS = new Set([
     'openclaw',
     'minimax-cli',
     'pi',
+    'cline',
 ]);
 
 function buildGatewayConfigSpec(agentId, { stateDirPath, sessionToken, routerUrl, modelTarget }) {
@@ -130,6 +131,31 @@ function buildGatewayConfigSpec(agentId, { stateDirPath, sessionToken, routerUrl
                                 name: modelTarget,
                                 contextWindow: 64000,
                             }],
+                        },
+                    },
+                }, null, 2),
+            };
+        case 'cline':
+            // cline reads provider config from ${CLINE_DATA_DIR}/settings/providers.json.
+            // Default provider is "cline" (cline's own API); must override the
+            // "openai-compatible" provider to point at the gateway, otherwise
+            // cline requests go to api.openai.com and reject the session token.
+            return {
+                dirPath: `${stateDirPath}/settings`,
+                filePath: `${stateDirPath}/settings/providers.json`,
+                content: JSON.stringify({
+                    version: 1,
+                    lastUsedProvider: 'openai-compatible',
+                    providers: {
+                        'openai-compatible': {
+                            settings: {
+                                provider: 'openai-compatible',
+                                model: modelTarget,
+                                baseUrl: `${routerUrl}/v1`,
+                                apiKey: sessionToken,
+                            },
+                            updatedAt: new Date().toISOString(),
+                            tokenSource: 'manual',
                         },
                     },
                 }, null, 2),
