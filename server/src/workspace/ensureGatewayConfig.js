@@ -13,6 +13,7 @@ const GATEWAY_CONFIG_AGENTS = new Set([
     'minimax-cli',
     'pi',
     'cline',
+    'glm-agent',
 ]);
 
 function buildGatewayConfigSpec(agentId, { stateDirPath, sessionToken, routerUrl, modelTarget }) {
@@ -158,6 +159,24 @@ function buildGatewayConfigSpec(agentId, { stateDirPath, sessionToken, routerUrl
                             tokenSource: 'manual',
                         },
                     },
+                }, null, 2),
+            };
+
+        case 'glm-agent':
+            // zai reads baseURL / apiKey / defaultModel from user-settings.json.
+            // env vars (ZAI_BASE_URL / ZAI_API_KEY / ZAI_MODEL) are injected but
+            // zai does not read them; without this file zai prompts for config.
+            return {
+                dirPath: `${stateDirPath}/.zai`,
+                filePath: `${stateDirPath}/.zai/user-settings.json`,
+                content: JSON.stringify({
+                    baseURL: `${routerUrl}/v1`,
+                    defaultModel: modelTarget,
+                    models: [modelTarget],
+                    watchEnabled: false,
+                    watchDebounceMs: 300,
+                    enableHistory: true,
+                    apiKey: sessionToken,
                 }, null, 2),
             };
 
