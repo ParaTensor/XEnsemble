@@ -328,6 +328,29 @@ fn split_provider_model(raw: &str) -> (String, String) {
     }
 }
 
+/// Resolve the routing hint for a raw model string.
+/// - `provider/model` → the explicit provider hint.
+/// - a bare model alias (e.g. `deepseek-v4-flash`) → the bound provider whose
+///   `model_mapping` / `default_model` matches the alias, so agents can send
+///   plain model names without a provider prefix. Without this, the hint is fed
+///   straight into targeting, which only matches endpoint/provider metadata and
+///   fails with `no provider matches target '<model>'`.
+async fn resolve_provider_hint(state: &AppState, service_id: &str, raw_model: &str) -> String {
+    let trimmed = raw_model.trim();
+    if let Some((provider, _model)) = trimmed.split_once('/') {
+        let provider = provider.trim();
+        if !provider.is_empty() {
+            return provider.to_string();
+        }
+    }
+    for model in state.gateway.list_service_models(service_id).await {
+        if model.alias == trimmed {
+            return model.owned_by;
+        }
+    }
+    trimmed.to_string()
+}
+
 async fn openai_chat(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -340,7 +363,8 @@ async fn openai_chat(
         .get("model")
         .and_then(Value::as_str)
         .unwrap_or("gpt-4o-mini");
-    let (provider_hint, default_model) = split_provider_model(raw_model);
+    let (_, default_model) = split_provider_model(raw_model);
+    let provider_hint = resolve_provider_hint(&state, &service_id, raw_model).await;
 
     let request = openai_payload_to_chat_request(&payload, &default_model)
         .map_err(|error| ApiError::bad_request(error.to_string()))?;
@@ -386,7 +410,8 @@ async fn anthropic_messages(
         .get("model")
         .and_then(Value::as_str)
         .unwrap_or("claude-sonnet-4-20250514");
-    let (provider_hint, default_model) = split_provider_model(raw_model);
+    let (_, default_model) = split_provider_model(raw_model);
+    let provider_hint = resolve_provider_hint(&state, &service_id, raw_model).await;
 
     let request = anthropic_payload_to_chat_request(&payload, &default_model)
         .map_err(|error| ApiError::bad_request(error.to_string()))?;
@@ -426,7 +451,8 @@ async fn openai_embeddings(
         .get("model")
         .and_then(Value::as_str)
         .unwrap_or("text-embedding-3-small");
-    let (provider_hint, default_model) = split_provider_model(raw_model);
+    let (_, default_model) = split_provider_model(raw_model);
+    let provider_hint = resolve_provider_hint(&state, &service_id, raw_model).await;
 
     let request = openai_payload_to_embed_request(&payload, &default_model)
         .map_err(|error| ApiError::bad_request(error.to_string()))?;
@@ -956,6 +982,44 @@ is_active = true
             engine.get_pool("droid").await.is_some(),
             "droid pool built after reload"
         );
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[tokio::test]
+    async fn resolve_provider_hint_maps_model_alias_to_bound_provider() {
+        let dir = std::env::temp_dir().join(format!("ugw-hint-test-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("create dir");
+        let path = dir.join("config.toml");
+        write_provider_toml(&path).await;
+
+        let gateway = GatewayState::load(&path).await.expect("load");
+        let engine = Arc::new(
+            UniGatewayEngine::builder()
+                .with_builtin_http_drivers()
+                .build()
+                .expect("engine"),
+        );
+        let pool_host = Arc::new(EnginePoolHost {
+            engine: engine.clone(),
+        });
+        let state = AppState {
+            gateway: gateway.clone(),
+            engine,
+            pool_host,
+            admin_token: None,
+        };
+        // Bare model alias resolves to the bound provider (zxs_deepseek).
+        let hint = resolve_provider_hint(&state, "default", "deepseek-v4-flash").await;
+        assert_eq!(hint, "zxs_deepseek");
+
+        // Explicit provider/model keeps the provider as the hint.
+        let hint = resolve_provider_hint(&state, "default", "zxs_deepseek/deepseek-v4-flash").await;
+        assert_eq!(hint, "zxs_deepseek");
+
+        // Unknown model falls back to the raw string.
+        let hint = resolve_provider_hint(&state, "default", "some-unknown-model").await;
+        assert_eq!(hint, "some-unknown-model");
 
         let _ = std::fs::remove_dir_all(&dir);
     }
