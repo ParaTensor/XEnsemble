@@ -25,3 +25,4 @@ unigateway-sdk = { version = "2.5.0", features = ["host"] }
 
 [patch.crates-io]
 unigateway-config = { path = "vendor/unigateway-config" }
+unigateway-core = { path = "vendor/unigateway-core" }
