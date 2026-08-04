@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState, useRef } from 'react';
 import { GitBranch, Loader2, Search, AlertCircle } from 'lucide-react';
 import {
   ConsoleDialogShell,
@@ -34,6 +34,7 @@ export default function RepoImportDialog({ open, onClose, onImported, fetchWorks
   const { showToast } = useToast();
   const [provider, setProvider] = useState('github');
   const { connection, loading: connectionLoading, connect, connectWithPat, disconnect } = useGitProvider(provider);
+  const repoReqIdRef = useRef(0);
 
   const [repos, setRepos] = useState([]);
   const [reposLoading, setReposLoading] = useState(false);
@@ -126,16 +127,19 @@ export default function RepoImportDialog({ open, onClose, onImported, fetchWorks
   };
 
   const loadRepos = async () => {
+    const reqId = ++repoReqIdRef.current;
     setReposLoading(true);
     try {
       const data = await gitApi.listRepos(provider, { per_page: '100' });
+      if (reqId !== repoReqIdRef.current) return;
       const rows = data.repos || data;
       setRepos(Array.isArray(rows) ? rows : []);
     } catch (err) {
+      if (reqId !== repoReqIdRef.current) return;
       showToast('error', err.message);
       setRepos([]);
     } finally {
-      setReposLoading(false);
+      if (reqId === repoReqIdRef.current) setReposLoading(false);
     }
   };
 

@@ -77,6 +77,7 @@ export default function RepoImportDialog({ open, onClose, onImported, fetchWorks
   const [urlFetching, setUrlFetching] = useState(false);
   const [urlError, setUrlError] = useState(null);
   const urlInputRef = useRef(null);
+  const repoReqIdRef = useRef(0);
 
   const [patToken, setPatToken] = useState('');
   const [patConnecting, setPatConnecting] = useState(false);
@@ -143,16 +144,19 @@ export default function RepoImportDialog({ open, onClose, onImported, fetchWorks
   };
 
   const loadRepos = async () => {
+    const reqId = ++repoReqIdRef.current;
     setReposLoading(true);
     try {
       const data = await gitApi.listRepos(provider, { per_page: '100' });
+      if (reqId !== repoReqIdRef.current) return;
       const rows = data.repos || data;
       setRepos(Array.isArray(rows) ? rows.map(normalizeRepo) : []);
     } catch (err) {
+      if (reqId !== repoReqIdRef.current) return;
       showToast('error', err.message);
       setRepos([]);
     } finally {
-      setReposLoading(false);
+      if (reqId === repoReqIdRef.current) setReposLoading(false);
     }
   };
 
