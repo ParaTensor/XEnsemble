@@ -56,6 +56,30 @@ class BoxLiteClient {
         this.base = (process.env.BLINK_API_URL || 'http://127.0.0.1:8787').replace(/\/$/, '');
     }
 
+    /**
+     * fetch wrapper with timeout. Prevents a single blink-server request
+     * from blocking indefinitely when the server's worker threads are
+     * exhausted (e.g. multiple VMs failing guest_connect with 30s timeout).
+     *
+     * Default timeout: 35s (covers blink's 30s guest_connect + overhead).
+     * openSession uses 60s to allow for VM boot + init.
+     */
+    async _fetch(url, options = {}, timeoutMs = 35000) {
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), timeoutMs);
+        try {
+            const res = await fetch(url, { ...options, signal: controller.signal });
+            return res;
+        } catch (err) {
+            if (err.name === 'AbortError') {
+                throw new Error(`blink request timeout after ${timeoutMs}ms: ${url}`);
+            }
+            throw err;
+        } finally {
+            clearTimeout(timer);
+        }
+    }
+
     parseExecutionStreamRef(streamRef) {
         const match = /^boxlite:([^:]+):([^:]+)$/.exec(String(streamRef || ''));
         if (!match) return null;
@@ -90,13 +114,13 @@ class BoxLiteClient {
     }
 
     async health() {
-        const res = await fetch(`${this.base}/api/health`);
+        const res = await this._fetch(`${this.base}/api/health`, {}, 5000);
         if (!res.ok) throw new Error(`blink health ${res.status}`);
         return res.json();
     }
 
     async product() {
-        const res = await fetch(`${this.base}/api/product`);
+        const res = await this._fetch(`${this.base}/api/product`, {}, 5000);
         if (!res.ok) return {};
         return res.json();
     }
@@ -121,11 +145,11 @@ class BoxLiteClient {
         if (options.resources && Object.keys(options.resources).length > 0) {
             body.resources = options.resources;
         }
-        const res = await fetch(`${this.base}/api/sessions`, {
+        const res = await this._fetch(`${this.base}/api/sessions`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(body),
-        });
+        }, 60000);
         if (!res.ok) {
             const t = await res.text().catch(() => '');
             throw new Error(`open session failed: ${res.status} ${t}`);
@@ -134,7 +158,7 @@ class BoxLiteClient {
     }
 
     async getSessionStatus(name) {
-        const res = await fetch(`${this.base}/api/sessions/${encodeURIComponent(name)}`);
+        const res = await this._fetch(`${this.base}/api/sessions/${encodeURIComponent(name)}`, {}, 10000);
         if (!res.ok) return null;
         const data = await res.json().catch(() => null);
         return data?.session || null;
@@ -143,7 +167,7 @@ class BoxLiteClient {
     async deleteSession(name) {
         if (!name) return;
         await this.stopSession(name).catch(() => {});
-        const res = await fetch(`${this.base}/api/sessions/${encodeURIComponent(name)}`, {
+        const res = await this._fetch(`${this.base}/api/sessions/${encodeURIComponent(name)}`, {
             method: 'DELETE',
         });
         if (!res.ok) {
@@ -154,7 +178,7 @@ class BoxLiteClient {
 
     async stopSession(name) {
         if (!name) return;
-        const res = await fetch(`${this.base}/api/sessions/${encodeURIComponent(name)}/stop`, {
+        const res = await this._fetch(`${this.base}/api/sessions/${encodeURIComponent(name)}/stop`, {
             method: 'POST',
         });
         if (!res.ok) {
@@ -165,7 +189,7 @@ class BoxLiteClient {
     }
 
     async spawn(sessionName, spec) {
-        const res = await fetch(`${this.base}/api/sessions/${encodeURIComponent(sessionName)}/spawn`, {
+        const res = await this._fetch(`${this.base}/api/sessions/${encodeURIComponent(sessionName)}/spawn`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(spec || {}),
@@ -257,7 +281,7 @@ class BoxLiteClient {
     }
 
     async createCheckpoint(name, snapshot) {
-        const res = await fetch(`${this.base}/api/sessions/${encodeURIComponent(name)}/checkpoints`, {
+        const res = await this._fetch(`${this.base}/api/sessions/${encodeURIComponent(name)}/checkpoints`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ snapshot: snapshot || `snap_${Date.now()}` }),
@@ -270,7 +294,7 @@ class BoxLiteClient {
     }
 
     async restoreCheckpoint(name, snapshot) {
-        const res = await fetch(`${this.base}/api/sessions/${encodeURIComponent(name)}/checkpoints/${encodeURIComponent(snapshot)}/restore`, {
+        const res = await this._fetch(`${this.base}/api/sessions/${encodeURIComponent(name)}/checkpoints/${encodeURIComponent(snapshot)}/restore`, {
             method: 'POST',
         });
         if (!res.ok) {
@@ -281,7 +305,7 @@ class BoxLiteClient {
     }
 
     async exportSession(name) {
-        const res = await fetch(`${this.base}/api/sessions/${encodeURIComponent(name)}/export`, { method: 'POST' });
+        const res = await this._fetch(`${this.base}/api/sessions/${encodeURIComponent(name)}/export`, { method: 'POST' });
         if (!res.ok) {
             const t = await res.text().catch(() => '');
             throw new Error(`export failed: ${res.status} ${t}`);
@@ -297,7 +321,7 @@ class BoxLiteClient {
         if (suggestedName) {
             form.append('name', suggestedName);
         }
-        const res = await fetch(`${this.base}/api/import`, {
+        const res = await this._fetch(`${this.base}/api/import`, {
             method: 'POST',
             body: form,
         });
