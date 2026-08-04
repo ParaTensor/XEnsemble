@@ -227,6 +227,27 @@ test('ensureReady runs post-boot boxlite execs sequentially (no concurrent zygot
     assert.equal(maxInFlight, 1, `expected serialized boxlite execs (maxInFlight=1), got ${maxInFlight}`);
 });
 
+test('ensureWorkspacePath retries on transient spawn failure', async () => {
+    const provider = new BoxLiteRuntimeProvider();
+    const client = new MockBoxLiteClient();
+    provider.client = client;
+
+    let spawnAttempts = 0;
+    client.execHandler = async ({ command, args }) => {
+        const shell = Array.isArray(args) ? args.join(' ') : '';
+        if (command === 'sh' && shell.includes('mkdir -p')) {
+            spawnAttempts += 1;
+            if (spawnAttempts < 2) {
+                throw new Error('spawn failed: 500 {"error":"failed to spawn command in sandbox"}');
+            }
+        }
+        return { exitCode: 0, stdout: '', stderr: '' };
+    };
+
+    await provider.ensureWorkspacePath('rt_retry', '/workspace');
+    assert.equal(spawnAttempts, 2, 'expected ensureWorkspacePath to retry after first spawn failure');
+});
+
 function resultMountKey(project) {
     const guestPath = '/workspace';
     const hostPath = workspace.projectDir(project.userId, project.id);

@@ -57,16 +57,31 @@ class BoxLiteRuntimeProvider extends RuntimeProvider {
     }
 
     async ensureWorkspacePath(runtimeRef, workspacePath) {
-        const result = await this.client.execForResult(
-            runtimeRef,
-            'sh',
-            ['-lc', `mkdir -p ${JSON.stringify(workspacePath)}`],
-            {},
-            '/'
-        );
-        if (result.exitCode !== 0) {
-            throw new RuntimeError(`BoxLite ensureReady failed: create workspace path failed with exit code ${result.exitCode}`, 502);
+        const MAX_RETRIES = 3;
+        let lastErr = null;
+        for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+            try {
+                const result = await this.client.execForResult(
+                    runtimeRef,
+                    'sh',
+                    ['-lc', `mkdir -p ${JSON.stringify(workspacePath)}`],
+                    {},
+                    '/'
+                );
+                if (result.exitCode !== 0) {
+                    throw new RuntimeError(`BoxLite ensureReady failed: create workspace path failed with exit code ${result.exitCode}`, 502);
+                }
+                return;
+            } catch (e) {
+                lastErr = e;
+                if (attempt < MAX_RETRIES && /spawn failed/i.test(e.message)) {
+                    await new Promise((r) => setTimeout(r, attempt * 1000));
+                    continue;
+                }
+                throw e;
+            }
         }
+        throw lastErr;
     }
 
     /**
