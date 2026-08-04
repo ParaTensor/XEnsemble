@@ -336,33 +336,54 @@ async function resumeSession({
                             session.id, session.streamRef, { after: cursor },
                         );
                         if (reattached && typeof reattached.onData === 'function' && typeof reattached.onExit === 'function') {
-                            handle = reattached;
-                            handle.transcriptRef = transcriptRef;
-                            sessionManager.createSession(session.id, handle, agentMeta.id, {
-                                transcriptRef,
-                                projectId: session.projectId || null,
-                                runtimeId: session.runtimeId || null,
-                                runtimeRef: runtimeReady.runtime ? runtimeReady.runtime.runtimeRef : null,
-                                stateDirRef: session.stateDirRef || null,
-                                userId: requestUser.id,
+                            // Attach 到已结束的 execution 时，blink 会立即回放 exit
+                            // 帧，导致 resume 报告 running 但实际没有活进程（用户端
+                            // 表现为 restart 后无法交互）。短暂等待：若 attach 后马上
+                            // 触发 exit，视为死进程，回退到重新 spawn 新进程。
+                            let aliveSub;
+                            const alive = await new Promise((resolve) => {
+                                const timer = setTimeout(() => {
+                                    aliveSub?.dispose?.();
+                                    resolve(true);
+                                }, 800);
+                                aliveSub = reattached.onExit(() => {
+                                    clearTimeout(timer);
+                                    aliveSub?.dispose?.();
+                                    resolve(false);
+                                });
                             });
-                            await registerSessionLifecycle({
-                                db, schema, sessionManager, sessionId: session.id, project, fastifyLog,
-                            });
-                            await db.update(schema.sessions)
-                                .set({ status: 'running', recoverable: true })
-                                .where(eq(schema.sessions.id, session.id));
-                            return {
-                                session_id: session.id,
-                                status: 'running',
-                                runtime_id: runtimeReady.runtime ? runtimeReady.runtime.id : session.runtimeId || null,
-                                stream_ref: handle.streamRef || null,
-                                recoverable: true,
-                                terminal_theme_id: terminalThemeId || null,
-                                spawn_env_preview: resolvedSpawnEnv.spawn_env_preview || null,
-                                state_dir_ref: session.stateDirRef || null,
-                                reattached: true,
-                            };
+                            if (alive) {
+                                handle = reattached;
+                                handle.transcriptRef = transcriptRef;
+                                sessionManager.createSession(session.id, handle, agentMeta.id, {
+                                    transcriptRef,
+                                    projectId: session.projectId || null,
+                                    runtimeId: session.runtimeId || null,
+                                    runtimeRef: runtimeReady.runtime ? runtimeReady.runtime.runtimeRef : null,
+                                    stateDirRef: session.stateDirRef || null,
+                                    userId: requestUser.id,
+                                });
+                                await registerSessionLifecycle({
+                                    db, schema, sessionManager, sessionId: session.id, project, fastifyLog,
+                                });
+                                await db.update(schema.sessions)
+                                    .set({ status: 'running', recoverable: true })
+                                    .where(eq(schema.sessions.id, session.id));
+                                return {
+                                    session_id: session.id,
+                                    status: 'running',
+                                    runtime_id: runtimeReady.runtime ? runtimeReady.runtime.id : session.runtimeId || null,
+                                    stream_ref: handle.streamRef || null,
+                                    recoverable: true,
+                                    terminal_theme_id: terminalThemeId || null,
+                                    spawn_env_preview: resolvedSpawnEnv.spawn_env_preview || null,
+                                    state_dir_ref: session.stateDirRef || null,
+                                    reattached: true,
+                                };
+                            }
+                            // Dead process — clean up the handle and fall through
+                            // to spawn a fresh agent below.
+                            try { reattached.kill?.(); } catch (_) {}
                         }
                     }
                 } catch (_) {

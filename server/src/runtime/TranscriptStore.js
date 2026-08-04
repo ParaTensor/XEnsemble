@@ -225,6 +225,15 @@ class TranscriptStore {
         const state = this._state(streamRef);
         if (!state) return 0;
 
+        // If the agent process has already exited (onExit appended an exit
+        // frame), there is nothing to reattach to: attachSession would open a
+        // WebSocket to a dead execution and immediately fire exit, so resume
+        // would report running with no live process. Fall back to a fresh spawn.
+        if (state.exited) return null;
+        for (const frame of state.frames) {
+            if (frame.kind === 'exit') return null;
+        }
+
         let cursor = 0;
         let sawOut = false;
         for (const frame of state.frames) {
