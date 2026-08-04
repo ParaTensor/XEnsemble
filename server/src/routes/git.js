@@ -203,6 +203,10 @@ function registerGitRoutes(fastify) {
             if (err.message.includes('not_connected')) {
                 return reply.code(400).send({ error: `${providerName} account not connected` });
             }
+            const isAuthError = err.code === 'token_expired' || err.status === 401;
+            if (isAuthError) {
+                return reply.code(400).send({ error: `${providerName} token 已过期或无效，请重新认证`, code: 'REAUTH_REQUIRED' });
+            }
             return reply.code(err.status || 500).send({ error: err.message });
         }
     });
@@ -224,6 +228,10 @@ function registerGitRoutes(fastify) {
             request.log.error(err);
             if (err.message.includes('not_connected')) {
                 return reply.code(400).send({ error: `${providerName} account not connected` });
+            }
+            const isAuthError = err.code === 'token_expired' || err.status === 401;
+            if (isAuthError) {
+                return reply.code(400).send({ error: `${providerName} token 已过期或无效，请重新认证`, code: 'REAUTH_REQUIRED' });
             }
             return reply.code(err.status || 500).send({ error: err.message });
         }
@@ -271,6 +279,10 @@ function registerGitRoutes(fastify) {
             request.log.error(err);
             if (err.message.includes('not_connected')) {
                 return reply.code(400).send({ error: `${providerName} account not connected` });
+            }
+            const isAuthError = err.code === 'token_expired' || err.status === 401;
+            if (isAuthError) {
+                return reply.code(400).send({ error: `${providerName} token 已过期或无效，请重新认证`, code: 'REAUTH_REQUIRED' });
             }
             return reply.code(err.status || 500).send({ error: err.message });
         }

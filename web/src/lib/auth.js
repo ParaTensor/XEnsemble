@@ -93,6 +93,17 @@ export async function apiFetch(path, options = {}) {
       res = await fetch(url, { ...options, headers });
     }
     if (res.status === 401) {
+      // Check if this is a git provider auth error (not user session expiry).
+      // Git routes return 400 + code:REAUTH_REQUIRED for expired git tokens,
+      // but as a defensive guard: if a 401 slips through, check the response
+      // body for REAUTH_REQUIRED before logging out the user.
+      try {
+        const cloned = res.clone();
+        const body = await cloned.json().catch(() => ({}));
+        if (body?.code === 'REAUTH_REQUIRED') {
+          return res;
+        }
+      } catch (_) { /* not JSON */ }
       notifyAuthExpired();
     }
   }
