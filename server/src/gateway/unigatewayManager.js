@@ -375,7 +375,14 @@ function stop() {
 async function restart(log = console) {
     stop();
     await killForeignListenerOnPort(status.bindAddr, log);
-    await new Promise((r) => setTimeout(r, 300));
+    // Ensure the old listener has fully released the port before spawning,
+    // otherwise the new UniGateway may fail to bind and the stale process
+    // (loaded with old config) keeps serving and overwrites the TOML.
+    for (let i = 0; i < 10; i++) {
+        await new Promise((r) => setTimeout(r, 300));
+        const stillListening = await killForeignListenerOnPort(status.bindAddr, log);
+        if (!stillListening) break;
+    }
     return start(log, { force: true });
 }
 

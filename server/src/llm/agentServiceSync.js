@@ -136,9 +136,13 @@ async function syncAllAgentServiceBindings(log = console) {
         fs.writeFileSync(CONFIG_PATH, before, { mode: 0o600 });
         log.info?.(`[llm] wrote ${toSync.length} bindings to UniGateway TOML`);
 
-        const status = unigateway.getStatus();
-        if (status.running) {
+        // Always restart so UniGateway reloads the updated TOML. Do NOT gate on
+        // status.running: a stale process (loaded with old config) would keep
+        // serving and its persist_if_dirty() would overwrite the new bindings.
+        try {
             await unigateway.restart(log);
+        } catch (err) {
+            log.warn?.(`[llm] restart UniGateway failed: ${err.message}`);
         }
     }
 
