@@ -47,6 +47,7 @@ function buildGatewayConfigSpec(agentId, { stateDirPath, sessionToken, routerUrl
                     customModels: [{
                         provider: 'generic-chat-completion-api',
                         model: modelTarget,
+                        displayName: modelTarget,
                         baseUrl: `${routerUrl}/v1`,
                         apiKey: sessionToken,
                     }],

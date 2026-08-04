@@ -251,6 +251,14 @@ async function resolveAgentAuthMode(agentId) {
 
 function applyGatewayAgentEnv(agentId, env, platform, envRequired) {
     const out = { ...env };
+    if (agentId === 'droid') {
+        // Factory Droid in BYOK airgap mode: droid only talks to configured
+        // customModels (no Factory API), which makes the gateway model the
+        // default in the UI instead of Factory's built-in models. Without this,
+        // the model selector opens on a Factory model and customModels must be
+        // picked manually every session.
+        out.FACTORY_AIRGAP_ENABLED = '1';
+    }
     if (envRequired.includes('OPENROUTER_API_KEY') && platform.OPENROUTER_BASE_URL?.trim()) {
         out.OPENROUTER_BASE_URL = platform.OPENROUTER_BASE_URL.trim();
     }
@@ -583,6 +591,7 @@ module.exports = {
     resolveTerminalThemeContext,
     mergeSpawnEnvLayers,
     applyAgentEnvOverrides,
+    applyGatewayAgentEnv,
     computeEffectiveRequired,
     isAgentKeysReady,
     findMissing,
