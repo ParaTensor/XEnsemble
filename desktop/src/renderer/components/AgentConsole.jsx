@@ -290,6 +290,9 @@ function AgentConsole({
                 let startRow = Math.max(0, vsCursorY - upCount);
                 const prefix = data.slice(0, dataOffset + cursorUpMatch[0].length);
                 const rest = data.slice(dataOffset + cursorUpMatch[0].length);
+                if (/\x1b\[\d*B/.test(rest)) {
+                    return data;
+                }
                 const segments = rest.match(/\x1b\[2K[^\r\n]*/g);
                 if (!segments || segments.length === 0) { vsCursorY = startRow; return data; }
                 let output = prefix;

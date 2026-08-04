@@ -440,6 +440,17 @@ function AgentConsole({
             let startRow = Math.max(0, vsCursorY - upCount);
             const prefix = data.slice(0, dataOffset + cursorUpMatch[0].length);
             const rest = data.slice(dataOffset + cursorUpMatch[0].length);
+            // If rest contains cursor-down (\x1b[<n>B), the row-diffing path
+            // can't correctly track vsCursorY: the content moves the cursor
+            // back down after the update (e.g. codebuddy spinner:
+            // \x1b[6A\x1b[2K<spinner>\x1b[6B).  vsCursorY would be set to
+            // startRow but the actual cursor is at startRow+6, causing
+            // subsequent updates to write to wrong rows (spinner frames
+            // accumulate instead of overwriting).  Return raw data to let
+            // xterm.js handle the cursor movement natively.
+            if (/\x1b\[\d*B/.test(rest)) {
+              return data;
+            }
             const segments = rest.match(/\x1b\[2K[^\r\n]*/g);
             if (!segments || segments.length === 0) {
               vsCursorY = startRow;
