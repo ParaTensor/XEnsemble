@@ -89,3 +89,47 @@ priority = 0
     assert.equal(hasBinding(after, 'kimi-code', 'deepseek-main'), false);
     assert.equal(hasBinding(after, 'other', 'deepseek-main'), true);
 });
+
+test('hasBinding ignores api_keys service_id (cross-section false positive)', () => {
+    const toml = `${TOML_WITH_SERVICE}
+[[bindings]]
+service_id = "other"
+provider_name = "deepseek-main"
+priority = 0
+
+[[api_keys]]
+key = "some-key"
+service_id = "qwen-code"
+used_quota = 0
+is_active = true
+
+[[bindings]]
+service_id = "cursor"
+provider_name = "deepseek-main"
+priority = 0
+`;
+    // qwen-code only appears in the api_keys table; it must NOT be treated as bound.
+    assert.equal(hasBinding(toml, 'qwen-code', 'deepseek-main'), false);
+    // Real bindings on both sides of the api_keys section must still match.
+    assert.equal(hasBinding(toml, 'kimi-code', 'deepseek-main'), true);
+    assert.equal(hasBinding(toml, 'cursor', 'deepseek-main'), true);
+});
+
+test('removeBindingsForService removes only the matching binding block', () => {
+    const toml = `${TOML_WITH_SERVICE}
+[[bindings]]
+service_id = "other"
+provider_name = "deepseek-main"
+priority = 0
+
+[[api_keys]]
+key = "some-key"
+service_id = "kimi-code"
+used_quota = 0
+is_active = true
+`;
+    const after = removeBindingsForService(toml, 'kimi-code');
+    assert.equal(hasBinding(after, 'kimi-code', 'deepseek-main'), false);
+    assert.equal(hasBinding(after, 'other', 'deepseek-main'), true);
+    assert.equal(after.includes('service_id = "kimi-code"'), true, 'api_keys service_id must be preserved');
+});
