@@ -878,3 +878,85 @@ impl IntoResponse for ApiError {
         (self.status, body).into_response()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use unigateway_config::core_sync::sync_core_pools;
+
+    async fn write_provider_toml(path: &std::path::Path) {
+        let toml = r#"
+[preferences]
+default_mode = "default"
+
+[[services]]
+id = "default"
+name = "Default"
+routing_strategy = "round_robin"
+
+[[providers]]
+name = "zxs_deepseek"
+provider_type = "openai"
+endpoint_id = "openai"
+base_url = "https://api.deepseek.com/"
+api_key = "sk-test"
+default_model = "deepseek-v4-flash"
+model_mapping = '{"deepseek-v4-flash":"deepseek-v4-flash"}'
+is_enabled = true
+
+[[bindings]]
+service_id = "default"
+provider_name = "zxs_deepseek"
+priority = 0
+
+[[api_keys]]
+key = "test-key"
+service_id = "default"
+is_active = true
+"#;
+        std::fs::write(path, toml).expect("write toml");
+    }
+
+    #[tokio::test]
+    async fn reload_merges_external_binding_and_rebuilds_pool() {
+        let dir = std::env::temp_dir().join(format!("ugw-reload-test-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("create dir");
+        let path = dir.join("config.toml");
+        write_provider_toml(&path).await;
+
+        let gateway = GatewayState::load(&path).await.expect("load");
+        let engine = Arc::new(
+            UniGatewayEngine::builder()
+                .with_builtin_http_drivers()
+                .build()
+                .expect("engine"),
+        );
+        sync_core_pools(&gateway, engine.as_ref())
+            .await
+            .expect("initial sync");
+
+        // External writer (Node control plane) appends a droid service+binding.
+        let mut toml = std::fs::read_to_string(&path).expect("read");
+        toml.push_str(
+            "[[services]]\nid = \"droid\"\nname = \"droid\"\nrouting_strategy = \"round_robin\"\n",
+        );
+        toml.push_str(
+            "[[bindings]]\nservice_id = \"droid\"\nprovider_name = \"zxs_deepseek\"\npriority = 0\n",
+        );
+        std::fs::write(&path, toml).expect("write external");
+
+        // reload merges droid into memory; rebuild pools so it becomes routable.
+        gateway.reload_from_disk().await.expect("reload");
+        sync_core_pools(&gateway, engine.as_ref())
+            .await
+            .expect("re-sync");
+
+        // If the droid binding was merged, sync_core_pools builds a droid pool.
+        assert!(
+            engine.get_pool("droid").await.is_some(),
+            "droid pool built after reload"
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+}
