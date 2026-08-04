@@ -259,6 +259,20 @@ function applyGatewayAgentEnv(agentId, env, platform, envRequired) {
         // picked manually every session.
         out.FACTORY_AIRGAP_ENABLED = '1';
     }
+    if (agentId === 'github-copilot') {
+        // Copilot CLI BYOK: without COPILOT_PROVIDER_* the CLI requires GitHub
+        // auth (OAuth / PAT) and talks to GitHub's hosted models. Setting these
+        // env vars routes all requests to the gateway with no GitHub login.
+        const routerUrl = platform.LLM_ROUTER_URL?.trim();
+        const routerKey = platform.LLM_ROUTER_API_KEY?.trim();
+        const target = out.OPENAI_MODEL?.trim() || out.LLM_MODEL?.trim();
+        if (routerUrl && routerKey && target) {
+            out.COPILOT_PROVIDER_BASE_URL = `${routerUrl.replace(/\/+$/, '')}/v1`;
+            out.COPILOT_PROVIDER_TYPE = 'openai';
+            out.COPILOT_PROVIDER_API_KEY = routerKey;
+            out.COPILOT_MODEL = target;
+        }
+    }
     if (envRequired.includes('OPENROUTER_API_KEY') && platform.OPENROUTER_BASE_URL?.trim()) {
         out.OPENROUTER_BASE_URL = platform.OPENROUTER_BASE_URL.trim();
     }

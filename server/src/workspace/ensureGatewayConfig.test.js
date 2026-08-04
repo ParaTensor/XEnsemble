@@ -52,3 +52,21 @@ test('buildGatewayConfigSpec: cline still works (regression check)', () => {
     const content = JSON.parse(spec.content);
     assert.equal(content.providers['openai-compatible'].settings.apiKey, 'xel_test_token');
 });
+
+test('codebuddy is in GATEWAY_CONFIG_AGENTS', () => {
+    assert.ok(GATEWAY_CONFIG_AGENTS.has('codebuddy'), 'codebuddy must be in GATEWAY_CONFIG_AGENTS');
+});
+
+test('buildGatewayConfigSpec: codebuddy writes models.json pointing at the gateway', () => {
+    const spec = buildGatewayConfigSpec('codebuddy', ctx);
+    assert.ok(spec, 'codebuddy spec must not be null');
+    assert.equal(spec.filePath, '$HOME/.codebuddy/models.json');
+    assert.equal(spec.dirPath, '$HOME/.codebuddy');
+
+    const models = JSON.parse(spec.content);
+    assert.equal(models.length, 1);
+    assert.equal(models[0].id, 'zxs_deepseek/deepseek-v4-flash');
+    assert.equal(models[0].apiKey, 'xel_test_token');
+    assert.equal(models[0].url, 'https://xensemble.dev/api/v1/llm/v1/chat/completions');
+    assert.equal(models[0].vendor, 'custom');
+});

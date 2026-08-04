@@ -96,3 +96,15 @@ test('resolveAgentSpawnArgs: pi gateway mode forces gateway provider + model', (
 test('resolveAgentSpawnArgs: pi non-gateway mode adds no args', () => {
     assert.deepEqual(resolveAgentSpawnArgs('pi', [], { authMode: 'byok' }), { prepend: [], append: [] });
 });
+
+test('resolveAgentSpawnArgs: codebuddy gateway mode adds --model', () => {
+    const result = resolveAgentSpawnArgs('codebuddy', [], { authMode: 'gateway', gatewayModel: 'zxs_deepseek/deepseek-v4-flash' });
+    assert.deepEqual(result, {
+        prepend: ['--model', 'zxs_deepseek/deepseek-v4-flash'],
+        append: [],
+    });
+});
+
+test('resolveAgentSpawnArgs: codebuddy non-gateway mode adds no args', () => {
+    assert.deepEqual(resolveAgentSpawnArgs('codebuddy', [], { authMode: 'byok' }), { prepend: [], append: [] });
+});

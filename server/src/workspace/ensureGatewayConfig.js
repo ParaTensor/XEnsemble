@@ -15,6 +15,7 @@ const GATEWAY_CONFIG_AGENTS = new Set([
     'cline',
     'glm-agent',
     'hermes',
+    'codebuddy',
 ]);
 
 function buildGatewayConfigSpec(agentId, { stateDirPath, sessionToken, routerUrl, modelTarget }) {
@@ -182,6 +183,25 @@ function buildGatewayConfigSpec(agentId, { stateDirPath, sessionToken, routerUrl
                 }, null, 2),
             };
 
+        case 'codebuddy':
+            // CodeBuddy reads ~/.codebuddy/models.json (OpenAI-compatible API).
+            // Its default official models (gemini/gpt/deepseek-v3-2-volc/...) require
+            // a Tencent CodeBuddy login; a custom model in models.json bypasses auth
+            // and routes to the gateway. The url must be a full /chat/completions path.
+            return {
+                dirPath: '$HOME/.codebuddy',
+                filePath: '$HOME/.codebuddy/models.json',
+                content: JSON.stringify([{
+                    id: modelTarget,
+                    name: modelTarget,
+                    vendor: 'custom',
+                    apiKey: sessionToken,
+                    url: `${routerUrl}/v1/chat/completions`,
+                    maxInputTokens: 64000,
+                    maxOutputTokens: 8192,
+                }], null, 2),
+            };
+
         case 'hermes':
             // hermes loads $HERMES_HOME/config.yaml and its _resolve_openrouter_runtime
             // prioritises config.yaml base_url over OPENROUTER_BASE_URL env var when
@@ -242,8 +262,8 @@ async function ensureGatewayConfig({ runtime, runtimeRef, agentId, authMode, sta
     if (!runtime?.exec?.exec) {
         return { skipped: true, reason: 'no_runtime_exec' };
     }
-    // minimax-cli and pi use $HOME (no state dir); all others require a state dir path.
-    if (agentId !== 'minimax-cli' && agentId !== 'pi' && !stateDirPath) {
+    // minimax-cli, pi and codebuddy use $HOME (no state dir); all others require a state dir path.
+    if (agentId !== 'minimax-cli' && agentId !== 'pi' && agentId !== 'codebuddy' && !stateDirPath) {
         return { skipped: true, reason: 'no_state_dir' };
     }
 

@@ -162,6 +162,13 @@ function resolveAgentSpawnArgs(agentId, configFiles, options = {}) {
         prepend.push('--model', gatewayModel);
     }
 
+    if (agentId === 'codebuddy' && authMode === 'gateway' && gatewayModel) {
+        // CodeBuddy defaults to its official models (gemini/gpt/...), which
+        // require a Tencent login. --model selects the custom model registered
+        // in models.json, bypassing login and routing to the gateway.
+        prepend.push('--model', gatewayModel);
+    }
+
     return { prepend, append };
 }
 
