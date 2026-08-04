@@ -188,6 +188,8 @@ function buildGatewayConfigSpec(agentId, { stateDirPath, sessionToken, routerUrl
             // Its default official models (gemini/gpt/deepseek-v3-2-volc/...) require
             // a Tencent CodeBuddy login; a custom model in models.json bypasses auth
             // and routes to the gateway. The url must be a full /chat/completions path.
+            // trustAll/trustedDirectories avoid the interactive "trust this folder?"
+            // prompt (CodeBuddy treats /tmp, /root and $HOME as dangerous).
             return {
                 dirPath: '$HOME/.codebuddy',
                 filePath: '$HOME/.codebuddy/models.json',
@@ -200,6 +202,14 @@ function buildGatewayConfigSpec(agentId, { stateDirPath, sessionToken, routerUrl
                     maxInputTokens: 64000,
                     maxOutputTokens: 8192,
                 }], null, 2),
+                extraFiles: [{
+                    dirPath: '$HOME/.codebuddy',
+                    filePath: '$HOME/.codebuddy/settings.json',
+                    content: JSON.stringify({
+                        trustAll: true,
+                        trustedDirectories: ['/workspace', '/tmp'],
+                    }, null, 2),
+                }],
             };
 
         case 'hermes':
@@ -232,19 +242,27 @@ function buildGatewayConfigSpec(agentId, { stateDirPath, sessionToken, routerUrl
 }
 
 function buildWriteScript(spec) {
-    const encoded = Buffer.from(spec.content, 'utf8').toString('base64');
     const lines = ['set -e'];
-    if (spec.dirPath && spec.dirPath.includes('$')) {
-        lines.push(`mkdir -p "${spec.dirPath}"`);
-    } else if (spec.dirPath) {
-        lines.push(`mkdir -p '${spec.dirPath.replace(/'/g, "'\\''")}'`);
-    } else {
-        lines.push('mkdir -p "$HOME/.mmx"');
-    }
-    if (spec.filePath.includes('$')) {
-        lines.push(`printf '%s' ${JSON.stringify(encoded)} | base64 -d > "${spec.filePath}"`);
-    } else {
-        lines.push(`printf '%s' ${JSON.stringify(encoded)} | base64 -d > '${spec.filePath.replace(/'/g, "'\\''")}'`);
+
+    const writeFile = (dirPath, filePath, content) => {
+        const encoded = Buffer.from(content, 'utf8').toString('base64');
+        if (dirPath && dirPath.includes('$')) {
+            lines.push(`mkdir -p "${dirPath}"`);
+        } else if (dirPath) {
+            lines.push(`mkdir -p '${dirPath.replace(/'/g, "'\\''")}'`);
+        } else {
+            lines.push('mkdir -p "$HOME/.mmx"');
+        }
+        if (filePath.includes('$')) {
+            lines.push(`printf '%s' ${JSON.stringify(encoded)} | base64 -d > "${filePath}"`);
+        } else {
+            lines.push(`printf '%s' ${JSON.stringify(encoded)} | base64 -d > '${filePath.replace(/'/g, "'\\''")}'`);
+        }
+    };
+
+    writeFile(spec.dirPath, spec.filePath, spec.content);
+    for (const extra of spec.extraFiles || []) {
+        writeFile(extra.dirPath, extra.filePath, extra.content);
     }
     return lines.join('\n');
 }

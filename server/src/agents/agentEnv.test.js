@@ -29,3 +29,15 @@ test('applyGatewayAgentEnv: github-copilot skips injection when gateway missing'
     const env = applyGatewayAgentEnv('github-copilot', { OPENAI_MODEL: 'm' }, {}, []);
     assert.equal(env.COPILOT_PROVIDER_BASE_URL, undefined);
 });
+
+test('applyGatewayAgentEnv: codebuddy injects CODEBUDDY_API_KEY to skip login', () => {
+    const env = applyGatewayAgentEnv('codebuddy', {}, {
+        LLM_ROUTER_API_KEY: 'xel_session_token',
+    }, []);
+    assert.equal(env.CODEBUDDY_API_KEY, 'xel_session_token');
+});
+
+test('applyGatewayAgentEnv: codebuddy skips injection when no gateway key', () => {
+    const env = applyGatewayAgentEnv('codebuddy', {}, {}, []);
+    assert.equal(env.CODEBUDDY_API_KEY, undefined);
+});

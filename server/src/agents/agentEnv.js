@@ -273,6 +273,16 @@ function applyGatewayAgentEnv(agentId, env, platform, envRequired) {
             out.COPILOT_MODEL = target;
         }
     }
+    if (agentId === 'codebuddy') {
+        // CodeBuddy's interactive UI always shows a "Select login method" screen
+        // unless CODEBUDDY_API_KEY is present. Setting it skips the login prompt;
+        // model requests still use the custom model from models.json (gateway),
+        // so any non-empty value works.
+        const routerKey = platform.LLM_ROUTER_API_KEY?.trim();
+        if (routerKey) {
+            out.CODEBUDDY_API_KEY = routerKey;
+        }
+    }
     if (envRequired.includes('OPENROUTER_API_KEY') && platform.OPENROUTER_BASE_URL?.trim()) {
         out.OPENROUTER_BASE_URL = platform.OPENROUTER_BASE_URL.trim();
     }

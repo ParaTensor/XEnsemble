@@ -69,4 +69,11 @@ test('buildGatewayConfigSpec: codebuddy writes models.json pointing at the gatew
     assert.equal(models[0].apiKey, 'xel_test_token');
     assert.equal(models[0].url, 'https://xensemble.dev/api/v1/llm/v1/chat/completions');
     assert.equal(models[0].vendor, 'custom');
+
+    // trust settings to skip the interactive folder-trust prompt
+    assert.equal(spec.extraFiles.length, 1);
+    assert.equal(spec.extraFiles[0].filePath, '$HOME/.codebuddy/settings.json');
+    const settings = JSON.parse(spec.extraFiles[0].content);
+    assert.equal(settings.trustAll, true);
+    assert.deepEqual(settings.trustedDirectories, ['/workspace', '/tmp']);
 });
