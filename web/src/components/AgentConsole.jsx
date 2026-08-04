@@ -93,6 +93,8 @@ function AgentConsole({
   const onSessionConnectedRef = useRef(onSessionConnected);
   const connectedRef = useRef(false);
   const firstConnectRef = useRef(true);
+
+  const replayDoneRef = useRef(true);
   const shouldConnect = sessionLive;
   const shouldReplayIdle = sessionWakeable && !sessionLive;
   // eslint-disable-next-line no-unused-vars
@@ -248,6 +250,7 @@ function AgentConsole({
 
     terminal.onData((data) => {
       if (disposed || serverEnded) return;
+      if (!replayDoneRef.current) return;
       if (wsRef.current?.readyState !== WebSocket.OPEN) return;
       wsRef.current.send(JSON.stringify({ type: 'input', data }));
     });
@@ -355,6 +358,7 @@ function AgentConsole({
           let failureHandled = false;
           let authenticated = false;
           let replayDone = false;
+          replayDoneRef.current = false;
           let writeBuffer = '';
           let pendingSeq = null;
           // Virtual screen for ANSI diff: plain text per row, + cursor Y
@@ -535,7 +539,7 @@ function AgentConsole({
             const buf = terminal.buffer.active;
             const atBottom = buf.baseY + terminal.rows >= buf.length;
             terminal.write(processed, () => {
-              if (!replayDone && !disposed) { replayDone = true; hideOverlay(); }
+              if (!replayDone && !disposed) { replayDone = true; replayDoneRef.current = true; hideOverlay(); }
               if (atBottom && !disposed) terminal.scrollToBottom();
             });
           }

@@ -111,6 +111,7 @@ function AgentConsole({
         const serverEndedRef = { current: false };
         const authenticatedRef = { current: false };
         const wsRef = { current: null };
+        const replayDoneRef = { current: true };
 
         const terminal = new Terminal({
             allowProposedApi: true,
@@ -226,6 +227,8 @@ function AgentConsole({
             let failureHandled = false;
             let authenticated = false;
             let writeBuffer = '';
+            let firstWrite = true;
+            replayDoneRef.current = false;
             let vsScreen = [];
             let vsCursorY = 0;
             const VS_ROWS = 32;
@@ -355,6 +358,7 @@ function AgentConsole({
                 const viewport = containerRef.current?.querySelector('.xterm-viewport');
                 const atBottom = !viewport || viewport.scrollTop + viewport.clientHeight >= viewport.scrollHeight - 5;
                 terminal.write(processed, () => {
+                    if (firstWrite) { firstWrite = false; replayDoneRef.current = true; }
                     if (atBottom && !disposedRef.current) terminal.scrollToBottom();
                 });
             }
@@ -441,7 +445,7 @@ function AgentConsole({
             };
 
             terminal.onData((data) => {
-                if (serverEndedRef.current || !wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
+                if (serverEndedRef.current || !replayDoneRef.current || !wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
                 wsRef.current.send(JSON.stringify({ type: 'input', data }));
             });
         };
