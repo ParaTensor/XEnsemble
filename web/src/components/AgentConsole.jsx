@@ -506,7 +506,14 @@ function AgentConsole({
                 writeTerminalData(data.slice(0, syncStart));
               }
               const blockEnd = syncEnd + '\x1b[?2026l'.length;
-              const stripped = data.slice(syncStart + '\x1b[?2026h'.length, syncEnd);
+              // Strip \x1b[2J (clear-screen) from sync-term content.  qwen-code
+              // emits \x1b[2J on ~38% of updates (417/1085 in a typical session).
+              // Without sync-term support in xterm.js, each clear is visible as a
+              // full-screen flash.  The cursor-up + \x1b[2K (clear-line) pattern
+              // already handles updating individual rows, so the clear-screen is
+              // redundant and only causes flicker.
+              const stripped = data.slice(syncStart + '\x1b[?2026h'.length, syncEnd)
+                .replace(/\x1b\[2J/g, '');
               if (stripped) {
                 writeTerminalData(stripped);
               }

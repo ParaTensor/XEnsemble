@@ -332,7 +332,8 @@ function AgentConsole({
                         writeTerminalData(data.slice(0, syncStart));
                     }
                     const blockEnd = syncEnd + '\x1b[?2026l'.length;
-                    const stripped = data.slice(syncStart + '\x1b[?2026h'.length, syncEnd);
+                    const stripped = data.slice(syncStart + '\x1b[?2026h'.length, syncEnd)
+                        .replace(/\x1b\[2J/g, '');
                     if (stripped) {
                         writeTerminalData(stripped);
                     }
