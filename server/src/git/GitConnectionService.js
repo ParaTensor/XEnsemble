@@ -357,8 +357,14 @@ class GitConnectionService {
                     });
                     scheduleLastUsedUpdate(row.id);
                     return token;
-                } catch {
-                    // Fall through to use existing token
+                } catch (refreshErr) {
+                    // Refresh failed (refresh_token expired, revoked, etc.).
+                    // Do NOT fall through with the stale access token - that
+                    // produces confusing "HTTP Basic: Access denied" errors
+                    // from the git provider. Surface the real problem instead.
+                    throw new Error(
+                        `${providerName || 'git'} token 已过期且自动刷新失败，请重新认证`,
+                    );
                 }
             }
         }
