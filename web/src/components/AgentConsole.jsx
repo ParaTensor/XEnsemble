@@ -384,23 +384,28 @@ function AgentConsole({
           }
 
           function extractIncompleteAnsi(text) {
-            if (!text || text[text.length - 1] >= '\x20') return '';
-            let i = text.length - 1;
-            while (i >= 0 && text[i] < '\x20' && text[i] !== '\x1b') i--;
-            if (i < 0 || text[i] !== '\x1b') return '';
-            const seq = text.slice(i);
-            if (seq.startsWith('\x1b[')) {
-              const rest = seq.slice(2);
-              for (let j = 0; j < rest.length; j++) {
-                if (rest[j] >= '@' && rest[j] <= '~') return '';
+            if (!text) return '';
+            const lastEsc = text.lastIndexOf('\x1b');
+            if (lastEsc === -1) return '';
+            const seq = text.slice(lastEsc);
+            if (seq.length === 1) return seq;
+            const c1 = seq.charCodeAt(1);
+            if (c1 === 0x5b) {
+              let j = 2;
+              while (j < seq.length) {
+                const ch = seq.charCodeAt(j);
+                if (ch >= 0x40 && ch <= 0x7e) return '';
+                j++;
               }
               return seq;
             }
-            if (seq.startsWith('\x1b]')) {
-              if (seq.includes('\x07') || seq.includes('\x1b\\')) return '';
+            if (c1 === 0x5d) {
+              if (seq.indexOf('\x07', 2) !== -1 || seq.indexOf('\x1b\\', 2) !== -1) return '';
               return seq;
             }
-            if (seq.length >= 2 && seq[1] >= '@' && seq[1] <= '~') return '';
+            let j = 1;
+            while (j < seq.length && seq.charCodeAt(j) >= 0x20 && seq.charCodeAt(j) <= 0x2f) j++;
+            if (j < seq.length && seq.charCodeAt(j) >= 0x30 && seq.charCodeAt(j) <= 0x7e) return '';
             return seq;
           }
 
@@ -572,7 +577,13 @@ function AgentConsole({
                 output = output.slice(0, output.length - incomplete.length);
                 ansiPending = incomplete;
               }
-              if (output) writeTerminalData(output);
+              if (output) {
+                writeTerminalData(output);
+              } else if (!replayDone) {
+                replayDone = true;
+                replayDoneRef.current = true;
+                hideOverlay();
+              }
             }
           };
 
