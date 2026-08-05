@@ -50,8 +50,10 @@ pub(super) async fn start_chat_stream(
     let (chunk_tx, chunk_rx) = mpsc::unbounded_channel();
     let (completion_tx, completion_rx) = tokio::sync::oneshot::channel();
     let completion_request_id = request_id.clone();
+    let panic_tx = chunk_tx.clone();
+    let panic_endpoint_id = endpoint.endpoint_id.clone();
 
-    tokio::spawn(async move {
+    let handle = tokio::spawn(async move {
         let completion = drive_chat_stream(
             transport_response.stream,
             chunk_tx,
@@ -61,6 +63,27 @@ pub(super) async fn start_chat_stream(
         )
         .await;
         let _ = completion_tx.send(completion);
+    });
+
+    tokio::spawn(async move {
+        if let Err(join_error) = handle.await {
+            let msg = if join_error.is_panic() {
+                let panic_payload = join_error.into_panic();
+                if let Some(s) = panic_payload.downcast_ref::<String>() {
+                    s.clone()
+                } else if let Some(s) = panic_payload.downcast_ref::<&str>() {
+                    s.to_string()
+                } else {
+                    "unknown panic in anthropic stream processing".to_string()
+                }
+            } else {
+                "anthropic stream processing task cancelled".to_string()
+            };
+            let _ = panic_tx.send(Err(GatewayError::StreamAborted {
+                message: msg,
+                endpoint_id: panic_endpoint_id,
+            }));
+        }
     });
 
     Ok(ProxySession::Streaming(StreamingResponse {

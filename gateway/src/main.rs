@@ -295,8 +295,20 @@ async fn dispatch_for_service(
                 ProtocolResponseBody::ServerSentEvents(stream) => (
                     status,
                     [(header::CONTENT_TYPE, "text/event-stream")],
-                    Body::from_stream(stream.map(|chunk| {
-                        chunk.map_err(|error| std::io::Error::other(error.to_string()))
+                    Body::from_stream(stream.map(|chunk| -> Result<_, std::io::Error> {
+                        match chunk {
+                            Ok(bytes) => Ok(bytes),
+                            Err(error) => {
+                                let error_json = json!({
+                                    "error": {
+                                        "message": error.to_string(),
+                                        "type": "gateway_error",
+                                    }
+                                });
+                                let sse_event = format!("data: {}\n\n", error_json);
+                                Ok(sse_event.into_bytes().into())
+                            }
+                        }
                     })),
                 )
                     .into_response(),
