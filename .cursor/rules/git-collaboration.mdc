@@ -1,0 +1,15 @@
+---
+description: 多人协作时的 Git 提交流程（pull + 分支 + PR）
+alwaysApply: true
+---
+
+# Git 协作提交流程
+
+仓库有多人并行开发。涉及提交、推送或开 PR 时必须遵守：
+
+1. **先 `git pull`**：开始改代码前、以及提交/推送前，先从远程拉取最新（优先 `git pull --rebase origin <base>` 或等价方式），避免基于过旧的 `main` 开发或推送。
+2. **禁止直接推 `main`**：不要把功能改动直接 commit/push 到 `main`/`master`。
+3. **用功能分支 + PR**：在最新 base 上建分支（如 `fix/...`、`feat/...`），推远程后用 `gh pr create` 开 PR；只有用户明确要求时才合并或 push 到 `main`。
+4. **冲突先解决再继续**：pull/rebase 出现冲突时先解决并确认状态干净，再 commit 或开 PR。
+
+用户说「提交」时，默认含义是：pull → 分支 commit → push → 开 PR（除非用户明确说只 commit 不开 PR，或只 commit 不推送）。

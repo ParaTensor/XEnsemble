@@ -116,8 +116,10 @@ export default React.forwardRef(function Sessions({
     const saved = typeof window !== 'undefined' ? window.localStorage.getItem('xensemble.panel.width') : null;
     const w = saved ? parseInt(saved, 10) : NaN;
     const maxW = typeof window !== 'undefined' ? Math.max(720, window.innerWidth - 240) : 800;
-    const preferred = Math.min(640, maxW);
-    if (!Number.isFinite(w) || w < 480 || w > 720) return preferred;
+    // Keep File usable, but leave more room for the Terminal.
+    const preferred = Math.min(480, maxW);
+    // Migrate older wide defaults (560/640) that crowded the Terminal.
+    if (!Number.isFinite(w) || w < 360 || w >= 560) return preferred;
     return w <= maxW ? w : preferred;
   });
   const resizingRef = useRef(null);
