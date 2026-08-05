@@ -154,6 +154,12 @@ class GitOperationService {
             await this._execGit(project, ['checkout', '-b', localBranch, `origin/${localBranch}`]);
         }
 
+        // Set local git config so agent-side `git commit` inside the VM works
+        // without requiring global config. ensureGitInit skips repos that
+        // already have .git, so cloned repos never get the config otherwise.
+        await this._execGit(project, ['config', 'user.email', 'xensemble@local']);
+        await this._execGit(project, ['config', 'user.name', 'XEnsemble']);
+
         const sha = await this._revParse(project, 'HEAD');
         return { sha, branch: localBranch };
     }
