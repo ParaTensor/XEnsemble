@@ -236,34 +236,8 @@ function AgentConsole({
             // Buffer for incomplete sync-term (DECSET 2026) blocks so vsProcess
             // sees the full cursor-up pattern.  See web AgentConsole for details.
             let syncTermPending = '';
-            let ansiPending = '';
             function vsStripAnsi(text) {
                 return text.replace(/\x1b\[[0-9;?]*[a-zA-Z]/g, '').replace(/\x1b\].*?\x07/g, '');
-            }
-            function extractIncompleteAnsi(text) {
-                if (!text) return '';
-                const lastEsc = text.lastIndexOf('\x1b');
-                if (lastEsc === -1) return '';
-                const seq = text.slice(lastEsc);
-                if (seq.length === 1) return seq;
-                const c1 = seq.charCodeAt(1);
-                if (c1 === 0x5b) {
-                    let j = 2;
-                    while (j < seq.length) {
-                        const ch = seq.charCodeAt(j);
-                        if (ch >= 0x40 && ch <= 0x7e) return '';
-                        j++;
-                    }
-                    return seq;
-                }
-                if (c1 === 0x5d) {
-                    if (seq.indexOf('\x07', 2) !== -1 || seq.indexOf('\x1b\\', 2) !== -1) return '';
-                    return seq;
-                }
-                let j = 1;
-                while (j < seq.length && seq.charCodeAt(j) >= 0x20 && seq.charCodeAt(j) <= 0x2f) j++;
-                if (j < seq.length && seq.charCodeAt(j) >= 0x30 && seq.charCodeAt(j) <= 0x7e) return '';
-                return seq;
             }
             function vsProcess(data) {
                 const hasClear = /\x1b\[2J/.test(data);
@@ -341,10 +315,9 @@ function AgentConsole({
             const flushWriteBuffer = () => {
                 writeRafId = null;
                 if (disposedRef.current) return;
-                if (!writeBuffer && !syncTermPending && !ansiPending) return;
+                if (!writeBuffer && !syncTermPending) return;
 
-                let remaining = ansiPending + syncTermPending + (writeBuffer || '');
-                ansiPending = '';
+                let remaining = syncTermPending + (writeBuffer || '');
                 syncTermPending = '';
                 writeBuffer = '';
 
@@ -381,19 +354,7 @@ function AgentConsole({
                     remaining = remaining.slice(syncEnd + '\x1b[?2026l'.length);
                 }
 
-                if (hasOutput) {
-                    const incomplete = extractIncompleteAnsi(output);
-                    if (incomplete) {
-                        output = output.slice(0, output.length - incomplete.length);
-                        ansiPending = incomplete;
-                    }
-                    if (output) {
-                        writeTerminalData(output);
-                    } else if (firstWrite) {
-                        firstWrite = false;
-                        replayDoneRef.current = true;
-                    }
-                }
+                if (hasOutput) writeTerminalData(output);
             };
 
             function writeTerminalData(processed) {
