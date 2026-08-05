@@ -70,7 +70,12 @@ export default function SourceControlPanel({ projectId, gitChanges, onJumpToFile
       const el = actionMenuBtnRef.current;
       if (!el) return;
       const rect = el.getBoundingClientRect();
-      setActionMenuRect({ top: rect.bottom + 4, left: Math.max(8, rect.right - 180), width: 180 });
+      const menuWidth = 180;
+      const menuEstHeight = 160;
+      const spaceBelow = window.innerHeight - rect.bottom;
+      const openAbove = spaceBelow < menuEstHeight + 8 && rect.top > menuEstHeight + 8;
+      const top = openAbove ? Math.max(8, rect.top - menuEstHeight - 4) : rect.bottom + 4;
+      setActionMenuRect({ top, left: Math.max(8, rect.right - menuWidth), width: menuWidth });
     };
     update();
     const onDoc = (e) => {
