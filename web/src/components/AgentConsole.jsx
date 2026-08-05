@@ -377,9 +377,31 @@ function AgentConsole({
           // fragment has no cursor-up and falls through to passthrough, causing
           // content to be appended as new lines instead of overwriting.
           let syncTermPending = '';
+          let ansiPending = '';
 
           function vsStripAnsi(text) {
             return text.replace(/\x1b\[[0-9;?]*[a-zA-Z]/g, '').replace(/\x1b\].*?\x07/g, '');
+          }
+
+          function extractIncompleteAnsi(text) {
+            if (!text || text[text.length - 1] >= '\x20') return '';
+            let i = text.length - 1;
+            while (i >= 0 && text[i] < '\x20' && text[i] !== '\x1b') i--;
+            if (i < 0 || text[i] !== '\x1b') return '';
+            const seq = text.slice(i);
+            if (seq.startsWith('\x1b[')) {
+              const rest = seq.slice(2);
+              for (let j = 0; j < rest.length; j++) {
+                if (rest[j] >= '@' && rest[j] <= '~') return '';
+              }
+              return seq;
+            }
+            if (seq.startsWith('\x1b]')) {
+              if (seq.includes('\x07') || seq.includes('\x1b\\')) return '';
+              return seq;
+            }
+            if (seq.length >= 2 && seq[1] >= '@' && seq[1] <= '~') return '';
+            return seq;
           }
 
           function vsProcess(data) {
@@ -490,9 +512,10 @@ function AgentConsole({
               setCachedSeq(sessionId, pendingSeq);
               pendingSeq = null;
             }
-            if (!writeBuffer && !syncTermPending) return;
+            if (!writeBuffer && !syncTermPending && !ansiPending) return;
 
-            let remaining = syncTermPending + (writeBuffer || '');
+            let remaining = ansiPending + syncTermPending + (writeBuffer || '');
+            ansiPending = '';
             syncTermPending = '';
             writeBuffer = '';
 
@@ -543,7 +566,14 @@ function AgentConsole({
               remaining = remaining.slice(syncEnd + '\x1b[?2026l'.length);
             }
 
-            if (hasOutput) writeTerminalData(output);
+            if (hasOutput) {
+              const incomplete = extractIncompleteAnsi(output);
+              if (incomplete) {
+                output = output.slice(0, output.length - incomplete.length);
+                ansiPending = incomplete;
+              }
+              if (output) writeTerminalData(output);
+            }
           };
 
           function writeTerminalData(processed) {
