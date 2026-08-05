@@ -506,6 +506,7 @@ function AgentConsole({
           const overlayFallbackTimer = setTimeout(() => {
             if (!replayDone && !disposed) {
               replayDone = true;
+              replayDoneRef.current = true;
               hideOverlay();
             }
           }, 5000);
