@@ -275,6 +275,16 @@ class LocalGitService {
      * Returns true if init was performed, false if already initialized.
      */
     async ensureGitInit(project) {
+        // External providers (github/gitlab/gitea) manage their own remote and
+        // credentials.  Overwriting repoProvider to 'local_git' here breaks
+        // pushBranch which uses repoProvider to resolve the OAuth token.
+        const isExternal = project.repoProvider
+            && project.repoProvider !== 'none'
+            && project.repoProvider !== 'local_git';
+        if (isExternal) {
+            return false;
+        }
+
         if (usesHostWorkspace()) {
             const hostWorkspacePath = workspace.createProjectDirectory(project.userId, project.id);
             if (fs.existsSync(path.join(hostWorkspacePath, '.git'))) {
