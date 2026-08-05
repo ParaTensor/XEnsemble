@@ -74,8 +74,12 @@ export default function SourceControlPanel({ projectId, gitChanges, onJumpToFile
       const menuEstHeight = 160;
       const spaceBelow = window.innerHeight - rect.bottom;
       const openAbove = spaceBelow < menuEstHeight + 8 && rect.top > menuEstHeight + 8;
-      const top = openAbove ? Math.max(8, rect.top - menuEstHeight - 4) : rect.bottom + 4;
-      setActionMenuRect({ top, left: Math.max(8, rect.right - menuWidth), width: menuWidth });
+      setActionMenuRect({
+        top: openAbove ? null : rect.bottom + 4,
+        bottom: openAbove ? window.innerHeight - rect.top + 4 : null,
+        left: Math.max(8, rect.right - menuWidth),
+        width: menuWidth,
+      });
     };
     update();
     const onDoc = (e) => {
@@ -585,7 +589,7 @@ export default function SourceControlPanel({ projectId, gitChanges, onJumpToFile
         <div
           id="changes-action-menu"
           className={`fixed ${consoleMenuDropdownZClass} ${consoleDropdownPanelClass} py-1 shadow-lg`}
-          style={{ top: actionMenuRect.top, left: actionMenuRect.left, width: actionMenuRect.width }}
+          style={{ top: actionMenuRect.top, bottom: actionMenuRect.bottom, left: actionMenuRect.left, width: actionMenuRect.width }}
           role="menu"
         >
           <button
