@@ -246,7 +246,21 @@ function AgentConsole({
                     .replace(/\x1b\[\?47h/g, '')
                     .replace(/\x1b\[\?47l/g, '')
                     .replace(/\x1b\[\?1047h/g, '')
-                    .replace(/\x1b\[\?1047l/g, '');
+                    .replace(/\x1b\[\?1047l/g, '')
+                    .replace(/\x1b\[\?1000h/g, '')
+                    .replace(/\x1b\[\?1000l/g, '')
+                    .replace(/\x1b\[\?1002h/g, '')
+                    .replace(/\x1b\[\?1002l/g, '')
+                    .replace(/\x1b\[\?1003h/g, '')
+                    .replace(/\x1b\[\?1003l/g, '')
+                    .replace(/\x1b\[\?1004h/g, '')
+                    .replace(/\x1b\[\?1004l/g, '')
+                    .replace(/\x1b\[\?1005h/g, '')
+                    .replace(/\x1b\[\?1005l/g, '')
+                    .replace(/\x1b\[\?1006h/g, '')
+                    .replace(/\x1b\[\?1006l/g, '')
+                    .replace(/\x1b\[\?1015h/g, '')
+                    .replace(/\x1b\[\?1015l/g, '');
             }
             function vsProcess(data) {
                 const hasClear = /\x1b\[2J/.test(data);
