@@ -84,6 +84,7 @@ const WorkspacePanel = memo(function WorkspacePanel({
   diffView,
   onCloseDiff,
   gitChanges,
+  changesTabActiveRef,
   onGitFileClick,
   gitDiffView,
   onCloseGitDiff,
@@ -115,7 +116,8 @@ const WorkspacePanel = memo(function WorkspacePanel({
 
   useEffect(() => {
     sessionStorage.setItem('xe_main_tab', mainTab);
-  }, [mainTab]);
+    if (changesTabActiveRef) changesTabActiveRef.current = (mainTab === 'changes');
+  }, [mainTab, changesTabActiveRef]);
 
   useEffect(() => {
     sessionStorage.setItem('xe_extra_tabs', JSON.stringify(extraTabs));
@@ -247,7 +249,7 @@ const WorkspacePanel = memo(function WorkspacePanel({
   const selectMainTab = useCallback(async (key) => {
     if (key === 'changes') {
       await flushAutosave().catch(() => {});
-      await fetchGitStatus?.({ silent: true });
+      await fetchGitStatus?.({ silent: true, skipIfFreshMs: 2000 });
     }
     setMainTab(key);
   }, [flushAutosave, fetchGitStatus]);

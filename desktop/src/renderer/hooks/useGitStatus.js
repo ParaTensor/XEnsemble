@@ -1,21 +1,26 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState, useRef } from 'react';
 import { useToast } from '../components/Toast';
 import * as githubApi from '../lib/githubApi';
 
 const POLL_INTERVAL_MS = 15000;
 
-export function useGitStatus(projectId) {
+export function useGitStatus(projectId, fullPollEnabledRef) {
   const { showToast } = useToast();
   const [status, setStatus] = useState(null);
   const [loading, setLoading] = useState(false);
   const [operation, setOperation] = useState(null);
+  const lastFetchAtRef = useRef(0);
 
-  const fetchStatus = useCallback(async ({ silent = false } = {}) => {
+  const fetchStatus = useCallback(async ({ silent = false, skipIfFreshMs = 0 } = {}) => {
     if (!projectId) return null;
+    if (skipIfFreshMs > 0 && Date.now() - lastFetchAtRef.current < skipIfFreshMs) {
+      return null;
+    }
     if (!silent) setLoading(true);
     try {
       const data = await githubApi.getGitStatus(projectId);
       setStatus(data);
+      lastFetchAtRef.current = Date.now();
       return data;
     } catch (err) {
       if (!silent) showToast('error', err.message);
@@ -30,18 +35,18 @@ export function useGitStatus(projectId) {
     let timer;
     const scheduleNext = () => {
       timer = setTimeout(() => {
-        // Skip polling when the tab is hidden (saves battery + server load).
         if (typeof document !== 'undefined' && document.hidden) {
           scheduleNext();
           return;
         }
-        fetchStatus({ silent: true });
+        const fullEnabled = !fullPollEnabledRef || fullPollEnabledRef.current;
+        if (fullEnabled) fetchStatus({ silent: true });
         scheduleNext();
       }, POLL_INTERVAL_MS);
     };
     scheduleNext();
     return () => clearTimeout(timer);
-  }, [fetchStatus]);
+  }, [fetchStatus, fullPollEnabledRef]);
 
   // Fetch immediately when tab becomes visible again.
   useEffect(() => {

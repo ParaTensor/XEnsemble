@@ -233,6 +233,7 @@ function registerProjectGitRoutes(fastify) {
                     }
                 }
                 await gitOperationService._execGit(project, ['pull', 'origin', target]);
+                gitOperationService._invalidateAheadBehind(project.id);
             });
             return { ok: true };
         } catch (err) {

@@ -5,15 +5,18 @@ import * as githubApi from '../lib/githubApi';
 const POLL_INTERVAL_MS = 15000;
 const FULL_POLL_INTERVAL_MS = 60000;
 
-export function useGitStatus(projectId) {
+export function useGitStatus(projectId, fullPollEnabledRef) {
   const { showToast } = useToast();
   const [status, setStatus] = useState(null);
   const [loading, setLoading] = useState(false);
   const [operation, setOperation] = useState(null);
   const lastFullAtRef = useRef(0);
 
-  const fetchStatusFull = useCallback(async ({ silent = false } = {}) => {
+  const fetchStatusFull = useCallback(async ({ silent = false, skipIfFreshMs = 0 } = {}) => {
     if (!projectId) return null;
+    if (skipIfFreshMs > 0 && Date.now() - lastFullAtRef.current < skipIfFreshMs) {
+      return null;
+    }
     if (!silent) setLoading(true);
     try {
       const data = await githubApi.getGitStatus(projectId);
@@ -45,13 +48,16 @@ export function useGitStatus(projectId) {
     const scheduleNext = () => {
       const now = Date.now();
       const needFull = (now - lastFullAtRef.current) >= FULL_POLL_INTERVAL_MS;
-      const interval = needFull ? 0 : POLL_INTERVAL_MS;
+      const fullEnabled = !fullPollEnabledRef || fullPollEnabledRef.current;
+      const interval = (needFull && fullEnabled) ? 0 : POLL_INTERVAL_MS;
       timer = setTimeout(() => {
         if (typeof document !== 'undefined' && document.hidden) {
           scheduleNext();
           return;
         }
-        if (needFull || (Date.now() - lastFullAtRef.current) >= FULL_POLL_INTERVAL_MS) {
+        const stillNeedFull = (Date.now() - lastFullAtRef.current) >= FULL_POLL_INTERVAL_MS;
+        const stillEnabled = !fullPollEnabledRef || fullPollEnabledRef.current;
+        if (stillNeedFull && stillEnabled) {
           fetchStatusFull({ silent: true });
           lastFullAtRef.current = Date.now();
         } else {
@@ -62,14 +68,16 @@ export function useGitStatus(projectId) {
     };
     scheduleNext();
     return () => clearTimeout(timer);
-  }, [fetchStatusFull, fetchStatusLight]);
+  }, [fetchStatusFull, fetchStatusLight, fullPollEnabledRef]);
 
   useEffect(() => {
     if (typeof document === 'undefined') return;
     const onVisible = () => {
       if (!document.hidden && projectId) {
         const now = Date.now();
-        if ((now - lastFullAtRef.current) >= FULL_POLL_INTERVAL_MS) {
+        const needFull = (now - lastFullAtRef.current) >= FULL_POLL_INTERVAL_MS;
+        const fullEnabled = !fullPollEnabledRef || fullPollEnabledRef.current;
+        if (needFull && fullEnabled) {
           fetchStatusFull({ silent: true });
           lastFullAtRef.current = now;
         } else {
@@ -79,7 +87,7 @@ export function useGitStatus(projectId) {
     };
     document.addEventListener('visibilitychange', onVisible);
     return () => document.removeEventListener('visibilitychange', onVisible);
-  }, [projectId, fetchStatusFull, fetchStatusLight]);
+  }, [projectId, fetchStatusFull, fetchStatusLight, fullPollEnabledRef]);
 
   const commit = useCallback(async (message, author) => {
     if (!projectId || !message?.trim()) return;

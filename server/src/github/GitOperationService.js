@@ -18,6 +18,9 @@ class GitError extends Error {
 
 const REMOTE_GIT_COMMANDS = new Set(['fetch', 'push', 'pull', 'ls-remote', 'clone']);
 
+const aheadBehindCache = new Map();
+const AHEAD_BEHIND_TTL_MS = 60_000;
+
 async function defaultGetToken(project) {
     const provider = project.repoProvider;
     if (!provider || provider === 'none' || provider === 'local_git') {
@@ -112,6 +115,10 @@ class GitOperationService {
 
     _mutate(project, fn) {
         return withProjectGitLock(project?.id, fn);
+    }
+
+    _invalidateAheadBehind(projectId) {
+        aheadBehindCache.delete(projectId);
     }
 
     async _revParse(project, ref) {
@@ -318,37 +325,44 @@ class GitOperationService {
         let lines = statusOut.stdout.split('\n').filter(Boolean);
         lines = await this._expandDirEntries(project, lines);
 
-        // check-ignore 和 ahead/behind 互不依赖，并行执行减少延迟
-        const filePaths = lines
-            .filter((line) => line.length >= 3)
+        // check-ignore 只对 untracked 文件有意义（已跟踪文件不受 .gitignore 影响）
+        const untrackedPaths = lines
+            .filter((line) => line.length >= 3 && line[0] === '?' && line[1] === '?')
             .map((line) => line.slice(3).trim());
 
+        // ahead/behind 只在 commit/push/pull 后变化，缓存 60s 避免每次 status 都跑 rev-list
+        const cachedAheadBehind = aheadBehindCache.get(project.id);
+        const aheadBehindFresh = cachedAheadBehind && cachedAheadBehind.expiresAt > Date.now();
+
         const [ignoredResult, aheadBehindResult] = await Promise.all([
-            // check-ignore：检查哪些文件被 .gitignore 匹配
-            filePaths.length > 0
-                ? this._execGit(project, ['check-ignore', ...filePaths])
+            // check-ignore：检查哪些 untracked 文件被 .gitignore 匹配
+            untrackedPaths.length > 0
+                ? this._execGit(project, ['check-ignore', ...untrackedPaths])
                     .then((r) => new Set(r.stdout.split('\n').filter(Boolean)))
                     .catch(() => new Set())
                 : Promise.resolve(new Set()),
-            // ahead/behind：并行尝试 @{upstream} 和 origin/<branch>，取最先成功的
-            // 避免 @{upstream} 失败后串行 fallback 的 ~500ms-1s 延迟
-            (async () => {
-                const candidates = [
-                    this._execGit(project, ['rev-list', '--left-right', '--count', 'HEAD...@{upstream}']),
-                ];
-                if (branch) {
-                    candidates.push(
-                        this._execGit(project, ['rev-list', '--left-right', '--count', `HEAD...origin/${branch}`]),
-                    );
-                }
-                try {
-                    const r = await Promise.any(candidates);
-                    const [a, b] = r.stdout.trim().split('\t').map((n) => Number(n) || 0);
-                    return { ahead: a, behind: b };
-                } catch {
-                    return { ahead: 0, behind: 0 };
-                }
-            })(),
+            // ahead/behind：有缓存时直接用，否则并行尝试 @{upstream} 和 origin/<branch>
+            aheadBehindFresh
+                ? Promise.resolve(cachedAheadBehind)
+                : (async () => {
+                    const candidates = [
+                        this._execGit(project, ['rev-list', '--left-right', '--count', 'HEAD...@{upstream}']),
+                    ];
+                    if (branch) {
+                        candidates.push(
+                            this._execGit(project, ['rev-list', '--left-right', '--count', `HEAD...origin/${branch}`]),
+                        );
+                    }
+                    try {
+                        const r = await Promise.any(candidates);
+                        const [a, b] = r.stdout.trim().split('\t').map((n) => Number(n) || 0);
+                        const result = { ahead: a, behind: b, expiresAt: Date.now() + AHEAD_BEHIND_TTL_MS };
+                        aheadBehindCache.set(project.id, result);
+                        return result;
+                    } catch {
+                        return { ahead: 0, behind: 0 };
+                    }
+                })(),
         ]);
 
         const ignoredSet = ignoredResult;
@@ -417,6 +431,7 @@ class GitOperationService {
             }
 
             await this._execGit(project, ['commit', '-m', message]);
+            this._invalidateAheadBehind(project.id);
             const sha = await this._revParse(project, 'HEAD');
             return { sha, committed: true };
         });
@@ -432,6 +447,7 @@ class GitOperationService {
                 args.unshift('-c', `user.email=${author.email}`);
             }
             await this._execGit(project, args);
+            this._invalidateAheadBehind(project.id);
             const sha = await this._revParse(project, 'HEAD');
             return { sha };
         });
@@ -456,6 +472,7 @@ class GitOperationService {
                 args.push('--force');
             }
             await this._execGit(project, args);
+            this._invalidateAheadBehind(project.id);
             const sha = await this._revParse(project, 'HEAD');
             return { sha };
         });
@@ -578,6 +595,7 @@ class GitOperationService {
                 }
             }
             await this._execGit(project, ['merge', safeFrom, '-m', `Merge ${safeFrom} into ${safeTo}`]);
+            this._invalidateAheadBehind(project.id);
             const sha = await this._revParse(project, 'HEAD');
             return { sha };
         });

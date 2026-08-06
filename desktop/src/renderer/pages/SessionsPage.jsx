@@ -143,7 +143,8 @@ export default React.forwardRef(function Sessions({
   const editorTabs = useEditorTabs(activeSession?.projectId);
   // Changes 与 Files 共用同一 workspace attach 路径；不能再按 sessionAlive 关掉，
   // 否则编辑器已能保存、Changes 却一直空白（分支显示 —）。
-  const gitChanges = useGitChanges(activeSession?.projectId || null);
+  const changesTabActiveRef = useRef(false);
+  const gitChanges = useGitChanges(activeSession?.projectId || null, changesTabActiveRef);
   const [gitDiffView, setGitDiffView] = useState(null);
 
   const [showConfigModal, setShowConfigModal] = useState(false);
@@ -1418,6 +1419,7 @@ sessionLive={sessionAlive}
                     diffView={editorTabs.diffView}
                     onCloseDiff={editorTabs.closeDiff}
                     gitChanges={gitChanges}
+                    changesTabActiveRef={changesTabActiveRef}
                     onGitFileClick={handleGitFileClick}
                     gitDiffView={gitDiffView}
                     onCloseGitDiff={handleCloseGitDiff}

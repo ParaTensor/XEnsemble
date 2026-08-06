@@ -2,8 +2,8 @@ import { useState, useCallback, useEffect } from 'react';
 import { useGitStatus } from './useGitStatus';
 import * as githubApi from '../lib/githubApi';
 
-export function useGitChanges(projectId) {
-  const { status, loading, operation, commit, push, pull, fetchStatus } = useGitStatus(projectId);
+export function useGitChanges(projectId, fullPollEnabledRef) {
+  const { status, loading, operation, commit, push, pull, fetchStatus } = useGitStatus(projectId, fullPollEnabledRef);
   const [optimistic, setOptimistic] = useState(null);
 
   useEffect(() => {
