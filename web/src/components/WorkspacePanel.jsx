@@ -2,7 +2,7 @@ import { useState, useCallback, useEffect, useRef, useMemo, memo, lazy, Suspense
 import { createPortal } from 'react-dom';
 import {
   FileText, Files, FolderPlus, Plus, PanelLeftClose, PanelLeft, Loader2,
-  Terminal, Globe, Monitor, GitBranch, GitPullRequest, X,
+  Terminal, Globe, Monitor, GitBranch, GitPullRequest, X, ArrowLeft,
 } from 'lucide-react';
 import WorkspaceFileTree from './WorkspaceFileTree';
 import CodeEditor from './CodeEditorLazy';
@@ -11,6 +11,7 @@ import SourceControlPanel from './SourceControlPanel';
 import WorkspacePreviewPane from './WorkspacePreviewPane';
 import WorkspaceBrowserPane from './WorkspaceBrowserPane';
 import MergeRequestListPanel from './git/MergeRequestListPanel';
+import CodeReviewPanel from './git/CodeReviewPanel';
 import CreatePRDialog from './git/CreatePRDialog';
 import { consoleButtonFocusClass, consoleInputClass } from '@/lib/consoleTheme';
 import { consoleDropdownPanelClass, consoleMenuDropdownZClass } from '@/lib/consoleTokens';
@@ -98,6 +99,7 @@ const WorkspacePanel = memo(function WorkspacePanel({
   const [creating, setCreating] = useState(false);
   const [saving, setSaving] = useState(false);
   const [createPROpen, setCreatePROpen] = useState(false);
+  const [selectedMR, setSelectedMR] = useState(null);
   const [sidebarOpen, setSidebarOpen] = useState(() => {
     const stored = sessionStorage.getItem('xe_sidebar_open');
     return stored !== null ? stored === 'true' : true;
@@ -475,20 +477,48 @@ const WorkspacePanel = memo(function WorkspacePanel({
 
         {mainTab === 'pullrequests' && (
           <div className="flex-1 min-h-0 flex flex-col">
-            <MergeRequestListPanel
-              projectId={projectId}
-              provider={provider}
-            />
-            <div className="flex items-center justify-end gap-2 border-t border-[#E8EAED] px-3 py-2 shrink-0">
-              <button
-                type="button"
-                onClick={() => setCreatePROpen(true)}
-                className={`${buttonClass('primary', 'sm')}`}
-              >
-                <GitPullRequest className="h-3.5 w-3.5 mr-1 inline" />
-                New Pull Request
-              </button>
-            </div>
+            {selectedMR ? (
+              <div className="flex-1 min-h-0 flex flex-col">
+                <div className="flex items-center gap-2 border-b border-[#E8EAED] px-3 py-2 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => setSelectedMR(null)}
+                    title="Back to list"
+                    className={`p-1 rounded text-[#5F6368] hover:text-[#202124] hover:bg-[#E8EAED] ${consoleButtonFocusClass}`}
+                  >
+                    <ArrowLeft className="h-3.5 w-3.5" />
+                  </button>
+                  <span className="text-xs font-medium text-[#202124] truncate">
+                    #{selectedMR.remote_mr_number || selectedMR.remoteMrNumber || ''} {selectedMR.title}
+                  </span>
+                </div>
+                <div className="flex-1 min-h-0">
+                  <CodeReviewPanel
+                    projectId={projectId}
+                    mergeRequestId={selectedMR.id}
+                    mergeRequest={selectedMR}
+                  />
+                </div>
+              </div>
+            ) : (
+              <>
+                <MergeRequestListPanel
+                  projectId={projectId}
+                  provider={provider}
+                  onSelectMR={setSelectedMR}
+                />
+                <div className="flex items-center justify-end gap-2 border-t border-[#E8EAED] px-3 py-2 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => setCreatePROpen(true)}
+                    className={`${buttonClass('primary', 'sm')}`}
+                  >
+                    <GitPullRequest className="h-3.5 w-3.5 mr-1 inline" />
+                    New Pull Request
+                  </button>
+                </div>
+              </>
+            )}
             <CreatePRDialog
               open={createPROpen}
               projectId={projectId}

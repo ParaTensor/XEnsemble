@@ -155,12 +155,12 @@ export function useWorkspaces(user) {
   }, [fetchProjects, fetchSessions, fetchAgents, user?.id]);
 
   useEffect(() => {
-    if (typeof EventSource === 'undefined' || !hasPending) return;
+    if (typeof EventSource === 'undefined' || sessions.length === 0) return;
     const es = new EventSource(getSseUrl());
     const onMessage = (e) => {
       try {
         const data = JSON.parse(e.data);
-        if (data.type === 'session_status') {
+        if (data.type === 'session_status' || data.type === 'session_title') {
           fetchSessions();
         }
       } catch {
@@ -172,7 +172,7 @@ export function useWorkspaces(user) {
       es.removeEventListener('message', onMessage);
       es.close();
     };
-  }, [hasPending, fetchSessions]);
+  }, [sessions.length > 0, fetchSessions]);
 
   useEffect(() => {
     if (sessions.length === 0) return;

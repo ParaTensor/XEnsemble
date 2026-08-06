@@ -1,7 +1,6 @@
 const { eq } = require('drizzle-orm');
 const { db } = require('../db');
 const schema = require('../db/schema');
-const sessionManager = require('./SessionManager');
 
 const API_KEY = process.env.DEEPSEEK_API_KEY;
 const API_URL = process.env.DEEPSEEK_API_URL || 'https://api.deepseek.com/chat/completions';
@@ -87,6 +86,7 @@ async function generateSessionTitle(sessionId) {
     if (!sessionRow.length) return null;
     if (sessionRow[0].title) return sessionRow[0].title;
 
+    const sessionManager = require('./SessionManager');
     const liveSession = sessionManager.getSession(sessionId);
     if (!liveSession) return null;
 
@@ -102,6 +102,12 @@ async function generateSessionTitle(sessionId) {
         .set({ title })
         .where(eq(schema.sessions.id, sessionId));
 
+    try {
+        const { broadcastSse } = require('./sseManager');
+        broadcastSse({ type: 'session_title', sessionId, title });
+    } catch (_) {}
+
+    console.log(`[titleService] Generated title for ${sessionId}: "${title}"`);
     return title;
 }
 
