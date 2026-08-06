@@ -20,6 +20,7 @@ const REMOTE_GIT_COMMANDS = new Set(['fetch', 'push', 'pull', 'ls-remote', 'clon
 
 const aheadBehindCache = new Map();
 const AHEAD_BEHIND_TTL_MS = 60_000;
+const CONFLICT_STATUSES = new Set(['DD', 'AU', 'UD', 'UA', 'DU', 'AA', 'UU']);
 
 async function defaultGetToken(project) {
     const provider = project.repoProvider;
@@ -373,9 +374,11 @@ class GitOperationService {
         let staged = false;
         let unstaged = false;
         let untracked = false;
+        let merging = false;
         const files = [];
         const stagedFiles = [];
         const unstagedFiles = [];
+        const conflicts = [];
 
         for (const line of lines) {
             if (line.length < 2) {
@@ -384,10 +387,17 @@ class GitOperationService {
             const x = line[0];
             const y = line[1];
             const filePath = line.slice(3).trim();
-            // 跳过被 .gitignore 匹配的文件（包括已跟踪的）
             if (ignoredSet.has(filePath)) continue;
-            const entry = { path: filePath, status: x + y };
-            if (x === '?' && y === '?') {
+            const xy = x + y;
+            const isConflict = CONFLICT_STATUSES.has(xy);
+            const entry = { path: filePath, status: xy };
+            if (isConflict) {
+                merging = true;
+                dirty = true;
+                entry.type = 'conflict';
+                entry.conflict = true;
+                conflicts.push(entry);
+            } else if (x === '?' && y === '?') {
                 untracked = true;
                 dirty = true;
                 entry.type = 'untracked';
@@ -409,13 +419,16 @@ class GitOperationService {
                 }
             }
             files.push(entry);
-            if (x !== ' ' && x !== '?') stagedFiles.push(entry);
-            // Untracked files (??) have y='?', they should appear in
-            // unstagedFiles because they can be staged with `git add`.
-            if (y !== ' ') unstagedFiles.push(entry);
+            if (isConflict) {
+                stagedFiles.push(entry);
+                unstagedFiles.push(entry);
+            } else {
+                if (x !== ' ' && x !== '?') stagedFiles.push(entry);
+                if (y !== ' ') unstagedFiles.push(entry);
+            }
         }
 
-        return { branch, sha, dirty, staged, unstaged, untracked, ahead, behind, files, stagedFiles, unstagedFiles };
+        return { branch, sha, dirty, staged, unstaged, untracked, merging, ahead, behind, files, stagedFiles, unstagedFiles, conflicts };
     }
 
     async commitAll(project, message) {

@@ -258,6 +258,7 @@ describe('GitOperationService (mock exec)', () => {
             staged: true,
             unstaged: false,
             untracked: true,
+            merging: false,
             ahead: 2,
             behind: 3,
             files: [
@@ -270,6 +271,7 @@ describe('GitOperationService (mock exec)', () => {
             unstagedFiles: [
                 { path: 'untracked.txt', status: '??', type: 'untracked' },
             ],
+            conflicts: [],
         });
     });
 

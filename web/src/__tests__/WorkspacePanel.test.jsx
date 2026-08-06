@@ -71,7 +71,7 @@ describe('WorkspacePanel', () => {
 
   it('opens new file dialog with autoFocus', () => {
     renderPanel(<WorkspacePanel {...defaultProps} />);
-    fireEvent.click(screen.getByTitle('新建文件'));
+    fireEvent.click(screen.getByTitle('New file'));
     const input = screen.getByPlaceholderText(/文件名/);
     expect(input).toBeInTheDocument();
     expect(input).toHaveFocus();
@@ -82,7 +82,7 @@ describe('WorkspacePanel', () => {
     const onFetchDir = vi.fn().mockResolvedValue([]);
     renderPanel(<WorkspacePanel {...defaultProps} onCreateFile={onCreateFile} onFetchDir={onFetchDir} />);
 
-    fireEvent.click(screen.getByTitle('新建文件'));
+    fireEvent.click(screen.getByTitle('New file'));
     const input = screen.getByPlaceholderText(/文件名/);
     fireEvent.change(input, { target: { value: 'newfile.js' } });
     fireEvent.click(screen.getByText('创建'));
@@ -94,7 +94,7 @@ describe('WorkspacePanel', () => {
 
   it('opens new folder dialog with autoFocus', () => {
     renderPanel(<WorkspacePanel {...defaultProps} />);
-    fireEvent.click(screen.getByTitle('新建文件夹'));
+    fireEvent.click(screen.getByTitle('New folder'));
     const input = screen.getByPlaceholderText(/文件夹名/);
     expect(input).toBeInTheDocument();
     expect(input).toHaveFocus();
@@ -105,7 +105,7 @@ describe('WorkspacePanel', () => {
     const onFetchDir = vi.fn().mockResolvedValue([]);
     renderPanel(<WorkspacePanel {...defaultProps} onCreateDir={onCreateDir} onFetchDir={onFetchDir} />);
 
-    fireEvent.click(screen.getByTitle('新建文件夹'));
+    fireEvent.click(screen.getByTitle('New folder'));
     const input = screen.getByPlaceholderText(/文件夹名/);
     fireEvent.change(input, { target: { value: 'newdir' } });
     fireEvent.click(screen.getByText('创建'));
@@ -124,17 +124,17 @@ describe('WorkspacePanel', () => {
 
   it('toggles file tree with a single header button', async () => {
     renderPanel(<WorkspacePanel {...defaultProps} />);
-    const collapseBtn = screen.getByTitle('收起文件树');
+    const collapseBtn = screen.getByTitle('Collapse file tree');
     expect(collapseBtn).toBeInTheDocument();
 
     fireEvent.click(collapseBtn);
-    const expandBtn = await screen.findByTitle('展开文件树');
+    const expandBtn = await screen.findByTitle('Expand file tree');
     expect(expandBtn).toBeInTheDocument();
-    expect(screen.queryByTitle('收起文件树')).not.toBeInTheDocument();
+    expect(screen.queryByTitle('Collapse file tree')).not.toBeInTheDocument();
 
     fireEvent.click(expandBtn);
-    expect(await screen.findByTitle('收起文件树')).toBeInTheDocument();
-    expect(screen.queryByTitle('展开文件树')).not.toBeInTheDocument();
+    expect(await screen.findByTitle('Collapse file tree')).toBeInTheDocument();
+    expect(screen.queryByTitle('Expand file tree')).not.toBeInTheDocument();
   });
 
   it('shows changes badge and opens Changes tab', async () => {
@@ -160,13 +160,13 @@ describe('WorkspacePanel', () => {
     renderPanel(<WorkspacePanel {...defaultProps} gitChanges={gitChanges} />);
     fireEvent.click(screen.getByText('Changes'));
     await waitFor(() => {
-      expect(screen.getByText(/暂无已保存的更改/)).toBeInTheDocument();
+      expect(screen.getByText(/No saved changes/)).toBeInTheDocument();
     });
   });
 
   it('adds Terminal from plus menu', async () => {
     renderPanel(<WorkspacePanel {...defaultProps} />);
-    fireEvent.click(screen.getByTitle('添加面板'));
+    fireEvent.click(screen.getByTitle('Add panel'));
     fireEvent.click(await screen.findByRole('menuitem', { name: 'Terminal' }));
     await waitFor(() => {
       expect(screen.getAllByText('Terminal').length).toBeGreaterThan(0);

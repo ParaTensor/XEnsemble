@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import {
   GitBranch, GitCommit, GitPullRequest, RefreshCw, PanelLeftClose, ArrowUp, ArrowDown,
   Plus, Minus, Loader2, ChevronRight, ChevronDown, ChevronsDownUp, ChevronsUpDown, FileText,
-  Upload, Download,
+  Upload, Download, AlertTriangle,
 } from 'lucide-react';
 import {
   consoleButtonFocusClass,
@@ -12,6 +12,7 @@ import {
 } from '@/lib/consoleTheme';
 import { buttonClass } from '@/lib/buttonStyles';
 import CreatePRDialog from './github/CreatePRDialog';
+import { ConflictFileItem } from './git/ConflictResolutionPanel';
 import { getGitFileDiff } from '@/lib/githubApi';
 import { useToast } from './Toast';
 
@@ -32,11 +33,11 @@ const GIT_STATUS_COLORS = {
 };
 
 const GIT_STATUS_DESC = {
-  'M ': '修改', ' M': '修改', 'MM': '修改',
-  'A ': '新增', 'AM': '新增',
-  'D ': '删除',
-  '??': '新增',
-  'R ': '重命名',
+  'M ': 'Modified', ' M': 'Modified', 'MM': 'Modified',
+  'A ': 'Added', 'AM': 'Added',
+  'D ': 'Deleted',
+  '??': 'Untracked',
+  'R ': 'Renamed',
 };
 
 export default function SourceControlPanel({ projectId, gitChanges, onJumpToFile, onCollapse, provider, sessionLive }) {
@@ -55,6 +56,7 @@ export default function SourceControlPanel({ projectId, gitChanges, onJumpToFile
   const [fileDiffs, setFileDiffs] = useState({});
   const [loadingDiff, setLoadingDiff] = useState(null);
   const [showFileList, setShowFileList] = useState(false);
+  const [resolvedPaths, setResolvedPaths] = useState(new Set());
   const authorNameRef = useRef(null);
   const actionMenuBtnRef = useRef(null);
 
@@ -105,6 +107,12 @@ export default function SourceControlPanel({ projectId, gitChanges, onJumpToFile
   const changeCount = gitStagedFiles.length + gitUnstagedFiles.length;
   const branch = gitChanges?.branch || '';
   const isLocalGit = !provider || provider === 'none' || provider === 'local_git';
+  const conflictFiles = (gitChanges?.conflicts || []).filter((f) => !resolvedPaths.has(f.path));
+
+  const handleConflictResolved = useCallback((resolvedPath) => {
+    setResolvedPaths((prev) => new Set([...prev, resolvedPath]));
+    gitChanges?.fetchStatus?.({ silent: true });
+  }, [gitChanges]);
 
   const handleStageAll = useCallback(async () => {
     const paths = gitUnstagedFiles.map((f) => f.path);
@@ -351,7 +359,7 @@ export default function SourceControlPanel({ projectId, gitChanges, onJumpToFile
           {stageAction && (
             <button
               onClick={() => stageAction(f.path)}
-              title={stageAction === handleStageFile ? '暂存' : '取消暂存'}
+              title={stageAction === handleStageFile ? 'Stage' : 'Unstage'}
               className={`shrink-0 p-1 rounded text-zinc-400 hover:text-zinc-600 hover:bg-[#DADCE0] opacity-0 group-hover:opacity-100 transition-opacity ${consoleButtonFocusClass}`}
             >
               {stageAction === handleStageFile ? (
@@ -371,7 +379,7 @@ export default function SourceControlPanel({ projectId, gitChanges, onJumpToFile
             ) : diffEntry != null ? (
               diffBinary ? (
                 <div className="px-3 py-3 text-[11px] text-zinc-500" data-testid="inline-diff-binary">
-                  二进制文件，无法显示文本对比
+                  Binary file, cannot display text diff
                 </div>
               ) : (
                 <div className="text-[11px] leading-relaxed overflow-x-auto font-mono select-text"
@@ -379,7 +387,7 @@ export default function SourceControlPanel({ projectId, gitChanges, onJumpToFile
                   {renderDiffLines(diffText)}
                   {diffTruncated && (
                     <div className="px-2 py-1 text-amber-700 bg-amber-50 border-t border-amber-200" data-testid="inline-diff-truncated">
-                      内容过大，已截断显示
+                      Content too large, truncated
                     </div>
                   )}
                 </div>
@@ -411,7 +419,7 @@ export default function SourceControlPanel({ projectId, gitChanges, onJumpToFile
         <div className="flex items-center gap-0.5 shrink-0">
           {gitHasChanges && (
             <button
-              title={allExpanded ? '全部折叠' : '全部展开'}
+              title={allExpanded ? 'Collapse all' : 'Expand all'}
               onClick={toggleExpandAll}
               className={`p-1 rounded text-zinc-400 hover:text-zinc-600 hover:bg-[#E8EAED] ${consoleButtonFocusClass}`}
             >
@@ -420,7 +428,7 @@ export default function SourceControlPanel({ projectId, gitChanges, onJumpToFile
           )}
           {gitHasChanges && (
             <button
-              title="文件列表"
+              title="File list"
               onClick={() => setShowFileList((v) => !v)}
               className={`p-1 rounded ${showFileList ? 'text-[#202124] bg-[#E8EAED]' : 'text-zinc-400 hover:text-zinc-600 hover:bg-[#E8EAED]'} ${consoleButtonFocusClass}`}
             >
@@ -428,7 +436,7 @@ export default function SourceControlPanel({ projectId, gitChanges, onJumpToFile
             </button>
           )}
           <button
-            title="刷新"
+            title="Refresh"
             onClick={() => gitChanges?.fetchStatus()}
             className={`p-1 rounded text-zinc-400 hover:text-zinc-600 hover:bg-[#E8EAED] ${consoleButtonFocusClass}`}
           >
@@ -436,7 +444,7 @@ export default function SourceControlPanel({ projectId, gitChanges, onJumpToFile
           </button>
           {onCollapse && (
             <button
-              title="收起侧栏"
+              title="Collapse sidebar"
               onClick={onCollapse}
               className={`p-1 rounded text-zinc-400 hover:text-zinc-600 hover:bg-[#E8EAED] ${consoleButtonFocusClass}`}
             >
@@ -455,7 +463,7 @@ export default function SourceControlPanel({ projectId, gitChanges, onJumpToFile
               </div>
               <div className="py-1">
                 {gitStagedFiles.length > 0 && (
-                  <div className="text-[9px] text-zinc-400 px-3 py-0.5">暂存的更改</div>
+                  <div className="text-[9px] text-zinc-400 px-3 py-0.5">Staged</div>
                 )}
                 {gitStagedFiles.map((f) => {
                   const name = f.path.split('/').pop();
@@ -474,7 +482,7 @@ export default function SourceControlPanel({ projectId, gitChanges, onJumpToFile
                   );
                 })}
                 {gitUnstagedFiles.length > 0 && (
-                  <div className="text-[9px] text-zinc-400 px-3 py-0.5 mt-0.5">更改</div>
+                  <div className="text-[9px] text-zinc-400 px-3 py-0.5 mt-0.5">Changes</div>
                 )}
                 {gitUnstagedFiles.map((f) => {
                   const name = f.path.split('/').pop();
@@ -496,10 +504,30 @@ export default function SourceControlPanel({ projectId, gitChanges, onJumpToFile
             </div>
           )}
           <div className="flex-1 min-h-0 overflow-y-auto console-scroll-hidden">
-            {!gitHasChanges ? (
+            {conflictFiles.length > 0 && (
+              <div className="border-b border-[#E8EAED]">
+                <div className="flex items-center gap-1.5 px-3 py-1.5 border-b border-[#E8EAED] bg-amber-50">
+                  <AlertTriangle className="h-3 w-3 text-amber-500 shrink-0" />
+                  <span className="text-[10px] font-semibold text-amber-700 uppercase tracking-wider">
+                    Conflicts ({conflictFiles.length})
+                  </span>
+                </div>
+                <div className="p-2 space-y-1.5">
+                  {conflictFiles.map((file) => (
+                    <ConflictFileItem
+                      key={file.path}
+                      file={file}
+                      projectId={projectId}
+                      onResolved={handleConflictResolved}
+                    />
+                  ))}
+                </div>
+              </div>
+            )}
+            {!gitHasChanges && conflictFiles.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-8 gap-2 text-zinc-400">
                 <GitCommit className="h-6 w-6" />
-                <p className="text-[10px]">暂无已保存的更改</p>
+                <p className="text-[10px]">No saved changes</p>
               </div>
             ) : (
               <div className="flex flex-col">
@@ -507,11 +535,11 @@ export default function SourceControlPanel({ projectId, gitChanges, onJumpToFile
                   <>
                     <div className="flex items-center justify-between px-3 py-1.5 border-b border-[#E8EAED]">
                       <span className="text-[10px] font-semibold text-zinc-500 uppercase tracking-wider">
-                        暂存的更改 ({gitStagedFiles.length})
+                        Staged ({gitStagedFiles.length})
                       </span>
                       <button
                         onClick={handleUnstageAll}
-                        title="全部取消暂存"
+                        title="Unstage all"
                         className={`text-[10px] text-zinc-400 hover:text-zinc-600 ${consoleButtonFocusClass}`}
                       >
                         <Minus className="h-3 w-3" />
@@ -524,11 +552,11 @@ export default function SourceControlPanel({ projectId, gitChanges, onJumpToFile
                   <>
                     <div className="flex items-center justify-between px-3 py-1.5 border-b border-[#E8EAED]">
                       <span className="text-[10px] font-semibold text-zinc-500 uppercase tracking-wider">
-                        更改 ({gitUnstagedFiles.length})
+                        Changes ({gitUnstagedFiles.length})
                       </span>
                       <button
                         onClick={handleStageAll}
-                        title="全部暂存"
+                        title="Stage all"
                         className={`text-[10px] text-zinc-400 hover:text-zinc-600 ${consoleButtonFocusClass}`}
                       >
                         <Plus className="h-3 w-3" />
@@ -643,7 +671,7 @@ export default function SourceControlPanel({ projectId, gitChanges, onJumpToFile
               role="menuitem"
               disabled={!branch}
               onClick={handleOpenCreatePR}
-              title="将自动 Push 并创建 Pull Request"
+              title="Will push and create pull request"
               className={`w-full flex items-center gap-2 px-3 py-2 text-sm text-left text-zinc-700 hover:bg-zinc-50 disabled:opacity-40 ${consoleButtonFocusClass}`}
             >
               <GitPullRequest className="h-3.5 w-3.5" />
@@ -666,19 +694,19 @@ export default function SourceControlPanel({ projectId, gitChanges, onJumpToFile
       {showAuthorDialog && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30">
           <div className="bg-white rounded-lg shadow-xl p-6 w-80">
-            <h3 className="text-sm font-semibold text-[#202124] mb-4">设置 Git 作者信息</h3>
+            <h3 className="text-sm font-semibold text-[#202124] mb-4">Set Git author info</h3>
             <div className="flex flex-col gap-3">
               <input
                 ref={authorNameRef}
                 type="text"
-                placeholder="姓名"
+                placeholder="Name"
                 value={authorName}
                 onChange={(e) => setAuthorName(e.target.value)}
                 className="w-full text-xs px-2 py-1.5 rounded border border-[#DADCE0] bg-white focus:outline-none focus:border-[#5B8DB8]"
               />
               <input
                 type="email"
-                placeholder="邮箱"
+                placeholder="Email"
                 value={authorEmail}
                 onChange={(e) => setAuthorEmail(e.target.value)}
                 className="w-full text-xs px-2 py-1.5 rounded border border-[#DADCE0] bg-white focus:outline-none focus:border-[#5B8DB8]"
@@ -688,14 +716,14 @@ export default function SourceControlPanel({ projectId, gitChanges, onJumpToFile
                   onClick={() => setShowAuthorDialog(false)}
                   className={`text-xs h-7 px-3 rounded ${buttonClass('secondary', 'sm')}`}
                 >
-                  取消
+                  Cancel
                 </button>
                 <button
                   onClick={handleAuthorConfirm}
                   disabled={!authorName.trim() || !authorEmail.trim()}
                   className={`text-xs h-7 px-3 rounded ${buttonClass('primary', 'sm')}`}
                 >
-                  确认
+                  Confirm
                 </button>
               </div>
             </div>

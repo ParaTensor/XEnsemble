@@ -25,7 +25,7 @@ const STRATEGY_DESCRIPTIONS = {
   manual: 'Mark as manually resolved',
 };
 
-function ConflictFileItem({ file, projectId, onResolved }) {
+export function ConflictFileItem({ file, projectId, onResolved }) {
   const { showToast } = useToast();
   const [expanded, setExpanded] = useState(false);
   const [oursContent, setOursContent] = useState(null);

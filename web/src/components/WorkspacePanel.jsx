@@ -2,7 +2,7 @@ import { useState, useCallback, useEffect, useRef, useMemo, memo, lazy, Suspense
 import { createPortal } from 'react-dom';
 import {
   FileText, Files, FolderPlus, Plus, PanelLeftClose, PanelLeft, Loader2,
-  Terminal, Globe, Monitor, GitBranch, X,
+  Terminal, Globe, Monitor, GitBranch, GitPullRequest, X,
 } from 'lucide-react';
 import WorkspaceFileTree from './WorkspaceFileTree';
 import CodeEditor from './CodeEditorLazy';
@@ -10,6 +10,8 @@ import { ConsoleDialogShell } from './ConsoleDialog';
 import SourceControlPanel from './SourceControlPanel';
 import WorkspacePreviewPane from './WorkspacePreviewPane';
 import WorkspaceBrowserPane from './WorkspaceBrowserPane';
+import MergeRequestListPanel from './git/MergeRequestListPanel';
+import CreatePRDialog from './git/CreatePRDialog';
 import { consoleButtonFocusClass, consoleInputClass } from '@/lib/consoleTheme';
 import { consoleDropdownPanelClass, consoleMenuDropdownZClass } from '@/lib/consoleTokens';
 import { buttonClass } from '@/lib/buttonStyles';
@@ -27,6 +29,7 @@ function DiffViewerFallback() {
 const PINNED_TABS = [
   { key: 'files', label: 'Files', icon: Files },
   { key: 'changes', label: 'Changes', icon: GitBranch },
+  { key: 'pullrequests', label: 'Pull Requests', icon: GitPullRequest },
 ];
 
 const ADDABLE_TABS = [
@@ -61,7 +64,7 @@ function readExtraTabs() {
 
 function readMainTab(extraTabs) {
   const stored = migrateTabKey(sessionStorage.getItem('xe_main_tab') || 'files');
-  if (stored === 'files' || stored === 'changes') return stored;
+  if (stored === 'files' || stored === 'changes' || stored === 'pullrequests') return stored;
   if (extraTabs.includes(stored)) return stored;
   return 'files';
 }
@@ -94,6 +97,7 @@ const WorkspacePanel = memo(function WorkspacePanel({
   const [newName, setNewName] = useState('');
   const [creating, setCreating] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [createPROpen, setCreatePROpen] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(() => {
     const stored = sessionStorage.getItem('xe_sidebar_open');
     return stored !== null ? stored === 'true' : true;
@@ -269,17 +273,23 @@ const WorkspacePanel = memo(function WorkspacePanel({
   const gitUnstagedFiles = gitChanges?.unstagedFiles || [];
   const changeCount = gitStagedFiles.length + gitUnstagedFiles.length;
 
+  const isExternalGit = provider && provider !== 'none' && provider !== 'local_git';
+
   const visibleTabs = useMemo(() => {
+    const pinned = PINNED_TABS.filter((t) => {
+      if (t.key === 'pullrequests') return isExternalGit;
+      return true;
+    }).map((t) => (
+      t.key === 'changes' ? { ...t, badge: changeCount } : t
+    ));
     const extras = extraTabs
       .map((key) => ADDABLE_TABS.find((t) => t.key === key))
       .filter(Boolean);
     return [
-      ...PINNED_TABS.map((t) => (
-        t.key === 'changes' ? { ...t, badge: changeCount } : t
-      )),
+      ...pinned,
       ...extras,
     ];
-  }, [extraTabs, changeCount]);
+  }, [extraTabs, changeCount, isExternalGit]);
 
   const addableRemaining = ADDABLE_TABS.filter((t) => !extraTabs.includes(t.key));
 
@@ -313,7 +323,7 @@ const WorkspacePanel = memo(function WorkspacePanel({
                 {closable && (
                   <button
                     type="button"
-                    title={`关闭 ${tab.label}`}
+                    title={`Close ${tab.label}`}
                     onClick={(e) => {
                       e.stopPropagation();
                       closeExtraTab(tab.key);
@@ -329,7 +339,7 @@ const WorkspacePanel = memo(function WorkspacePanel({
           <button
             ref={addBtnRef}
             type="button"
-            title="添加面板"
+            title="Add panel"
             onClick={() => setAddMenuOpen((v) => !v)}
             className={`ml-0.5 p-1.5 rounded text-zinc-400 hover:text-zinc-600 hover:bg-[#E8EAED] ${consoleButtonFocusClass}`}
           >
@@ -339,16 +349,16 @@ const WorkspacePanel = memo(function WorkspacePanel({
 
         {mainTab === 'files' && (
           <div className="flex items-center gap-0.5 ml-auto pr-1">
-            <button title="新建文件" onClick={() => { setNewName(''); setShowNewFile(true); }}
+            <button title="New file" onClick={() => { setNewName(''); setShowNewFile(true); }}
               className={`p-1 rounded text-zinc-400 hover:text-zinc-600 hover:bg-[#E8EAED] ${consoleButtonFocusClass}`}>
               <Plus className="h-3.5 w-3.5" />
             </button>
-            <button title="新建文件夹" onClick={() => { setNewName(''); setShowNewFolder(true); }}
+            <button title="New folder" onClick={() => { setNewName(''); setShowNewFolder(true); }}
               className={`p-1 rounded text-zinc-400 hover:text-zinc-600 hover:bg-[#E8EAED] ${consoleButtonFocusClass}`}>
               <FolderPlus className="h-3.5 w-3.5" />
             </button>
             <button
-              title={sidebarOpen ? '收起文件树' : '展开文件树'}
+              title={sidebarOpen ? 'Collapse file tree' : 'Expand file tree'}
               onClick={() => setSidebarOpen((open) => !open)}
               className={`p-1 rounded text-zinc-400 hover:text-zinc-600 hover:bg-[#E8EAED] ${consoleButtonFocusClass}`}
             >
@@ -456,6 +466,32 @@ const WorkspacePanel = memo(function WorkspacePanel({
             provider={provider}
             sessionLive={sessionLive}
           />
+        )}
+
+        {mainTab === 'pullrequests' && (
+          <div className="flex-1 min-h-0 flex flex-col">
+            <MergeRequestListPanel
+              projectId={projectId}
+              provider={provider}
+            />
+            <div className="flex items-center justify-end gap-2 border-t border-[#E8EAED] px-3 py-2 shrink-0">
+              <button
+                type="button"
+                onClick={() => setCreatePROpen(true)}
+                className={`${buttonClass('primary', 'sm')}`}
+              >
+                <GitPullRequest className="h-3.5 w-3.5 mr-1 inline" />
+                New Pull Request
+              </button>
+            </div>
+            <CreatePRDialog
+              open={createPROpen}
+              projectId={projectId}
+              sourceBranch={gitChanges?.branch || ''}
+              defaultTargetBranch="main"
+              onClose={() => setCreatePROpen(false)}
+            />
+          </div>
         )}
 
         {mainTab === 'terminal' && (
