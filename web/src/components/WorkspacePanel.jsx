@@ -29,10 +29,10 @@ function DiffViewerFallback() {
 const PINNED_TABS = [
   { key: 'files', label: 'Files', icon: Files },
   { key: 'changes', label: 'Changes', icon: GitBranch },
-  { key: 'pullrequests', label: 'Pull Requests', icon: GitPullRequest },
 ];
 
 const ADDABLE_TABS = [
+  { key: 'pullrequests', label: 'Pull Requests', icon: GitPullRequest },
   { key: 'terminal', label: 'Terminal', icon: Terminal },
   { key: 'preview', label: 'Preview', icon: Monitor },
   { key: 'browser', label: 'Browser', icon: Globe },
@@ -64,7 +64,7 @@ function readExtraTabs() {
 
 function readMainTab(extraTabs) {
   const stored = migrateTabKey(sessionStorage.getItem('xe_main_tab') || 'files');
-  if (stored === 'files' || stored === 'changes' || stored === 'pullrequests') return stored;
+  if (stored === 'files' || stored === 'changes') return stored;
   if (extraTabs.includes(stored)) return stored;
   return 'files';
 }
@@ -276,22 +276,27 @@ const WorkspacePanel = memo(function WorkspacePanel({
   const isExternalGit = provider && provider !== 'none' && provider !== 'local_git';
 
   const visibleTabs = useMemo(() => {
-    const pinned = PINNED_TABS.filter((t) => {
-      if (t.key === 'pullrequests') return isExternalGit;
-      return true;
-    }).map((t) => (
+    const pinned = PINNED_TABS.map((t) => (
       t.key === 'changes' ? { ...t, badge: changeCount } : t
     ));
     const extras = extraTabs
       .map((key) => ADDABLE_TABS.find((t) => t.key === key))
-      .filter(Boolean);
+      .filter((t) => {
+        if (!t) return false;
+        if (t.key === 'pullrequests') return isExternalGit;
+        return true;
+      });
     return [
       ...pinned,
       ...extras,
     ];
   }, [extraTabs, changeCount, isExternalGit]);
 
-  const addableRemaining = ADDABLE_TABS.filter((t) => !extraTabs.includes(t.key));
+  const addableRemaining = ADDABLE_TABS.filter((t) => {
+    if (extraTabs.includes(t.key)) return false;
+    if (t.key === 'pullrequests') return isExternalGit;
+    return true;
+  });
 
   return (
     <div className="flex h-full min-h-0 flex-col" data-testid="workspace-panel">
@@ -375,7 +380,7 @@ const WorkspacePanel = memo(function WorkspacePanel({
           style={{ top: addMenuRect.top, left: addMenuRect.left, width: addMenuRect.width }}
           role="menu"
         >
-          {ADDABLE_TABS.map((tab) => {
+          {addableRemaining.map((tab) => {
             const Icon = tab.icon;
             const alreadyOpen = extraTabs.includes(tab.key);
             return (

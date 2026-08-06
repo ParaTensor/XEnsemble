@@ -116,11 +116,10 @@ export default React.forwardRef(function Sessions({
     const saved = typeof window !== 'undefined' ? window.localStorage.getItem('xensemble.panel.width') : null;
     const w = saved ? parseInt(saved, 10) : NaN;
     const maxW = typeof window !== 'undefined' ? Math.max(720, window.innerWidth - 240) : 800;
-    // Keep File usable, but leave more room for the Terminal.
-    const preferred = Math.min(480, maxW);
-    // Migrate older wide defaults (560/640) that crowded the Terminal.
-    if (!Number.isFinite(w) || w < 360 || w >= 560) return preferred;
-    return w <= maxW ? w : preferred;
+    // Default to ~1:1 ratio between agent console and right sidebar.
+    const preferred = Math.min(Math.floor(maxW / 2), maxW);
+    if (!Number.isFinite(w) || w < 360 || w > maxW) return preferred;
+    return w;
   });
   const resizingRef = useRef(null);
   const [isLoadingFiles, setIsLoadingFiles] = useState(false);
