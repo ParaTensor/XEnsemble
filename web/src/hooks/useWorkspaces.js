@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { apiFetch, getAccessToken } from '../lib/api';
+import { apiFetch, getAccessToken, refreshAccessToken } from '../lib/api';
 import {
   readBootstrapConsoleState,
   saveConsoleCache,
@@ -156,7 +156,9 @@ export function useWorkspaces(user) {
 
   useEffect(() => {
     if (typeof EventSource === 'undefined' || sessions.length === 0) return;
-    const es = new EventSource(getSseUrl());
+    let es = null;
+    let reconnectTimer = null;
+    let closed = false;
     const onMessage = (e) => {
       try {
         const data = JSON.parse(e.data);
@@ -167,10 +169,25 @@ export function useWorkspaces(user) {
         // ignore invalid data
       }
     };
-    es.addEventListener('message', onMessage);
+    const connect = () => {
+      es = new EventSource(getSseUrl());
+      es.addEventListener('message', onMessage);
+      es.addEventListener('error', async () => {
+        es.close();
+        if (closed) return;
+        const newToken = await refreshAccessToken();
+        if (!newToken) return;
+        reconnectTimer = setTimeout(connect, 2000);
+      });
+    };
+    connect();
     return () => {
-      es.removeEventListener('message', onMessage);
-      es.close();
+      closed = true;
+      if (reconnectTimer) clearTimeout(reconnectTimer);
+      if (es) {
+        es.removeEventListener('message', onMessage);
+        es.close();
+      }
     };
   }, [sessions.length > 0, fetchSessions]);
 
