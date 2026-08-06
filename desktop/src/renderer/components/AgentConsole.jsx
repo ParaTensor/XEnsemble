@@ -239,6 +239,15 @@ function AgentConsole({
             function vsStripAnsi(text) {
                 return text.replace(/\x1b\[[0-9;?]*[a-zA-Z]/g, '').replace(/\x1b\].*?\x07/g, '');
             }
+            function stripAlternateScreen(text) {
+                return text
+                    .replace(/\x1b\[\?1049h/g, '')
+                    .replace(/\x1b\[\?1049l/g, '')
+                    .replace(/\x1b\[\?47h/g, '')
+                    .replace(/\x1b\[\?47l/g, '')
+                    .replace(/\x1b\[\?1047h/g, '')
+                    .replace(/\x1b\[\?1047l/g, '');
+            }
             function vsProcess(data) {
                 const hasClear = /\x1b\[2J/.test(data);
                 if (hasClear) for (let y = 0; y < VS_ROWS; y++) vsScreen[y] = '';
@@ -354,7 +363,7 @@ function AgentConsole({
                     remaining = remaining.slice(syncEnd + '\x1b[?2026l'.length);
                 }
 
-                if (hasOutput) writeTerminalData(output);
+                if (hasOutput) writeTerminalData(stripAlternateScreen(output));
             };
 
             function writeTerminalData(processed) {
