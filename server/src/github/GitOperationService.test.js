@@ -148,12 +148,12 @@ describe('GitOperationService (mock exec)', () => {
             'https://github.com/owner/repo.git',
             'remote URL should not contain the token',
         );
-        assert.ok(remoteCall.env.GIT_ASKPASS);
-        assert.strictEqual(remoteCall.env.GIT_ASKPASS_TOKEN, 'mock_token');
 
         const fetchCall = findCall(exec.calls, 'fetch', 'origin');
         assert.ok(fetchCall);
         assert.deepStrictEqual(fetchCall.args.slice(2), ['main', '--depth', '1']);
+        assert.ok(fetchCall.env.GIT_ASKPASS, 'fetch should receive credential env');
+        assert.strictEqual(fetchCall.env.GIT_ASKPASS_TOKEN, 'mock_token');
 
         const checkoutCall = findCall(exec.calls, 'checkout', '-b', 'main');
         assert.ok(checkoutCall);
@@ -432,6 +432,44 @@ describe('GitOperationService (mock exec)', () => {
         const result = await service.getFileDiffView({ id: 'p1', userId: 'u1' }, 'deleted.txt');
         assert.strictEqual(result.original, 'HEAD content\n');
         assert.strictEqual(result.modified, '');
+    });
+
+    it('local operations work even when token resolution throws', async () => {
+        const tokenErr = new Error('gitlab token 已过期且自动刷新失败，请重新认证');
+        const responses = new Map([
+            [JSON.stringify(['rev-parse', '--abbrev-ref', 'HEAD']), 'main\n'],
+            [JSON.stringify(['rev-parse', 'HEAD']), 'sha\n'],
+            [JSON.stringify(['status', '--porcelain=v1', '-uall']), ' M modified.txt\n'],
+            [JSON.stringify(['rev-list', '--left-right', '--count', 'HEAD...@{upstream}']), '0\t0\n'],
+        ]);
+        const exec = makeMockExec((args) => responses.get(JSON.stringify(args)) ?? '');
+        const service = new GitOperationService({
+            exec,
+            ensureProjectRuntime: async () => ({ workspacePath: '/workspace' }),
+            getToken: async () => { throw tokenErr; },
+            usesHostWorkspace: () => false,
+        });
+
+        const status = await service.getStatus({ id: 'p1', userId: 'u1', repoProvider: 'gitlab' });
+        assert.ok(status.dirty, 'dirty should be true');
+        assert.strictEqual(status.unstagedFiles.length, 1);
+        assert.strictEqual(status.unstagedFiles[0].path, 'modified.txt');
+    });
+
+    it('push still surfaces token errors for remote operations', async () => {
+        const tokenErr = new Error('gitlab token 已过期且自动刷新失败，请重新认证');
+        const exec = makeMockExec(() => '');
+        const service = new GitOperationService({
+            exec,
+            ensureProjectRuntime: async () => ({ workspacePath: '/workspace' }),
+            getToken: async () => { throw tokenErr; },
+            usesHostWorkspace: () => false,
+        });
+
+        await assert.rejects(
+            () => service.pushBranch({ id: 'p1', userId: 'u1', repoProvider: 'gitlab' }, 'main'),
+            (err) => err.message.includes('token 已过期'),
+        );
     });
 });
 

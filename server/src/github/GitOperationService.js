@@ -16,6 +16,8 @@ class GitError extends Error {
     }
 }
 
+const REMOTE_GIT_COMMANDS = new Set(['fetch', 'push', 'pull', 'ls-remote', 'clone']);
+
 async function defaultGetToken(project) {
     const provider = project.repoProvider;
     if (!provider || provider === 'none' || provider === 'local_git') {
@@ -48,7 +50,8 @@ class GitOperationService {
     }
 
     async _execGit(project, args, options = {}) {
-        const token = await this._resolveToken(project);
+        const needsToken = options.needsToken ?? REMOTE_GIT_COMMANDS.has(args[0]);
+        const token = needsToken ? await this._resolveToken(project) : undefined;
         const hostPath = workspace.projectDir(project.userId, project.id);
 
         if (this.usesHostWorkspace()) {
