@@ -317,6 +317,13 @@ export default function AppSidebar({
       /* ignore */
     }
   }, []);
+
+  // Auto-collapse sidebar when entering a session
+  useEffect(() => {
+    if (activeSession?.sessionId) {
+      setCollapsed(true);
+    }
+  }, [activeSession?.sessionId]);
   const [activeOnlyFilter, setActiveOnlyFilter] = useState(false);
   const [resumingSessionId, setResumingSessionId] = useState(null);
   const [customImageMap, setCustomImageMap] = useState({});

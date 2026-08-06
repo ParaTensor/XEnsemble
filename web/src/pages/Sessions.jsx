@@ -115,13 +115,8 @@ export default React.forwardRef(function Sessions({
   const [panelOpen, setPanelOpen] = useState(true);
   const [shellMounted, setShellMounted] = useState(false);
   const [panelWidth, setPanelWidth] = useState(() => {
-    const saved = typeof window !== 'undefined' ? window.localStorage.getItem('xensemble.panel.width.v2') : null;
-    const w = saved ? parseInt(saved, 10) : NaN;
     const maxW = typeof window !== 'undefined' ? Math.max(720, window.innerWidth - 240) : 800;
-    // Default to ~1:1 ratio between agent console and right sidebar.
-    const preferred = Math.min(Math.floor(maxW / 2), maxW);
-    if (!Number.isFinite(w) || w < 360 || w > maxW) return preferred;
-    return w;
+    return Math.min(Math.floor(maxW / 2), maxW);
   });
   const resizingRef = useRef(null);
   const [isLoadingFiles, setIsLoadingFiles] = useState(false);
@@ -184,13 +179,6 @@ export default React.forwardRef(function Sessions({
   const [sessionConfigSaving, setSessionConfigSaving] = useState(false);
   const [sessionConfigError, setSessionConfigError] = useState(null);
   const [showRestartPrompt, setShowRestartPrompt] = useState(false);
-
-  useEffect(() => {
-    const maxW = typeof window !== 'undefined' ? Math.max(720, window.innerWidth - 240) : 800;
-    if (panelWidth >= 420 && panelWidth <= maxW) {
-      window.localStorage.setItem('xensemble.panel.width.v2', String(panelWidth));
-    }
-  }, [panelWidth]);
 
   // Reset launch config when agent changes
   useEffect(() => {
