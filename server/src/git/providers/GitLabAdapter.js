@@ -298,6 +298,21 @@ class GitLabAdapter extends GitProviderService {
         }));
     }
 
+    async listMrFiles(token, repoIdentifier, mrIid, { apiBase } = {}) {
+        const encoded = encodeURIComponent(repoIdentifier);
+        const data = await gitlabFetch(token, apiBase,
+            `/projects/${encoded}/merge_requests/${mrIid}/changes`);
+        const changes = data.changes || [];
+        return changes.map((c) => ({
+            path: c.new_path || c.old_path || '',
+            oldPath: c.old_path || null,
+            status: c.new_file ? 'added' : c.deleted_file ? 'deleted' : 'modified',
+            additions: null,
+            deletions: null,
+            diff: c.diff || '',
+        }));
+    }
+
     // ── Utility ──
 
     parseRepoIdentifier(fullName) {

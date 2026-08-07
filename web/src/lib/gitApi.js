@@ -85,6 +85,9 @@ export const listIssueComments = (projectId, mrId, params = {}) => {
   return request(`/api/v1/projects/${encodeURIComponent(projectId)}/merge-requests/${encodeURIComponent(mrId)}/issue-comments?${qs}`);
 };
 
+export const listMrFiles = (projectId, mrId) =>
+  request(`/api/v1/projects/${encodeURIComponent(projectId)}/merge-requests/${encodeURIComponent(mrId)}/files`);
+
 export const getBlame = (projectId, filePath, params = {}) => {
   const qs = new URLSearchParams({ path: filePath, ...params });
   return request(`/api/v1/projects/${encodeURIComponent(projectId)}/repository/blame?${qs}`);

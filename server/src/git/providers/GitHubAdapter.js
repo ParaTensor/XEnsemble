@@ -271,6 +271,22 @@ class GitHubAdapter extends GitProviderService {
         }));
     }
 
+    async listMrFiles(token, repoIdentifier, prNumber, { apiBase, page = 1, perPage = 100 } = {}) {
+        const base = apiBase || DEFAULT_API_BASE;
+        const { owner, repo } = this.parseRepoIdentifier(repoIdentifier);
+        const query = new URLSearchParams({ page: String(page), per_page: String(perPage) });
+        const files = await githubFetch(token, base,
+            `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/pulls/${prNumber}/files?${query}`);
+        return files.map((f) => ({
+            path: f.filename || '',
+            oldPath: f.previous_filename || null,
+            status: f.status === 'added' ? 'added' : f.status === 'removed' ? 'deleted' : f.status === 'renamed' ? 'renamed' : 'modified',
+            additions: f.additions ?? null,
+            deletions: f.deletions ?? null,
+            diff: f.patch || '',
+        }));
+    }
+
     parseRepoIdentifier(fullName) {
         if (!fullName || typeof fullName !== 'string') {
             throw new Error('Repository full name is required');

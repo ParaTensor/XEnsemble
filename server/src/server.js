@@ -926,6 +926,43 @@ fastify.get('/api/v1/projects/:projectId/merge-requests/:mrId/issue-comments', {
     }
 });
 
+// PR/MR changed files with diffs
+fastify.get('/api/v1/projects/:projectId/merge-requests/:mrId/files', {
+    preValidation: [fastify.authenticate],
+}, async (request, reply) => {
+    const project = await getProjectForUser(request.user.id, request.params.projectId);
+    if (!project) return reply.code(404).send({ error: 'Project not found' });
+
+    const providerName = project.repoProvider;
+    if (!providerName || providerName === 'local_git' || providerName === 'none') {
+        return { files: [] };
+    }
+
+    try {
+        const { GitConnectionService, getProviderConfig } = require('./git/GitConnectionService');
+        const { getProvider } = require('./git/providers/registry');
+        const connService = new GitConnectionService();
+        const token = await connService.getDecryptedToken(project.userId, providerName);
+        if (!token) return { files: [] };
+
+        const adapter = getProvider(providerName);
+        const config = await getProviderConfig(providerName);
+        const mrRows = await db.select().from(schema.mergeRequests)
+            .where(eq(schema.mergeRequests.id, request.params.mrId));
+        if (mrRows.length === 0) return reply.code(404).send({ error: 'Merge request not found' });
+        const mr = mrRows[0];
+        const prNumber = mr.remoteMrNumber;
+        if (!prNumber) return { files: [] };
+
+        const repoId = project.remoteFullName || project.githubFullName;
+        const files = await adapter.listMrFiles(token, repoId, prNumber, { apiBase: config?.apiBase });
+        return { files };
+    } catch (err) {
+        request.log.error(err);
+        return reply.code(500).send({ error: 'Failed to fetch MR files' });
+    }
+});
+
 // Sessions - list
 fastify.get('/api/v1/sessions', { preValidation: [fastify.authenticate] }, async (request, reply) => {
     const result = await db.execute(sql`

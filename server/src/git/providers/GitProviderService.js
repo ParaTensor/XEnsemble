@@ -153,6 +153,13 @@ class GitProviderService {
         return [];
     }
 
+    /**
+     * List changed files with diffs for a PR/MR.
+     */
+    async listMrFiles(token, repoIdentifier, prNumber, opts) {
+        return [];
+    }
+
     // ── Utility ──
 
     /**

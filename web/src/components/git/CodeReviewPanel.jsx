@@ -1,9 +1,10 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { Check, CircleDot, GitPullRequest, Loader2, MessageSquare, RefreshCw, X } from 'lucide-react';
+import { Check, ChevronDown, ChevronRight, CircleDot, GitPullRequest, Loader2, MessageSquare, RefreshCw, X } from 'lucide-react';
 import * as gitApi from '../../lib/gitApi';
 import { useToast } from '../Toast';
 import {
   consoleIconButtonClass,
+  consoleButtonFocusClass,
   textPrimary,
   textSecondary,
   textPlaceholder,
@@ -114,6 +115,9 @@ export default function CodeReviewPanel({ projectId, mergeRequestId, mergeReques
   const [reviews, setReviews] = useState([]);
   const [comments, setComments] = useState([]);
   const [issueComments, setIssueComments] = useState([]);
+  const [mrFiles, setMrFiles] = useState([]);
+  const [mrFilesLoading, setMrFilesLoading] = useState(false);
+  const [expandedFiles, setExpandedFiles] = useState(new Set());
   const [loading, setLoading] = useState(false);
   const [activeTab, setActiveTab] = useState('reviews');
 
@@ -136,9 +140,49 @@ export default function CodeReviewPanel({ projectId, mergeRequestId, mergeReques
     }
   }, [projectId, mergeRequestId, showToast]);
 
+  const fetchMrFiles = useCallback(async () => {
+    if (!projectId || !mergeRequestId || mrFiles.length > 0) return;
+    setMrFilesLoading(true);
+    try {
+      const res = await gitApi.listMrFiles(projectId, mergeRequestId);
+      setMrFiles(res.files || []);
+    } catch (err) {
+      showToast('error', err.message);
+    } finally {
+      setMrFilesLoading(false);
+    }
+  }, [projectId, mergeRequestId, mrFiles.length, showToast]);
+
   useEffect(() => {
     fetchData();
   }, [fetchData]);
+
+  useEffect(() => {
+    if (activeTab === 'changes') fetchMrFiles();
+  }, [activeTab, fetchMrFiles]);
+
+  const toggleFileExpand = (path) => {
+    setExpandedFiles((prev) => {
+      const next = new Set(prev);
+      if (next.has(path)) next.delete(path);
+      else next.add(path);
+      return next;
+    });
+  };
+
+  const renderDiffLines = (raw) => {
+    if (!raw) return null;
+    return raw.split('\n').map((line, i) => {
+      if (line.startsWith('---') || line.startsWith('+++') || line.startsWith('diff ') || line.startsWith('index ') || line.startsWith('new file') || line.startsWith('deleted ') || line.startsWith('\\ No newline')) return null;
+      if (line[0] === '@') return null;
+      if (line[0] === '+') return <div key={i} className="bg-[#DFF7E4] text-[#1A7F37] pl-2">{line.slice(1)}</div>;
+      if (line[0] === '-') return <div key={i} className="bg-[#FFEBE9] text-[#CF222E] pl-2">{line.slice(1)}</div>;
+      return <div key={i} className="bg-white text-[#1F2328] pl-2">{line || ' '}</div>;
+    });
+  };
+
+  const STATUS_LABELS = { added: 'A', modified: 'M', deleted: 'D', renamed: 'R' };
+  const STATUS_COLORS = { added: 'text-[#4A7C59]', modified: 'text-[#C06C5D]', deleted: 'text-[#C06C5D]', renamed: 'text-[#5B8DB8]' };
 
   const approvedCount = reviews.filter((r) => r.state === 'APPROVED').length;
   const changesCount = reviews.filter((r) => r.state === 'CHANGES_REQUESTED').length;
@@ -231,8 +275,79 @@ export default function CodeReviewPanel({ projectId, mergeRequestId, mergeReques
             >
               Discussion ({issueComments.length})
             </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab('changes')}
+              className={`px-3 py-2 text-xs font-medium border-b-2 -mb-px transition-colors ${
+                activeTab === 'changes'
+                  ? 'border-[#202124] text-[#202124]'
+                  : 'border-transparent text-[#5F6368] hover:text-[#202124]'
+              }`}
+            >
+              Changes ({mrFiles.length})
+            </button>
           </div>
 
+          {activeTab === 'changes' ? (
+            <div className="flex-1 min-h-0 overflow-auto">
+              {mrFilesLoading ? (
+                <div className="flex items-center justify-center gap-2 py-8 text-sm text-[#5F6368]">
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Loading…
+                </div>
+              ) : mrFiles.length === 0 ? (
+                <div className="text-center py-8">
+                  <GitPullRequest className="mx-auto h-8 w-8 text-[#9AA0A6] mb-2" />
+                  <p className={`text-sm ${textSecondary}`}>No file changes.</p>
+                </div>
+              ) : (
+                mrFiles.map((f) => {
+                  const fileName = f.path.split('/').pop();
+                  const dirPath = f.path.includes('/') ? f.path.slice(0, f.path.lastIndexOf('/')) : '';
+                  const isExpanded = expandedFiles.has(f.path);
+                  const label = STATUS_LABELS[f.status] || 'M';
+                  const colorCls = STATUS_COLORS[f.status] || 'text-zinc-400';
+                  return (
+                    <div key={f.path}>
+                      <div className="flex items-center group hover:bg-[#E8EAED]">
+                        <button
+                          onClick={() => toggleFileExpand(f.path)}
+                          className="shrink-0 p-0.5 text-zinc-400 hover:text-zinc-600"
+                        >
+                          {isExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                        </button>
+                        <button
+                          onClick={() => toggleFileExpand(f.path)}
+                          className={`flex items-center gap-2 flex-1 min-w-0 px-2 py-1.5 text-left transition-colors ${consoleButtonFocusClass}`}
+                        >
+                          <span className={`w-4 text-center font-mono text-[11px] font-semibold ${colorCls} shrink-0`}>
+                            {label}
+                          </span>
+                          <span className="truncate text-[#202124] text-xs">{fileName}</span>
+                          {dirPath && (
+                            <span className="truncate text-[#9AA0A6] text-[10px]">{dirPath}</span>
+                          )}
+                          {f.additions != null && f.deletions != null && (
+                            <span className="ml-auto text-[10px] shrink-0">
+                              <span className="text-[#1A7F37]">+{f.additions}</span>
+                              <span className="text-[#CF222E]"> -{f.deletions}</span>
+                            </span>
+                          )}
+                        </button>
+                      </div>
+                      {isExpanded && f.diff && (
+                        <div className="border-t border-[#E8EAED] bg-[#FAFAFA]">
+                          <div className="text-[11px] leading-relaxed overflow-x-auto font-mono select-text" style={{ tabSize: 4, MozTabSize: 4 }}>
+                            {renderDiffLines(f.diff)}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          ) : (
           <div className="flex-1 min-h-0 overflow-auto p-4 space-y-2">
             {loading ? (
               <div className="flex items-center justify-center gap-2 py-8 text-sm text-[#5F6368]">
@@ -274,6 +389,7 @@ export default function CodeReviewPanel({ projectId, mergeRequestId, mergeReques
               )
             )}
           </div>
+          )}
         </>
       )}
     </div>
