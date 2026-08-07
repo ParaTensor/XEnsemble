@@ -53,6 +53,11 @@ export const pullLatest = (projectId) =>
     method: 'POST',
   });
 
+export const fetchRemote = (projectId) =>
+  request(`/api/v1/projects/${encodeURIComponent(projectId)}/git/fetch`, {
+    method: 'POST',
+  });
+
 export const getGitDiff = (projectId, { base, head } = {}) => {
   const qs = new URLSearchParams();
   if (base) qs.set('base', base);

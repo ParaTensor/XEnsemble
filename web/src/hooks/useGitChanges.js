@@ -3,7 +3,7 @@ import { useGitStatus } from './useGitStatus';
 import * as githubApi from '../lib/githubApi';
 
 export function useGitChanges(projectId, fullPollEnabledRef) {
-  const { status, loading, operation, commit: originalCommit, push: originalPush, pull: originalPull, fetchStatus } = useGitStatus(projectId, fullPollEnabledRef);
+  const { status, loading, operation, commit: originalCommit, push: originalPush, pull: originalPull, fetchRemote: originalFetchRemote, fetchStatus } = useGitStatus(projectId, fullPollEnabledRef);
   const [optimistic, setOptimistic] = useState(null);
 
   useEffect(() => {
@@ -118,6 +118,7 @@ export function useGitChanges(projectId, fullPollEnabledRef) {
     commit,
     push,
     pull,
+    fetchRemote: originalFetchRemote,
     fetchStatus,
     getFileDiff,
     getHeadContent,

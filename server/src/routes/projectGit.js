@@ -242,6 +242,24 @@ function registerProjectGitRoutes(fastify) {
         }
     });
 
+    fastify.post('/api/v1/projects/:id/git/fetch', {
+        preValidation: [fastify.authenticate, fastify.requireActive],
+    }, async (request, reply) => {
+        const project = await getProjectForUser(request.user.id, request.params.id);
+        if (!project) return reply.code(404).send({ error: 'Project not found' });
+        try {
+            await withProjectGitLock(project.id, async () => {
+                await gitOperationService._execGit(project, ['fetch', 'origin']);
+                gitOperationService._invalidateAheadBehind(project.id);
+            });
+            const status = await gitOperationService.getStatus(project).catch(() => null);
+            return { ok: true, status };
+        } catch (err) {
+            request.log.error(err);
+            return reply.code(500).send({ error: err.message });
+        }
+    });
+
     fastify.get('/api/v1/projects/:id/git/clone-status', {
         preValidation: [fastify.authenticate, fastify.requireActive],
     }, async (request, reply) => {

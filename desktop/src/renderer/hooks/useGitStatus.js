@@ -109,6 +109,22 @@ export function useGitStatus(projectId, fullPollEnabledRef) {
     }
   }, [projectId, showToast, fetchStatus]);
 
+  const fetchRemote = useCallback(async () => {
+    if (!projectId) return;
+    setOperation('fetch');
+    try {
+      const result = await githubApi.fetchRemote(projectId);
+      showToast('success', 'Fetched from remote.');
+      fetchStatus({ silent: true });
+      return result;
+    } catch (err) {
+      showToast('error', err.message);
+      throw err;
+    } finally {
+      setOperation(null);
+    }
+  }, [projectId, showToast, fetchStatus]);
+
   return {
     status,
     loading,
@@ -116,6 +132,7 @@ export function useGitStatus(projectId, fullPollEnabledRef) {
     commit,
     push,
     pull,
+    fetchRemote,
     fetchStatus,
   };
 }

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { ArrowDown, ArrowUp, GitBranch, GitPullRequest, Loader2, Pencil, Upload, Download } from 'lucide-react';
+import { ArrowDown, ArrowUp, GitBranch, GitPullRequest, Loader2, Pencil, Upload, Download, RefreshCw } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import CreatePRDialog from './CreatePRDialog';
 import {
@@ -40,6 +40,7 @@ export default function GitStatusBar({ projectId, project, git }) {
   const commit = git?.commit;
   const push = git?.push;
   const pull = git?.pull;
+  const fetchRemote = git?.fetchRemote;
   const [showCommitDialog, setShowCommitDialog] = useState(false);
   const [commitMessage, setCommitMessage] = useState('');
   const [committing, setCommitting] = useState(false);
@@ -131,6 +132,20 @@ export default function GitStatusBar({ projectId, project, git }) {
               <Loader2 className="h-3.5 w-3.5 animate-spin" />
             ) : (
               <Upload className="h-3.5 w-3.5" />
+            )}
+          </button>
+          <button
+            type="button"
+            onClick={fetchRemote}
+            disabled={operation === 'fetch'}
+            title="Fetch from remote"
+            aria-label="Fetch from remote"
+            className={consoleIconButtonClass}
+          >
+            {operation === 'fetch' ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <RefreshCw className="h-3.5 w-3.5" />
             )}
           </button>
           <button
