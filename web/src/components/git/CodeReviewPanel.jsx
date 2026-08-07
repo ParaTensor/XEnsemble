@@ -66,12 +66,13 @@ function ReviewItem({ review }) {
 }
 
 function CommentItem({ comment }) {
+  const isInline = Boolean(comment.path);
   return (
     <div className={`rounded-lg border ${borderHairline} p-3`}>
       <div className="flex items-center justify-between gap-2 mb-2">
         <div className="flex items-center gap-2 min-w-0">
           {comment.user?.avatarUrl ? (
-            <img src={comment.user.avatarUrl} alt="" className="h-5 w-5 rounded-full" />
+            <img src={comment.user?.avatarUrl} alt="" className="h-5 w-5 rounded-full" />
           ) : (
             <div className="h-5 w-5 rounded-full bg-[#E8EAED]" />
           )}
@@ -82,9 +83,14 @@ function CommentItem({ comment }) {
             {formatDate(comment.createdAt)}
           </span>
         </div>
+        {isInline && (
+          <span className="shrink-0 inline-flex items-center rounded-full bg-[#F4F5F6] px-1.5 py-0.5 text-[9px] font-medium text-[#5F6368]">
+            inline
+          </span>
+        )}
       </div>
 
-      {comment.path && (
+      {isInline && (
         <div className="mb-2 flex items-center gap-2">
           <span className="font-mono text-[10px] bg-[#F4F5F6] rounded px-1.5 py-0.5 text-[#5F6368] truncate max-w-[14rem]">
             {comment.path}
@@ -187,6 +193,11 @@ export default function CodeReviewPanel({ projectId, mergeRequestId, mergeReques
   const approvedCount = reviews.filter((r) => r.state === 'APPROVED').length;
   const changesCount = reviews.filter((r) => r.state === 'CHANGES_REQUESTED').length;
 
+  const conversation = [
+    ...comments,
+    ...issueComments,
+  ].sort((a, b) => new Date(a.createdAt || 0) - new Date(b.createdAt || 0));
+
   const mrTitle = mergeRequest?.title || mergeRequest?.description || '';
   const mrNumber = mergeRequest?.remoteMrNumber || mergeRequest?.remote_mr_number || '';
 
@@ -255,25 +266,14 @@ export default function CodeReviewPanel({ projectId, mergeRequestId, mergeReques
             </button>
             <button
               type="button"
-              onClick={() => setActiveTab('comments')}
+              onClick={() => setActiveTab('conversation')}
               className={`px-3 py-2 text-xs font-medium border-b-2 -mb-px transition-colors ${
-                activeTab === 'comments'
+                activeTab === 'conversation'
                   ? 'border-[#202124] text-[#202124]'
                   : 'border-transparent text-[#5F6368] hover:text-[#202124]'
               }`}
             >
-              Inline ({comments.length})
-            </button>
-            <button
-              type="button"
-              onClick={() => setActiveTab('discussion')}
-              className={`px-3 py-2 text-xs font-medium border-b-2 -mb-px transition-colors ${
-                activeTab === 'discussion'
-                  ? 'border-[#202124] text-[#202124]'
-                  : 'border-transparent text-[#5F6368] hover:text-[#202124]'
-              }`}
-            >
-              Discussion ({issueComments.length})
+              Conversation ({conversation.length})
             </button>
             <button
               type="button"
@@ -365,25 +365,14 @@ export default function CodeReviewPanel({ projectId, mergeRequestId, mergeReques
                   <ReviewItem key={review.id || idx} review={review} />
                 ))
               )
-            ) : activeTab === 'comments' ? (
-              comments.length === 0 ? (
-                <div className="text-center py-8">
-                  <MessageSquare className="mx-auto h-8 w-8 text-[#9AA0A6] mb-2" />
-                  <p className={`text-sm ${textSecondary}`}>No inline comments yet.</p>
-                </div>
-              ) : (
-                comments.map((comment, idx) => (
-                  <CommentItem key={comment.id || idx} comment={comment} />
-                ))
-              )
             ) : (
-              issueComments.length === 0 ? (
+              conversation.length === 0 ? (
                 <div className="text-center py-8">
                   <MessageSquare className="mx-auto h-8 w-8 text-[#9AA0A6] mb-2" />
-                  <p className={`text-sm ${textSecondary}`}>No discussion yet.</p>
+                  <p className={`text-sm ${textSecondary}`}>No conversation yet.</p>
                 </div>
               ) : (
-                issueComments.map((comment, idx) => (
+                conversation.map((comment, idx) => (
                   <CommentItem key={comment.id || idx} comment={comment} />
                 ))
               )
