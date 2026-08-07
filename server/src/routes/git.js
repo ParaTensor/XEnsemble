@@ -385,6 +385,9 @@ function registerGitRoutes(fastify) {
     }, async (request, reply) => {
         const project = await getProjectForUser(request.user.id, request.params.id);
         if (!project) return reply.code(404).send({ error: 'Project not found' });
+        try {
+            await mergeRequestService.syncAll(project);
+        } catch (_) {}
         const rows = await mergeRequestService.list(project.id);
         return { merge_requests: rows };
     });
