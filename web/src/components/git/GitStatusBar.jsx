@@ -1,6 +1,8 @@
-import { useState } from 'react';
-import { ArrowDown, ArrowUp, GitBranch, GitPullRequest, Loader2, Pencil, Upload, Download, RefreshCw } from 'lucide-react';
+import { useState, useRef, useEffect, useLayoutEffect } from 'react';
+import { createPortal } from 'react-dom';
+import { ArrowDown, ArrowUp, GitBranch, GitPullRequest, Loader2, Pencil, Upload, Download, RefreshCw, Check } from 'lucide-react';
 import { cn } from '../../lib/utils';
+import * as githubApi from '../../lib/githubApi';
 import CreatePRDialog from './CreatePRDialog';
 import {
   ConsoleInlineDialog,
@@ -38,10 +40,50 @@ export default function GitStatusBar({ projectId, project, git }) {
   const push = git?.push;
   const pull = git?.pull;
   const fetchRemote = git?.fetchRemote;
+  const switchBranch = git?.switchBranch;
   const [showCommitDialog, setShowCommitDialog] = useState(false);
   const [commitMessage, setCommitMessage] = useState('');
   const [committing, setCommitting] = useState(false);
   const [createPROpen, setCreatePROpen] = useState(false);
+  const [branchMenuOpen, setBranchMenuOpen] = useState(false);
+  const [branchMenuRect, setBranchMenuRect] = useState(null);
+  const [branches, setBranches] = useState([]);
+  const [branchesLoading, setBranchesLoading] = useState(false);
+  const branchBtnRef = useRef(null);
+
+  const openBranchMenu = async () => {
+    if (branchBtnRef.current) {
+      const rect = branchBtnRef.current.getBoundingClientRect();
+      setBranchMenuRect({ bottom: window.innerHeight - rect.top + 4, left: rect.left, width: 200 });
+    }
+    setBranchMenuOpen(true);
+    setBranchesLoading(true);
+    try {
+      const data = await githubApi.listBranches(projectId);
+      setBranches(data.branches || []);
+    } catch {
+      setBranches([]);
+    } finally {
+      setBranchesLoading(false);
+    }
+  };
+
+  const handleSwitchBranch = async (name) => {
+    setBranchMenuOpen(false);
+    if (name === (status?.branch || project?.currentBranch)) return;
+    await switchBranch?.(name);
+  };
+
+  useEffect(() => {
+    if (!branchMenuOpen) return;
+    const onClick = (e) => {
+      if (branchBtnRef.current && !branchBtnRef.current.contains(e.target)) {
+        setBranchMenuOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', onClick);
+    return () => document.removeEventListener('mousedown', onClick);
+  }, [branchMenuOpen]);
 
   if (!isGitProject) return null;
 
@@ -63,9 +105,21 @@ export default function GitStatusBar({ projectId, project, git }) {
         <div className="flex min-w-0 items-center gap-3 text-xs">
           <div className="flex items-center gap-1.5 text-[#202124]">
             <GitBranch className="h-3.5 w-3.5 shrink-0 text-[#9AA0A6]" />
-            <span className="max-w-[12rem] truncate font-mono font-medium">
-              {status?.branch || project?.currentBranch || 'unknown'}
-            </span>
+            <button
+              ref={branchBtnRef}
+              type="button"
+              onClick={openBranchMenu}
+              disabled={operation === 'switch'}
+              title="Switch branch"
+              className={`flex items-center gap-1 max-w-[12rem] truncate font-mono font-medium hover:text-[#5F6368] transition-colors ${consoleButtonFocusClass}`}
+            >
+              {operation === 'switch' ? (
+                <Loader2 className="h-3 w-3 animate-spin" />
+              ) : null}
+              <span className="truncate">
+                {status?.branch || project?.currentBranch || 'unknown'}
+              </span>
+            </button>
           </div>
           {(status?.ahead > 0 || status?.behind > 0) && (
             <div className="flex items-center gap-2 text-[#5F6368]">
@@ -215,6 +269,41 @@ export default function GitStatusBar({ projectId, project, git }) {
         defaultTargetBranch={project?.repoDefaultBranch || 'main'}
         onClose={() => setCreatePROpen(false)}
       />
+
+      {branchMenuOpen && branchMenuRect && createPortal(
+        <div
+          className={`fixed z-50 bg-white border border-[#E8EAED] rounded-lg shadow-lg py-1 max-h-64 overflow-auto`}
+          style={{ bottom: branchMenuRect.bottom, left: branchMenuRect.left, width: branchMenuRect.width }}
+        >
+          {branchesLoading ? (
+            <div className="flex items-center justify-center py-4">
+              <Loader2 className="h-4 w-4 animate-spin text-[#9AA0A6]" />
+            </div>
+          ) : branches.length === 0 ? (
+            <div className="px-3 py-2 text-xs text-[#9AA0A6]">No branches</div>
+          ) : (
+            branches.map((b) => {
+              const isCurrent = b.name === (status?.branch || project?.currentBranch);
+              return (
+                <button
+                  key={b.name}
+                  type="button"
+                  onClick={() => handleSwitchBranch(b.name)}
+                  className={`w-full flex items-center gap-2 px-3 py-1.5 text-xs text-left transition-colors ${
+                    isCurrent ? 'bg-[#F4F5F6] text-[#202124] font-medium' : 'text-[#5F6368] hover:bg-[#F4F5F6]'
+                  } ${consoleButtonFocusClass}`}
+                >
+                  <span className="w-3.5 shrink-0 flex items-center justify-center">
+                    {isCurrent && <Check className="h-3 w-3" strokeWidth={2.5} />}
+                  </span>
+                  <span className="truncate font-mono">{b.name}</span>
+                </button>
+              );
+            })
+          )}
+        </div>,
+        document.body,
+      )}
     </>
   );
 }

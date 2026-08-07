@@ -78,6 +78,12 @@ export const getGitFileContent = (projectId, filePath, ref = 'HEAD') =>
 export const listBranches = (projectId) =>
   request(`/api/v1/projects/${encodeURIComponent(projectId)}/branches`);
 
+export const switchBranch = (projectId, name) =>
+  request(`/api/v1/projects/${encodeURIComponent(projectId)}/branches/switch`, {
+    method: 'POST',
+    body: JSON.stringify({ name }),
+  });
+
 export const createPullRequest = (projectId, payload) =>
   request(`/api/v1/projects/${encodeURIComponent(projectId)}/pull-requests`, {
     method: 'POST',
