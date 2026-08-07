@@ -77,6 +77,11 @@ export const syncMergeRequest = (projectId, mrId) =>
     method: 'POST',
   });
 
+export const syncAllMergeRequests = (projectId) =>
+  request(`/api/v1/projects/${encodeURIComponent(projectId)}/merge-requests/sync-all`, {
+    method: 'POST',
+  });
+
 // ── Reviews (Phase 4) ──
 
 export const listReviews = (projectId, mrId) =>

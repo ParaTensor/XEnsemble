@@ -220,6 +220,38 @@ class MergeRequestService {
             .where(eq(schema.mergeRequests.projectId, projectId));
     }
 
+    async syncAll(project) {
+        const providerName = project.repoProvider;
+        if (!providerName || providerName === 'none' || providerName === 'local_git') {
+            return { synced: 0 };
+        }
+        const repoFullName = project.remoteFullName || project.githubFullName;
+        if (!repoFullName) return { synced: 0 };
+
+        const ctx = await this._resolveProvider(project, null);
+        if (!ctx) return { synced: 0 };
+
+        const remotePRs = await ctx.provider.listPRs(ctx.token, ctx.repoFullName, {
+            state: ctx.provider.name === 'gitlab' ? 'opened' : 'open',
+            perPage: 50,
+            apiBase: ctx.apiBase,
+        });
+
+        let synced = 0;
+        for (const prInfo of remotePRs) {
+            await this._upsertFromRemote(project, providerName, prInfo, {
+                title: prInfo.title,
+                body: prInfo.body,
+                src: prInfo.headRef,
+                tgt: prInfo.baseRef,
+                actorUserId: project.userId,
+            });
+            synced++;
+        }
+
+        return { synced };
+    }
+
     async get(mrId) {
         const rows = await db.select().from(schema.mergeRequests)
             .where(eq(schema.mergeRequests.id, mrId));
