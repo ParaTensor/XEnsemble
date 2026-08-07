@@ -65,8 +65,9 @@ function ReviewItem({ review }) {
   );
 }
 
-function CommentItem({ comment }) {
+function CommentItem({ comment, mrFiles, renderDiffLines }) {
   const isInline = Boolean(comment.path);
+  const fileDiff = isInline ? (mrFiles || []).find((f) => f.path === comment.path)?.diff : null;
   return (
     <div className={`rounded-lg border ${borderHairline} p-3`}>
       <div className="flex items-center justify-between gap-2 mb-2">
@@ -84,26 +85,28 @@ function CommentItem({ comment }) {
           </span>
         </div>
         {isInline && (
-          <span className="shrink-0 inline-flex items-center rounded-full bg-[#F4F5F6] px-1.5 py-0.5 text-[9px] font-medium text-[#5F6368]">
-            inline
-          </span>
+          <div className="flex items-center gap-1 shrink-0">
+            <span className="font-mono text-[10px] bg-[#F4F5F6] rounded px-1.5 py-0.5 text-[#5F6368] truncate max-w-[10rem]">
+              {comment.path}
+            </span>
+            {comment.line && (
+              <span className="font-mono text-[10px] text-[#9AA0A6]">
+                L{comment.line}
+              </span>
+            )}
+          </div>
         )}
       </div>
 
-      {isInline && (
-        <div className="mb-2 flex items-center gap-2">
-          <span className="font-mono text-[10px] bg-[#F4F5F6] rounded px-1.5 py-0.5 text-[#5F6368] truncate max-w-[14rem]">
-            {comment.path}
-          </span>
-          {comment.line && (
-            <span className="font-mono text-[10px] text-[#9AA0A6]">
-              L{comment.line}
-            </span>
-          )}
+      {fileDiff && (
+        <div className={`mb-2 border ${borderHairline} rounded overflow-hidden`}>
+          <div className="text-[11px] leading-relaxed overflow-x-auto font-mono select-text max-h-40 overflow-y-auto" style={{ tabSize: 4, MozTabSize: 4 }}>
+            {renderDiffLines(fileDiff)}
+          </div>
         </div>
       )}
 
-      {comment.diffHunk && (
+      {comment.diffHunk && !fileDiff && (
         <pre className="mb-2 rounded bg-[#F4F5F6] p-2 text-[10px] font-mono text-[#5F6368] max-h-20 overflow-auto whitespace-pre-wrap">
           {comment.diffHunk}
         </pre>
@@ -122,7 +125,6 @@ export default function CodeReviewPanel({ projectId, mergeRequestId, mergeReques
   const [comments, setComments] = useState([]);
   const [issueComments, setIssueComments] = useState([]);
   const [mrFiles, setMrFiles] = useState([]);
-  const [mrFilesLoading, setMrFilesLoading] = useState(false);
   const [expandedFiles, setExpandedFiles] = useState(new Set());
   const [loading, setLoading] = useState(false);
   const [activeTab, setActiveTab] = useState('reviews');
@@ -131,14 +133,16 @@ export default function CodeReviewPanel({ projectId, mergeRequestId, mergeReques
     if (!projectId || !mergeRequestId) return;
     setLoading(true);
     try {
-      const [reviewsRes, commentsRes, issueRes] = await Promise.all([
+      const [reviewsRes, commentsRes, issueRes, filesRes] = await Promise.all([
         gitApi.listReviews(projectId, mergeRequestId),
         gitApi.listReviewComments(projectId, mergeRequestId),
         gitApi.listIssueComments(projectId, mergeRequestId),
+        gitApi.listMrFiles(projectId, mergeRequestId),
       ]);
       setReviews(reviewsRes.reviews || []);
       setComments(commentsRes.comments || []);
       setIssueComments(issueRes.comments || []);
+      setMrFiles(filesRes.files || []);
     } catch (err) {
       showToast('error', err.message);
     } finally {
@@ -146,26 +150,9 @@ export default function CodeReviewPanel({ projectId, mergeRequestId, mergeReques
     }
   }, [projectId, mergeRequestId, showToast]);
 
-  const fetchMrFiles = useCallback(async () => {
-    if (!projectId || !mergeRequestId || mrFiles.length > 0) return;
-    setMrFilesLoading(true);
-    try {
-      const res = await gitApi.listMrFiles(projectId, mergeRequestId);
-      setMrFiles(res.files || []);
-    } catch (err) {
-      showToast('error', err.message);
-    } finally {
-      setMrFilesLoading(false);
-    }
-  }, [projectId, mergeRequestId, mrFiles.length, showToast]);
-
   useEffect(() => {
     fetchData();
   }, [fetchData]);
-
-  useEffect(() => {
-    if (activeTab === 'changes') fetchMrFiles();
-  }, [activeTab, fetchMrFiles]);
 
   const toggleFileExpand = (path) => {
     setExpandedFiles((prev) => {
@@ -290,7 +277,7 @@ export default function CodeReviewPanel({ projectId, mergeRequestId, mergeReques
 
           {activeTab === 'changes' ? (
             <div className="flex-1 min-h-0 overflow-auto">
-              {mrFilesLoading ? (
+              {loading ? (
                 <div className="flex items-center justify-center gap-2 py-8 text-sm text-[#5F6368]">
                   <Loader2 className="h-4 w-4 animate-spin" />
                   Loading…
@@ -373,7 +360,7 @@ export default function CodeReviewPanel({ projectId, mergeRequestId, mergeReques
                 </div>
               ) : (
                 conversation.map((comment, idx) => (
-                  <CommentItem key={comment.id || idx} comment={comment} />
+                  <CommentItem key={comment.id || idx} comment={comment} mrFiles={mrFiles} renderDiffLines={renderDiffLines} />
                 ))
               )
             )}
