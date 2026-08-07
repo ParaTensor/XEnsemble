@@ -826,13 +826,14 @@ fastify.get('/api/v1/projects/:projectId/merge-requests/:mrId/reviews', {
     }
 
     try {
-        const { GitConnectionService } = require('./git/GitConnectionService');
+        const { GitConnectionService, getProviderConfig } = require('./git/GitConnectionService');
         const { getProvider } = require('./git/providers/registry');
         const connService = new GitConnectionService();
         const token = await connService.getDecryptedToken(project.userId, providerName);
         if (!token) return { reviews: [] };
 
         const adapter = getProvider(providerName);
+        const config = await getProviderConfig(providerName);
         const mrRows = await db.select().from(schema.mergeRequests)
             .where(eq(schema.mergeRequests.id, request.params.mrId));
         if (mrRows.length === 0) return reply.code(404).send({ error: 'Merge request not found' });
@@ -841,7 +842,7 @@ fastify.get('/api/v1/projects/:projectId/merge-requests/:mrId/reviews', {
         if (!prNumber) return { reviews: [] };
 
         const repoId = project.remoteFullName || project.githubFullName;
-        const reviews = await adapter.listReviews(token, repoId, prNumber, {});
+        const reviews = await adapter.listReviews(token, repoId, prNumber, { apiBase: config?.apiBase });
         return { reviews };
     } catch (err) {
         request.log.error(err);
@@ -862,13 +863,14 @@ fastify.get('/api/v1/projects/:projectId/merge-requests/:mrId/comments', {
     }
 
     try {
-        const { GitConnectionService } = require('./git/GitConnectionService');
+        const { GitConnectionService, getProviderConfig } = require('./git/GitConnectionService');
         const { getProvider } = require('./git/providers/registry');
         const connService = new GitConnectionService();
         const token = await connService.getDecryptedToken(project.userId, providerName);
         if (!token) return { comments: [] };
 
         const adapter = getProvider(providerName);
+        const config = await getProviderConfig(providerName);
         const mrRows = await db.select().from(schema.mergeRequests)
             .where(eq(schema.mergeRequests.id, request.params.mrId));
         if (mrRows.length === 0) return reply.code(404).send({ error: 'Merge request not found' });
@@ -878,7 +880,7 @@ fastify.get('/api/v1/projects/:projectId/merge-requests/:mrId/comments', {
 
         const repoId = project.remoteFullName || project.githubFullName;
         const page = request.query?.page ? Number(request.query.page) : 1;
-        const comments = await adapter.listReviewComments(token, repoId, prNumber, { page });
+        const comments = await adapter.listReviewComments(token, repoId, prNumber, { page, apiBase: config?.apiBase });
         return { comments };
     } catch (err) {
         request.log.error(err);
@@ -899,13 +901,14 @@ fastify.get('/api/v1/projects/:projectId/merge-requests/:mrId/issue-comments', {
     }
 
     try {
-        const { GitConnectionService } = require('./git/GitConnectionService');
+        const { GitConnectionService, getProviderConfig } = require('./git/GitConnectionService');
         const { getProvider } = require('./git/providers/registry');
         const connService = new GitConnectionService();
         const token = await connService.getDecryptedToken(project.userId, providerName);
         if (!token) return { comments: [] };
 
         const adapter = getProvider(providerName);
+        const config = await getProviderConfig(providerName);
         const mrRows = await db.select().from(schema.mergeRequests)
             .where(eq(schema.mergeRequests.id, request.params.mrId));
         if (mrRows.length === 0) return reply.code(404).send({ error: 'Merge request not found' });
@@ -915,7 +918,7 @@ fastify.get('/api/v1/projects/:projectId/merge-requests/:mrId/issue-comments', {
 
         const repoId = project.remoteFullName || project.githubFullName;
         const page = request.query?.page ? Number(request.query.page) : 1;
-        const comments = await adapter.listIssueComments(token, repoId, prNumber, { page });
+        const comments = await adapter.listIssueComments(token, repoId, prNumber, { page, apiBase: config?.apiBase });
         return { comments };
     } catch (err) {
         request.log.error(err);

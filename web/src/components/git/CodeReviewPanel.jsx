@@ -122,9 +122,9 @@ export default function CodeReviewPanel({ projectId, mergeRequestId, mergeReques
     setLoading(true);
     try {
       const [reviewsRes, commentsRes, issueRes] = await Promise.all([
-        gitApi.listReviews(projectId, mergeRequestId).catch(() => ({ reviews: [] })),
-        gitApi.listReviewComments(projectId, mergeRequestId).catch(() => ({ comments: [] })),
-        gitApi.listIssueComments(projectId, mergeRequestId).catch(() => ({ comments: [] })),
+        gitApi.listReviews(projectId, mergeRequestId),
+        gitApi.listReviewComments(projectId, mergeRequestId),
+        gitApi.listIssueComments(projectId, mergeRequestId),
       ]);
       setReviews(reviewsRes.reviews || []);
       setComments(commentsRes.comments || []);
