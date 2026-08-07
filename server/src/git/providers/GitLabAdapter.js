@@ -270,7 +270,7 @@ class GitLabAdapter extends GitProviderService {
         const query = new URLSearchParams({ page: String(page), per_page: String(perPage) });
         const notes = await gitlabFetch(token, apiBase,
             `/projects/${encoded}/merge_requests/${mrIid}/notes?${query}`);
-        return notes.filter((n) => !n.system).map((n) => ({
+        return notes.filter((n) => !n.system && n.position).map((n) => ({
             id: n.id,
             path: n.position?.new_path || n.position?.old_path || null,
             line: n.position?.new_line || n.position?.old_line || null,
@@ -281,6 +281,20 @@ class GitLabAdapter extends GitProviderService {
             updatedAt: n.updated_at,
             inReplyToId: null,
             diffHunk: null,
+        }));
+    }
+
+    async listIssueComments(token, repoIdentifier, mrIid, { apiBase, page = 1, perPage = 30 } = {}) {
+        const encoded = encodeURIComponent(repoIdentifier);
+        const query = new URLSearchParams({ page: String(page), per_page: String(perPage) });
+        const notes = await gitlabFetch(token, apiBase,
+            `/projects/${encoded}/merge_requests/${mrIid}/notes?${query}`);
+        return notes.filter((n) => !n.system && !n.position).map((n) => ({
+            id: n.id,
+            user: { login: n.author?.username, avatarUrl: n.author?.avatar_url },
+            body: n.body || '',
+            createdAt: n.created_at,
+            updatedAt: n.updated_at,
         }));
     }
 
