@@ -92,6 +92,15 @@ export const switchBranch = (projectId, name) =>
     body: JSON.stringify({ name }),
   });
 
+export const createBranch = (projectId, name, baseBranch) => {
+  const body = { name };
+  if (baseBranch) body.base_branch = baseBranch;
+  return request(`/api/v1/projects/${encodeURIComponent(projectId)}/branches`, {
+    method: 'POST',
+    body: JSON.stringify(body),
+  });
+};
+
 export const createPullRequest = (projectId, payload) =>
   request(`/api/v1/projects/${encodeURIComponent(projectId)}/merge-requests`, {
     method: 'POST',

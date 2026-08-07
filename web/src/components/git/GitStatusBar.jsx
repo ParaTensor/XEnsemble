@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useLayoutEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { ArrowDown, ArrowUp, GitBranch, GitPullRequest, Loader2, Pencil, Upload, Download, RefreshCw, Check } from 'lucide-react';
+import { ArrowDown, ArrowUp, GitBranch, GitPullRequest, Loader2, Pencil, Upload, Download, RefreshCw, Check, Plus } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import * as githubApi from '../../lib/githubApi';
 import CreatePRDialog from './CreatePRDialog';
@@ -42,6 +42,7 @@ export default function GitStatusBar({ projectId, project, git }) {
   const pull = git?.pull;
   const fetchRemote = git?.fetchRemote;
   const switchBranch = git?.switchBranch;
+  const createBranch = git?.createBranch;
   const [showCommitDialog, setShowCommitDialog] = useState(false);
   const [commitMessage, setCommitMessage] = useState('');
   const [committing, setCommitting] = useState(false);
@@ -50,7 +51,9 @@ export default function GitStatusBar({ projectId, project, git }) {
   const [branchMenuRect, setBranchMenuRect] = useState(null);
   const [branches, setBranches] = useState([]);
   const [branchesLoading, setBranchesLoading] = useState(false);
+  const [newBranchName, setNewBranchName] = useState('');
   const branchBtnRef = useRef(null);
+  const newBranchInputRef = useRef(null);
 
   const openBranchMenu = async () => {
     if (branchBtnRef.current) {
@@ -75,6 +78,14 @@ export default function GitStatusBar({ projectId, project, git }) {
     await switchBranch?.(name);
   };
 
+  const handleCreateBranch = async () => {
+    const name = newBranchName.trim();
+    if (!name) return;
+    setNewBranchName('');
+    setBranchMenuOpen(false);
+    await createBranch?.(name);
+  };
+
   useEffect(() => {
     if (!branchMenuOpen) return;
     const onClick = (e) => {
@@ -84,6 +95,14 @@ export default function GitStatusBar({ projectId, project, git }) {
     };
     document.addEventListener('mousedown', onClick);
     return () => document.removeEventListener('mousedown', onClick);
+  }, [branchMenuOpen]);
+
+  useEffect(() => {
+    if (branchMenuOpen) {
+      setNewBranchName('');
+      const t = setTimeout(() => newBranchInputRef.current?.focus(), 50);
+      return () => clearTimeout(t);
+    }
   }, [branchMenuOpen]);
 
   if (!isGitProject) return null;
@@ -302,6 +321,32 @@ export default function GitStatusBar({ projectId, project, git }) {
               );
             })
           )}
+          <div className="border-t border-[#E8EAED] mt-1 pt-1 px-2 pb-1">
+            <div className="flex items-center gap-1">
+              <input
+                ref={newBranchInputRef}
+                type="text"
+                value={newBranchName}
+                onChange={(e) => setNewBranchName(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') handleCreateBranch(); }}
+                placeholder="New branch…"
+                className="flex-1 min-w-0 px-2 py-1 text-xs font-mono border border-[#E8EAED] rounded focus:outline-none focus:border-[#202124]"
+              />
+              <button
+                type="button"
+                onClick={handleCreateBranch}
+                disabled={!newBranchName.trim() || operation === 'switch'}
+                title="Create branch"
+                className={`shrink-0 p-1 rounded text-[#5F6368] hover:text-[#202124] hover:bg-[#E8EAED] disabled:opacity-40 disabled:cursor-default ${consoleButtonFocusClass}`}
+              >
+                {operation === 'switch' ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <Plus className="h-3.5 w-3.5" />
+                )}
+              </button>
+            </div>
+          </div>
         </div>,
         document.body,
       )}

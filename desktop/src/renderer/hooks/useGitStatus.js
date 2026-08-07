@@ -140,6 +140,21 @@ export function useGitStatus(projectId, fullPollEnabledRef) {
     }
   }, [projectId, showToast, fetchStatus]);
 
+  const createBranch = useCallback(async (name) => {
+    if (!projectId || !name) return;
+    setOperation('switch');
+    try {
+      await githubApi.createBranch(projectId, name);
+      showToast('success', `Created and switched to ${name}.`);
+      fetchStatus({ silent: true });
+    } catch (err) {
+      showToast('error', err.message);
+      throw err;
+    } finally {
+      setOperation(null);
+    }
+  }, [projectId, showToast, fetchStatus]);
+
   return {
     status,
     loading,
@@ -149,6 +164,7 @@ export function useGitStatus(projectId, fullPollEnabledRef) {
     pull,
     fetchRemote,
     switchBranch,
+    createBranch,
     fetchStatus,
   };
 }
