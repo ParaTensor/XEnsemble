@@ -11,6 +11,7 @@ import Input from '../Input';
 import Button from '../Button';
 import {
   consoleIconButtonClass,
+  consoleButtonFocusClass,
   consoleStructuredDialogHeaderClass,
   consoleStructuredDialogFooterClass,
   borderHairline,
