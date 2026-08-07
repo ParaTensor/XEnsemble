@@ -19,6 +19,7 @@ export default function CreatePRDialog({
   sourceBranch,
   defaultTargetBranch,
   onClose,
+  onCreated,
 }) {
   const { showToast } = useToast();
   const [branches, setBranches] = useState([]);
@@ -90,6 +91,7 @@ export default function CreatePRDialog({
       if (pr?.remoteMrUrl || pr?.remote_mr_url || pr?.github_pr_url || pr?.githubPrUrl) {
         githubApi.openExternal(pr.remoteMrUrl || pr.remote_mr_url || pr.github_pr_url || pr.githubPrUrl);
       }
+      onCreated?.();
       onClose();
     } catch (err) {
       if (err.code === 'REAUTH_REQUIRED') {

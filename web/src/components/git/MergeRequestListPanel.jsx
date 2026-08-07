@@ -27,7 +27,7 @@ function formatDate(ts) {
   return isNaN(date.getTime()) ? '—' : date.toLocaleDateString();
 }
 
-export default function MergeRequestListPanel({ projectId, provider, onSelectMR }) {
+export default function MergeRequestListPanel({ projectId, provider, onSelectMR, refreshTrigger }) {
   const { showToast } = useToast();
   const [mergeRequests, setMergeRequests] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -51,6 +51,10 @@ export default function MergeRequestListPanel({ projectId, provider, onSelectMR 
   useEffect(() => {
     fetchMRs();
   }, [fetchMRs]);
+
+  useEffect(() => {
+    if (refreshTrigger > 0) fetchMRs();
+  }, [refreshTrigger, fetchMRs]);
 
   const handleSync = useCallback(async (mrId) => {
     if (!projectId || !mrId) return;

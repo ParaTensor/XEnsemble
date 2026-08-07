@@ -100,6 +100,7 @@ const WorkspacePanel = memo(function WorkspacePanel({
   const [saving, setSaving] = useState(false);
   const [createPROpen, setCreatePROpen] = useState(false);
   const [selectedMR, setSelectedMR] = useState(null);
+  const [prRefreshTrigger, setPrRefreshTrigger] = useState(0);
   const [sidebarOpen, setSidebarOpen] = useState(() => {
     const stored = sessionStorage.getItem('xe_sidebar_open');
     return stored !== null ? stored === 'true' : true;
@@ -506,6 +507,7 @@ const WorkspacePanel = memo(function WorkspacePanel({
                   projectId={projectId}
                   provider={provider}
                   onSelectMR={setSelectedMR}
+                  refreshTrigger={prRefreshTrigger}
                 />
                 <div className="flex items-center justify-end gap-2 border-t border-[#E8EAED] px-3 py-2 shrink-0">
                   <button
@@ -525,6 +527,7 @@ const WorkspacePanel = memo(function WorkspacePanel({
               sourceBranch={gitChanges?.branch || ''}
               defaultTargetBranch="main"
               onClose={() => setCreatePROpen(false)}
+              onCreated={() => setPrRefreshTrigger((n) => n + 1)}
             />
           </div>
         )}
