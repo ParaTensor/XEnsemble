@@ -537,6 +537,7 @@ class GitConnectionService {
         const result = await provider.refreshAccessToken(refreshSecrets.token, {
             clientId: config.clientId,
             clientSecret: config.clientSecret,
+            apiBase: config.apiBase,
         });
 
         const now = Date.now();

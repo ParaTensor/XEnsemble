@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef, useLayoutEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import AgentConsole from '../components/AgentConsole';
 import WorkspaceFileTree from '../components/WorkspaceFileTree';
@@ -118,6 +118,20 @@ export default React.forwardRef(function Sessions({
     const maxW = typeof window !== 'undefined' ? Math.max(720, window.innerWidth - 240) : 800;
     return Math.min(Math.floor(maxW / 2), maxW);
   });
+  const panelRowRef = useRef(null);
+
+  // Measure actual container width for true 1:1 ratio (sidebar width varies)
+  useLayoutEffect(() => {
+    const measure = () => {
+      if (panelRowRef.current) {
+        const w = panelRowRef.current.offsetWidth;
+        if (w > 0) setPanelWidth(Math.floor(w / 2));
+      }
+    };
+    measure();
+    const timer = setTimeout(measure, 100);
+    return () => clearTimeout(timer);
+  }, []);
   const resizingRef = useRef(null);
   const [isLoadingFiles, setIsLoadingFiles] = useState(false);
   const [showHiddenFiles, setShowHiddenFiles] = useState(false);
@@ -1511,7 +1525,7 @@ export default React.forwardRef(function Sessions({
                 </div>
               </div>
             ) : (
-<div className="flex min-h-0 min-w-0 flex-1 flex-row overflow-hidden">
+<div ref={panelRowRef} className="flex min-h-0 min-w-0 flex-1 flex-row overflow-hidden">
               <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
                 <div
                   className="flex min-h-0 flex-1 flex-col overflow-hidden"
