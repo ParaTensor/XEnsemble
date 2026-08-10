@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { Check, ChevronDown, ChevronRight, CircleDot, GitPullRequest, Loader2, MessageSquare, RefreshCw, X } from 'lucide-react';
+import { ArrowLeft, Check, ChevronDown, ChevronRight, CircleDot, GitPullRequest, Loader2, MessageSquare, RefreshCw, X } from 'lucide-react';
 import * as gitApi from '../../lib/gitApi';
 import { useToast } from '../Toast';
 import {
@@ -119,7 +119,7 @@ function CommentItem({ comment, mrFiles, renderDiffLines }) {
   );
 }
 
-export default function CodeReviewPanel({ projectId, mergeRequestId, mergeRequest }) {
+export default function CodeReviewPanel({ projectId, mergeRequestId, mergeRequest, onBack }) {
   const { showToast } = useToast();
   const [reviews, setReviews] = useState([]);
   const [comments, setComments] = useState([]);
@@ -190,23 +190,40 @@ export default function CodeReviewPanel({ projectId, mergeRequestId, mergeReques
 
   return (
     <div className="flex flex-col h-full min-h-0">
-      <div className="flex items-center justify-between border-b border-[#E8EAED] px-4 py-2.5 shrink-0">
+      <div className="flex items-center justify-between border-b border-[#E8EAED] px-3 py-2 shrink-0">
         <div className="flex items-center gap-2 min-w-0">
-          <MessageSquare className="h-4 w-4 text-[#5F6368] shrink-0" />
-          <h3 className={`text-sm font-semibold ${textPrimary} shrink-0`}>Code Review</h3>
-          {mrTitle && (
-            <span className="flex items-center gap-1 min-w-0 text-[11px] text-[#5F6368]">
-              <GitPullRequest className="h-3 w-3 shrink-0" />
-              {mrNumber && <span className="shrink-0">#{mrNumber}</span>}
-              <span className="truncate">{mrTitle}</span>
-            </span>
+          {onBack && (
+            <button
+              type="button"
+              onClick={onBack}
+              title="Back to list"
+              className={`p-1 rounded text-[#5F6368] hover:text-[#202124] hover:bg-[#E8EAED] ${consoleButtonFocusClass}`}
+            >
+              <ArrowLeft className="h-3.5 w-3.5" />
+            </button>
+          )}
+          {mrNumber && <span className="shrink-0 text-xs font-medium text-[#5F6368]">#{mrNumber}</span>}
+          <span className="truncate text-xs font-medium text-[#202124]">{mrTitle}</span>
+          {(approvedCount > 0 || changesCount > 0) && (
+            <div className="flex items-center gap-1 shrink-0">
+              {approvedCount > 0 && (
+                <span className="inline-flex items-center rounded-full bg-green-100 px-1.5 py-0.5 text-[9px] font-medium text-green-700">
+                  {approvedCount} approved
+                </span>
+              )}
+              {changesCount > 0 && (
+                <span className="inline-flex items-center rounded-full bg-red-100 px-1.5 py-0.5 text-[9px] font-medium text-red-700">
+                  {changesCount} changes
+                </span>
+              )}
+            </div>
           )}
         </div>
         <button
           type="button"
           onClick={fetchData}
           disabled={loading}
-          title="Refresh reviews"
+          title="Refresh"
           className={`shrink-0 ${consoleIconButtonClass}`}
         >
           {loading ? (
@@ -224,21 +241,6 @@ export default function CodeReviewPanel({ projectId, mergeRequestId, mergeReques
         </div>
       ) : (
         <>
-          {(approvedCount > 0 || changesCount > 0) && (
-            <div className="flex items-center gap-2 px-4 py-1.5 border-b border-[#E8EAED] shrink-0">
-              {approvedCount > 0 && (
-                <span className="inline-flex items-center rounded-full bg-green-100 px-2 py-0.5 text-[10px] font-medium text-green-700">
-                  {approvedCount} approved
-                </span>
-              )}
-              {changesCount > 0 && (
-                <span className="inline-flex items-center rounded-full bg-red-100 px-2 py-0.5 text-[10px] font-medium text-red-700">
-                  {changesCount} changes requested
-                </span>
-              )}
-            </div>
-          )}
-
           <div className="flex border-b border-[#E8EAED] px-4 shrink-0">
             <button
               type="button"

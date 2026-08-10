@@ -483,27 +483,13 @@ const WorkspacePanel = memo(function WorkspacePanel({
         {mainTab === 'pullrequests' && (
           <div className="flex-1 min-h-0 flex flex-col">
             {selectedMR ? (
-              <div className="flex-1 min-h-0 flex flex-col">
-                <div className="flex items-center gap-2 border-b border-[#E8EAED] px-3 py-2 shrink-0">
-                  <button
-                    type="button"
-                    onClick={() => setSelectedMR(null)}
-                    title="Back to list"
-                    className={`p-1 rounded text-[#5F6368] hover:text-[#202124] hover:bg-[#E8EAED] ${consoleButtonFocusClass}`}
-                  >
-                    <ArrowLeft className="h-3.5 w-3.5" />
-                  </button>
-                  <span className="text-xs font-medium text-[#202124] truncate">
-                    #{selectedMR.remote_mr_number || selectedMR.remoteMrNumber || ''} {selectedMR.title}
-                  </span>
-                </div>
-                <div className="flex-1 min-h-0">
-                  <CodeReviewPanel
-                    projectId={projectId}
-                    mergeRequestId={selectedMR.id}
-                    mergeRequest={selectedMR}
-                  />
-                </div>
+              <div className="flex-1 min-h-0">
+                <CodeReviewPanel
+                  projectId={projectId}
+                  mergeRequestId={selectedMR.id}
+                  mergeRequest={selectedMR}
+                  onBack={() => setSelectedMR(null)}
+                />
               </div>
             ) : (
               <>
