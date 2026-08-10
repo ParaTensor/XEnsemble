@@ -72,6 +72,27 @@ export const syncAllMergeRequests = (projectId) =>
     method: 'POST',
   });
 
+export const mergeMergeRequest = (projectId, mrId) =>
+  request(`/api/v1/projects/${encodeURIComponent(projectId)}/merge-requests/${encodeURIComponent(mrId)}/merge`, {
+    method: 'POST',
+  });
+
+export const closeMergeRequest = (projectId, mrId) =>
+  request(`/api/v1/projects/${encodeURIComponent(projectId)}/merge-requests/${encodeURIComponent(mrId)}/close`, {
+    method: 'POST',
+  });
+
+export const approveMergeRequest = (projectId, mrId) =>
+  request(`/api/v1/projects/${encodeURIComponent(projectId)}/merge-requests/${encodeURIComponent(mrId)}/approve`, {
+    method: 'POST',
+  });
+
+export const addMergeRequestComment = (projectId, mrId, body) =>
+  request(`/api/v1/projects/${encodeURIComponent(projectId)}/merge-requests/${encodeURIComponent(mrId)}/comments`, {
+    method: 'POST',
+    body: JSON.stringify({ body }),
+  });
+
 export const listReviews = (projectId, mrId) =>
   request(`/api/v1/projects/${encodeURIComponent(projectId)}/merge-requests/${encodeURIComponent(mrId)}/reviews`);
 

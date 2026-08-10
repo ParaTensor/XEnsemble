@@ -287,6 +287,57 @@ class GitHubAdapter extends GitProviderService {
         }));
     }
 
+    // ── PR Actions ──
+
+    async mergePR(token, repoIdentifier, prNumber, { apiBase, squash } = {}) {
+        const base = apiBase || DEFAULT_API_BASE;
+        const { owner, repo } = this.parseRepoIdentifier(repoIdentifier);
+        const res = await githubFetch(token, base,
+            `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/pulls/${prNumber}/merge`, {
+            method: 'PUT',
+            body: JSON.stringify({ merge_method: squash ? 'squash' : 'merge' }),
+        });
+        return { merged: true, mergeSha: res.sha || null };
+    }
+
+    async closePR(token, repoIdentifier, prNumber, { apiBase } = {}) {
+        const base = apiBase || DEFAULT_API_BASE;
+        const { owner, repo } = this.parseRepoIdentifier(repoIdentifier);
+        const res = await githubFetch(token, base,
+            `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/pulls/${prNumber}`, {
+            method: 'PATCH',
+            body: JSON.stringify({ state: 'closed' }),
+        });
+        return { state: res.state || 'closed' };
+    }
+
+    async submitApproval(token, repoIdentifier, prNumber, { apiBase } = {}) {
+        const base = apiBase || DEFAULT_API_BASE;
+        const { owner, repo } = this.parseRepoIdentifier(repoIdentifier);
+        const res = await githubFetch(token, base,
+            `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/pulls/${prNumber}/reviews`, {
+            method: 'POST',
+            body: JSON.stringify({ event: 'APPROVE' }),
+        });
+        return { approved: true, reviewId: res.id };
+    }
+
+    async addIssueComment(token, repoIdentifier, prNumber, body, { apiBase } = {}) {
+        const base = apiBase || DEFAULT_API_BASE;
+        const { owner, repo } = this.parseRepoIdentifier(repoIdentifier);
+        const res = await githubFetch(token, base,
+            `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/issues/${prNumber}/comments`, {
+            method: 'POST',
+            body: JSON.stringify({ body }),
+        });
+        return {
+            id: res.id,
+            body: res.body,
+            createdAt: res.created_at,
+            user: { login: res.user?.login, avatarUrl: res.user?.avatar_url },
+        };
+    }
+
     parseRepoIdentifier(fullName) {
         if (!fullName || typeof fullName !== 'string') {
             throw new Error('Repository full name is required');

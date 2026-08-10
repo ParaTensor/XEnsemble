@@ -313,6 +313,55 @@ class GitLabAdapter extends GitProviderService {
         }));
     }
 
+    // ── PR Actions ──
+
+    async mergePR(token, repoIdentifier, mrIid, { apiBase, squash, removeSourceBranch } = {}) {
+        const encoded = encodeURIComponent(repoIdentifier);
+        const body = {};
+        if (squash) body.squash = true;
+        if (removeSourceBranch) body.should_remove_source_branch = true;
+        const res = await gitlabFetch(token, apiBase,
+            `/projects/${encoded}/merge_requests/${mrIid}/merge`, {
+            method: 'PUT',
+            body: JSON.stringify(body),
+        });
+        return { merged: true, mergeSha: res.merge_commit_sha || null };
+    }
+
+    async closePR(token, repoIdentifier, mrIid, { apiBase } = {}) {
+        const encoded = encodeURIComponent(repoIdentifier);
+        const res = await gitlabFetch(token, apiBase,
+            `/projects/${encoded}/merge_requests/${mrIid}`, {
+            method: 'PUT',
+            body: JSON.stringify({ state_event: 'close' }),
+        });
+        return { state: res.state || 'closed' };
+    }
+
+    async submitApproval(token, repoIdentifier, mrIid, { apiBase } = {}) {
+        const encoded = encodeURIComponent(repoIdentifier);
+        await gitlabFetch(token, apiBase,
+            `/projects/${encoded}/merge_requests/${mrIid}/approve`, {
+            method: 'POST',
+        });
+        return { approved: true };
+    }
+
+    async addIssueComment(token, repoIdentifier, mrIid, body, { apiBase } = {}) {
+        const encoded = encodeURIComponent(repoIdentifier);
+        const res = await gitlabFetch(token, apiBase,
+            `/projects/${encoded}/merge_requests/${mrIid}/notes`, {
+            method: 'POST',
+            body: JSON.stringify({ body }),
+        });
+        return {
+            id: res.id,
+            body: res.body,
+            createdAt: res.created_at,
+            user: { login: res.author?.username, avatarUrl: res.author?.avatar_url },
+        };
+    }
+
     // ── Utility ──
 
     parseRepoIdentifier(fullName) {

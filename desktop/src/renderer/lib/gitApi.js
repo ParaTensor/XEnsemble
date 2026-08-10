@@ -14,20 +14,16 @@ async function request(path, options = {}) {
   return data;
 }
 
-// ── Providers ──
-
 export const listProviders = () => request('/api/v1/git/providers');
 
 export const getProviderConfig = (provider) =>
   request(`/api/v1/git/providers/${encodeURIComponent(provider)}/config`);
 
-// ── Connections ──
-
 export const getConnection = (provider) =>
   request(`/api/v1/git/connections/${encodeURIComponent(provider)}`);
 
 export const connectProvider = (provider) =>
-  request(`/api/v1/git/connect`, {
+  request('/api/v1/git/connect', {
     method: 'POST',
     body: JSON.stringify({ provider }),
   });
@@ -43,25 +39,19 @@ export const connectWithPat = (provider, token) =>
     body: JSON.stringify({ token }),
   });
 
-// ── Repos ──
-
 export const listRepos = (provider, params = {}) => {
-  const qs = new URLSearchParams(params);
-  return request(`/api/v1/git/repos/${encodeURIComponent(provider)}?${qs.toString()}`);
+  const qs = new URLSearchParams({ provider, ...params });
+  return request(`/api/v1/git/repos?${qs.toString()}`);
 };
 
 export const getRepo = (provider, repoPath) =>
   request(`/api/v1/git/repos/${repoPath}?provider=${encodeURIComponent(provider)}`);
 
-// ── Import ──
-
 export const importRepo = (payload) =>
-  request('/api/v1/git/import', {
+  request('/api/v1/projects/import-git', {
     method: 'POST',
     body: JSON.stringify(payload),
   });
-
-// ── Merge Requests ──
 
 export const listMergeRequests = (projectId) =>
   request(`/api/v1/projects/${encodeURIComponent(projectId)}/merge-requests`);
@@ -82,7 +72,26 @@ export const syncAllMergeRequests = (projectId) =>
     method: 'POST',
   });
 
-// ── Reviews (Phase 4) ──
+export const mergeMergeRequest = (projectId, mrId) =>
+  request(`/api/v1/projects/${encodeURIComponent(projectId)}/merge-requests/${encodeURIComponent(mrId)}/merge`, {
+    method: 'POST',
+  });
+
+export const closeMergeRequest = (projectId, mrId) =>
+  request(`/api/v1/projects/${encodeURIComponent(projectId)}/merge-requests/${encodeURIComponent(mrId)}/close`, {
+    method: 'POST',
+  });
+
+export const approveMergeRequest = (projectId, mrId) =>
+  request(`/api/v1/projects/${encodeURIComponent(projectId)}/merge-requests/${encodeURIComponent(mrId)}/approve`, {
+    method: 'POST',
+  });
+
+export const addMergeRequestComment = (projectId, mrId, body) =>
+  request(`/api/v1/projects/${encodeURIComponent(projectId)}/merge-requests/${encodeURIComponent(mrId)}/comments`, {
+    method: 'POST',
+    body: JSON.stringify({ body }),
+  });
 
 export const listReviews = (projectId, mrId) =>
   request(`/api/v1/projects/${encodeURIComponent(projectId)}/merge-requests/${encodeURIComponent(mrId)}/reviews`);
@@ -92,7 +101,13 @@ export const listReviewComments = (projectId, mrId, params = {}) => {
   return request(`/api/v1/projects/${encodeURIComponent(projectId)}/merge-requests/${encodeURIComponent(mrId)}/comments?${qs}`);
 };
 
-// ── Repository (Phase 4) ──
+export const listIssueComments = (projectId, mrId, params = {}) => {
+  const qs = new URLSearchParams(params);
+  return request(`/api/v1/projects/${encodeURIComponent(projectId)}/merge-requests/${encodeURIComponent(mrId)}/issue-comments?${qs}`);
+};
+
+export const listMrFiles = (projectId, mrId) =>
+  request(`/api/v1/projects/${encodeURIComponent(projectId)}/merge-requests/${encodeURIComponent(mrId)}/files`);
 
 export const getBlame = (projectId, filePath, params = {}) => {
   const qs = new URLSearchParams({ path: filePath, ...params });
@@ -102,6 +117,17 @@ export const getBlame = (projectId, filePath, params = {}) => {
 export const getDetailedLog = (projectId, params = {}) => {
   const qs = new URLSearchParams(params);
   return request(`/api/v1/projects/${encodeURIComponent(projectId)}/repository/log/detailed?${qs}`);
+};
+
+export const getCommitFiles = (projectId, sha) =>
+  request(`/api/v1/projects/${encodeURIComponent(projectId)}/repository/commit/${encodeURIComponent(sha)}/files`);
+
+export const listTrackedFiles = (projectId) =>
+  request(`/api/v1/projects/${encodeURIComponent(projectId)}/repository/files`);
+
+export const getGraphLog = (projectId, count = 50) => {
+  const qs = new URLSearchParams({ count: String(count) });
+  return request(`/api/v1/projects/${encodeURIComponent(projectId)}/repository/log/graph?${qs}`);
 };
 
 export const conflictCheck = (projectId, targetBranch) => {

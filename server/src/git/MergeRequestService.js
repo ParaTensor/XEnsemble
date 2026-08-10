@@ -292,6 +292,42 @@ class MergeRequestService {
         if (!ctx) return [];
         return ctx.provider.listIssueComments(ctx.token, ctx.repoFullName, mr.remoteMrNumber, { apiBase: ctx.apiBase, ...opts });
     }
+
+    async mergePR(project, mrId) {
+        const mr = await this.get(mrId);
+        if (!mr || mr.projectId !== project.id) throw new Error('Merge request not found');
+        const ctx = await this._resolveProvider(project, mr);
+        if (!ctx) throw new Error('Provider not available');
+        const result = await ctx.provider.mergePR(ctx.token, ctx.repoFullName, mr.remoteMrNumber, { apiBase: ctx.apiBase });
+        await this.sync(project, mrId);
+        return result;
+    }
+
+    async closePR(project, mrId) {
+        const mr = await this.get(mrId);
+        if (!mr || mr.projectId !== project.id) throw new Error('Merge request not found');
+        const ctx = await this._resolveProvider(project, mr);
+        if (!ctx) throw new Error('Provider not available');
+        const result = await ctx.provider.closePR(ctx.token, ctx.repoFullName, mr.remoteMrNumber, { apiBase: ctx.apiBase });
+        await this.sync(project, mrId);
+        return result;
+    }
+
+    async approvePR(project, mrId) {
+        const mr = await this.get(mrId);
+        if (!mr || mr.projectId !== project.id) throw new Error('Merge request not found');
+        const ctx = await this._resolveProvider(project, mr);
+        if (!ctx) throw new Error('Provider not available');
+        return ctx.provider.submitApproval(ctx.token, ctx.repoFullName, mr.remoteMrNumber, { apiBase: ctx.apiBase });
+    }
+
+    async addComment(project, mrId, body) {
+        const mr = await this.get(mrId);
+        if (!mr || mr.projectId !== project.id) throw new Error('Merge request not found');
+        const ctx = await this._resolveProvider(project, mr);
+        if (!ctx) throw new Error('Provider not available');
+        return ctx.provider.addIssueComment(ctx.token, ctx.repoFullName, mr.remoteMrNumber, body, { apiBase: ctx.apiBase });
+    }
 }
 
 module.exports = { MergeRequestService };

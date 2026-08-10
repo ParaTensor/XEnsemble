@@ -240,6 +240,57 @@ class GiteaAdapter extends GitProviderService {
         return prs.map(normalizePRInfo);
     }
 
+    // ── PR Actions ──
+
+    async mergePR(token, repoIdentifier, prNumber, { apiBase } = {}) {
+        const { owner, repo } = this.parseRepoIdentifier(repoIdentifier);
+        const res = await giteaFetch(token, apiBase,
+            `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/pulls/${prNumber}/merge`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ Do: 'merge' }),
+        });
+        return { merged: true };
+    }
+
+    async closePR(token, repoIdentifier, prNumber, { apiBase } = {}) {
+        const { owner, repo } = this.parseRepoIdentifier(repoIdentifier);
+        const res = await giteaFetch(token, apiBase,
+            `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/pulls/${prNumber}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ state: 'closed' }),
+        });
+        return { state: res.state || 'closed' };
+    }
+
+    async submitApproval(token, repoIdentifier, prNumber, { apiBase } = {}) {
+        const { owner, repo } = this.parseRepoIdentifier(repoIdentifier);
+        await giteaFetch(token, apiBase,
+            `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/pulls/${prNumber}/reviews`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ event: 'APPROVED' }),
+        });
+        return { approved: true };
+    }
+
+    async addIssueComment(token, repoIdentifier, prNumber, body, { apiBase } = {}) {
+        const { owner, repo } = this.parseRepoIdentifier(repoIdentifier);
+        const res = await giteaFetch(token, apiBase,
+            `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/issues/${prNumber}/comments`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ body }),
+        });
+        return {
+            id: res.id,
+            body: res.body,
+            createdAt: res.created_at,
+            user: { login: res.user?.login, avatarUrl: res.user?.avatar_url },
+        };
+    }
+
     // ── Utility ──
 
     parseRepoIdentifier(fullName) {

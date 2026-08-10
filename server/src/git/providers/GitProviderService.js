@@ -160,6 +160,24 @@ class GitProviderService {
         return [];
     }
 
+    // ── PR Actions ──
+
+    async mergePR(token, repoIdentifier, prNumber, opts) {
+        throw new Error('GitProviderService.mergePR not implemented');
+    }
+
+    async closePR(token, repoIdentifier, prNumber, opts) {
+        throw new Error('GitProviderService.closePR not implemented');
+    }
+
+    async submitApproval(token, repoIdentifier, prNumber, opts) {
+        throw new Error('GitProviderService.submitApproval not implemented');
+    }
+
+    async addIssueComment(token, repoIdentifier, prNumber, body, opts) {
+        throw new Error('GitProviderService.addIssueComment not implemented');
+    }
+
     // ── Utility ──
 
     /**

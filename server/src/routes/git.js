@@ -460,6 +460,67 @@ function registerGitRoutes(fastify) {
             return reply.code(400).send({ error: err.message });
         }
     });
+
+    fastify.post('/api/v1/projects/:id/merge-requests/:mrId/merge', {
+        preValidation: [fastify.authenticate, fastify.requireActive],
+    }, async (request, reply) => {
+        const project = await getProjectForUser(request.user.id, request.params.id);
+        if (!project) return reply.code(404).send({ error: 'Project not found' });
+        try {
+            const result = await mergeRequestService.mergePR(project, request.params.mrId);
+            return result;
+        } catch (err) {
+            request.log.error(err);
+            const isAuth = err.code === 'token_expired' || err.status === 401;
+            return reply.code(isAuth ? 400 : 500).send({ error: err.message, code: isAuth ? 'REAUTH_REQUIRED' : undefined });
+        }
+    });
+
+    fastify.post('/api/v1/projects/:id/merge-requests/:mrId/close', {
+        preValidation: [fastify.authenticate, fastify.requireActive],
+    }, async (request, reply) => {
+        const project = await getProjectForUser(request.user.id, request.params.id);
+        if (!project) return reply.code(404).send({ error: 'Project not found' });
+        try {
+            const result = await mergeRequestService.closePR(project, request.params.mrId);
+            return result;
+        } catch (err) {
+            request.log.error(err);
+            return reply.code(400).send({ error: err.message });
+        }
+    });
+
+    fastify.post('/api/v1/projects/:id/merge-requests/:mrId/approve', {
+        preValidation: [fastify.authenticate, fastify.requireActive],
+    }, async (request, reply) => {
+        const project = await getProjectForUser(request.user.id, request.params.id);
+        if (!project) return reply.code(404).send({ error: 'Project not found' });
+        try {
+            const result = await mergeRequestService.approvePR(project, request.params.mrId);
+            return result;
+        } catch (err) {
+            request.log.error(err);
+            return reply.code(400).send({ error: err.message });
+        }
+    });
+
+    fastify.post('/api/v1/projects/:id/merge-requests/:mrId/comments', {
+        preValidation: [fastify.authenticate, fastify.requireActive],
+    }, async (request, reply) => {
+        const project = await getProjectForUser(request.user.id, request.params.id);
+        if (!project) return reply.code(404).send({ error: 'Project not found' });
+        const body = request.body?.body;
+        if (!body || !String(body).trim()) {
+            return reply.code(400).send({ error: 'Comment body is required' });
+        }
+        try {
+            const result = await mergeRequestService.addComment(project, request.params.mrId, String(body).trim());
+            return reply.code(201).send(result);
+        } catch (err) {
+            request.log.error(err);
+            return reply.code(400).send({ error: err.message });
+        }
+    });
 }
 
 module.exports = { registerGitRoutes };

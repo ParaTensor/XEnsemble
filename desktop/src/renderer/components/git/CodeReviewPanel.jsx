@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { ArrowLeft, Check, ChevronDown, ChevronRight, CircleDot, GitPullRequest, Loader2, MessageSquare, RefreshCw, X } from 'lucide-react';
+import { ArrowLeft, Check, CheckCircle2, ChevronDown, ChevronRight, CircleDot, GitPullRequest, GitMerge, Loader2, MessageSquare, RefreshCw, Send, X, XCircle } from 'lucide-react';
 import * as gitApi from '../../lib/gitApi.js';
 import { useToast } from '../Toast';
 import {
@@ -10,6 +10,7 @@ import {
   textPlaceholder,
   borderHairline,
   bgCanvas,
+  consoleInputClass,
 } from '../../lib/consoleTheme';
 
 const REVIEW_STATE_STYLES = {
@@ -142,6 +143,9 @@ export default function CodeReviewPanel({ projectId, mergeRequestId, mergeReques
   const [loading, setLoading] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const [activeTab, setActiveTab] = useState('reviews');
+  const [actionLoading, setActionLoading] = useState(null);
+  const [commentText, setCommentText] = useState('');
+  const [commentSending, setCommentSending] = useState(false);
   const COMMENTS_PER_PAGE = 50;
 
   const fetchData = useCallback(async () => {
@@ -202,6 +206,65 @@ export default function CodeReviewPanel({ projectId, mergeRequestId, mergeReques
 
   const mrTitle = mergeRequest?.title || mergeRequest?.description || '';
   const mrNumber = mergeRequest?.remoteMrNumber || mergeRequest?.remote_mr_number || '';
+  const mrStatus = mergeRequest?.status || mergeRequest?.remoteState || 'open';
+  const isOpen = mrStatus === 'open';
+  const isMerged = mrStatus === 'merged';
+  const isClosed = mrStatus === 'closed';
+  const hasApproved = reviews.some((r) => r.state === 'APPROVED');
+
+  const handleMerge = async () => {
+    setActionLoading('merge');
+    try {
+      await gitApi.mergeMergeRequest(projectId, mergeRequestId);
+      showToast('success', 'Pull request merged.');
+      await fetchData();
+    } catch (err) {
+      showToast('error', err.message);
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const handleClose = async () => {
+    setActionLoading('close');
+    try {
+      await gitApi.closeMergeRequest(projectId, mergeRequestId);
+      showToast('success', 'Pull request closed.');
+      await fetchData();
+    } catch (err) {
+      showToast('error', err.message);
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const handleApprove = async () => {
+    setActionLoading('approve');
+    try {
+      await gitApi.approveMergeRequest(projectId, mergeRequestId);
+      showToast('success', 'Pull request approved.');
+      await fetchData();
+    } catch (err) {
+      showToast('error', err.message);
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const handleSendComment = async () => {
+    if (!commentText.trim()) return;
+    setCommentSending(true);
+    try {
+      await gitApi.addMergeRequestComment(projectId, mergeRequestId, commentText.trim());
+      setCommentText('');
+      showToast('success', 'Comment added.');
+      await fetchData();
+    } catch (err) {
+      showToast('error', err.message);
+    } finally {
+      setCommentSending(false);
+    }
+  };
 
   return (
     <div className="flex flex-col h-full min-h-0">
@@ -234,19 +297,63 @@ export default function CodeReviewPanel({ projectId, mergeRequestId, mergeReques
             </div>
           )}
         </div>
-        <button
-          type="button"
-          onClick={fetchData}
-          disabled={loading}
-          title="Refresh"
-          className={`shrink-0 ${consoleIconButtonClass}`}
-        >
-          {loading ? (
-            <Loader2 className="h-3.5 w-3.5 animate-spin" />
-          ) : (
-            <RefreshCw className="h-3.5 w-3.5" />
+        <div className="flex items-center gap-1 shrink-0">
+          {isOpen && (
+            <>
+              <button
+                type="button"
+                onClick={handleApprove}
+                disabled={actionLoading !== null || hasApproved}
+                title={hasApproved ? 'Already approved' : 'Approve'}
+                className={`flex items-center gap-1 px-2 h-7 text-[11px] font-medium rounded-md text-green-700 bg-green-50 hover:bg-green-100 disabled:opacity-40 transition-colors ${consoleButtonFocusClass}`}
+              >
+                {actionLoading === 'approve' ? <Loader2 className="h-3 w-3 animate-spin" /> : <CheckCircle2 className="h-3.5 w-3.5" />}
+                Approve
+              </button>
+              <button
+                type="button"
+                onClick={handleMerge}
+                disabled={actionLoading !== null}
+                title="Merge pull request"
+                className={`flex items-center gap-1 px-2 h-7 text-[11px] font-medium rounded-md text-white bg-[#4A7C59] hover:bg-[#3d684a] disabled:opacity-40 transition-colors ${consoleButtonFocusClass}`}
+              >
+                {actionLoading === 'merge' ? <Loader2 className="h-3 w-3 animate-spin" /> : <GitMerge className="h-3.5 w-3.5" />}
+                Merge
+              </button>
+              <button
+                type="button"
+                onClick={handleClose}
+                disabled={actionLoading !== null}
+                title="Close pull request"
+                className={`flex items-center gap-1 px-2 h-7 text-[11px] font-medium rounded-md text-[#5F6368] bg-[#F4F5F6] hover:bg-[#E8EAED] disabled:opacity-40 transition-colors ${consoleButtonFocusClass}`}
+              >
+                {actionLoading === 'close' ? <Loader2 className="h-3 w-3 animate-spin" /> : <XCircle className="h-3.5 w-3.5" />}
+                Close
+              </button>
+            </>
           )}
-        </button>
+          {isMerged && (
+            <span className="flex items-center gap-1 px-2 h-7 text-[11px] font-medium rounded-md text-purple-700 bg-purple-50">
+              <GitMerge className="h-3.5 w-3.5" />
+              Merged
+            </span>
+          )}
+          {isClosed && (
+            <span className="flex items-center gap-1 px-2 h-7 text-[11px] font-medium rounded-md text-[#5F6368] bg-[#F4F5F6]">
+              <XCircle className="h-3.5 w-3.5" />
+              Closed
+            </span>
+          )}
+          <button
+            type="button"
+            onClick={fetchData}
+            disabled={loading}
+            title="Refresh"
+            className={consoleIconButtonClass}
+          >
+            {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
+          </button>
+        </div>
       </div>
 
       {!mergeRequestId ? (
@@ -419,6 +526,33 @@ export default function CodeReviewPanel({ projectId, mergeRequestId, mergeReques
           </div>
           )}
         </>
+      )}
+      {isOpen && (
+        <div className="flex items-end gap-2 border-t border-[#DADCE0] px-3 py-2 shrink-0 bg-white">
+          <textarea
+            value={commentText}
+            onChange={(e) => setCommentText(e.target.value)}
+            placeholder="Leave a comment…"
+            rows={1}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+                e.preventDefault();
+                handleSendComment();
+              }
+            }}
+            className={`flex-1 min-h-[28px] max-h-24 text-xs ${consoleInputClass} resize-none`}
+          />
+          <button
+            type="button"
+            onClick={handleSendComment}
+            disabled={!commentText.trim() || commentSending}
+            title="Comment (Ctrl+Enter)"
+            className={`shrink-0 flex items-center gap-1 px-2.5 h-7 text-[11px] font-medium rounded-md text-white bg-[#5B8DB8] hover:bg-[#4A7298] disabled:opacity-40 transition-colors ${consoleButtonFocusClass}`}
+          >
+            {commentSending ? <Loader2 className="h-3 w-3 animate-spin" /> : <Send className="h-3 w-3" />}
+            Comment
+          </button>
+        </div>
       )}
     </div>
   );
