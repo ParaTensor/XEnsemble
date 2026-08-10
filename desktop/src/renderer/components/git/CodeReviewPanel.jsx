@@ -5,6 +5,7 @@ import { useToast } from '../Toast';
 import {
   consoleIconButtonClass,
   consoleButtonFocusClass,
+  consoleInputClass,
   textPrimary,
   textSecondary,
   textPlaceholder,
@@ -133,7 +134,7 @@ function CommentItem({ comment, mrFiles, renderDiffLines }) {
   );
 }
 
-export default function CodeReviewPanel({ projectId, mergeRequestId, mergeRequest, onBack }) {
+export default function CodeReviewPanel({ projectId, mergeRequestId, mergeRequest, onBack, onChanged }) {
   const { showToast } = useToast();
   const [reviews, setReviews] = useState([]);
   const [comments, setComments] = useState([]);
@@ -206,33 +207,49 @@ export default function CodeReviewPanel({ projectId, mergeRequestId, mergeReques
 
   const mrTitle = mergeRequest?.title || mergeRequest?.description || '';
   const mrNumber = mergeRequest?.remoteMrNumber || mergeRequest?.remote_mr_number || '';
-  const mrStatus = mergeRequest?.status || mergeRequest?.remoteState || 'open';
+  const mrStatus = mergeRequest?.status || (mergeRequest?.remoteState === 'opened' ? 'open' : mergeRequest?.remoteState) || 'open';
   const isOpen = mrStatus === 'open';
   const isMerged = mrStatus === 'merged';
   const isClosed = mrStatus === 'closed';
-  const hasApproved = reviews.some((r) => r.state === 'APPROVED');
+
+  const refreshMR = () => {
+    fetchData();
+    onChanged?.();
+  };
 
   const handleMerge = async () => {
+    if (!window.confirm('Merge this pull request? This action cannot be undone.')) return;
     setActionLoading('merge');
     try {
       await gitApi.mergeMergeRequest(projectId, mergeRequestId);
       showToast('success', 'Pull request merged.');
-      await fetchData();
+      refreshMR();
     } catch (err) {
-      showToast('error', err.message);
+      if (err.code === 'REAUTH_REQUIRED') {
+        showToast('warning', err.message);
+        window.dispatchEvent(new CustomEvent('xe:open-settings'));
+      } else {
+        showToast('error', err.message);
+      }
     } finally {
       setActionLoading(null);
     }
   };
 
   const handleClose = async () => {
+    if (!window.confirm('Close this pull request without merging?')) return;
     setActionLoading('close');
     try {
       await gitApi.closeMergeRequest(projectId, mergeRequestId);
       showToast('success', 'Pull request closed.');
-      await fetchData();
+      refreshMR();
     } catch (err) {
-      showToast('error', err.message);
+      if (err.code === 'REAUTH_REQUIRED') {
+        showToast('warning', err.message);
+        window.dispatchEvent(new CustomEvent('xe:open-settings'));
+      } else {
+        showToast('error', err.message);
+      }
     } finally {
       setActionLoading(null);
     }
@@ -243,9 +260,14 @@ export default function CodeReviewPanel({ projectId, mergeRequestId, mergeReques
     try {
       await gitApi.approveMergeRequest(projectId, mergeRequestId);
       showToast('success', 'Pull request approved.');
-      await fetchData();
+      refreshMR();
     } catch (err) {
-      showToast('error', err.message);
+      if (err.code === 'REAUTH_REQUIRED') {
+        showToast('warning', err.message);
+        window.dispatchEvent(new CustomEvent('xe:open-settings'));
+      } else {
+        showToast('error', err.message);
+      }
     } finally {
       setActionLoading(null);
     }
@@ -258,9 +280,14 @@ export default function CodeReviewPanel({ projectId, mergeRequestId, mergeReques
       await gitApi.addMergeRequestComment(projectId, mergeRequestId, commentText.trim());
       setCommentText('');
       showToast('success', 'Comment added.');
-      await fetchData();
+      refreshMR();
     } catch (err) {
-      showToast('error', err.message);
+      if (err.code === 'REAUTH_REQUIRED') {
+        showToast('warning', err.message);
+        window.dispatchEvent(new CustomEvent('xe:open-settings'));
+      } else {
+        showToast('error', err.message);
+      }
     } finally {
       setCommentSending(false);
     }
@@ -303,8 +330,8 @@ export default function CodeReviewPanel({ projectId, mergeRequestId, mergeReques
               <button
                 type="button"
                 onClick={handleApprove}
-                disabled={actionLoading !== null || hasApproved}
-                title={hasApproved ? 'Already approved' : 'Approve'}
+                disabled={actionLoading !== null}
+                title="Approve this pull request"
                 className={`flex items-center gap-1 px-2 h-7 text-[11px] font-medium rounded-md text-green-700 bg-green-50 hover:bg-green-100 disabled:opacity-40 transition-colors ${consoleButtonFocusClass}`}
               >
                 {actionLoading === 'approve' ? <Loader2 className="h-3 w-3 animate-spin" /> : <CheckCircle2 className="h-3.5 w-3.5" />}

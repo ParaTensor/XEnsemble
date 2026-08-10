@@ -34,6 +34,7 @@ async function gitlabFetch(token, apiBase, path, opts = {}) {
         ...opts,
         headers: {
             Authorization: `Bearer ${token}`,
+            ...(opts.body ? { 'Content-Type': 'application/json' } : {}),
             ...opts.headers,
         },
     };

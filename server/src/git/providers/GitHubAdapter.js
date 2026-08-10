@@ -43,7 +43,11 @@ async function githubFetch(token, apiBase, path, opts = {}) {
     const url = `${apiBase}${path}`;
     const options = {
         ...fetchOpts,
-        headers: { ...authHeaders(token), ...fetchOpts.headers },
+        headers: {
+            ...authHeaders(token),
+            ...(opts.body ? { 'Content-Type': 'application/json' } : {}),
+            ...fetchOpts.headers,
+        },
     };
 
     let res;

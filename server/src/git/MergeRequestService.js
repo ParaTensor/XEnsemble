@@ -299,7 +299,7 @@ class MergeRequestService {
         const ctx = await this._resolveProvider(project, mr);
         if (!ctx) throw new Error('Provider not available');
         const result = await ctx.provider.mergePR(ctx.token, ctx.repoFullName, mr.remoteMrNumber, { apiBase: ctx.apiBase });
-        await this.sync(project, mrId);
+        try { await this.sync(project, mrId); } catch (_) {}
         return result;
     }
 
@@ -309,7 +309,7 @@ class MergeRequestService {
         const ctx = await this._resolveProvider(project, mr);
         if (!ctx) throw new Error('Provider not available');
         const result = await ctx.provider.closePR(ctx.token, ctx.repoFullName, mr.remoteMrNumber, { apiBase: ctx.apiBase });
-        await this.sync(project, mrId);
+        try { await this.sync(project, mrId); } catch (_) {}
         return result;
     }
 

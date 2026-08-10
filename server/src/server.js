@@ -880,7 +880,8 @@ fastify.get('/api/v1/projects/:projectId/merge-requests/:mrId/comments', {
 
         const repoId = project.remoteFullName || project.githubFullName;
         const page = request.query?.page ? Number(request.query.page) : 1;
-        const comments = await adapter.listReviewComments(token, repoId, prNumber, { page, apiBase: config?.apiBase });
+        const perPage = request.query?.per_page ? Number(request.query.per_page) : 30;
+        const comments = await adapter.listReviewComments(token, repoId, prNumber, { page, perPage, apiBase: config?.apiBase });
         return { comments };
     } catch (err) {
         request.log.error(err);
@@ -918,7 +919,8 @@ fastify.get('/api/v1/projects/:projectId/merge-requests/:mrId/issue-comments', {
 
         const repoId = project.remoteFullName || project.githubFullName;
         const page = request.query?.page ? Number(request.query.page) : 1;
-        const comments = await adapter.listIssueComments(token, repoId, prNumber, { page, apiBase: config?.apiBase });
+        const perPage = request.query?.per_page ? Number(request.query.per_page) : 30;
+        const comments = await adapter.listIssueComments(token, repoId, prNumber, { page, perPage, apiBase: config?.apiBase });
         return { comments };
     } catch (err) {
         request.log.error(err);

@@ -9,7 +9,9 @@ async function request(path, options = {}) {
     data = {};
   }
   if (!res.ok) {
-    throw new Error(data.error || data.message || `Request failed: ${res.status}`);
+    const e = new Error(data.error || data.message || `Request failed: ${res.status}`);
+    if (data.code) e.code = data.code;
+    throw e;
   }
   return data;
 }

@@ -485,6 +485,7 @@ const WorkspacePanel = memo(function WorkspacePanel({
                   mergeRequestId={selectedMR.id}
                   mergeRequest={selectedMR}
                   onBack={() => setSelectedMR(null)}
+                  onChanged={() => setPrRefreshTrigger((n) => n + 1)}
                 />
               </div>
             ) : (

@@ -486,7 +486,8 @@ function registerGitRoutes(fastify) {
             return result;
         } catch (err) {
             request.log.error(err);
-            return reply.code(400).send({ error: err.message });
+            const isAuth = err.code === 'token_expired' || err.status === 401;
+            return reply.code(isAuth ? 400 : 500).send({ error: err.message, code: isAuth ? 'REAUTH_REQUIRED' : undefined });
         }
     });
 
@@ -500,7 +501,8 @@ function registerGitRoutes(fastify) {
             return result;
         } catch (err) {
             request.log.error(err);
-            return reply.code(400).send({ error: err.message });
+            const isAuth = err.code === 'token_expired' || err.status === 401;
+            return reply.code(isAuth ? 400 : 500).send({ error: err.message, code: isAuth ? 'REAUTH_REQUIRED' : undefined });
         }
     });
 
@@ -518,7 +520,8 @@ function registerGitRoutes(fastify) {
             return reply.code(201).send(result);
         } catch (err) {
             request.log.error(err);
-            return reply.code(400).send({ error: err.message });
+            const isAuth = err.code === 'token_expired' || err.status === 401;
+            return reply.code(isAuth ? 400 : 500).send({ error: err.message, code: isAuth ? 'REAUTH_REQUIRED' : undefined });
         }
     });
 }
