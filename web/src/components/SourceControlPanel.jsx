@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import {
   GitBranch, GitCommit, GitPullRequest, RefreshCw, PanelLeftClose, ArrowUp, ArrowDown,
   Plus, Minus, Loader2, ChevronRight, ChevronDown, ChevronsDownUp, ChevronsUpDown, FileText,
-  Upload, Download, AlertTriangle,
+  Upload, Download, AlertTriangle, RotateCcw,
 } from 'lucide-react';
 import { consoleButtonFocusClass, consoleInputClass } from '../lib/consoleTheme';
 import { consoleDropdownPanelClass, consoleMenuDropdownZClass } from '../lib/consoleTokens';
@@ -151,6 +151,30 @@ export default function SourceControlPanel({ projectId, gitChanges, onJumpToFile
       } catch (_) {}
     }
   }, [gitChanges, expandedFiles, projectId]);
+
+  const [discarding, setDiscarding] = useState(false);
+
+  const handleDiscardFile = useCallback(async (path) => {
+    if (!window.confirm(`Discard changes to ${path}? This cannot be undone.`)) return;
+    setFileDiffs((prev) => { const next = { ...prev }; delete next[path]; return next; });
+    await gitChanges?.discard([path]);
+  }, [gitChanges]);
+
+  const handleDiscardAll = useCallback(async () => {
+    const allPaths = [...gitStagedFiles, ...gitUnstagedFiles].map((f) => f.path).filter(Boolean);
+    if (allPaths.length === 0) return;
+    if (!window.confirm(`Discard all ${allPaths.length} change(s)? This cannot be undone.`)) return;
+    setDiscarding(true);
+    try {
+      setFileDiffs({});
+      await gitChanges?.discard(allPaths);
+      showToast('success', 'All changes discarded.');
+    } catch (err) {
+      showToast('error', err.message || 'Discard failed');
+    } finally {
+      setDiscarding(false);
+    }
+  }, [gitStagedFiles, gitUnstagedFiles, gitChanges, showToast]);
 
   const handleCommit = useCallback(async () => {
     if (!commitMessage.trim()) return;
@@ -367,6 +391,13 @@ export default function SourceControlPanel({ projectId, gitChanges, onJumpToFile
               )}
             </button>
           )}
+          <button
+            onClick={() => handleDiscardFile(f.path)}
+            title="Discard changes"
+            className={`shrink-0 p-1 rounded text-zinc-400 hover:text-[#C06C5D] hover:bg-[#DADCE0] transition-opacity ${consoleButtonFocusClass}`}
+          >
+            <RotateCcw className="h-3 w-3" />
+          </button>
         </div>
         {isExpanded && (
           <div className="border-t border-[#E8EAED] bg-[#FAFAFA]">
@@ -674,6 +705,18 @@ export default function SourceControlPanel({ projectId, gitChanges, onJumpToFile
             >
               <GitPullRequest className="h-3.5 w-3.5" />
               Create PR
+            </button>
+          )}
+          {gitHasChanges && (
+            <button
+              type="button"
+              role="menuitem"
+              disabled={discarding}
+              onClick={() => { setActionMenuOpen(false); handleDiscardAll(); }}
+              className={`w-full flex items-center gap-2 px-3 py-2 text-sm text-left text-[#C06C5D] hover:bg-red-50 disabled:opacity-40 ${consoleButtonFocusClass}`}
+            >
+              {discarding ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RotateCcw className="h-3.5 w-3.5" />}
+              Discard All
             </button>
           )}
         </div>,

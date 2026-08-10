@@ -107,6 +107,24 @@ function registerProjectGitRoutes(fastify) {
         }
     });
 
+    fastify.post('/api/v1/projects/:id/git/discard', {
+        preValidation: [fastify.authenticate, fastify.requireActive],
+    }, async (request, reply) => {
+        const project = await getProjectForUser(request.user.id, request.params.id);
+        if (!project) return reply.code(404).send({ error: 'Project not found' });
+        const files = request.body?.files;
+        if (!Array.isArray(files) || files.length === 0) {
+            return reply.code(400).send({ error: 'files array is required' });
+        }
+        try {
+            await gitOperationService.discardChanges(project, files);
+            return { ok: true };
+        } catch (err) {
+            request.log.error(err);
+            return reply.code(500).send({ error: err.message });
+        }
+    });
+
     fastify.post('/api/v1/projects/:id/git/push', {
         preValidation: [fastify.authenticate, fastify.requireActive],
     }, async (request, reply) => {

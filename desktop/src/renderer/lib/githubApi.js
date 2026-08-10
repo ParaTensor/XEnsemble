@@ -9,7 +9,9 @@ async function request(path, options = {}) {
     data = {};
   }
   if (!res.ok) {
-    throw new Error(data.error || data.message || `Request failed: ${res.status}`);
+    const err = new Error(data.error || data.message || `Request failed: ${res.status}`);
+    if (data.code) err.code = data.code;
+    throw err;
   }
   return data;
 }
@@ -20,6 +22,12 @@ export function openExternal(url) {
 
 export const getGitStatus = (projectId) =>
   request(`/api/v1/projects/${encodeURIComponent(projectId)}/git/status`);
+
+export const getGitStatusLight = (projectId) =>
+  request(`/api/v1/projects/${encodeURIComponent(projectId)}/git/status?mode=light`);
+
+export const getCloneStatus = (projectId) =>
+  request(`/api/v1/projects/${encodeURIComponent(projectId)}/git/clone-status`);
 
 export const commitStaged = (projectId, message, author) => {
   const body = { message };
@@ -38,6 +46,12 @@ export const stageFiles = (projectId, files) =>
 
 export const unstageFiles = (projectId, files) =>
   request(`/api/v1/projects/${encodeURIComponent(projectId)}/git/unstage`, {
+    method: 'POST',
+    body: JSON.stringify({ files }),
+  });
+
+export const discardFiles = (projectId, files) =>
+  request(`/api/v1/projects/${encodeURIComponent(projectId)}/git/discard`, {
     method: 'POST',
     body: JSON.stringify({ files }),
   });
@@ -94,7 +108,7 @@ export const createBranch = (projectId, name, baseBranch) => {
 };
 
 export const createPullRequest = (projectId, payload) =>
-  request(`/api/v1/projects/${encodeURIComponent(projectId)}/pull-requests`, {
+  request(`/api/v1/projects/${encodeURIComponent(projectId)}/merge-requests`, {
     method: 'POST',
     body: JSON.stringify(payload),
   });

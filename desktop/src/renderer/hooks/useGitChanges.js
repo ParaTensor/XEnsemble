@@ -3,7 +3,7 @@ import { useGitStatus } from './useGitStatus';
 import * as githubApi from '../lib/githubApi';
 
 export function useGitChanges(projectId, fullPollEnabledRef) {
-  const { status, loading, operation, commit, push, pull, fetchRemote, switchBranch, createBranch, fetchStatus } = useGitStatus(projectId, fullPollEnabledRef);
+  const { status, loading, operation, commit: originalCommit, push: originalPush, pull: originalPull, fetchRemote: originalFetchRemote, switchBranch: originalSwitchBranch, createBranch: originalCreateBranch, fetchStatus } = useGitStatus(projectId, fullPollEnabledRef);
   const [optimistic, setOptimistic] = useState(null);
 
   useEffect(() => {
@@ -44,6 +44,25 @@ export function useGitChanges(projectId, fullPollEnabledRef) {
     }
   }, [projectId]);
 
+  const commit = useCallback(async (message, author) => {
+    const result = await originalCommit(message, author);
+    setOptimistic(null);
+    await fetchStatus({ silent: true });
+    return result;
+  }, [originalCommit, fetchStatus]);
+
+  const push = useCallback(async () => {
+    const result = await originalPush();
+    setOptimistic(null);
+    return result;
+  }, [originalPush]);
+
+  const pull = useCallback(async () => {
+    const result = await originalPull();
+    setOptimistic(null);
+    return result;
+  }, [originalPull]);
+
   const stage = useCallback(async (files) => {
     if (!projectId || !files?.length) return;
     const fileSet = new Set(files);
@@ -80,6 +99,22 @@ export function useGitChanges(projectId, fullPollEnabledRef) {
     fetchStatus({ silent: true });
   }, [projectId, fetchStatus, status]);
 
+  const discard = useCallback(async (files) => {
+    if (!projectId || !files?.length) return;
+    const fileSet = new Set(files);
+    setOptimistic((prev) => {
+      const base = prev || status;
+      if (!base) return null;
+      return {
+        ...base,
+        stagedFiles: (base.stagedFiles || []).filter((f) => !fileSet.has(f.path)),
+        unstagedFiles: (base.unstagedFiles || []).filter((f) => !fileSet.has(f.path)),
+      };
+    });
+    await githubApi.discardFiles(projectId, files);
+    fetchStatus({ silent: true });
+  }, [projectId, fetchStatus, status]);
+
   return {
     branch: merged?.branch,
     sha: merged?.sha,
@@ -99,14 +134,15 @@ export function useGitChanges(projectId, fullPollEnabledRef) {
     commit,
     push,
     pull,
-    fetchRemote,
-    switchBranch,
-    createBranch,
+    fetchRemote: originalFetchRemote,
+    switchBranch: originalSwitchBranch,
+    createBranch: originalCreateBranch,
     fetchStatus,
     getFileDiff,
     getHeadContent,
     stage,
     unstage,
+    discard,
   };
 }
 

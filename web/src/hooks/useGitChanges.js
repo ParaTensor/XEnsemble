@@ -99,6 +99,22 @@ export function useGitChanges(projectId, fullPollEnabledRef) {
     fetchStatus({ silent: true });
   }, [projectId, fetchStatus, status]);
 
+  const discard = useCallback(async (files) => {
+    if (!projectId || !files?.length) return;
+    const fileSet = new Set(files);
+    setOptimistic((prev) => {
+      const base = prev || status;
+      if (!base) return null;
+      return {
+        ...base,
+        stagedFiles: (base.stagedFiles || []).filter((f) => !fileSet.has(f.path)),
+        unstagedFiles: (base.unstagedFiles || []).filter((f) => !fileSet.has(f.path)),
+      };
+    });
+    await githubApi.discardFiles(projectId, files);
+    fetchStatus({ silent: true });
+  }, [projectId, fetchStatus, status]);
+
   return {
     branch: merged?.branch,
     sha: merged?.sha,
@@ -126,6 +142,7 @@ export function useGitChanges(projectId, fullPollEnabledRef) {
     getHeadContent,
     stage,
     unstage,
+    discard,
   };
 }
 

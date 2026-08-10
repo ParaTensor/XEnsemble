@@ -478,6 +478,33 @@ class GitOperationService {
         });
     }
 
+    async discardChanges(project, filePaths) {
+        return this._mutate(project, async () => {
+            const safePaths = filePaths.map(assertRepoRelativePath);
+            const statusOut = await this._execGit(project, ['status', '--porcelain=v1', '--', ...safePaths]);
+            const lines = statusOut.stdout.split('\n').filter(Boolean);
+
+            const trackedPaths = [];
+            const untrackedPaths = [];
+            for (const line of lines) {
+                const status = line.slice(0, 2);
+                const path = line.slice(3).trim();
+                if (status[0] === '?' && status[1] === '?') {
+                    untrackedPaths.push(path);
+                } else {
+                    trackedPaths.push(path);
+                }
+            }
+
+            if (trackedPaths.length > 0) {
+                await this._execGit(project, ['checkout', '--', ...trackedPaths]);
+            }
+            if (untrackedPaths.length > 0) {
+                await this._execGit(project, ['clean', '-fd', '--', ...untrackedPaths]);
+            }
+        });
+    }
+
     async pushBranch(project, branchName, { force = false } = {}) {
         return this._mutate(project, async () => {
             const args = ['push', '-u', 'origin', assertGitBranch(branchName)];
