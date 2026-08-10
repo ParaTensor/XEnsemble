@@ -2,6 +2,7 @@ import React, { useState, useRef, useCallback } from 'react';
 import { Routes, Route, useNavigate, useLocation, Navigate } from 'react-router-dom';
 import Login from './pages/Login';
 import Sessions from './pages/Sessions';
+import StartSessionPage from './pages/StartSessionPage';
 import AgentsAdmin from './pages/AgentsAdmin';
 import ImagesManager from './pages/ImagesManager';
 import UsersAdmin from './pages/UsersAdmin';
@@ -28,6 +29,7 @@ function AuthenticatedLayout({
   activeSession,
   setActiveSession,
   fetchWorkspaces,
+  fetchProjects,
   logout,
   showSettingsModal,
   setShowSettingsModal,
@@ -37,6 +39,7 @@ function AuthenticatedLayout({
   const sessionsRef = useRef(null);
 
   const isSessions = location.pathname === '/sessions';
+  const isStartSession = location.pathname === '/sessions/new';
   const isAgentsAdmin = location.pathname === '/admin/agents';
   const isUsersAdmin = location.pathname === '/admin/users';
   const isGatewayAdmin = location.pathname === '/admin/gateway';
@@ -70,9 +73,9 @@ function AuthenticatedLayout({
         activeSession={activeSession}
         fetchWorkspaces={fetchWorkspaces}
         onSelectSession={onSelectSession}
-        onCreateWorkspace={() => sessionsRef.current?.openLaunchModal?.('workspace')}
+        onCreateWorkspace={() => sessionsRef.current?.openNewWorkspaceModal?.()}
         onImportFromGit={() => sessionsRef.current?.openImportDialog?.()}
-        onNewAgent={() => sessionsRef.current?.openLaunchModal?.('session')}
+        onNewAgent={() => navigate('/sessions/new')}
         onRequestDeleteSession={(session, ws) => sessionsRef.current?.requestDeleteSession?.(session, ws)}
         onRequestDeleteWorkspace={(ws) => sessionsRef.current?.requestDeleteWorkspace?.(ws)}
         onArchiveSession={onArchiveSession}
@@ -101,6 +104,24 @@ function AuthenticatedLayout({
           )}
           aria-hidden={!isSessions}
         />
+        <div
+          className={cn(
+            'flex h-full min-h-0 flex-1 flex-col',
+            isStartSession ? 'relative z-10' : offRouteClass,
+          )}
+          aria-hidden={!isStartSession}
+        >
+          <StartSessionPage
+            key={`${location.pathname}${location.search}`}
+            agents={agents}
+            projects={projects}
+            setProjects={setProjects}
+            setSessions={setSessions}
+            setActiveSession={setActiveSession}
+            fetchWorkspaces={fetchWorkspaces}
+            fetchProjects={fetchProjects}
+          />
+        </div>
         {user?.role === 'admin' && isAgentsAdmin && (
             <div
               className={cn(
@@ -165,6 +186,7 @@ function App() {
     activeSession,
     setActiveSession,
     fetchWorkspaces,
+    fetchProjects,
   } = useWorkspaces(user);
 
   React.useEffect(() => {
@@ -279,6 +301,7 @@ function App() {
                     activeSession={activeSession}
                     setActiveSession={setActiveSession}
                     fetchWorkspaces={fetchWorkspaces}
+                    fetchProjects={fetchProjects}
                     logout={logout}
                     showSettingsModal={showSettingsModal}
                     setShowSettingsModal={setShowSettingsModal}
@@ -289,6 +312,7 @@ function App() {
               }
             >
               <Route path="/sessions" element={null} />
+              <Route path="/sessions/new" element={null} />
               <Route path="/custom-images" element={null} />
               <Route path="/console" element={<Navigate to="/sessions" replace />} />
               <Route

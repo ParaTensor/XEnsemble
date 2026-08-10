@@ -12,7 +12,6 @@ import {
   ConsoleDialogShell,
   ConsoleInlineDialog,
 } from '../components/ConsoleDialog';
-import SelectMenu from '../components/SelectMenu';
 import { useToast } from '../components/Toast';
 import { useTerminalTheme } from '../hooks/useTerminalTheme.jsx';
 import { useEditorTabs } from '../hooks/useEditorTabs';
@@ -25,7 +24,6 @@ import {
   X,
   RefreshCw,
   Plus,
-  Bot,
   PanelRightOpen,
   PanelRightClose,
   FileText,
@@ -33,6 +31,7 @@ import {
   Unplug,
   Loader2,
   Trash2,
+  Check,
 } from 'lucide-react';
 import { getSecretLabel, getSecretPlaceholder, isSecretPasswordField } from '../lib/secretLabels';
 import AgentConfigEditor from '../components/AgentConfigEditor';
@@ -43,7 +42,6 @@ import {
   purgeWorkspaceSidebarPrefs,
   rememberRecentSession,
   replaceRecentSessionId,
-  sortAgentsByRecentUsage,
   rememberRecentAgent,
 } from '../lib/sidebarPrefs';
 import {
@@ -64,14 +62,6 @@ import {
   hoverBgTertiary,
   hoverTextPrimary,
 } from '../lib/consoleTheme.js';
-
-const DEFAULT_AGENT_ID = 'kimi-code';
-
-function pickDefaultAgentId(agents, preferredId) {
-  if (preferredId && agents.some((a) => a.id === preferredId)) return preferredId;
-  const preferred = agents.find((a) => a.id === DEFAULT_AGENT_ID) || agents[0];
-  return preferred?.id || '';
-}
 
 const SLUG_WORDS = [
   'small', 'heavy', 'many', 'quiet', 'swift', 'bright', 'calm', 'bold', 'brave', 'clear',
@@ -101,15 +91,11 @@ export default React.forwardRef(function Sessions({
     if (location.pathname !== '/sessions') navigate('/sessions');
   }, [location.pathname, navigate]);
 
-  const [selectedAgentId, setSelectedAgentId] = useState('');
   const [newProjectName, setNewProjectName] = useState('');
-  const [launchModalMode, setLaunchModalMode] = useState('workspace');
-  const [launchWorkspaceId, setLaunchWorkspaceId] = useState('');
+  const [showNewWorkspaceModal, setShowNewWorkspaceModal] = useState(false);
+  const [workspaceModalError, setWorkspaceModalError] = useState(null);
   const [projectCreating, setProjectCreating] = useState(false);
-  const [launchModalError, setLaunchModalError] = useState(null);
-  const [startSessionAfterCreate, setStartSessionAfterCreate] = useState(true);
-  const [isLoading, setIsLoading] = useState(false);
-  const [launchingSession, setLaunchingSession] = useState(false);
+  const [showImportDialog, setShowImportDialog] = useState(false);
   // eslint-disable-next-line no-unused-vars
   const [_error, setError] = useState(null);
   const [panelOpen, setPanelOpen] = useState(true);
@@ -158,12 +144,6 @@ export default React.forwardRef(function Sessions({
   const preview = usePreview(activeSession?.projectId, Boolean(activeSession?.projectId));
   const [gitDiffView, setGitDiffView] = useState(null);
 
-  const [configEnvVars, setConfigEnvVars] = useState([{ key: '', value: '' }]);
-  const [savedConfigKeys, setSavedConfigKeys] = useState({});
-  const configModalInitialKeysRef = useRef(null);
-  const [configSaving, setConfigSaving] = useState(false);
-  const [configLoading, setConfigLoading] = useState(false);
-  const [configError, setConfigError] = useState(null);
   const { showToast } = useToast();
   const { themeId, preset } = useTerminalTheme();
   // eslint-disable-next-line no-unused-vars
@@ -175,16 +155,6 @@ export default React.forwardRef(function Sessions({
   const [deleteConfirmWorkspace, setDeleteConfirmWorkspace] = useState(null);
   const [deletingWorkspaceId, setDeletingWorkspaceId] = useState(null);
 
-  const [showNewInstanceModal, setShowNewInstanceModal] = useState(false);
-  const [showImportDialog, setShowImportDialog] = useState(false);
-  const [createNewWorkspaceInline, setCreateNewWorkspaceInline] = useState(false);
-  const [customImageId, setCustomImageId] = useState('');
-  const [customImages, setCustomImages] = useState([]);
-
-  // Launch modal: agent config files
-  const [launchConfigFiles, setLaunchConfigFiles] = useState([]);
-  const [showLaunchConfigModal, setShowLaunchConfigModal] = useState(false);
-
   // Session config dialog (running session)
   const [showSessionConfigModal, setShowSessionConfigModal] = useState(false);
   const [sessionConfigFiles, setSessionConfigFiles] = useState([]);
@@ -193,11 +163,6 @@ export default React.forwardRef(function Sessions({
   const [sessionConfigSaving, setSessionConfigSaving] = useState(false);
   const [sessionConfigError, setSessionConfigError] = useState(null);
   const [showRestartPrompt, setShowRestartPrompt] = useState(false);
-
-  // Reset launch config when agent changes
-  useEffect(() => {
-    setLaunchConfigFiles([]);
-  }, [selectedAgentId]);
 
   const startPanelResize = useCallback((e) => {
     e.preventDefault();
@@ -227,10 +192,6 @@ export default React.forwardRef(function Sessions({
   );
 
   useEffect(() => {
-    if (activeSession) setLaunchingSession(false);
-  }, [activeSession]);
-
-  useEffect(() => {
     if (!activeSession?.projectId) {
       setPanelOpen(false);
       setShellMounted(false);
@@ -241,72 +202,6 @@ export default React.forwardRef(function Sessions({
     setFileContent('');
   }, [activeSession?.projectId]);
 
-  useEffect(() => {
-    if (agents.length === 0) return;
-    setSelectedAgentId((prev) => pickDefaultAgentId(agents, prev));
-  }, [agents]);
-
-  const fetchCustomImages = useCallback(() => {
-    return apiFetch('/api/v1/custom-images').then((res) => res.json()).then((data) => {
-      const list = data.images || (Array.isArray(data) ? data : []);
-      setCustomImages(list.filter((img) => img.status === 'ready'));
-    }).catch(() => {
-      setCustomImages([]);
-    });
-  }, []);
-
-  useEffect(() => {
-    fetchCustomImages();
-  }, [fetchCustomImages]);
-
-  const selectedAgent = agents.find(a => a.id === selectedAgentId);
-
-  const openLaunchConfigModal = async () => {
-    const required = selectedAgent?.env_required || [];
-    setConfigError(null);
-    setError(null);
-    setShowLaunchConfigModal(true);
-    setConfigLoading(true);
-    try {
-      const res = await apiFetch('/api/v1/secrets');
-      const data = await res.json();
-      if (res.ok) {
-        const allKeys = Object.keys(data);
-        const seen = new Set();
-        const envVars = [];
-        for (const key of required) {
-          const val = data[key];
-          envVars.push({ key, value: val === '***' ? '' : (val || '') });
-          seen.add(key);
-        }
-        for (const key of allKeys) {
-          if (!seen.has(key)) {
-            envVars.push({ key, value: data[key] === '***' ? '' : (data[key] || '') });
-          }
-        }
-        setConfigEnvVars(envVars);
-        configModalInitialKeysRef.current = new Set(allKeys);
-        const saved = {};
-        allKeys.forEach((k) => { if (data[k]) saved[k] = true; });
-        setSavedConfigKeys(saved);
-      } else {
-        setConfigEnvVars(required.map((key) => ({ key, value: '' })));
-      }
-    } catch {
-      setConfigEnvVars(required.map((key) => ({ key, value: '' })));
-      setConfigError('Could not load saved keys.');
-    } finally {
-      setConfigLoading(false);
-    }
-  };
-
-  const configRequiredKeys = selectedAgent?.env_required || [];
-  // eslint-disable-next-line no-unused-vars
-  const configMissingKeys = useMemo(
-    () => configRequiredKeys.filter((k) => !savedConfigKeys[k]),
-    [configRequiredKeys, savedConfigKeys],
-  );
-
   const ensureAgentSecrets = async (agent) => {
     const required = agent?.env_required || [];
     if (required.length === 0 || agent?.llm_auth_mode === 'gateway') return true;
@@ -314,12 +209,8 @@ export default React.forwardRef(function Sessions({
       const res = await apiFetch('/api/v1/secrets');
       const data = await res.json();
       if (!res.ok) return false;
-      const missing = required.filter((k) => !data[k]);
-      if (missing.length === 0) return true;
-      openLaunchConfigModal();
-      return false;
+      return required.every((k) => Boolean(data[k]));
     } catch {
-      openLaunchConfigModal();
       return false;
     }
   };
@@ -327,11 +218,12 @@ export default React.forwardRef(function Sessions({
   const handleCreateProject = async (nameOverride) => {
     const name = (nameOverride ?? newProjectName).trim() || defaultWorkspaceName();
     setProjectCreating(true);
+    setWorkspaceModalError(null);
     setError(null);
     try {
       const res = await apiFetch('/api/v1/projects', {
         method: 'POST',
-        body: JSON.stringify({ name })
+        body: JSON.stringify({ name }),
       });
       const data = await res.json();
       if (!res.ok) {
@@ -345,266 +237,29 @@ export default React.forwardRef(function Sessions({
       }
       return { id: data.id, name: data.name || name };
     } catch (err) {
-      setLaunchModalError(err.message);
+      setWorkspaceModalError(err.message);
       return null;
     } finally {
       setProjectCreating(false);
     }
   };
 
-  const handleStartSession = async (projectId, projectName, { closeLaunchModal = true } = {}) => {
-    if (!selectedAgentId || !selectedAgent) return false;
-    if (!projectId) {
-      setLaunchModalError('Could not create workspace for this session.');
-      return false;
-    }
-    setIsLoading(true);
-    setLaunchModalError(null);
-    setError(null);
-    try {
-      const ready = await ensureAgentSecrets(selectedAgent);
-      if (!ready) {
-        setLaunchModalError('Configure required API keys before launching.');
-        return false;
-      }
+  const openNewWorkspaceModal = useCallback(() => {
+    setWorkspaceModalError(null);
+    setNewProjectName('');
+    setShowNewWorkspaceModal(true);
+  }, []);
 
-      // Collect non-empty config files from launch modal
-      const cleanConfigFiles = launchConfigFiles.filter((f) => f.path && f.content);
-
-      // Collect non-required env vars as custom_env (required ones are injected via secrets)
-      const requiredSet = new Set(selectedAgent?.env_required || []);
-      const cleanCustomEnv = {};
-      for (const { key, value } of configEnvVars) {
-        const k = (key || '').trim();
-        const v = (value || '').trim();
-        if (k && v && !requiredSet.has(k)) cleanCustomEnv[k] = v;
-      }
-
-      const response = await apiFetch('/api/v1/session/start', {
-        method: 'POST',
-        body: JSON.stringify({
-          agent_id: selectedAgentId,
-          project_id: projectId,
-          terminal_theme_id: themeId,
-          custom_image_id: customImageId || undefined,
-          ...(cleanConfigFiles.length ? { config_files: cleanConfigFiles } : {}),
-          ...(Object.keys(cleanCustomEnv).length ? { custom_env: cleanCustomEnv } : {}),
-        })
-      });
-      const data = await response.json();
-      if (!response.ok) {
-        const msg = data.detail || data.error || data.message || 'Failed to start session';
-        if (response.status === 401 || msg === 'Unauthorized') {
-          setLaunchModalError('登录已过期，请重新登录。');
-          return false;
-        }
-        if (data.error === 'agent_not_granted') {
-          setLaunchModalError('You do not have permission to use this agent.');
-          return false;
-        }
-        if (data.error === 'quota_exceeded') {
-          setLaunchModalError(formatQuotaExceeded(data.dimension, data.current, data.limit));
-          fetchWorkspaces();
-          return false;
-        }
-        throw new Error(msg);
-      }
-
-      const isPending = response.status === 202 || data.status === 'pending';
-
-      rememberRecentSession({
-        id: data.session_id,
-        agentId: selectedAgentId,
-        projectId,
-        projectName: projectName || projectId,
-        createdAt: Date.now(),
-      });
-      rememberRecentAgent(selectedAgentId);
-      setActiveSession({
-        sessionId: data.session_id,
-        agentId: selectedAgentId,
-        agentName: selectedAgent.name,
-        projectId,
-        projectName: projectName || projectId,
-      });
-      goToSessions();
-      setSessions((prev) => {
-        if (prev.some((s) => s.id === data.session_id)) return prev;
-        const now = Date.now();
-        return [
-          ...prev,
-          {
-            id: data.session_id,
-            projectId,
-            agentId: selectedAgentId,
-            status: data.status || 'running',
-            alive: !isPending,
-            projectName: projectName || projectId,
-            createdAt: now,
-          },
-        ];
-      });
-      fetchWorkspaces();
-      if (closeLaunchModal) setShowNewInstanceModal(false);
-      return true;
-    } catch (err) {
-      setLaunchModalError(err.message);
-      setError(err.message);
-      return false;
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const resolveDefaultWorkspace = useCallback(() => {
-    if (activeSession?.projectId) {
-      const ws = projects.find((p) => p.id === activeSession.projectId);
-      if (ws) return ws;
-    }
-    const prefs = loadSidebarPrefs();
-    for (const sessionId of prefs.recentSessionIds || []) {
-      const snap = prefs.recentSessionSnapshots?.[sessionId];
-      if (snap?.projectId) {
-        const ws = projects.find((p) => p.id === snap.projectId);
-        if (ws) return ws;
-      }
-    }
-    if (projects.length === 0) return null;
-    return [...projects].sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0))[0];
-  }, [activeSession?.projectId, projects]);
-
-  const openLaunchModal = (mode = 'session', workspace = null) => {
-    setLaunchModalError(null);
-    setCreateNewWorkspaceInline(false);
-    setCustomImageId('');
-    fetchCustomImages();
-    if (mode === 'workspace') {
-      setLaunchModalMode('workspace');
-      setStartSessionAfterCreate(false);
-      setLaunchWorkspaceId('');
-      setNewProjectName('');
-    } else if (projects.length === 0) {
-      setLaunchModalMode('quickstart');
-      setStartSessionAfterCreate(true);
-      setLaunchWorkspaceId('');
-      setNewProjectName('');
-    } else {
-      setLaunchModalMode('session');
-      setStartSessionAfterCreate(true);
-      const ws = workspace || resolveDefaultWorkspace();
-      if (ws) {
-        setLaunchWorkspaceId(ws.id);
-        setNewProjectName(ws.name);
-      } else {
-        setLaunchWorkspaceId('');
-        setNewProjectName('');
-      }
-    }
-    const prefs = loadSidebarPrefs();
-    const sorted = sortAgentsByRecentUsage(agents, prefs);
-    if (sorted.length > 0) {
-      setSelectedAgentId(sorted[0].id);
-    }
-    setShowNewInstanceModal(true);
-  };
-
-  const handleLaunchFromModal = async () => {
-    setLaunchModalError(null);
-    setLaunchingSession(true);
-    let started = false;
-    try {
-      if (launchModalMode === 'quickstart') {
-        const name = newProjectName.trim() || defaultWorkspaceName();
-        const created = await handleCreateProject(name);
-        if (!created) return;
-        setProjects((prev) => {
-          if (prev.some((p) => p.id === created.id)) return prev;
-          return [...prev, { id: created.id, name: created.name, createdAt: Date.now() }];
-        });
-        started = await handleStartSession(created.id, created.name, { closeLaunchModal: true });
-        return;
-      }
-      if (launchModalMode === 'session') {
-        if (createNewWorkspaceInline) {
-          const name = newProjectName.trim() || defaultWorkspaceName();
-          const created = await handleCreateProject(name);
-          if (!created) return;
-          setProjects((prev) => {
-            if (prev.some((p) => p.id === created.id)) return prev;
-            return [...prev, { id: created.id, name: created.name, createdAt: Date.now() }];
-          });
-          started = await handleStartSession(created.id, created.name, { closeLaunchModal: true });
-          return;
-        }
-        if (!launchWorkspaceId) {
-          setLaunchModalError('Select a workspace first.');
-          return;
-        }
-        const ws = projects.find((p) => p.id === launchWorkspaceId);
-        started = await handleStartSession(launchWorkspaceId, ws?.name || launchWorkspaceId, { closeLaunchModal: true });
-        return;
-      }
-      const name = newProjectName.trim() || defaultWorkspaceName();
-      const created = await handleCreateProject(name);
-      if (!created) return;
-      setProjects((prev) => {
-        if (prev.some((p) => p.id === created.id)) return prev;
-        return [...prev, { id: created.id, name: created.name, createdAt: Date.now() }];
-      });
-      if (startSessionAfterCreate) {
-        started = await handleStartSession(created.id, created.name, { closeLaunchModal: true });
-        if (!started) fetchWorkspaces();
-      } else {
-        fetchWorkspaces();
-        setShowNewInstanceModal(false);
-      }
-    } finally {
-      if (!started) setLaunchingSession(false);
-    }
-  };
-
-  const handleSaveLaunchConfig = async () => {
-    setConfigError(null);
-    const payload = {};
-    for (const { key, value } of configEnvVars) {
-      const k = (key || '').trim();
-      if (!k) continue;
-      const v = (value || '').trim();
-      payload[k] = v;
-    }
-    // Include keys that were removed via X button (present at modal open, now gone)
-    if (configModalInitialKeysRef.current) {
-      for (const k of configModalInitialKeysRef.current) {
-        if (!(k in payload)) payload[k] = '';
-      }
-    }
-    configModalInitialKeysRef.current = null;
-    if (Object.keys(payload).length === 0) {
-      setShowLaunchConfigModal(false);
-      setLaunchModalError(null);
-      return;
-    }
-    setConfigSaving(true);
-    try {
-      const res = await apiFetch('/api/v1/secrets', {
-        method: 'POST',
-        body: JSON.stringify(payload),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Failed to save keys');
-      setSavedConfigKeys((prev) => {
-        const next = { ...prev };
-        Object.keys(payload).forEach((k) => { next[k] = true; });
-        return next;
-      });
-      showToast('success', 'Configuration saved.');
-      setShowLaunchConfigModal(false);
-      setLaunchModalError(null);
-    } catch (err) {
-      setConfigError(err.message);
-    } finally {
-      setConfigSaving(false);
-    }
+  const handleCreateWorkspace = async () => {
+    const name = newProjectName.trim() || defaultWorkspaceName();
+    const created = await handleCreateProject(name);
+    if (!created) return;
+    setProjects((prev) => {
+      if (prev.some((p) => p.id === created.id)) return prev;
+      return [...prev, { id: created.id, name: created.name, createdAt: Date.now() }];
+    });
+    fetchWorkspaces();
+    setShowNewWorkspaceModal(false);
   };
 
   // ── Session config (config files + custom env for running session) ──
@@ -802,7 +457,8 @@ export default React.forwardRef(function Sessions({
     try {
       const ready = await ensureAgentSecrets(agent);
       if (!ready) {
-        showToast('error', 'Configure required API keys before starting.');
+        showToast('error', 'Configure required API keys in Start session.');
+        navigate('/sessions/new');
         return;
       }
 
@@ -960,16 +616,11 @@ export default React.forwardRef(function Sessions({
   };
 
   React.useImperativeHandle(ref, () => ({
-    openLaunchModal,
+    openNewWorkspaceModal,
     openImportDialog: () => setShowImportDialog(true),
     requestDeleteSession,
     requestDeleteWorkspace,
-  }), [openLaunchModal, requestDeleteSession, requestDeleteWorkspace]);
-
-  const agentSelectOptions = useMemo(
-    () => sortAgentsByRecentUsage(agents, loadSidebarPrefs()).map((agent) => ({ value: agent.id, label: agent.name })),
-    [agents],
-  );
+  }), [openNewWorkspaceModal, requestDeleteSession, requestDeleteWorkspace]);
 
   const activeProject = useMemo(
     () => projects.find((p) => p.id === activeSession?.projectId) || null,
@@ -994,214 +645,51 @@ export default React.forwardRef(function Sessions({
 
   return (
     <div className={className || 'h-full w-full'}>
-      {/* Launch modal */}
-      {showNewInstanceModal && (
+      {showNewWorkspaceModal && (
         <ConsoleInlineDialog
-          onClose={() => { if (showLaunchConfigModal) return; setShowNewInstanceModal(false); setLaunchModalError(null); setCreateNewWorkspaceInline(false); }}
+          onClose={() => { setShowNewWorkspaceModal(false); setWorkspaceModalError(null); }}
           panelClassName={`${consoleDialogPanelClass} w-full max-w-sm shadow-sm`}
         >
           <div className={`${consoleStructuredDialogHeaderClass} flex items-center gap-2.5`}>
-            {launchModalMode === 'workspace' ? (
-              <Plus className={`w-4 h-4 shrink-0 ${textPlaceholder}`} />
-            ) : (
-              <Bot className={`w-4 h-4 shrink-0 ${textPlaceholder}`} />
-            )}
-            <h3 className={`font-semibold text-sm ${textPrimary}`}>
-              {launchModalMode === 'workspace'
-                ? 'New Workspace'
-                : launchModalMode === 'quickstart'
-                  ? 'New Agent'
-                  : 'New Agent'}
-            </h3>
+            <Plus className={`w-4 h-4 shrink-0 ${textPlaceholder}`} />
+            <h3 className={`font-semibold text-sm ${textPrimary}`}>New workspace</h3>
           </div>
-          <div className="p-4 space-y-3">
-            {launchModalError && (
-              <p className="text-sm text-[#C06C5D] bg-[#FDECEA] border border-[#FADBD8] rounded-md px-3 py-2">{launchModalError}</p>
+          <div className="space-y-3 p-4">
+            {workspaceModalError && (
+              <p className="rounded-md border border-[#FADBD8] bg-[#FDECEA] px-3 py-2 text-sm text-[#C06C5D]">
+                {workspaceModalError}
+              </p>
             )}
-            {launchModalMode === 'workspace' && (
-              <div>
-                <label className={`block text-xs font-semibold uppercase tracking-wider ${textPlaceholder} mb-1`}>Workspace name</label>
-                <input type="text" value={newProjectName} onChange={e => setNewProjectName(e.target.value)} placeholder="my-workspace" className={consoleInputClass} autoFocus />
-              </div>
-            )}
-            {(launchModalMode === 'quickstart' || launchModalMode === 'session') && (
-              <div>
-                <div className="flex items-center justify-between gap-2 mb-1">
-                  <label className={`text-xs font-semibold uppercase tracking-wider ${textPlaceholder}`}>Workspace</label>
-                  {launchModalMode === 'session' && !createNewWorkspaceInline && projects.length > 0 && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setCreateNewWorkspaceInline(true);
-                        setNewProjectName('');
-                        setLaunchWorkspaceId('');
-                      }}
-                      className={`text-xs font-medium ${textPlaceholder} hover:text-[#202124] ${transitionBase}`}
-                    >
-                      New workspace
-                    </button>
-                  )}
-                </div>
-                {launchModalMode === 'quickstart' || createNewWorkspaceInline ? (
-                  <input
-                    type="text"
-                    value={newProjectName}
-                    onChange={e => setNewProjectName(e.target.value)}
-                    placeholder={launchModalMode === 'quickstart' ? 'Optional — auto-generated if empty' : 'my-workspace'}
-                    className={consoleInputClass}
-                    autoFocus
-                  />
-                ) : (
-                  <SelectMenu
-                    value={launchWorkspaceId}
-                    onChange={setLaunchWorkspaceId}
-                    options={projects.map((p) => ({ value: p.id, label: p.name }))}
-                    placeholder="Select workspace"
-                  />
-                )}
-              </div>
-            )}
-            {launchModalMode !== 'workspace' && customImages.length > 0 && (
-              <div>
-                <label className={`text-xs font-semibold uppercase tracking-wider ${textPlaceholder} mb-1 block`}>Image type</label>
-                <SelectMenu
-                  value={customImageId ? 'custom' : ''}
-                  onChange={(v) => {
-                    if (v === 'custom') {
-                      setCustomImageId(customImages[0]?.id || '');
-                      const img = customImages[0];
-                      if (img) {
-                        const agentComp = (img.components || []).find((c) => (c.component_id || '').startsWith('agent:'));
-                        const agentId = agentComp ? agentComp.component_id.replace('agent:', '') : '';
-                        if (agentId && agents.find((a) => a.id === agentId)) {
-                          setSelectedAgentId(agentId);
-                        }
-                      }
-                    } else {
-                      setCustomImageId('');
-                      setSelectedAgentId('');
-                    }
-                  }}
-                  options={[
-                    { value: '', label: 'Built-in' },
-                    { value: 'custom', label: 'Custom (your images)' },
-                  ]}
-                  placeholder="Built-in"
-                />
-              </div>
-            )}
-            {launchModalMode !== 'workspace' && customImageId && (
-              <div>
-                <label className={`text-xs font-semibold uppercase tracking-wider ${textPlaceholder} mb-1 block`}>Custom image</label>
-                <SelectMenu
-                  value={customImageId}
-                  onChange={(v) => {
-                    setCustomImageId(v);
-                    const img = customImages.find((c) => c.id === v);
-                    if (img) {
-                      const agentComp = (img.components || []).find((c) => (c.component_id || '').startsWith('agent:'));
-                      const agentId = agentComp ? agentComp.component_id.replace('agent:', '') : '';
-                      if (agentId && agents.find((a) => a.id === agentId)) {
-                        setSelectedAgentId(agentId);
-                      }
-                    }
-                  }}
-                  options={customImages.map((img) => ({ value: img.id, label: img.name }))}
-                  placeholder="Select image"
-                />
-              </div>
-            )}
-            {launchModalMode !== 'workspace' && (
-              <div>
-                <div className="flex items-center justify-between gap-2 mb-1">
-                  <label className={`text-xs font-semibold uppercase tracking-wider ${textPlaceholder}`}>Agent</label>
-                  {selectedAgent && (
-                    <button type="button" onClick={() => openLaunchConfigModal()} className={`text-xs font-medium ${textPlaceholder} hover:text-[#202124] ${transitionBase}`}>
-                      <Settings2 className="w-3.5 h-3.5 inline" /> Configure
-                    </button>
-                  )}
-                </div>
-                <SelectMenu
-                  value={selectedAgentId}
-                  onChange={setSelectedAgentId}
-                  options={
-                    customImageId
-                      ? agentSelectOptions.filter((opt) => {
-                          const img = customImages.find((c) => c.id === customImageId);
-                          if (!img) return true;
-                          const agentComp = (img.components || []).find((c) => (c.component_id || '').startsWith('agent:'));
-                          return !agentComp || opt.value === agentComp.component_id.replace('agent:', '');
-                        })
-                      : agentSelectOptions
-                  }
-                  placeholder="Select agent"
-                />
-              </div>
-            )}
-          </div>
-          <div className={consoleStructuredDialogFooterClass}>
-            <button type="button" onClick={() => { setShowNewInstanceModal(false); setCreateNewWorkspaceInline(false); }} className={`h-9 px-3 ${bgCanvas} border ${borderHairline} ${textPrimary} rounded-md text-sm font-medium ${hoverBgSecondary} ${transitionBase}`}>Cancel</button>
-            <button
-              type="button"
-              disabled={
-                isLoading
-                || projectCreating
-                || (launchModalMode !== 'workspace' && !selectedAgentId)
-                || (launchModalMode === 'session' && !createNewWorkspaceInline && !launchWorkspaceId)
-              }
-              onClick={handleLaunchFromModal}
-              className={`h-9 px-3 flex items-center justify-center gap-2 bg-[#202124] text-white rounded-md text-sm font-medium hover:bg-[#3C4043] disabled:opacity-50 ${transitionBase}`}
-            >
-              {isLoading || projectCreating
-                ? 'Starting...'
-                : launchModalMode === 'workspace'
-                  ? 'Create workspace'
-                  : 'Start agent'}
-            </button>
-          </div>
-        </ConsoleInlineDialog>
-      )}
-
-      {/* Launch config dialog (config files + env vars for new session) */}
-      {showLaunchConfigModal && (
-        <ConsoleInlineDialog
-          onClose={() => setShowLaunchConfigModal(false)}
-          panelClassName={`${consoleDialogPanelClass} w-full max-w-lg shadow-sm`}
-        >
-          <div className={`${consoleStructuredDialogHeaderClass} flex items-center gap-2.5`}>
-            <Settings2 className={`w-4 h-4 shrink-0 ${textPlaceholder}`} />
-            <h3 className={`font-semibold text-sm ${textPrimary}`}>
-              Configure{selectedAgent ? ` - ${selectedAgent.name}` : ''}
-            </h3>
-          </div>
-          <div className="p-4 space-y-3">
-            {configError && (
-              <p className="text-sm text-[#C06C5D] bg-[#FDECEA] border border-[#FADBD8] rounded-md px-3 py-2">{configError}</p>
-            )}
-            <AgentConfigEditor
-              configSchema={selectedAgent?.config_schema || null}
-              configFiles={launchConfigFiles}
-              envVars={configEnvVars}
-              onConfigFilesChange={setLaunchConfigFiles}
-              onEnvVarsChange={setConfigEnvVars}
-              loading={configLoading}
-            />
+            <div>
+              <label className={`mb-1 block text-xs font-semibold uppercase tracking-wider ${textPlaceholder}`}>
+                Workspace name
+              </label>
+              <input
+                type="text"
+                value={newProjectName}
+                onChange={(e) => setNewProjectName(e.target.value)}
+                placeholder="my-workspace"
+                className={consoleInputClass}
+                autoFocus
+              />
+            </div>
           </div>
           <div className={consoleStructuredDialogFooterClass}>
             <button
               type="button"
-              onClick={() => { setShowLaunchConfigModal(false); setConfigError(null); }}
-              className={`h-9 px-3 ${bgCanvas} border ${borderHairline} ${textPrimary} rounded-md text-sm font-medium ${hoverBgSecondary} ${transitionBase}`}
+              onClick={() => { setShowNewWorkspaceModal(false); setWorkspaceModalError(null); }}
+              className={`h-9 rounded-md border px-3 ${bgCanvas} ${borderHairline} text-sm font-medium ${textPrimary} ${hoverBgSecondary} ${transitionBase}`}
             >
               Cancel
             </button>
             <button
               type="button"
-              disabled={configSaving || configLoading}
-              onClick={handleSaveLaunchConfig}
-              className={`h-9 px-3 flex items-center justify-center gap-2 bg-[#202124] text-white rounded-md text-sm font-medium hover:bg-[#3C4043] disabled:opacity-50 ${transitionBase}`}
+              disabled={projectCreating}
+              onClick={handleCreateWorkspace}
+              className={`flex h-9 items-center justify-center gap-2 rounded-md bg-[#202124] px-3 text-sm font-medium text-white hover:bg-[#3C4043] disabled:opacity-50 ${transitionBase}`}
             >
-              {configSaving ? <><Loader2 className="w-4 h-4 animate-spin" /> Saving…</> : 'Save'}
+              {projectCreating ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+              {projectCreating ? 'Creating…' : 'Create workspace'}
             </button>
           </div>
         </ConsoleInlineDialog>
@@ -1493,9 +981,15 @@ export default React.forwardRef(function Sessions({
               <div className="flex min-h-0 flex-1 flex-col items-center justify-center bg-white p-8 text-center">
                 <Loader2 className="w-8 h-8 text-[#9AA0A6] animate-spin mb-4" strokeWidth={1.5} />
                 <h3 className="text-lg font-semibold text-[#202124] mb-1.5">Preparing your environment…</h3>
-                <p className="text-sm text-[#9AA0A6] max-w-sm">
-                  Pulling image and starting virtual machine. This usually takes less than a minute.
+                <p className="text-sm text-[#9AA0A6] max-w-sm mb-4">
+                  Starting the virtual machine and configuring your agent. This usually takes less than a minute.
                 </p>
+                <ul className="text-left text-sm text-[#9AA0A6] max-w-xs space-y-1.5">
+                  <li className="flex items-center gap-2"><Check className="w-3.5 h-3.5 text-[#4A7C59]" /> Workspace ready</li>
+                  <li className="flex items-center gap-2"><Loader2 className="w-3.5 h-3.5 animate-spin" /> Starting virtual machine</li>
+                  <li className="flex items-center gap-2 opacity-50">○ Configuring agent</li>
+                  <li className="flex items-center gap-2 opacity-50">○ Connecting terminal</li>
+                </ul>
               </div>
             ) : sessionFailed ? (
               <div className="flex min-h-0 flex-1 flex-col items-center justify-center bg-white p-8 text-center">
@@ -1579,8 +1073,6 @@ export default React.forwardRef(function Sessions({
               )}
             </div>
             )
-          ) : launchingSession ? (
-            <div className="flex-1 bg-white" />
           ) : (
             <div className="flex h-full flex-col items-center justify-center bg-white p-8 text-center">
               <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-[#F4F5F6] mb-5">
@@ -1589,8 +1081,8 @@ export default React.forwardRef(function Sessions({
               <h3 className="text-lg font-semibold text-[#202124] mb-1.5">No active session</h3>
               <p className="text-sm text-[#9AA0A6] max-w-sm">
                 {projects.length === 0
-                  ? 'Create a workspace, then use New Agent in the sidebar to get started.'
-                  : 'Select a session from the sidebar, or use New Agent to start one in a workspace.'}
+                  ? 'Create a workspace, then use Start session in the sidebar to get started.'
+                  : 'Select a session from the sidebar, or use Start session to open one in a workspace.'}
               </p>
             </div>
           )}
@@ -1601,8 +1093,12 @@ export default React.forwardRef(function Sessions({
         <RepoImportDialog
           open={showImportDialog}
           onClose={() => setShowImportDialog(false)}
-          onImported={() => {
+          onImported={(projectId) => {
             fetchWorkspaces();
+            setShowImportDialog(false);
+            if (projectId) {
+              navigate(`/sessions/new?project=${encodeURIComponent(projectId)}`);
+            }
           }}
           fetchWorkspaces={fetchWorkspaces}
         />

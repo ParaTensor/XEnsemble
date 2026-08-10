@@ -22,6 +22,23 @@ function getSseUrl() {
   return `${base}/api/v1/events?access_token=${encodeURIComponent(token || '')}`;
 }
 
+function normalizeProject(p) {
+  return {
+    id: p.id,
+    name: p.name,
+    createdAt: p.created_at ?? p.createdAt ?? 0,
+    repoProvider: p.repo_provider ?? p.repoProvider ?? 'none',
+    repoUrl: p.repo_url ?? p.repoUrl ?? null,
+    repoDefaultBranch: p.repo_default_branch ?? p.repoDefaultBranch ?? 'main',
+    currentBranch: p.current_branch ?? p.currentBranch ?? null,
+    githubRepoId: p.github_repo_id ?? p.githubRepoId ?? null,
+    githubFullName: p.github_full_name ?? p.githubFullName ?? null,
+    cloneStatus: p.clone_status ?? p.cloneStatus ?? null,
+    cloneError: p.clone_error ?? p.cloneError ?? null,
+    workspaceMode: p.workspace_mode ?? p.workspaceMode ?? 'local',
+  };
+}
+
 export function useWorkspaces(user) {
   const [agents, setAgents] = useState(() => readBootstrapConsoleState(null).agents);
   const [projects, setProjects] = useState(() => readBootstrapConsoleState(null).projects);
@@ -49,20 +66,7 @@ export function useWorkspaces(user) {
       const res = await apiFetch('/api/v1/projects');
       const data = await res.json();
       if (Array.isArray(data)) {
-        setProjects(data.map((p) => ({
-          id: p.id,
-          name: p.name,
-          createdAt: p.created_at ?? p.createdAt ?? 0,
-          repoProvider: p.repo_provider ?? p.repoProvider ?? 'none',
-          repoUrl: p.repo_url ?? p.repoUrl ?? null,
-          repoDefaultBranch: p.repo_default_branch ?? p.repoDefaultBranch ?? 'main',
-          currentBranch: p.current_branch ?? p.currentBranch ?? null,
-          githubRepoId: p.github_repo_id ?? p.githubRepoId ?? null,
-          githubFullName: p.github_full_name ?? p.githubFullName ?? null,
-          cloneStatus: p.clone_status ?? p.cloneStatus ?? null,
-          cloneError: p.clone_error ?? p.cloneError ?? null,
-          workspaceMode: p.workspace_mode ?? p.workspaceMode ?? 'local',
-        })));
+        setProjects(data.map(normalizeProject));
       }
     } catch {
       // ignore transient errors
@@ -232,5 +236,6 @@ export function useWorkspaces(user) {
     setActiveSession,
     fetchWorkspaces,
     fetchAgents,
+    fetchProjects,
   };
 }
