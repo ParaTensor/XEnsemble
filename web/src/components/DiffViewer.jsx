@@ -66,9 +66,9 @@ export default function DiffViewer({
     return (
       <div className="flex flex-col h-full w-full">
         <div className="flex items-center justify-between px-4 py-2 border-b border-[#E8EAED] bg-[#FAFBFC]">
-          <span className="text-sm text-zinc-600">对比：{displayName}</span>
+            <span className="text-sm text-zinc-600">Compare: {displayName}</span>
           <button
-            aria-label="关闭对比"
+            aria-label="Close compare"
             onClick={onClose}
             className={`p-1 rounded text-zinc-400 hover:text-zinc-600 hover:bg-[#E8EAED] ${consoleButtonFocusClass}`}
           >
@@ -91,9 +91,9 @@ export default function DiffViewer({
   return (
     <div className="flex flex-col h-full w-full">
       <div className="flex items-center justify-between px-4 py-2 border-b border-[#E8EAED] bg-[#FAFBFC]">
-        <span className="text-sm text-zinc-600">对比：{displayName}</span>
+        <span className="text-sm text-zinc-600">Compare: {displayName}</span>
         <button
-          aria-label="关闭对比"
+          aria-label="Close compare"
           onClick={onClose}
           className={`p-1 rounded text-zinc-400 hover:text-zinc-600 hover:bg-[#E8EAED] ${consoleButtonFocusClass}`}
         >
@@ -102,11 +102,11 @@ export default function DiffViewer({
       </div>
       {binary ? (
         <div className="flex-1 flex items-center justify-center text-sm text-zinc-400" data-testid="diff-binary">
-          二进制文件，无法显示文本对比
+          Binary file, cannot display text diff
         </div>
       ) : noDiff ? (
         <div className="flex-1 flex items-center justify-center text-sm text-zinc-400">
-          无差异
+          No differences
         </div>
       ) : (
         <div className="flex-1 min-h-0 relative">
@@ -135,7 +135,7 @@ export default function DiffViewer({
           )}
           {truncated && (
             <div className="absolute bottom-3 left-3 right-3 text-xs text-amber-700 bg-amber-50 border border-amber-200 px-3 py-2" data-testid="diff-truncated">
-              内容过大，已截断显示
+              Content too large, truncated
             </div>
           )}
         </div>

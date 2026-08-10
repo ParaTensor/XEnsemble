@@ -68,7 +68,7 @@ export default function WorkspacePreviewPane({ projectId }) {
         ) : (
           <div className="flex h-full flex-col items-center justify-center gap-3 text-zinc-400 px-6 text-center">
             <Monitor className="h-10 w-10" />
-            <p className="text-sm">{embedError || '部署 Preview 后在此查看应用'}</p>
+            <p className="text-sm">{embedError || 'Deploy a Preview to view your app here'}</p>
             {status !== 'running' && (
               <button
                 type="button"

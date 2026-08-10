@@ -405,12 +405,12 @@ const WorkspacePanel = memo(function WorkspacePanel({
               >
                 <Icon className="h-3.5 w-3.5 shrink-0" />
                 <span>{tab.label}</span>
-                {alreadyOpen && <span className="ml-auto text-[10px] text-zinc-400">已打开</span>}
+                {alreadyOpen && <span className="ml-auto text-[10px] text-zinc-400">Already open</span>}
               </button>
             );
           })}
           {addableRemaining.length === 0 && (
-            <div className="px-3 py-2 text-xs text-zinc-400">全部面板已打开</div>
+            <div className="px-3 py-2 text-xs text-zinc-400">All panels already open</div>
           )}
         </div>,
         document.body,
@@ -459,7 +459,7 @@ const WorkspacePanel = memo(function WorkspacePanel({
               ) : (
                 <div className="flex-1 flex flex-col items-center justify-center gap-3 text-zinc-400">
                   <FileText className="h-12 w-12" />
-                  <p className="text-sm">从左侧文件树选择一个文件打开</p>
+                  <p className="text-sm">Select a file from the tree to open</p>
                 </div>
               )}
             </div>
@@ -549,15 +549,15 @@ const WorkspacePanel = memo(function WorkspacePanel({
       {showNewFile && (
         <ConsoleDialogShell onClose={() => setShowNewFile(false)}>
           <div className="p-4 w-80">
-            <h3 className="font-bold text-lg text-zinc-900 mb-3">新建文件</h3>
-            <input ref={newFileInputRef} type="text" placeholder="文件名.js"
+            <h3 className="font-bold text-lg text-zinc-900 mb-3">New File</h3>
+            <input ref={newFileInputRef} type="text" placeholder="filename.js"
               value={newName} onChange={(e) => setNewName(e.target.value)}
               onKeyDown={(e) => { if (e.key === 'Enter') handleCreateFile(); }}
               className={consoleInputClass} />
             <div className="flex justify-end gap-2 mt-4">
-              <button onClick={() => setShowNewFile(false)} className={buttonClass('secondary', 'sm')}>取消</button>
+              <button onClick={() => setShowNewFile(false)} className={buttonClass('secondary', 'sm')}>Cancel</button>
               <button onClick={handleCreateFile} disabled={creating || !newName.trim()} className={buttonClass('primary', 'sm')}>
-                {creating ? '创建中…' : '创建'}
+                {creating ? 'Creating…' : 'Create'}
               </button>
             </div>
           </div>
@@ -567,15 +567,15 @@ const WorkspacePanel = memo(function WorkspacePanel({
       {showNewFolder && (
         <ConsoleDialogShell onClose={() => setShowNewFolder(false)}>
           <div className="p-4 w-80">
-            <h3 className="font-bold text-lg text-zinc-900 mb-3">新建文件夹</h3>
-            <input ref={newFolderInputRef} type="text" placeholder="文件夹名"
+            <h3 className="font-bold text-lg text-zinc-900 mb-3">New Folder</h3>
+            <input ref={newFolderInputRef} type="text" placeholder="folder name"
               value={newName} onChange={(e) => setNewName(e.target.value)}
               onKeyDown={(e) => { if (e.key === 'Enter') handleCreateDir(); }}
               className={consoleInputClass} />
             <div className="flex justify-end gap-2 mt-4">
-              <button onClick={() => setShowNewFolder(false)} className={buttonClass('secondary', 'sm')}>取消</button>
+              <button onClick={() => setShowNewFolder(false)} className={buttonClass('secondary', 'sm')}>Cancel</button>
               <button onClick={handleCreateDir} disabled={creating || !newName.trim()} className={buttonClass('primary', 'sm')}>
-                {creating ? '创建中…' : '创建'}
+                {creating ? 'Creating…' : 'Create'}
               </button>
             </div>
           </div>

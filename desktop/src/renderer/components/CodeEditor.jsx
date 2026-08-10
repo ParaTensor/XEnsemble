@@ -84,8 +84,8 @@ export default function CodeEditor({ content, path, readOnly: readOnlyProp, isBi
     return (
       <div className="flex flex-col items-center justify-center h-full gap-3 text-zinc-500">
         <FileWarning className="h-10 w-10" />
-        <p className="text-sm font-medium">二进制文件</p>
-        <p className="text-xs">{path || '此文件无法在编辑器中显示'}</p>
+        <p className="text-sm font-medium">Binary file</p>
+        <p className="text-xs">{path || 'This file cannot be displayed in the editor'}</p>
       </div>
     );
   }
@@ -98,17 +98,17 @@ export default function CodeEditor({ content, path, readOnly: readOnlyProp, isBi
       {showToolbar && (
         <div className="flex items-center justify-between px-4 py-1.5 border-b border-[#E8EAED] bg-[#FAFBFC]">
           <div className="flex items-center gap-2 text-xs text-zinc-500">
-            {isReadOnly ? <span>只读</span> : null}
+            {isReadOnly ? <span>Read-only</span> : null}
             {saving && (
               <span className="inline-flex items-center gap-1">
                 <Loader2 className="h-3 w-3 animate-spin" />
-                保存中…
+                Saving…
               </span>
             )}
             {isLarge && (
               <span className="inline-flex items-center gap-1 text-amber-700">
                 <FileWarning className="h-3 w-3" />
-                文件较大（{Math.round(content.length / MEGABYTE)} MB），编辑可能卡顿
+                File is large ({Math.round(content.length / MEGABYTE)} MB), editing may be slow
               </span>
             )}
           </div>
@@ -125,7 +125,7 @@ export default function CodeEditor({ content, path, readOnly: readOnlyProp, isBi
           loading={
             <div className="flex items-center justify-center h-full gap-2">
               <Loader2 className="h-4 w-4 animate-spin text-zinc-400" />
-              <span className="text-sm text-zinc-400">加载编辑器…</span>
+              <span className="text-sm text-zinc-400">Loading editor…</span>
             </div>
           }
           options={{

@@ -36,7 +36,7 @@ const TreeNode = memo(function TreeNode({ node, depth, expanded, selectedPath, o
           onClick={() => onToggle(node.path)}
           className="shrink-0 p-1 text-zinc-400 hover:text-zinc-700"
           aria-expanded={isExpanded}
-          aria-label={`展开/折叠 ${node.name}`}
+          aria-label={`Expand/Collapse ${node.name}`}
         >
           {isLoading ? (
             <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -130,11 +130,11 @@ function LazyTree({ selectedPath, onOpenFile, projectId, onFetchDir }) {
   const buildTree = useCallback((dirPath, depth) => {
     const items = dirChildren[dirPath] || [];
     const nodes = [];
-    // 防御性深度限制：防止循环引用或异常数据导致栈溢出
+    // Defensive depth limit
     if (depth > 100) return nodes;
     for (const item of items) {
       if (item.type === 'directory') {
-        // 跳过自身引用（item.path === dirPath 会导致无限递归）
+        // Skip self-reference
         if (item.path === dirPath) continue;
         nodes.push({
           ...item,
@@ -174,7 +174,7 @@ function LazyTree({ selectedPath, onOpenFile, projectId, onFetchDir }) {
   const tree = buildTree('.', 0);
 
   if (!tree.length) {
-    return <div className="py-4 text-center text-sm text-zinc-400" data-testid="tree-empty">暂无文件</div>;
+    return <div className="py-4 text-center text-sm text-zinc-400" data-testid="tree-empty">No files</div>;
   }
 
   return (

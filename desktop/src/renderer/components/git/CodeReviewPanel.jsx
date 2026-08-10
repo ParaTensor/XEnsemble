@@ -251,7 +251,7 @@ export default function CodeReviewPanel({ projectId, mergeRequestId, mergeReques
       {!mergeRequestId ? (
         <div className="flex flex-col items-center justify-center py-8 gap-2 text-zinc-400">
           <GitPullRequest className="h-6 w-6" />
-          <p className="text-[10px]">从 Pull Request 列表选择一个 PR 查看审查</p>
+          <p className="text-[10px]">Select a pull request from the list to view review</p>
         </div>
       ) : (
         <>

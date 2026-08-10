@@ -378,9 +378,9 @@ export default function AppSidebar({
         body: JSON.stringify({ name: trimmed }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || '重命名失败');
+      if (!res.ok) throw new Error(data.error || 'Rename failed');
       fetchWorkspaces?.();
-      showToast('success', '工作空间已重命名');
+      showToast('success', 'Workspace renamed');
     } catch (err) {
       showToast('error', err.message);
     } finally {

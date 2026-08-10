@@ -82,7 +82,7 @@ export default function WorkspaceBrowserPane() {
         ) : (
           <div className="flex h-full flex-col items-center justify-center gap-3 text-zinc-400 px-6 text-center">
             <Globe className="h-10 w-10" />
-            <p className="text-sm">输入网址后按 Enter 打开</p>
+            <p className="text-sm">Enter a URL and press Enter to open</p>
           </div>
         )}
       </div>
