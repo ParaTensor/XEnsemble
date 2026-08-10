@@ -140,7 +140,9 @@ export default function CodeReviewPanel({ projectId, mergeRequestId, mergeReques
   const [mrFiles, setMrFiles] = useState([]);
   const [expandedFiles, setExpandedFiles] = useState(new Set());
   const [loading, setLoading] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [activeTab, setActiveTab] = useState('reviews');
+  const COMMENTS_PER_PAGE = 50;
 
   const fetchData = useCallback(async () => {
     if (!projectId || !mergeRequestId) return;
@@ -148,8 +150,8 @@ export default function CodeReviewPanel({ projectId, mergeRequestId, mergeReques
     try {
       const [reviewsRes, commentsRes, issueRes, filesRes] = await Promise.all([
         gitApi.listReviews(projectId, mergeRequestId),
-        gitApi.listReviewComments(projectId, mergeRequestId),
-        gitApi.listIssueComments(projectId, mergeRequestId),
+        gitApi.listReviewComments(projectId, mergeRequestId, { per_page: COMMENTS_PER_PAGE }),
+        gitApi.listIssueComments(projectId, mergeRequestId, { per_page: COMMENTS_PER_PAGE }),
         gitApi.listMrFiles(projectId, mergeRequestId),
       ]);
       setReviews(reviewsRes.reviews || []);
@@ -376,9 +378,42 @@ export default function CodeReviewPanel({ projectId, mergeRequestId, mergeReques
                   <p className={`text-sm ${textSecondary}`}>No conversation yet.</p>
                 </div>
               ) : (
-                conversation.map((comment, idx) => (
-                  <CommentItem key={comment.id || idx} comment={comment} mrFiles={mrFiles} renderDiffLines={renderDiffLines} />
-                ))
+                <>
+                  {conversation.map((comment, idx) => (
+                    <CommentItem key={comment.id || idx} comment={comment} mrFiles={mrFiles} renderDiffLines={renderDiffLines} />
+                  ))}
+                  {(comments.length >= COMMENTS_PER_PAGE || issueComments.length >= COMMENTS_PER_PAGE) && (
+                    <div className="flex justify-center pt-2">
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          setLoadingMore(true);
+                          try {
+                            const commentPage = Math.floor(comments.length / COMMENTS_PER_PAGE) + 1;
+                            const issuePage = Math.floor(issueComments.length / COMMENTS_PER_PAGE) + 1;
+                            const [moreComments, moreIssues] = await Promise.all([
+                              gitApi.listReviewComments(projectId, mergeRequestId, { page: commentPage, per_page: COMMENTS_PER_PAGE }).catch(() => ({ comments: [] })),
+                              gitApi.listIssueComments(projectId, mergeRequestId, { page: issuePage, per_page: COMMENTS_PER_PAGE }).catch(() => ({ comments: [] })),
+                            ]);
+                            if (moreComments.comments?.length) setComments((prev) => [...prev, ...moreComments.comments]);
+                            if (moreIssues.comments?.length) setIssueComments((prev) => [...prev, ...moreIssues.comments]);
+                            if (!moreComments.comments?.length && !moreIssues.comments?.length) {
+                              showToast('info', 'No more comments to load.');
+                            }
+                          } catch (err) {
+                            showToast('error', err.message);
+                          } finally {
+                            setLoadingMore(false);
+                          }
+                        }}
+                        disabled={loadingMore}
+                        className={`text-xs text-[#5B8DB8] hover:text-[#4A7298] ${consoleButtonFocusClass}`}
+                      >
+                        {loadingMore ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : 'Load more'}
+                      </button>
+                    </div>
+                  )}
+                </>
               )
             )}
           </div>
