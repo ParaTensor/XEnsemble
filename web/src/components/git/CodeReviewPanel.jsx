@@ -39,13 +39,13 @@ function ReviewBadge({ state }) {
 
 function ReviewItem({ review }) {
   return (
-    <div className={`rounded-lg border ${borderHairline} p-3`}>
+    <div className="rounded-xl bg-white shadow-sm border border-[#E8EAED] p-3.5 transition-shadow hover:shadow-md">
       <div className="flex items-center justify-between gap-2">
         <div className="flex items-center gap-2 min-w-0">
           {review.user?.avatarUrl ? (
-            <img src={review.user.avatarUrl} alt="" className="h-5 w-5 rounded-full" />
+            <img src={review.user.avatarUrl} alt="" className="h-6 w-6 rounded-full ring-1 ring-[#E8EAED]" />
           ) : (
-            <div className="h-5 w-5 rounded-full bg-[#E8EAED]" />
+            <div className="h-6 w-6 rounded-full bg-[#E8EAED]" />
           )}
           <span className={`text-sm font-medium ${textPrimary} truncate`}>
             {review.user?.login || 'Unknown'}
@@ -57,7 +57,7 @@ function ReviewItem({ review }) {
         </span>
       </div>
       {review.body && (
-        <p className={`mt-2 text-xs ${textSecondary} whitespace-pre-wrap`}>
+        <p className={`mt-2.5 text-xs ${textSecondary} whitespace-pre-wrap leading-relaxed`}>
           {review.body}
         </p>
       )}
@@ -69,13 +69,13 @@ function CommentItem({ comment, mrFiles, renderDiffLines }) {
   const isInline = Boolean(comment.path);
   const fileDiff = isInline ? (mrFiles || []).find((f) => f.path === comment.path)?.diff : null;
   return (
-    <div className={`rounded-lg border ${borderHairline} p-3`}>
+    <div className="rounded-xl bg-white shadow-sm border border-[#E8EAED] p-3.5 transition-shadow hover:shadow-md">
       <div className="flex items-center justify-between gap-2 mb-2">
         <div className="flex items-center gap-2 min-w-0">
           {comment.user?.avatarUrl ? (
-            <img src={comment.user?.avatarUrl} alt="" className="h-5 w-5 rounded-full" />
+            <img src={comment.user?.avatarUrl} alt="" className="h-6 w-6 rounded-full ring-1 ring-[#E8EAED]" />
           ) : (
-            <div className="h-5 w-5 rounded-full bg-[#E8EAED]" />
+            <div className="h-6 w-6 rounded-full bg-[#E8EAED]" />
           )}
           <span className={`text-xs font-medium ${textPrimary}`}>
             {comment.user?.login || 'Unknown'}
@@ -86,7 +86,7 @@ function CommentItem({ comment, mrFiles, renderDiffLines }) {
         </div>
         {isInline && (
           <div className="flex items-center gap-1 shrink-0">
-            <span className="font-mono text-[10px] bg-[#F4F5F6] rounded px-1.5 py-0.5 text-[#5F6368] truncate max-w-[10rem]">
+            <span className="font-mono text-[10px] bg-[#F4F5F6] rounded-md px-1.5 py-0.5 text-[#5F6368] truncate max-w-[10rem]">
               {comment.path}
             </span>
             {comment.line && (
@@ -99,7 +99,7 @@ function CommentItem({ comment, mrFiles, renderDiffLines }) {
       </div>
 
       {fileDiff && (
-        <div className={`mb-2 border ${borderHairline} rounded overflow-hidden`}>
+        <div className="mb-2.5 rounded-lg border border-[#E8EAED] overflow-hidden shadow-sm">
           <div className="text-[11px] leading-relaxed overflow-x-auto font-mono select-text max-h-40 overflow-y-auto" style={{ tabSize: 4, MozTabSize: 4 }}>
             {renderDiffLines(fileDiff)}
           </div>
@@ -107,12 +107,12 @@ function CommentItem({ comment, mrFiles, renderDiffLines }) {
       )}
 
       {comment.diffHunk && !fileDiff && (
-        <pre className="mb-2 rounded bg-[#F4F5F6] p-2 text-[10px] font-mono text-[#5F6368] max-h-20 overflow-auto whitespace-pre-wrap">
+        <pre className="mb-2.5 rounded-lg bg-[#F4F5F6] p-2 text-[10px] font-mono text-[#5F6368] max-h-20 overflow-auto whitespace-pre-wrap">
           {comment.diffHunk}
         </pre>
       )}
 
-      <p className={`text-xs ${textSecondary} whitespace-pre-wrap`}>
+      <p className={`text-xs ${textSecondary} whitespace-pre-wrap leading-relaxed`}>
         {comment.body}
       </p>
     </div>
@@ -190,20 +190,20 @@ export default function CodeReviewPanel({ projectId, mergeRequestId, mergeReques
 
   return (
     <div className="flex flex-col h-full min-h-0">
-      <div className="flex items-center justify-between border-b border-[#E8EAED] px-3 py-2 shrink-0">
+      <div className="flex items-center justify-between border-b border-[#DADCE0] px-3 py-2 shrink-0 bg-white">
         <div className="flex items-center gap-2 min-w-0">
           {onBack && (
             <button
               type="button"
               onClick={onBack}
               title="Back to list"
-              className={`p-1 rounded text-[#5F6368] hover:text-[#202124] hover:bg-[#E8EAED] ${consoleButtonFocusClass}`}
+              className={`p-1 rounded-md text-[#5F6368] hover:text-[#202124] hover:bg-[#E8EAED] ${consoleButtonFocusClass}`}
             >
               <ArrowLeft className="h-3.5 w-3.5" />
             </button>
           )}
-          {mrNumber && <span className="shrink-0 text-xs font-medium text-[#5F6368]">#{mrNumber}</span>}
-          <span className="truncate text-xs font-medium text-[#202124]">{mrTitle}</span>
+          {mrNumber && <span className="shrink-0 text-xs font-semibold text-[#5F6368]">#{mrNumber}</span>}
+          <span className="truncate text-xs font-semibold text-[#202124]">{mrTitle}</span>
           {(approvedCount > 0 || changesCount > 0) && (
             <div className="flex items-center gap-1 shrink-0">
               {approvedCount > 0 && (
@@ -241,14 +241,14 @@ export default function CodeReviewPanel({ projectId, mergeRequestId, mergeReques
         </div>
       ) : (
         <>
-          <div className="flex border-b border-[#E8EAED] px-4 shrink-0">
+          <div className="flex border-b border-[#DADCE0] px-3 shrink-0 bg-white gap-1">
             <button
               type="button"
               onClick={() => setActiveTab('reviews')}
-              className={`px-3 py-2 text-xs font-medium border-b-2 -mb-px transition-colors ${
+              className={`px-3 py-2 text-xs font-medium border-b-2 -mb-px transition-all ${
                 activeTab === 'reviews'
                   ? 'border-[#202124] text-[#202124]'
-                  : 'border-transparent text-[#5F6368] hover:text-[#202124]'
+                  : 'border-transparent text-[#5F6368] hover:text-[#202124] hover:bg-[#F4F5F6] rounded-t-md'
               }`}
             >
               Reviews ({reviews.length})
@@ -256,10 +256,10 @@ export default function CodeReviewPanel({ projectId, mergeRequestId, mergeReques
             <button
               type="button"
               onClick={() => setActiveTab('conversation')}
-              className={`px-3 py-2 text-xs font-medium border-b-2 -mb-px transition-colors ${
+              className={`px-3 py-2 text-xs font-medium border-b-2 -mb-px transition-all ${
                 activeTab === 'conversation'
                   ? 'border-[#202124] text-[#202124]'
-                  : 'border-transparent text-[#5F6368] hover:text-[#202124]'
+                  : 'border-transparent text-[#5F6368] hover:text-[#202124] hover:bg-[#F4F5F6] rounded-t-md'
               }`}
             >
               Conversation ({conversation.length})
@@ -267,10 +267,10 @@ export default function CodeReviewPanel({ projectId, mergeRequestId, mergeReques
             <button
               type="button"
               onClick={() => setActiveTab('changes')}
-              className={`px-3 py-2 text-xs font-medium border-b-2 -mb-px transition-colors ${
+              className={`px-3 py-2 text-xs font-medium border-b-2 -mb-px transition-all ${
                 activeTab === 'changes'
                   ? 'border-[#202124] text-[#202124]'
-                  : 'border-transparent text-[#5F6368] hover:text-[#202124]'
+                  : 'border-transparent text-[#5F6368] hover:text-[#202124] hover:bg-[#F4F5F6] rounded-t-md'
               }`}
             >
               Changes ({mrFiles.length})
@@ -278,7 +278,7 @@ export default function CodeReviewPanel({ projectId, mergeRequestId, mergeReques
           </div>
 
           {activeTab === 'changes' ? (
-            <div className="flex-1 min-h-0 overflow-auto">
+            <div className="flex-1 min-h-0 overflow-auto bg-[#F7F8F9] p-3">
               {loading ? (
                 <div className="flex items-center justify-center gap-2 py-8 text-sm text-[#5F6368]">
                   <Loader2 className="h-4 w-4 animate-spin" />
@@ -290,24 +290,25 @@ export default function CodeReviewPanel({ projectId, mergeRequestId, mergeReques
                   <p className={`text-sm ${textSecondary}`}>No file changes.</p>
                 </div>
               ) : (
-                mrFiles.map((f) => {
+                <div className="rounded-xl bg-white shadow-sm border border-[#E8EAED] overflow-hidden">
+                {mrFiles.map((f) => {
                   const fileName = f.path.split('/').pop();
                   const dirPath = f.path.includes('/') ? f.path.slice(0, f.path.lastIndexOf('/')) : '';
                   const isExpanded = expandedFiles.has(f.path);
                   const label = STATUS_LABELS[f.status] || 'M';
                   const colorCls = STATUS_COLORS[f.status] || 'text-zinc-400';
                   return (
-                    <div key={f.path}>
-                      <div className="flex items-center group hover:bg-[#E8EAED]">
+                    <div key={f.path} className="border-b border-[#E8EAED] last:border-b-0">
+                      <div className="flex items-center group hover:bg-[#F4F5F6] transition-colors">
                         <button
                           onClick={() => toggleFileExpand(f.path)}
-                          className="shrink-0 p-0.5 text-zinc-400 hover:text-zinc-600"
+                          className="shrink-0 p-0.5 ml-2 text-zinc-400 hover:text-zinc-600"
                         >
                           {isExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
                         </button>
                         <button
                           onClick={() => toggleFileExpand(f.path)}
-                          className={`flex items-center gap-2 flex-1 min-w-0 px-2 py-1.5 text-left transition-colors ${consoleButtonFocusClass}`}
+                          className={`flex items-center gap-2 flex-1 min-w-0 px-2 py-2 text-left transition-colors ${consoleButtonFocusClass}`}
                         >
                           <span className={`w-4 text-center font-mono text-[11px] font-semibold ${colorCls} shrink-0`}>
                             {label}
@@ -325,7 +326,7 @@ export default function CodeReviewPanel({ projectId, mergeRequestId, mergeReques
                         </button>
                       </div>
                       {isExpanded && f.diff && (
-                        <div className="border-t border-[#E8EAED] bg-[#FAFAFA]">
+                        <div className="border-t border-[#E8EAED] bg-[#FAFBFC]">
                           <div className="text-[11px] leading-relaxed overflow-x-auto font-mono select-text" style={{ tabSize: 4, MozTabSize: 4 }}>
                             {renderDiffLines(f.diff)}
                           </div>
@@ -333,11 +334,12 @@ export default function CodeReviewPanel({ projectId, mergeRequestId, mergeReques
                       )}
                     </div>
                   );
-                })
+                })}
+                </div>
               )}
             </div>
           ) : (
-          <div className="flex-1 min-h-0 overflow-auto p-4 space-y-2">
+          <div className="flex-1 min-h-0 overflow-auto bg-[#F7F8F9] p-3 space-y-2.5">
             {loading ? (
               <div className="flex items-center justify-center gap-2 py-8 text-sm text-[#5F6368]">
                 <Loader2 className="h-4 w-4 animate-spin" />
