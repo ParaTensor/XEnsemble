@@ -10,7 +10,6 @@ import {
   textPlaceholder,
   borderHairline,
   bgCanvas,
-  consoleButtonFocusClass,
 } from '../../lib/consoleTheme';
 
 const REVIEW_STATE_STYLES = {
@@ -259,7 +258,7 @@ export default function CodeReviewPanel({ projectId, mergeRequestId, mergeReques
             <button
               type="button"
               onClick={() => setActiveTab('reviews')}
-              className={`px-3 py-2 text-xs font-medium border-b-2 -mb-px transition-all ${
+              className={`px-3 py-2 text-xs font-medium border-b-2 -mb-px transition-all ${consoleButtonFocusClass} ${
                 activeTab === 'reviews'
                   ? 'border-[#202124] text-[#202124]'
                   : 'border-transparent text-[#5F6368] hover:text-[#202124] hover:bg-[#F4F5F6] rounded-t-md'
@@ -270,7 +269,7 @@ export default function CodeReviewPanel({ projectId, mergeRequestId, mergeReques
             <button
               type="button"
               onClick={() => setActiveTab('conversation')}
-              className={`px-3 py-2 text-xs font-medium border-b-2 -mb-px transition-all ${
+              className={`px-3 py-2 text-xs font-medium border-b-2 -mb-px transition-all ${consoleButtonFocusClass} ${
                 activeTab === 'conversation'
                   ? 'border-[#202124] text-[#202124]'
                   : 'border-transparent text-[#5F6368] hover:text-[#202124] hover:bg-[#F4F5F6] rounded-t-md'
@@ -281,7 +280,7 @@ export default function CodeReviewPanel({ projectId, mergeRequestId, mergeReques
             <button
               type="button"
               onClick={() => setActiveTab('changes')}
-              className={`px-3 py-2 text-xs font-medium border-b-2 -mb-px transition-all ${
+              className={`px-3 py-2 text-xs font-medium border-b-2 -mb-px transition-all ${consoleButtonFocusClass} ${
                 activeTab === 'changes'
                   ? 'border-[#202124] text-[#202124]'
                   : 'border-transparent text-[#5F6368] hover:text-[#202124] hover:bg-[#F4F5F6] rounded-t-md'

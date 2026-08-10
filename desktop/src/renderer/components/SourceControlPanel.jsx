@@ -5,12 +5,9 @@ import {
   Plus, Minus, Loader2, ChevronRight, ChevronDown, ChevronsDownUp, ChevronsUpDown, FileText,
   Upload, Download, AlertTriangle,
 } from 'lucide-react';
-import {
-  consoleButtonFocusClass,
-  consoleDropdownPanelClass,
-  consoleMenuDropdownZClass,
-} from '@/lib/consoleTheme';
-import { buttonClass } from '@/lib/buttonStyles';
+import { consoleButtonFocusClass, consoleInputClass, consoleDropdownPanelClass, consoleMenuDropdownZClass } from '@/lib/consoleTheme';
+import { buttonClass } from '../lib/buttonStyles';
+import { ConsoleDialogShell } from './ConsoleDialog';
 import CreatePRDialog from './github/CreatePRDialog';
 import { ConflictFileItem } from './git/ConflictResolutionPanel';
 import { getGitFileDiff } from '@/lib/githubApi';
@@ -360,7 +357,7 @@ export default function SourceControlPanel({ projectId, gitChanges, onJumpToFile
             <button
               onClick={() => stageAction(f.path)}
               title={stageAction === handleStageFile ? 'Stage' : 'Unstage'}
-              className={`shrink-0 p-1 rounded text-zinc-400 hover:text-zinc-600 hover:bg-[#DADCE0] opacity-0 group-hover:opacity-100 transition-opacity ${consoleButtonFocusClass}`}
+              className={`shrink-0 p-1 rounded text-zinc-400 hover:text-zinc-600 hover:bg-[#DADCE0] transition-opacity ${consoleButtonFocusClass}`}
             >
               {stageAction === handleStageFile ? (
                 <Plus className="h-3 w-3" />
@@ -626,12 +623,12 @@ export default function SourceControlPanel({ projectId, gitChanges, onJumpToFile
           <button
             type="button"
             role="menuitem"
-            disabled={!commitMessage.trim() || (gitStagedFiles.length === 0 && gitUnstagedFiles.length === 0) || committing}
+            disabled={!commitMessage.trim() || gitStagedFiles.length === 0 || committing}
             onClick={() => { setActionMenuOpen(false); handleCommit(); }}
             className={`w-full flex items-center gap-2 px-3 py-2 text-sm text-left text-zinc-700 hover:bg-zinc-50 disabled:opacity-40 ${consoleButtonFocusClass}`}
           >
             <GitCommit className="h-3.5 w-3.5" />
-            {gitStagedFiles.length === 0 && gitUnstagedFiles.length > 0 ? 'Stage All & Commit' : 'Commit'}
+            Commit
           </button>
           {gitChanges?.behind > 0 && (
             <button
@@ -692,43 +689,43 @@ export default function SourceControlPanel({ projectId, gitChanges, onJumpToFile
 
       {/* Author dialog */}
       {showAuthorDialog && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30">
-          <div className="bg-white rounded-lg shadow-xl p-6 w-80">
-            <h3 className="text-sm font-semibold text-[#202124] mb-4">Set Git author info</h3>
-            <div className="flex flex-col gap-3">
-              <input
-                ref={authorNameRef}
-                type="text"
-                placeholder="Name"
-                value={authorName}
-                onChange={(e) => setAuthorName(e.target.value)}
-                className="w-full text-xs px-2 py-1.5 rounded border border-[#DADCE0] bg-white focus:outline-none focus:border-[#5B8DB8]"
-              />
-              <input
-                type="email"
-                placeholder="Email"
-                value={authorEmail}
-                onChange={(e) => setAuthorEmail(e.target.value)}
-                className="w-full text-xs px-2 py-1.5 rounded border border-[#DADCE0] bg-white focus:outline-none focus:border-[#5B8DB8]"
-              />
-              <div className="flex gap-2 justify-end">
-                <button
-                  onClick={() => setShowAuthorDialog(false)}
-                  className={`text-xs h-7 px-3 rounded ${buttonClass('secondary', 'sm')}`}
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={handleAuthorConfirm}
-                  disabled={!authorName.trim() || !authorEmail.trim()}
-                  className={`text-xs h-7 px-3 rounded ${buttonClass('primary', 'sm')}`}
-                >
-                  Confirm
-                </button>
-              </div>
-            </div>
+        <ConsoleDialogShell onClose={() => setShowAuthorDialog(false)} panelClassName="w-80">
+          <div className="px-5 pt-5 pb-2">
+            <h3 className="text-sm font-semibold text-[#202124]">Set Git author info</h3>
           </div>
-        </div>
+          <div className="px-5 pb-5 flex flex-col gap-3">
+            <input
+              ref={authorNameRef}
+              type="text"
+              placeholder="Name"
+              value={authorName}
+              onChange={(e) => setAuthorName(e.target.value)}
+              className={`w-full ${consoleInputClass} text-xs`}
+            />
+            <input
+              type="email"
+              placeholder="Email"
+              value={authorEmail}
+              onChange={(e) => setAuthorEmail(e.target.value)}
+              className={`w-full ${consoleInputClass} text-xs`}
+            />
+          </div>
+          <div className="flex justify-end gap-2 px-5 py-3 border-t border-[#E8EAED]">
+            <button
+              onClick={() => setShowAuthorDialog(false)}
+              className={buttonClass('secondary', 'sm')}
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleAuthorConfirm}
+              disabled={!authorName.trim() || !authorEmail.trim()}
+              className={buttonClass('primary', 'sm')}
+            >
+              Confirm
+            </button>
+          </div>
+        </ConsoleDialogShell>
       )}
     </div>
   );

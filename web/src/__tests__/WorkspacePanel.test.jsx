@@ -55,7 +55,7 @@ describe('WorkspacePanel', () => {
   it('renders empty state when no file is open', async () => {
     renderPanel(<WorkspacePanel {...defaultProps} />);
     await waitFor(() => {
-      expect(screen.getByText(/从左侧文件树选择一个文件打开/)).toBeInTheDocument();
+      expect(screen.getByText(/Select a file from the tree to open/)).toBeInTheDocument();
     });
   });
 
@@ -72,7 +72,7 @@ describe('WorkspacePanel', () => {
   it('opens new file dialog with autoFocus', () => {
     renderPanel(<WorkspacePanel {...defaultProps} />);
     fireEvent.click(screen.getByTitle('New file'));
-    const input = screen.getByPlaceholderText(/文件名/);
+    const input = screen.getByPlaceholderText(/filename/);
     expect(input).toBeInTheDocument();
     expect(input).toHaveFocus();
   });
@@ -83,9 +83,9 @@ describe('WorkspacePanel', () => {
     renderPanel(<WorkspacePanel {...defaultProps} onCreateFile={onCreateFile} onFetchDir={onFetchDir} />);
 
     fireEvent.click(screen.getByTitle('New file'));
-    const input = screen.getByPlaceholderText(/文件名/);
+    const input = screen.getByPlaceholderText(/filename/);
     fireEvent.change(input, { target: { value: 'newfile.js' } });
-    fireEvent.click(screen.getByText('创建'));
+    fireEvent.click(screen.getByText('Create'));
 
     await waitFor(() => {
       expect(onCreateFile).toHaveBeenCalledWith('proj1', 'newfile.js');
@@ -95,7 +95,7 @@ describe('WorkspacePanel', () => {
   it('opens new folder dialog with autoFocus', () => {
     renderPanel(<WorkspacePanel {...defaultProps} />);
     fireEvent.click(screen.getByTitle('New folder'));
-    const input = screen.getByPlaceholderText(/文件夹名/);
+    const input = screen.getByPlaceholderText(/folder name/);
     expect(input).toBeInTheDocument();
     expect(input).toHaveFocus();
   });
@@ -106,9 +106,9 @@ describe('WorkspacePanel', () => {
     renderPanel(<WorkspacePanel {...defaultProps} onCreateDir={onCreateDir} onFetchDir={onFetchDir} />);
 
     fireEvent.click(screen.getByTitle('New folder'));
-    const input = screen.getByPlaceholderText(/文件夹名/);
+    const input = screen.getByPlaceholderText(/folder name/);
     fireEvent.change(input, { target: { value: 'newdir' } });
-    fireEvent.click(screen.getByText('创建'));
+    fireEvent.click(screen.getByText('Create'));
 
     await waitFor(() => {
       expect(onCreateDir).toHaveBeenCalledWith('proj1', 'newdir');

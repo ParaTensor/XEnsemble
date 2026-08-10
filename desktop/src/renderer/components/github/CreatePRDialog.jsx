@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { ExternalLink, Loader2 } from 'lucide-react';
 import {
   ConsoleDialogShell,
@@ -11,10 +11,7 @@ import Button from '../Button';
 import SelectMenu from '../SelectMenu';
 import { useToast } from '../Toast';
 import * as githubApi from '../../lib/githubApi.js';
-import {
-  consoleDialogMdClass,
-  textPrimary,
-} from '../../lib/consoleTheme';
+import { consoleDialogMdClass } from '../../lib/consoleTheme';
 
 export default function CreatePRDialog({
   open,
@@ -51,6 +48,8 @@ export default function CreatePRDialog({
       setTitle('');
       setBody('');
       setDiff('');
+      setDiffBinary(false);
+      setDiffTruncated(false);
       setShowDiff(false);
       setTargetBranch(defaultTargetBranch || 'main');
     }
@@ -61,8 +60,16 @@ export default function CreatePRDialog({
     setDiffLoading(true);
     githubApi
       .getGitDiff(projectId, { base: targetBranch, head: sourceBranch })
-      .then(({ diff: d }) => setDiff(d || ''))
-      .catch(() => setDiff(''))
+      .then((data) => {
+        setDiff(data?.diff || '');
+        setDiffBinary(Boolean(data?.binary));
+        setDiffTruncated(Boolean(data?.truncated));
+      })
+      .catch(() => {
+        setDiff('');
+        setDiffBinary(false);
+        setDiffTruncated(false);
+      })
       .finally(() => setDiffLoading(false));
   }, [open, projectId, sourceBranch, targetBranch]);
 
@@ -72,22 +79,29 @@ export default function CreatePRDialog({
   );
 
   const handleCreate = async () => {
-    if (!projectId || !sourceBranch || !title.trim()) return;
+    if (!projectId || !sourceBranch || !title.trim() || sourceBranch === targetBranch) return;
     setCreating(true);
     try {
       const pr = await githubApi.createPullRequest(projectId, {
         title: title.trim(),
         body: body.trim(),
+        source_branch: sourceBranch,
         target_branch: targetBranch,
       });
       showToast('success', 'Pull request created.');
-      if (pr?.github_pr_url || pr?.githubPrUrl) {
-        githubApi.openExternal(pr.github_pr_url || pr.githubPrUrl);
+      if (pr?.remoteMrUrl || pr?.remote_mr_url || pr?.github_pr_url || pr?.githubPrUrl) {
+        githubApi.openExternal(pr.remoteMrUrl || pr.remote_mr_url || pr.github_pr_url || pr.githubPrUrl);
       }
       onCreated?.();
       onClose();
     } catch (err) {
-      showToast('error', err.message);
+      if (err.code === 'REAUTH_REQUIRED') {
+        showToast('warning', err.message);
+        onClose();
+        window.dispatchEvent(new CustomEvent('xe:open-settings'));
+      } else {
+        showToast('error', err.message);
+      }
     } finally {
       setCreating(false);
     }
@@ -109,7 +123,7 @@ export default function CreatePRDialog({
               id="pr-source"
               value={sourceBranch || ''}
               readOnly
-              className="mt-1.5 bg-zinc-100"
+              className="mt-1.5 bg-[#F4F5F6]"
             />
           </div>
           <div>
@@ -152,26 +166,38 @@ export default function CreatePRDialog({
           <button
             type="button"
             onClick={() => setShowDiff((v) => !v)}
-            className="text-xs font-medium text-zinc-600 hover:text-zinc-900"
+            className="text-xs font-medium text-[#5F6368] hover:text-[#202124]"
           >
             {showDiff ? 'Hide diff preview' : 'Show diff preview'}
           </button>
           {showDiff && (
-            <div className="mt-2 max-h-48 overflow-auto rounded-md border border-zinc-200 bg-zinc-50 p-3">
+            <div className="mt-2 max-h-48 overflow-auto rounded-md border border-[#E8EAED] bg-[#FAFBFC] p-3">
               {diffLoading ? (
-                <div className="flex items-center gap-2 text-xs text-zinc-500">
+                <div className="flex items-center gap-2 text-xs text-[#5F6368]">
                   <Loader2 className="h-3.5 w-3.5 animate-spin" />
                   Loading diff…
                 </div>
+              ) : diffBinary ? (
+                <p className="text-xs text-[#5F6368]" data-testid="pr-diff-binary">Binary files are omitted from this preview.</p>
               ) : diff ? (
-                <pre className="whitespace-pre-wrap font-mono text-xs text-zinc-700">{diff}</pre>
+                <>
+                  <pre className="whitespace-pre-wrap font-mono text-xs text-[#3C4043]">{diff}</pre>
+                  {diffTruncated && (
+                    <p className="mt-2 text-xs text-amber-700" data-testid="pr-diff-truncated">Diff truncated due to size.</p>
+                  )}
+                </>
               ) : (
-                <p className="text-xs text-zinc-500">No diff available.</p>
+                <p className="text-xs text-[#5F6368]">No diff available.</p>
               )}
             </div>
           )}
         </div>
       </ConsoleStructuredDialogBody>
+      {sourceBranch === targetBranch && (
+        <div className="px-5 py-1.5 text-[11px] text-amber-700 bg-amber-50 border-t border-amber-200">
+          Source and target branches must be different.
+        </div>
+      )}
       <ConsoleStructuredDialogFooter>
         <Button type="button" variant="secondary" size="sm" onClick={onClose}>
           Cancel
@@ -179,7 +205,7 @@ export default function CreatePRDialog({
         <Button
           type="button"
           size="sm"
-          disabled={!title.trim() || creating}
+          disabled={!title.trim() || !sourceBranch || sourceBranch === targetBranch || creating}
           onClick={handleCreate}
         >
           {creating ? (

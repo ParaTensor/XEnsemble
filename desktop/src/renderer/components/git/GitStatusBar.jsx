@@ -2,8 +2,8 @@ import { useState, useRef, useEffect, useLayoutEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { ArrowDown, ArrowUp, GitBranch, GitPullRequest, Loader2, Pencil, Upload, Download, RefreshCw, Check, Plus } from 'lucide-react';
 import { cn } from '../../lib/utils';
-import * as githubApi from '../../lib/githubApi';
-import CreatePRDialog from './CreatePRDialog';
+import * as githubApi from '../../lib/githubApi.js';
+import CreatePRDialog from '../github/CreatePRDialog';
 import {
   ConsoleInlineDialog,
 } from '../ConsoleDialog';

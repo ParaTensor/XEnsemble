@@ -79,12 +79,13 @@ export default function CreatePRDialog({
   );
 
   const handleCreate = async () => {
-    if (!projectId || !sourceBranch || !title.trim()) return;
+    if (!projectId || !sourceBranch || !title.trim() || sourceBranch === targetBranch) return;
     setCreating(true);
     try {
       const pr = await githubApi.createPullRequest(projectId, {
         title: title.trim(),
         body: body.trim(),
+        source_branch: sourceBranch,
         target_branch: targetBranch,
       });
       showToast('success', 'Pull request created.');
@@ -192,6 +193,11 @@ export default function CreatePRDialog({
           )}
         </div>
       </ConsoleStructuredDialogBody>
+      {sourceBranch === targetBranch && (
+        <div className="px-5 py-1.5 text-[11px] text-amber-700 bg-amber-50 border-t border-amber-200">
+          Source and target branches must be different.
+        </div>
+      )}
       <ConsoleStructuredDialogFooter>
         <Button type="button" variant="secondary" size="sm" onClick={onClose}>
           Cancel
@@ -199,7 +205,7 @@ export default function CreatePRDialog({
         <Button
           type="button"
           size="sm"
-          disabled={!title.trim() || creating}
+          disabled={!title.trim() || !sourceBranch || sourceBranch === targetBranch || creating}
           onClick={handleCreate}
         >
           {creating ? (
