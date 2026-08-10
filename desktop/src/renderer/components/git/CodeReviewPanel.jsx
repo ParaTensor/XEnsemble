@@ -69,6 +69,9 @@ function ReviewItem({ review }) {
 function CommentItem({ comment, mrFiles, renderDiffLines }) {
   const isInline = Boolean(comment.path);
   const fileDiff = isInline ? (mrFiles || []).find((f) => f.path === comment.path)?.diff : null;
+  const [codeExpanded, setCodeExpanded] = useState(true);
+  const hasCode = Boolean(fileDiff || (comment.diffHunk && !fileDiff));
+
   return (
     <div className="rounded-xl bg-white shadow-sm border border-[#E8EAED] p-3.5 transition-shadow hover:shadow-md">
       <div className="flex items-center justify-between gap-2 mb-2">
@@ -85,21 +88,31 @@ function CommentItem({ comment, mrFiles, renderDiffLines }) {
             {formatDate(comment.createdAt)}
           </span>
         </div>
-        {isInline && (
-          <div className="flex items-center gap-1 shrink-0">
+        <div className="flex items-center gap-1.5 shrink-0">
+          {isInline && (
             <span className="font-mono text-[10px] bg-[#F4F5F6] rounded-md px-1.5 py-0.5 text-[#5F6368] truncate max-w-[10rem]">
               {comment.path}
             </span>
-            {comment.line && (
-              <span className="font-mono text-[10px] text-[#9AA0A6]">
-                L{comment.line}
-              </span>
-            )}
-          </div>
-        )}
+          )}
+          {isInline && comment.line && (
+            <span className="font-mono text-[10px] text-[#9AA0A6]">
+              L{comment.line}
+            </span>
+          )}
+          {hasCode && (
+            <button
+              type="button"
+              onClick={() => setCodeExpanded((v) => !v)}
+              title={codeExpanded ? 'Collapse code' : 'Expand code'}
+              className={`p-0.5 rounded text-[#9AA0A6] hover:text-[#5F6368] hover:bg-[#F4F5F6] ${consoleButtonFocusClass}`}
+            >
+              {codeExpanded ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
+            </button>
+          )}
+        </div>
       </div>
 
-      {fileDiff && (
+      {hasCode && codeExpanded && fileDiff && (
         <div className="mb-2.5 rounded-lg border border-[#E8EAED] overflow-hidden shadow-sm">
           <div className="text-[11px] leading-relaxed overflow-x-auto font-mono select-text max-h-40 overflow-y-auto" style={{ tabSize: 4, MozTabSize: 4 }}>
             {renderDiffLines(fileDiff)}
@@ -107,7 +120,7 @@ function CommentItem({ comment, mrFiles, renderDiffLines }) {
         </div>
       )}
 
-      {comment.diffHunk && !fileDiff && (
+      {hasCode && codeExpanded && !fileDiff && comment.diffHunk && (
         <pre className="mb-2.5 rounded-lg bg-[#F4F5F6] p-2 text-[10px] font-mono text-[#5F6368] max-h-20 overflow-auto whitespace-pre-wrap">
           {comment.diffHunk}
         </pre>
@@ -191,7 +204,7 @@ export default function CodeReviewPanel({ projectId, mergeRequestId, mergeReques
 
   return (
     <div className="flex flex-col h-full min-h-0">
-      <div className="flex items-center justify-between border-b border-[#DADCE0] px-3 py-2 shrink-0 bg-white">
+      <div className="flex items-center justify-between border-b border-[#DADCE0] px-3 py-2 shrink-0 bg-white shadow-sm z-10">
         <div className="flex items-center gap-2 min-w-0">
           {onBack && (
             <button
@@ -203,8 +216,8 @@ export default function CodeReviewPanel({ projectId, mergeRequestId, mergeReques
               <ArrowLeft className="h-3.5 w-3.5" />
             </button>
           )}
-          {mrNumber && <span className="shrink-0 text-xs font-semibold text-[#5F6368]">#{mrNumber}</span>}
-          <span className="truncate text-xs font-semibold text-[#202124]">{mrTitle}</span>
+          {mrNumber && <span className="shrink-0 text-sm font-bold text-[#202124]">#{mrNumber}</span>}
+          <span className="truncate text-sm font-semibold text-[#202124]">{mrTitle}</span>
           {(approvedCount > 0 || changesCount > 0) && (
             <div className="flex items-center gap-1 shrink-0">
               {approvedCount > 0 && (
@@ -242,7 +255,7 @@ export default function CodeReviewPanel({ projectId, mergeRequestId, mergeReques
         </div>
       ) : (
         <>
-          <div className="flex border-b border-[#DADCE0] px-3 shrink-0 bg-white gap-1">
+          <div className="flex border-b border-[#DADCE0] px-3 shrink-0 bg-white gap-1 shadow-sm">
             <button
               type="button"
               onClick={() => setActiveTab('reviews')}
@@ -279,7 +292,7 @@ export default function CodeReviewPanel({ projectId, mergeRequestId, mergeReques
           </div>
 
           {activeTab === 'changes' ? (
-            <div className="flex-1 min-h-0 overflow-auto bg-[#F7F8F9] p-3">
+            <div className="flex-1 min-h-0 overflow-auto bg-[#F0F1F3] p-3">
               {loading ? (
                 <div className="flex items-center justify-center gap-2 py-8 text-sm text-[#5F6368]">
                   <Loader2 className="h-4 w-4 animate-spin" />
@@ -340,7 +353,7 @@ export default function CodeReviewPanel({ projectId, mergeRequestId, mergeReques
               )}
             </div>
           ) : (
-          <div className="flex-1 min-h-0 overflow-auto bg-[#F7F8F9] p-3 space-y-2.5">
+          <div className="flex-1 min-h-0 overflow-auto bg-[#F0F1F3] p-3 space-y-2.5">
             {loading ? (
               <div className="flex items-center justify-center gap-2 py-8 text-sm text-[#5F6368]">
                 <Loader2 className="h-4 w-4 animate-spin" />

@@ -90,7 +90,7 @@ export default function MergeRequestListPanel({ projectId, provider, onSelectMR,
           )}
         </button>
       </div>
-      <div className="min-h-0 flex-1 overflow-auto bg-[#F7F8F9] p-3">
+      <div className="min-h-0 flex-1 overflow-auto bg-[#F0F1F3] p-3">
         {mergeRequests.length === 0 ? (
           <div className={`p-6 text-center text-xs ${textPlaceholder} ${consoleEmptyStateClass} rounded-xl bg-white shadow-sm border border-[#E8EAED]`}>
             No {label.toLowerCase()} yet.
