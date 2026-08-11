@@ -94,6 +94,7 @@ async function resumeSession({
     issueSessionToken,
     agentGatewayConfig,
     requestUser,
+    byokConfigFiles = [],
 }) {
     return withResumeLock(session.id, async () => {
         const existingLive = sessionManager.getSession(session.id);
@@ -282,12 +283,14 @@ async function resumeSession({
         // Write user-provided config files AFTER bootstrap (kimiConfig, etc.)
         // so user-provided files take precedence over bootstrap defaults.
         const { writeConfigFilesToVM, applyCustomEnv, getSessionConfig, resolveAgentSpawnArgs } = require('./sessionConfig');
+        const { mergeByokConfigFiles } = require('../agents/byokFields');
         const userConfig = await getSessionConfig(db, schema, session.id);
-        if (userConfig.configFiles.length) {
+        const mergedConfigFiles = mergeByokConfigFiles(byokConfigFiles, userConfig.configFiles);
+        if (mergedConfigFiles.length) {
             await writeConfigFilesToVM(runtime.fs, {
                 workspaceRoot: workspacePath,
                 runtimeRef,
-                configFiles: userConfig.configFiles,
+                configFiles: mergedConfigFiles,
                 stateDirPath: stateDirPath || null,
             }).catch((err) => {
                 if (fastifyLog?.warn) fastifyLog.warn({ err }, '[sessions] resume writeConfigFilesToVM failed');
@@ -454,7 +457,7 @@ async function resumeSession({
                 } catch (_) { /* best-effort */ }
             }
 
-            const resumeSpawnArgs = resolveAgentSpawnArgs(agentMeta.id, userConfig.configFiles, {
+            const resumeSpawnArgs = resolveAgentSpawnArgs(agentMeta.id, mergedConfigFiles, {
                 authMode,
                 gatewayModel: resolvedSpawnEnv.env.OPENAI_MODEL,
             });

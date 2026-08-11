@@ -35,7 +35,7 @@ import {
   Trash2,
 } from 'lucide-react';
 import { getSecretLabel, getSecretPlaceholder, isSecretPasswordField } from '../lib/secretLabels';
-import AgentConfigEditor from '../components/AgentConfigEditor';
+import ByokConfigForm from '../components/ByokConfigForm';
 import { formatQuotaExceeded } from '../lib/quotaLabels';
 import {
   archiveSession,
@@ -262,42 +262,9 @@ export default React.forwardRef(function Sessions({
   const selectedAgent = agents.find(a => a.id === selectedAgentId);
 
   const openLaunchConfigModal = async () => {
-    const required = selectedAgent?.env_required || [];
     setConfigError(null);
     setError(null);
     setShowLaunchConfigModal(true);
-    setConfigLoading(true);
-    try {
-      const res = await apiFetch('/api/v1/secrets');
-      const data = await res.json();
-      if (res.ok) {
-        const allKeys = Object.keys(data);
-        const seen = new Set();
-        const envVars = [];
-        for (const key of required) {
-          const val = data[key];
-          envVars.push({ key, value: val === '***' ? '' : (val || '') });
-          seen.add(key);
-        }
-        for (const key of allKeys) {
-          if (!seen.has(key)) {
-            envVars.push({ key, value: data[key] === '***' ? '' : (data[key] || '') });
-          }
-        }
-        setConfigEnvVars(envVars);
-        configModalInitialKeysRef.current = new Set(allKeys);
-        const saved = {};
-        allKeys.forEach((k) => { if (data[k]) saved[k] = true; });
-        setSavedConfigKeys(saved);
-      } else {
-        setConfigEnvVars(required.map((key) => ({ key, value: '' })));
-      }
-    } catch {
-      setConfigEnvVars(required.map((key) => ({ key, value: '' })));
-      setConfigError('Could not load saved keys.');
-    } finally {
-      setConfigLoading(false);
-    }
   };
 
   const configRequiredKeys = selectedAgent?.env_required || [];
@@ -1162,11 +1129,11 @@ export default React.forwardRef(function Sessions({
         </ConsoleInlineDialog>
       )}
 
-      {/* Launch config dialog (config files + env vars for new session) */}
+      {/* Launch config dialog (BYOK key-value form) */}
       {showLaunchConfigModal && (
         <ConsoleInlineDialog
           onClose={() => setShowLaunchConfigModal(false)}
-          panelClassName={`${consoleDialogPanelClass} w-full max-w-lg shadow-sm`}
+          panelClassName={`${consoleDialogPanelClass} w-full max-w-md shadow-sm`}
         >
           <div className={`${consoleStructuredDialogHeaderClass} flex items-center gap-2.5`}>
             <Settings2 className={`w-4 h-4 shrink-0 ${textPlaceholder}`} />
@@ -1174,35 +1141,15 @@ export default React.forwardRef(function Sessions({
               Configure{selectedAgent ? ` - ${selectedAgent.name}` : ''}
             </h3>
           </div>
-          <div className="p-4 space-y-3">
-            {configError && (
-              <p className="text-sm text-[#C06C5D] bg-[#FDECEA] border border-[#FADBD8] rounded-md px-3 py-2">{configError}</p>
-            )}
-            <AgentConfigEditor
-              configSchema={selectedAgent?.config_schema || null}
-              configFiles={launchConfigFiles}
-              envVars={configEnvVars}
-              onConfigFilesChange={setLaunchConfigFiles}
-              onEnvVarsChange={setConfigEnvVars}
-              loading={configLoading}
+          <div className="p-4">
+            <ByokConfigForm
+              agentId={selectedAgentId}
+              loading={false}
+              onSave={() => {
+                setShowLaunchConfigModal(false);
+                showToast('success', 'Configuration saved.');
+              }}
             />
-          </div>
-          <div className={consoleStructuredDialogFooterClass}>
-            <button
-              type="button"
-              onClick={() => { setShowLaunchConfigModal(false); setConfigError(null); }}
-              className={`h-9 px-3 ${bgCanvas} border ${borderHairline} ${textPrimary} rounded-md text-sm font-medium ${hoverBgSecondary} ${transitionBase}`}
-            >
-              Cancel
-            </button>
-            <button
-              type="button"
-              disabled={configSaving || configLoading}
-              onClick={handleSaveLaunchConfig}
-              className={`h-9 px-3 flex items-center justify-center gap-2 bg-[#202124] text-white rounded-md text-sm font-medium hover:bg-[#3C4043] disabled:opacity-50 ${transitionBase}`}
-            >
-              {configSaving ? <><Loader2 className="w-4 h-4 animate-spin" /> Saving…</> : 'Save'}
-            </button>
           </div>
         </ConsoleInlineDialog>
       )}

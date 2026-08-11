@@ -6,7 +6,6 @@ import {
   Upload, Download, AlertTriangle, RotateCcw,
 } from 'lucide-react';
 import { consoleButtonFocusClass, consoleInputClass, consoleDropdownPanelClass, consoleMenuDropdownZClass } from '@/lib/consoleTheme';
-import { consoleDropdownPanelClass, consoleMenuDropdownZClass } from '../lib/consoleTokens';
 import { buttonClass } from '../lib/buttonStyles';
 import { ConsoleDialogShell } from './ConsoleDialog';
 import CreatePRDialog from './github/CreatePRDialog';

@@ -11,7 +11,6 @@ import {
   textPlaceholder,
   borderHairline,
   bgCanvas,
-  consoleInputClass,
 } from '../../lib/consoleTheme';
 
 const REVIEW_STATE_STYLES = {

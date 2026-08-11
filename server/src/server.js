@@ -238,6 +238,77 @@ fastify.post('/api/v1/secrets', { preValidation: [fastify.authenticate] }, async
     }
 });
 
+// ── BYOK (Bring Your Own Key) field definitions and config ──
+
+fastify.get('/api/v1/agents/:agentId/byok-fields', { preValidation: [fastify.authenticate] }, async (request, reply) => {
+    const { agentId } = request.params;
+    const { BYOK_FIELDS } = require('./agents/byokFields');
+    return BYOK_FIELDS[agentId] || [];
+});
+
+fastify.get('/api/v1/agents/:agentId/byok-config', { preValidation: [fastify.authenticate] }, async (request, reply) => {
+    const { agentId } = request.params;
+    const { getByokFieldValues } = require('./agents/byokFields');
+    const { getUserSecrets } = require('./agents/agentEnv');
+    const secrets = await getUserSecrets(request.user.id);
+    return getByokFieldValues(agentId, secrets);
+});
+
+fastify.put('/api/v1/agents/:agentId/byok-config', { preValidation: [fastify.authenticate] }, async (request, reply) => {
+    const { agentId } = request.params;
+    const values = request.body || {};
+    const { BYOK_FIELDS, applyByokToSecrets } = require('./agents/byokFields');
+
+    const fields = BYOK_FIELDS[agentId];
+    if (!fields) return reply.code(404).send({ error: 'No BYOK fields for this agent' });
+
+    const missing = fields
+        .filter((f) => f.required && !String(values[f.key] ?? '').trim())
+        .map((f) => f.key);
+    if (missing.length) {
+        return reply.code(400).send({ error: `Missing required fields: ${missing.join(', ')}` });
+    }
+
+    try {
+        const existing = await db.select().from(schema.secrets).where(eq(schema.secrets.userId, request.user.id));
+        let currentSecrets = {};
+        if (existing.length > 0) {
+            currentSecrets = auth.decryptSecrets(existing[0].encryptedData);
+        }
+        const updatedSecrets = applyByokToSecrets(agentId, values, currentSecrets);
+        const encrypted = auth.encryptSecrets(updatedSecrets);
+
+        if (existing.length > 0) {
+            await db.update(schema.secrets).set({ encryptedData: encrypted }).where(eq(schema.secrets.userId, request.user.id));
+        } else {
+            await db.insert(schema.secrets).values({ userId: request.user.id, encryptedData: encrypted });
+        }
+        return { success: true };
+    } catch (e) {
+        request.log.error(e);
+        return reply.code(500).send({ error: 'Failed to save BYOK config' });
+    }
+});
+
+fastify.delete('/api/v1/agents/:agentId/byok-config', { preValidation: [fastify.authenticate] }, async (request, reply) => {
+    const { agentId } = request.params;
+    const { removeByokFromSecrets, byokStorageKey } = require('./agents/byokFields');
+
+    try {
+        const existing = await db.select().from(schema.secrets).where(eq(schema.secrets.userId, request.user.id));
+        if (existing.length === 0) return { success: true };
+        const currentSecrets = auth.decryptSecrets(existing[0].encryptedData);
+        if (!currentSecrets[byokStorageKey(agentId)]) return { success: true };
+        const updatedSecrets = removeByokFromSecrets(agentId, currentSecrets);
+        const encrypted = auth.encryptSecrets(updatedSecrets);
+        await db.update(schema.secrets).set({ encryptedData: encrypted }).where(eq(schema.secrets.userId, request.user.id));
+        return { success: true };
+    } catch (e) {
+        request.log.error(e);
+        return reply.code(500).send({ error: 'Failed to delete BYOK config' });
+    }
+});
+
 const DEFAULT_AGENT_ID = 'kimi-code';
 
 fastify.get('/api/v1/agents', { preValidation: [fastify.authenticate] }, async (request) => {
@@ -1300,6 +1371,7 @@ fastify.post('/api/v1/sessions/:sessionId/resume', { preValidation: [fastify.aut
             issueSessionToken,
             agentGatewayConfig,
             requestUser: request.user,
+            byokConfigFiles: resumeContext.byokConfigFiles,
         });
     } catch (err) {
         if (err instanceof RuntimeError) {
@@ -1439,6 +1511,18 @@ fastify.post('/api/v1/session/start', { preValidation: [fastify.authenticate] },
         return reply.code(400).send({ error: resolved.error });
     }
 
+    // Merge BYOK env vars + collect BYOK config files for this agent.
+    const { getByokFieldValues, generateByokConfig } = require('./agents/byokFields');
+    const { getUserSecrets } = require('./agents/agentEnv');
+    const byokSecrets = await getUserSecrets(request.user.id);
+    const byokValues = getByokFieldValues(agent_id, byokSecrets);
+    let byokConfigFiles = [];
+    if (Object.keys(byokValues).length) {
+        const byokConfig = generateByokConfig(agent_id, byokValues);
+        resolved.env = { ...resolved.env, ...byokConfig.env };
+        byokConfigFiles = byokConfig.configFiles || [];
+    }
+
     // Validate config files BEFORE creating the session so we can reject
     // invalid JSON without leaving an orphaned session row.
     if (config_files?.length) {
@@ -1560,13 +1644,15 @@ fastify.post('/api/v1/session/start', { preValidation: [fastify.authenticate] },
         // Write user-provided config files BEFORE bootstrap so that bootstrap
         // logic (e.g. claude-code API key approval) can augment user-provided files.
         const { writeConfigFilesToVM, applyCustomEnv, getSessionConfig, resolveAgentSpawnArgs } = require('./session/sessionConfig');
+        const { mergeByokConfigFiles } = require('./agents/byokFields');
         const userSessionConfig = await getSessionConfig(db, schema, sessionId);
-        if (userSessionConfig.configFiles.length) {
+        const mergedConfigFiles = mergeByokConfigFiles(byokConfigFiles, userSessionConfig.configFiles);
+        if (mergedConfigFiles.length) {
             const vmRuntimeRef = ready.runtime ? ready.runtime.runtimeRef : undefined;
             await writeConfigFilesToVM(runtime.fs, {
                 workspaceRoot: workspacePath,
                 runtimeRef: vmRuntimeRef,
-                configFiles: userSessionConfig.configFiles,
+                configFiles: mergedConfigFiles,
                 stateDirPath: sessionStateDir?.stateDirPath || null,
             }).catch((err) => fastify.log.warn({ err, sessionId }, '[sessions] writeConfigFilesToVM failed'));
         }
@@ -1656,7 +1742,7 @@ fastify.post('/api/v1/session/start', { preValidation: [fastify.authenticate] },
             const stateArgs = sessionStateDir?.stateDirPath
                 ? buildStateArgs(resumeSpec, sessionStateDir.stateDirPath)
                 : [];
-            const spawnArgs = resolveAgentSpawnArgs(agent_id, userSessionConfig.configFiles, {
+            const spawnArgs = resolveAgentSpawnArgs(agent_id, mergedConfigFiles, {
                 authMode,
                 gatewayModel: resolved.env.OPENAI_MODEL,
             });
@@ -1692,18 +1778,18 @@ fastify.post('/api/v1/session/start', { preValidation: [fastify.authenticate] },
                             });
                         } catch (e) { /* best-effort */ }
                     }
-                    if (userSessionConfig.configFiles.length) {
+                    if (mergedConfigFiles.length) {
                         await writeConfigFilesToVM(runtime.fs, {
                             workspaceRoot: workspacePath,
                             runtimeRef: ready.runtime ? ready.runtime.runtimeRef : undefined,
-                            configFiles: userSessionConfig.configFiles,
+                            configFiles: mergedConfigFiles,
                             stateDirPath: sessionStateDir?.stateDirPath || null,
                         }).catch(() => {});
                     }
                     const retryStateArgs = sessionStateDir?.stateDirPath
                         ? buildStateArgs(resumeSpec, sessionStateDir.stateDirPath)
                         : [];
-                    const retrySpawnArgs = resolveAgentSpawnArgs(agent_id, userSessionConfig.configFiles, {
+                    const retrySpawnArgs = resolveAgentSpawnArgs(agent_id, mergedConfigFiles, {
                         authMode,
                         gatewayModel: resolved.env.OPENAI_MODEL,
                     });
@@ -1915,6 +2001,7 @@ fastify.register(async function terminalWsRoutes(app) {
                     issueSessionToken,
                     agentGatewayConfig,
                     requestUser: wsUser,
+                    byokConfigFiles: resumeContext.byokConfigFiles,
                 });
             };
 

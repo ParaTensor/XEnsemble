@@ -1,7 +1,8 @@
 const { eq } = require('drizzle-orm');
 const { getAgentResume, getAgentResumeLevel } = require('../agents/agentResume');
-const { resolveSpawnEnv } = require('../agents/agentEnv');
+const { resolveSpawnEnv, getUserSecrets } = require('../agents/agentEnv');
 const { applyProjectGitEnv } = require('../agents/projectGitEnv');
+const { getByokFieldValues, generateByokConfig } = require('../agents/byokFields');
 
 async function buildResumeSessionContext({
     requestUser,
@@ -72,6 +73,16 @@ async function buildResumeSessionContext({
 
     applyProjectGitEnv(resolvedSpawnEnv.env, project);
 
+    // Merge BYOK env vars + collect BYOK config files for this agent.
+    const byokSecrets = await getUserSecrets(requestUser.id);
+    const byokValues = getByokFieldValues(agentMeta.id, byokSecrets);
+    let byokConfigFiles = [];
+    if (Object.keys(byokValues).length) {
+        const byokConfig = generateByokConfig(agentMeta.id, byokValues);
+        resolvedSpawnEnv.env = { ...resolvedSpawnEnv.env, ...byokConfig.env };
+        byokConfigFiles = byokConfig.configFiles || [];
+    }
+
     return {
         project,
         agentMeta,
@@ -79,6 +90,7 @@ async function buildResumeSessionContext({
         resolvedSpawnEnv,
         sessionToken,
         requestUser,
+        byokConfigFiles,
     };
 }
 

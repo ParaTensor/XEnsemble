@@ -57,6 +57,7 @@ async function wakeIdleSession({ requestUser, requestLog, sessionRecord }) {
         issueSessionToken,
         agentGatewayConfig,
         requestUser,
+        byokConfigFiles: resumeContext.byokConfigFiles,
     });
 }
 

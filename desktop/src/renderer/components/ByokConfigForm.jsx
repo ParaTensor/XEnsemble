@@ -1,0 +1,166 @@
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { HelpCircle, Loader2 } from 'lucide-react';
+import { cn } from '../lib/utils';
+import {
+  consoleInputClass,
+  consoleButtonFocusClass,
+  textPrimary,
+  textPlaceholder,
+  textSecondary,
+  borderHairline,
+  bgCanvas,
+} from '../lib/consoleTheme';
+
+export default function ByokConfigForm({ agentId, loading, onSave }) {
+  const [fields, setFields] = useState([]);
+  const [values, setValues] = useState({});
+  const [valuesLoading, setValuesLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState(null);
+  const firstInputRef = useRef(null);
+
+  useEffect(() => {
+    if (!agentId) return;
+    setValuesLoading(true);
+    setError(null);
+    Promise.all([
+      fetch(`/api/v1/agents/${encodeURIComponent(agentId)}/byok-fields`, {
+        headers: { Authorization: `Bearer ${localStorage.getItem('xe_access_token')}` },
+      }).then((r) => r.json()),
+      fetch(`/api/v1/agents/${encodeURIComponent(agentId)}/byok-config`, {
+        headers: { Authorization: `Bearer ${localStorage.getItem('xe_access_token')}` },
+      }).then((r) => r.json()),
+    ]).then(([fieldsRes, configRes]) => {
+      setFields(fieldsRes.fields || []);
+      const savedValues = {};
+      const config = configRes.values || {};
+      for (const f of (fieldsRes.fields || [])) {
+        if (f.key in config && config[f.key]) {
+          savedValues[f.key] = config[f.key];
+        } else if (f.defaultValue) {
+          savedValues[f.key] = String(f.defaultValue);
+        } else {
+          savedValues[f.key] = '';
+        }
+      }
+      setValues(savedValues);
+    }).catch(() => {
+      setError('Failed to load configuration fields.');
+    }).finally(() => {
+      setValuesLoading(false);
+    });
+  }, [agentId]);
+
+  useEffect(() => {
+    if (!valuesLoading && firstInputRef.current) {
+      firstInputRef.current.focus();
+    }
+  }, [valuesLoading]);
+
+  const handleChange = useCallback((key, value) => {
+    setValues((prev) => ({ ...prev, [key]: value }));
+  }, []);
+
+  const handleSave = async () => {
+    setError(null);
+    for (const f of fields) {
+      if (f.required && !(values[f.key] || '').trim()) {
+        setError(`${f.label} is required.`);
+        return;
+      }
+    }
+    setSaving(true);
+    try {
+      const res = await fetch(`/api/v1/agents/${encodeURIComponent(agentId)}/byok-config`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${localStorage.getItem('xe_access_token')}`,
+        },
+        body: JSON.stringify({ values }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to save configuration');
+      onSave?.();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (valuesLoading || loading) {
+    return (
+      <div className="flex items-center justify-center py-8">
+        <Loader2 className="w-4 h-4 animate-spin text-[#9AA0A6]" />
+      </div>
+    );
+  }
+
+  if (fields.length === 0) {
+    return (
+      <p className={cn('text-sm py-4 text-center', textPlaceholder)}>
+        This agent does not require BYOK configuration.
+      </p>
+    );
+  }
+
+  return (
+    <div className="space-y-3">
+      {error && (
+        <p className="text-sm text-[#C06C5D] bg-[#FDECEA] border border-[#FADBD8] rounded-md px-3 py-2">{error}</p>
+      )}
+      {fields.map((f, idx) => {
+        const isSecret = f.type === 'secret';
+        const isNumber = f.type === 'number';
+        return (
+          <div key={f.key}>
+            <div className="flex items-center gap-1.5 mb-1">
+              <label className={cn('text-xs font-medium', textPrimary)}>
+                {f.label}
+                {f.required && <span className="text-[#C06C5D] ml-0.5">*</span>}
+              </label>
+              <span className="group relative inline-flex">
+                <HelpCircle className={cn('h-3 w-3 cursor-help', textPlaceholder)} />
+                <span className={cn(
+                  'absolute left-1/2 -translate-x-1/2 bottom-full mb-1.5',
+                  'hidden group-hover:block z-10',
+                  'px-2 py-1 text-[11px] rounded whitespace-nowrap',
+                  'bg-[#202124] text-white',
+                  'pointer-events-none',
+                )}>
+                  {f.tooltip}
+                </span>
+              </span>
+            </div>
+            <input
+              ref={idx === 0 ? firstInputRef : undefined}
+              type={isSecret ? 'password' : 'text'}
+              value={values[f.key] || ''}
+              onChange={(e) => handleChange(f.key, e.target.value)}
+              placeholder={f.defaultValue ? String(f.defaultValue) : `Enter ${f.label}`}
+              className={cn(consoleInputClass, consoleButtonFocusClass)}
+              autoComplete="off"
+              spellCheck={false}
+            />
+          </div>
+        );
+      })}
+      <div className="flex justify-end pt-1">
+        <button
+          type="button"
+          disabled={saving}
+          onClick={handleSave}
+          className={cn(
+            'h-9 px-4 flex items-center justify-center gap-2',
+            'bg-[#202124] text-white rounded-md text-sm font-medium',
+            'hover:bg-[#3C4043] disabled:opacity-50',
+            consoleButtonFocusClass,
+          )}
+        >
+          {saving ? <><Loader2 className="w-4 h-4 animate-spin" /> Saving…</> : 'Save'}
+        </button>
+      </div>
+    </div>
+  );
+}

@@ -1,0 +1,408 @@
+const { test } = require('node:test');
+const assert = require('node:assert/strict');
+const {
+    BYOK_FIELDS,
+    byokStorageKey,
+    getByokFieldValues,
+    generateByokConfig,
+    applyByokToSecrets,
+    removeByokFromSecrets,
+    mergeByokConfigFiles,
+} = require('./byokFields');
+
+// ── BYOK_FIELDS ──
+
+test('BYOK_FIELDS: covers all configurable agents', () => {
+    const expected = [
+        'kimi-code', 'claude-code', 'opencode', 'cline', 'droid',
+        'glm-agent', 'qoder', 'qwen-code', 'minimax-cli', 'pi',
+        'commandcode', 'hermes', 'openclaw',
+    ];
+    for (const id of expected) {
+        assert.ok(Array.isArray(BYOK_FIELDS[id]), `missing fields for ${id}`);
+        assert.ok(BYOK_FIELDS[id].length >= 1, `${id} should have at least 1 field`);
+    }
+});
+
+test('BYOK_FIELDS: non-configurable agents are absent', () => {
+    assert.equal(BYOK_FIELDS['cursor'], undefined);
+    assert.equal(BYOK_FIELDS['amp'], undefined);
+    assert.equal(BYOK_FIELDS['codebuddy'], undefined);
+    assert.equal(BYOK_FIELDS['github-copilot'], undefined);
+});
+
+test('BYOK_FIELDS: each field has required shape', () => {
+    for (const [agentId, fields] of Object.entries(BYOK_FIELDS)) {
+        for (const f of fields) {
+            assert.ok(f.key, `${agentId}: field missing key`);
+            assert.ok(f.label, `${agentId}: field missing label`);
+            assert.ok(f.tooltip, `${agentId}: field missing tooltip`);
+            assert.ok(['string', 'secret', 'number'].includes(f.type), `${agentId}: invalid type ${f.type}`);
+            assert.equal(typeof f.required, 'boolean', `${agentId}: required must be boolean`);
+        }
+    }
+});
+
+test('BYOK_FIELDS: required fields have no defaultValue', () => {
+    for (const [agentId, fields] of Object.entries(BYOK_FIELDS)) {
+        for (const f of fields) {
+            if (f.required) {
+                assert.equal(f.defaultValue, '', `${agentId}.${f.key}: required field should have empty defaultValue`);
+            }
+        }
+    }
+});
+
+// ── byokStorageKey ──
+
+test('byokStorageKey: returns __byok_ prefix', () => {
+    assert.equal(byokStorageKey('kimi-code'), '__byok_kimi-code');
+    assert.equal(byokStorageKey('claude-code'), '__byok_claude-code');
+});
+
+// ── getByokFieldValues ──
+
+test('getByokFieldValues: returns parsed values from blob', () => {
+    const secrets = { '__byok_cline': JSON.stringify({ ANTHROPIC_API_KEY: 'sk-test' }) };
+    const values = getByokFieldValues('cline', secrets);
+    assert.deepEqual(values, { ANTHROPIC_API_KEY: 'sk-test' });
+});
+
+test('getByokFieldValues: returns empty for missing blob', () => {
+    assert.deepEqual(getByokFieldValues('cline', {}), {});
+    assert.deepEqual(getByokFieldValues('cline', null), {});
+});
+
+test('getByokFieldValues: returns empty for invalid JSON', () => {
+    const secrets = { '__byok_cline': 'not-json' };
+    assert.deepEqual(getByokFieldValues('cline', secrets), {});
+});
+
+// ── generateByokConfig: kimi-code ──
+
+test('generateByokConfig kimi-code: generates TOML with fixed fields', () => {
+    const { env, configFiles } = generateByokConfig('kimi-code', {
+        api_key: 'sk-kimi',
+        base_url: 'https://api.moonshot.cn/v1',
+        model: 'kimi-k2.5',
+        max_context_size: 256000,
+    });
+    assert.deepEqual(env, {});
+    assert.equal(configFiles.length, 1);
+    assert.equal(configFiles[0].path, '${STATE_DIR}/config.toml');
+    const content = configFiles[0].content;
+    assert.ok(content.includes('default_model = "kimi-default"'));
+    assert.ok(content.includes('default_provider = "kimi"'));
+    assert.ok(content.includes('type = "kimi"'));
+    assert.ok(content.includes('provider = "kimi"'));
+    assert.ok(content.includes('api_key = "sk-kimi"'));
+    assert.ok(content.includes('model = "kimi-k2.5"'));
+    assert.ok(content.includes('max_context_size = 256000'));
+});
+
+test('generateByokConfig kimi-code: uses defaults for missing optional fields', () => {
+    const { configFiles } = generateByokConfig('kimi-code', { api_key: 'sk-kimi' });
+    const content = configFiles[0].content;
+    assert.ok(content.includes('base_url = "https://api.moonshot.cn/v1"'));
+    assert.ok(content.includes('model = "kimi-k2.5"'));
+    assert.ok(content.includes('max_context_size = 256000'));
+});
+
+test('generateByokConfig kimi-code: no config file when api_key empty', () => {
+    const { configFiles } = generateByokConfig('kimi-code', { api_key: '' });
+    assert.equal(configFiles.length, 0);
+});
+
+// ── generateByokConfig: claude-code ──
+
+test('generateByokConfig claude-code: generates env only', () => {
+    const { env, configFiles } = generateByokConfig('claude-code', {
+        ANTHROPIC_API_KEY: 'sk-ant',
+        ANTHROPIC_BASE_URL: 'https://api.anthropic.com',
+        ANTHROPIC_MODEL: 'claude-sonnet-4',
+        ANTHROPIC_SMALL_FAST_MODEL: 'claude-haiku',
+    });
+    assert.deepEqual(env, {
+        ANTHROPIC_API_KEY: 'sk-ant',
+        ANTHROPIC_BASE_URL: 'https://api.anthropic.com',
+        ANTHROPIC_MODEL: 'claude-sonnet-4',
+        ANTHROPIC_SMALL_FAST_MODEL: 'claude-haiku',
+    });
+    assert.equal(configFiles.length, 0);
+});
+
+test('generateByokConfig claude-code: skips empty optional fields', () => {
+    const { env } = generateByokConfig('claude-code', {
+        ANTHROPIC_API_KEY: 'sk-ant',
+        ANTHROPIC_MODEL: '',
+    });
+    assert.equal(env.ANTHROPIC_API_KEY, 'sk-ant');
+    assert.equal(env.ANTHROPIC_MODEL, undefined);
+    assert.equal(env.ANTHROPIC_SMALL_FAST_MODEL, undefined);
+});
+
+// ── generateByokConfig: cline / minimax-cli / commandcode ──
+
+test('generateByokConfig cline: single env var', () => {
+    const { env, configFiles } = generateByokConfig('cline', { ANTHROPIC_API_KEY: 'sk-test' });
+    assert.deepEqual(env, { ANTHROPIC_API_KEY: 'sk-test' });
+    assert.equal(configFiles.length, 0);
+});
+
+test('generateByokConfig minimax-cli: single env var', () => {
+    const { env } = generateByokConfig('minimax-cli', { MINIMAX_API_KEY: 'mmx-test' });
+    assert.deepEqual(env, { MINIMAX_API_KEY: 'mmx-test' });
+});
+
+test('generateByokConfig commandcode: single env var', () => {
+    const { env } = generateByokConfig('commandcode', { COHERE_API_KEY: 'co-test' });
+    assert.deepEqual(env, { COHERE_API_KEY: 'co-test' });
+});
+
+// ── generateByokConfig: opencode ──
+
+test('generateByokConfig opencode: generates JSON with npm and name from provider', () => {
+    const { env, configFiles } = generateByokConfig('opencode', {
+        apiKey: 'sk-ds',
+        baseURL: 'https://api.deepseek.com',
+        model: 'my-deepseek/deepseek-chat',
+        provider: 'my-deepseek',
+    });
+    assert.deepEqual(env, {});
+    assert.equal(configFiles.length, 1);
+    assert.equal(configFiles[0].path, '/root/.config/opencode/opencode.json');
+    const parsed = JSON.parse(configFiles[0].content);
+    assert.equal(parsed.autoupdate, false);
+    assert.equal(parsed.model, 'my-deepseek/deepseek-chat');
+    assert.equal(parsed.provider['my-deepseek'].npm, '@ai-sdk/openai-compatible');
+    assert.equal(parsed.provider['my-deepseek'].name, 'my-deepseek');
+    assert.equal(parsed.provider['my-deepseek'].options.apiKey, 'sk-ds');
+    assert.equal(parsed.provider['my-deepseek'].options.baseURL, 'https://api.deepseek.com');
+    assert.ok(parsed.provider['my-deepseek'].models['deepseek-chat']);
+});
+
+// ── generateByokConfig: droid ──
+
+test('generateByokConfig droid: generates settings.json with customModels', () => {
+    const { env, configFiles } = generateByokConfig('droid', {
+        apiKey: 'sk-ds',
+        baseUrl: 'https://api.deepseek.com/v1',
+        model: 'deepseek-chat',
+        provider: 'generic-chat-completion-api',
+    });
+    assert.deepEqual(env, {});
+    assert.equal(configFiles.length, 1);
+    assert.equal(configFiles[0].path, '${STATE_DIR}/.factory/settings.json');
+    const parsed = JSON.parse(configFiles[0].content);
+    assert.equal(parsed.customModels.length, 1);
+    assert.equal(parsed.customModels[0].provider, 'generic-chat-completion-api');
+    assert.equal(parsed.customModels[0].model, 'deepseek-chat');
+    assert.equal(parsed.customModels[0].apiKey, 'sk-ds');
+});
+
+// ── generateByokConfig: glm-agent ──
+
+test('generateByokConfig glm-agent: preserves models whitelist and appends defaultModel', () => {
+    const { configFiles } = generateByokConfig('glm-agent', {
+        apiKey: 'sk-zai',
+        defaultModel: 'glm-custom',
+    });
+    const parsed = JSON.parse(configFiles[0].content);
+    assert.deepEqual(parsed.models, ['glm-4.6', 'glm-4.5', 'glm-4.5-air', 'glm-custom']);
+    assert.equal(parsed.defaultModel, 'glm-custom');
+    assert.equal(parsed.apiKey, 'sk-zai');
+    assert.equal(parsed.watchEnabled, false);
+});
+
+test('generateByokConfig glm-agent: does not duplicate when defaultModel in whitelist', () => {
+    const { configFiles } = generateByokConfig('glm-agent', {
+        apiKey: 'sk-zai',
+        defaultModel: 'glm-4.6',
+    });
+    const parsed = JSON.parse(configFiles[0].content);
+    assert.deepEqual(parsed.models, ['glm-4.6', 'glm-4.5', 'glm-4.5-air']);
+});
+
+// ── generateByokConfig: qoder ──
+
+test('generateByokConfig qoder: generates env + settings.json', () => {
+    const { env, configFiles } = generateByokConfig('qoder', {
+        QODER_PERSONAL_ACCESS_TOKEN: 'tok-qoder',
+        apiKey: 'sk-ds',
+        baseUrl: 'https://api.deepseek.com',
+        model: 'deepseek-chat',
+    });
+    assert.equal(env.QODER_PERSONAL_ACCESS_TOKEN, 'tok-qoder');
+    assert.equal(configFiles.length, 1);
+    assert.equal(configFiles[0].path, '${STATE_DIR}/settings.json');
+    const parsed = JSON.parse(configFiles[0].content);
+    assert.equal(parsed.model, 'my-deepseek/deepseek-chat');
+    assert.equal(parsed.providers['my-deepseek'].apiKey, 'sk-ds');
+    assert.equal(parsed.general.enableAutoUpdate, false);
+});
+
+// ── generateByokConfig: qwen-code ──
+
+test('generateByokConfig qwen-code: env only when customApiKey empty', () => {
+    const { env, configFiles } = generateByokConfig('qwen-code', {
+        DASHSCOPE_API_KEY: 'sk-dash',
+    });
+    assert.equal(env.DASHSCOPE_API_KEY, 'sk-dash');
+    assert.equal(configFiles.length, 0);
+});
+
+test('generateByokConfig qwen-code: generates settings.json when customApiKey filled', () => {
+    const { env, configFiles } = generateByokConfig('qwen-code', {
+        DASHSCOPE_API_KEY: 'sk-dash',
+        customApiKey: 'sk-custom',
+        baseUrl: 'https://api.deepseek.com/v1',
+        model: 'deepseek-chat',
+    });
+    assert.equal(env.DASHSCOPE_API_KEY, 'sk-dash');
+    assert.equal(configFiles.length, 1);
+    const parsed = JSON.parse(configFiles[0].content);
+    assert.equal(parsed.env.DEEPSEEK_API_KEY, 'sk-custom');
+    assert.equal(parsed.modelProviders['my-deepseek'][0].envKey, 'DEEPSEEK_API_KEY');
+});
+
+// ── generateByokConfig: pi ──
+
+test('generateByokConfig pi: env only when apiKey empty', () => {
+    const { env, configFiles } = generateByokConfig('pi', {
+        ANTHROPIC_API_KEY: 'sk-ant',
+        OPENAI_API_KEY: 'sk-oai',
+    });
+    assert.equal(env.ANTHROPIC_API_KEY, 'sk-ant');
+    assert.equal(env.OPENAI_API_KEY, 'sk-oai');
+    assert.equal(configFiles.length, 0);
+});
+
+test('generateByokConfig pi: generates models.json when apiKey filled', () => {
+    const { env, configFiles } = generateByokConfig('pi', {
+        ANTHROPIC_API_KEY: 'sk-ant',
+        OPENAI_API_KEY: 'sk-oai',
+        apiKey: 'sk-custom',
+        baseUrl: 'https://api.deepseek.com/v1',
+        model: 'deepseek-chat',
+    });
+    assert.equal(env.ANTHROPIC_API_KEY, 'sk-ant');
+    assert.equal(env.OPENAI_API_KEY, 'sk-oai');
+    assert.equal(configFiles.length, 1);
+    assert.equal(configFiles[0].path, '/root/.pi/agent/models.json');
+    const parsed = JSON.parse(configFiles[0].content);
+    assert.equal(parsed.providers['my-deepseek'].apiKey, 'sk-custom');
+    assert.equal(parsed.providers['my-deepseek'].api, 'openai-completions');
+});
+
+// ── generateByokConfig: hermes ──
+
+test('generateByokConfig hermes: generates YAML', () => {
+    const { env, configFiles } = generateByokConfig('hermes', {
+        api_key: 'sk-ds',
+        base_url: 'https://api.deepseek.com/v1',
+        model: 'deepseek-chat',
+        api_mode: 'openai',
+    });
+    assert.deepEqual(env, {});
+    assert.equal(configFiles.length, 1);
+    assert.equal(configFiles[0].path, '${STATE_DIR}/config.yaml');
+    const content = configFiles[0].content;
+    assert.ok(content.includes('provider: my-deepseek'));
+    assert.ok(content.includes('name: DeepSeek'));
+    assert.ok(content.includes('api_key: sk-ds'));
+    assert.ok(content.includes('api_mode: openai'));
+    assert.ok(content.includes('model: deepseek-chat'));
+});
+
+// ── generateByokConfig: openclaw ──
+
+test('generateByokConfig openclaw: generates JSON with mode=merge and logging.level=info', () => {
+    const { env, configFiles } = generateByokConfig('openclaw', {
+        apiKey: 'sk-ds',
+        baseUrl: 'https://api.deepseek.com/v1',
+        model: 'deepseek-chat',
+        api: 'openai-completions',
+    });
+    assert.deepEqual(env, {});
+    assert.equal(configFiles.length, 1);
+    assert.equal(configFiles[0].path, '${STATE_DIR}/openclaw.json');
+    const parsed = JSON.parse(configFiles[0].content);
+    assert.equal(parsed.models.mode, 'merge');
+    assert.equal(parsed.logging.level, 'info');
+    assert.equal(parsed.agents.defaults.model.primary, 'my-deepseek/deepseek-chat');
+    assert.equal(parsed.models.providers['my-deepseek'].apiKey, 'sk-ds');
+});
+
+// ── generateByokConfig: edge cases ──
+
+test('generateByokConfig: unknown agent returns empty', () => {
+    const { env, configFiles } = generateByokConfig('unknown', { foo: 'bar' });
+    assert.deepEqual(env, {});
+    assert.deepEqual(configFiles, []);
+});
+
+test('generateByokConfig: null values returns empty', () => {
+    const { env, configFiles } = generateByokConfig('kimi-code', null);
+    assert.deepEqual(env, {});
+    assert.deepEqual(configFiles, []);
+});
+
+// ── applyByokToSecrets ──
+
+test('applyByokToSecrets: stores blob + individual env keys', () => {
+    const updated = applyByokToSecrets('cline', { ANTHROPIC_API_KEY: 'sk-test' }, {});
+    assert.ok(updated['__byok_cline']);
+    assert.equal(updated.ANTHROPIC_API_KEY, 'sk-test');
+    const blob = JSON.parse(updated['__byok_cline']);
+    assert.deepEqual(blob, { ANTHROPIC_API_KEY: 'sk-test' });
+});
+
+test('applyByokToSecrets: removes old env keys when values change', () => {
+    const oldSecrets = applyByokToSecrets('claude-code', {
+        ANTHROPIC_API_KEY: 'sk-old',
+        ANTHROPIC_MODEL: 'old-model',
+    }, {});
+    const updated = applyByokToSecrets('claude-code', {
+        ANTHROPIC_API_KEY: 'sk-new',
+    }, oldSecrets);
+    assert.equal(updated.ANTHROPIC_API_KEY, 'sk-new');
+    assert.equal(updated.ANTHROPIC_MODEL, undefined);
+});
+
+test('applyByokToSecrets: preserves non-BYOK secrets', () => {
+    const existing = { MY_OTHER_SECRET: 'keep-me' };
+    const updated = applyByokToSecrets('cline', { ANTHROPIC_API_KEY: 'sk-test' }, existing);
+    assert.equal(updated.MY_OTHER_SECRET, 'keep-me');
+});
+
+// ── removeByokFromSecrets ──
+
+test('removeByokFromSecrets: removes blob and env keys', () => {
+    const withByok = applyByokToSecrets('cline', { ANTHROPIC_API_KEY: 'sk-test' }, { OTHER: 'val' });
+    const cleaned = removeByokFromSecrets('cline', withByok);
+    assert.equal(cleaned['__byok_cline'], undefined);
+    assert.equal(cleaned.ANTHROPIC_API_KEY, undefined);
+    assert.equal(cleaned.OTHER, 'val');
+});
+
+// ── mergeByokConfigFiles ──
+
+test('mergeByokConfigFiles: session files override BYOK files with same path', () => {
+    const byok = [{ path: '${STATE_DIR}/settings.json', content: '{"byok":true}' }];
+    const session = [{ path: '${STATE_DIR}/settings.json', content: '{"session":true}' }];
+    const merged = mergeByokConfigFiles(byok, session);
+    assert.equal(merged.length, 1);
+    assert.equal(merged[0].content, '{"session":true}');
+});
+
+test('mergeByokConfigFiles: different paths are both kept', () => {
+    const byok = [{ path: '${STATE_DIR}/config.toml', content: 'toml' }];
+    const session = [{ path: '${STATE_DIR}/settings.json', content: 'json' }];
+    const merged = mergeByokConfigFiles(byok, session);
+    assert.equal(merged.length, 2);
+});
+
+test('mergeByokConfigFiles: handles empty inputs', () => {
+    assert.deepEqual(mergeByokConfigFiles([], []), []);
+    assert.deepEqual(mergeByokConfigFiles(null, null), []);
+});

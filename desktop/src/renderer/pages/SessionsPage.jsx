@@ -33,7 +33,7 @@ import {
   Loader2,
   Trash2,
 } from 'lucide-react';
-import { getSecretLabel, getSecretPlaceholder, isSecretPasswordField } from '../lib/secretLabels';
+import ByokConfigForm from '../components/ByokConfigForm';
 import { formatQuotaExceeded } from '../lib/quotaLabels';
 import {
   archiveSession,
@@ -241,33 +241,9 @@ export default React.forwardRef(function Sessions({
   const selectedAgent = agents.find(a => a.id === selectedAgentId);
 
   const openConfigModal = async () => {
-    const required = selectedAgent?.env_required || [];
     setConfigError(null);
     setError(null);
     setShowConfigModal(true);
-    setConfigLoading(true);
-    try {
-      const res = await apiFetch('/api/v1/secrets');
-      const data = await res.json();
-      if (res.ok) {
-        const allKeys = Object.keys(data);
-        const envVars = allKeys.length > 0
-          ? allKeys.map((key) => ({ key, value: data[key] === '***' ? '' : (data[key] || '') }))
-          : required.map((key) => ({ key, value: '' }));
-        setConfigEnvVars(envVars);
-        configModalInitialKeysRef.current = new Set(allKeys);
-        const saved = {};
-        allKeys.forEach((k) => { if (data[k]) saved[k] = true; });
-        setSavedConfigKeys(saved);
-      } else {
-        setConfigEnvVars(required.map((key) => ({ key, value: '' })));
-      }
-    } catch {
-      setConfigEnvVars(required.map((key) => ({ key, value: '' })));
-      setConfigError('Could not load saved keys.');
-    } finally {
-      setConfigLoading(false);
-    }
   };
 
   const configRequiredKeys = selectedAgent?.env_required || [];
@@ -1014,9 +990,9 @@ export default React.forwardRef(function Sessions({
               <div>
                 <div className="flex items-center justify-between gap-2 mb-1">
                   <label className={`text-xs font-semibold uppercase tracking-wider ${textPlaceholder}`}>Agent</label>
-                  {selectedAgent?.llm_auth_mode === 'byok' && selectedAgent?.env_required?.length > 0 && (
+                  {selectedAgent && selectedAgent.llm_auth_mode === 'byok' && (
                     <button type="button" onClick={() => openConfigModal()} className={`text-xs font-medium ${textPlaceholder} hover:text-[#202124]`}>
-                      <Settings2 className="w-3.5 h-3.5 inline" /> Configure Keys
+                      <Settings2 className="w-3.5 h-3.5 inline" /> Configure
                     </button>
                   )}
                 </div>
@@ -1143,7 +1119,7 @@ export default React.forwardRef(function Sessions({
         </ConsoleInlineDialog>
       )}
 
-      {/* Configure environment variables (BYOK) */}
+      {/* Configure BYOK (key-value form) */}
       {showConfigModal && (
         <ConsoleInlineDialog
           onClose={() => { setShowConfigModal(false); setConfigError(null); }}
@@ -1152,83 +1128,19 @@ export default React.forwardRef(function Sessions({
           <div className={`${consoleStructuredDialogHeaderClass} flex items-center gap-2.5`}>
             <Settings2 className={`w-4 h-4 shrink-0 ${textPlaceholder}`} />
             <h3 className={`font-semibold text-sm ${textPrimary}`}>
-              Environment variables{selectedAgent ? ` - ${selectedAgent.name}` : ''}
+              Configure{selectedAgent ? ` - ${selectedAgent.name}` : ''}
             </h3>
           </div>
-          <form onSubmit={handleSaveConfig}>
-            <div className="p-4 space-y-3">
-              {configError && (
-                <p className="text-sm text-[#C06C5D] bg-[#FDECEA] border border-[#FADBD8] rounded-md px-3 py-2">{configError}</p>
-              )}
-              {configLoading ? (
-                <p className={`text-sm ${textPlaceholder} flex items-center gap-2`}>
-                  <Loader2 className="w-4 h-4 animate-spin" /> Loading…
-                </p>
-              ) : (
-                <>
-                  <p className={`text-xs ${textPlaceholder}`}>
-                    Add environment variables for this agent. Admin-configured variables are used by default; your values here override them.
-                  </p>
-                  {configEnvVars.map((pair, idx) => (
-                    <div key={idx} className="space-y-1">
-                      <div className="flex gap-2 items-center">
-                        <input
-                          value={pair.key}
-                          onChange={(e) => setConfigEnvVars((prev) => prev.map((p, i) => i === idx ? { ...p, key: e.target.value } : p))}
-                          className={consoleInputClass}
-                          placeholder="ENV_VAR_NAME"
-                          autoFocus={idx === 0}
-                          autoComplete="off"
-                        />
-                        <button
-                          type="button"
-                          onClick={() => setConfigEnvVars((prev) => prev.filter((_, i) => i !== idx))}
-                          className={`flex-shrink-0 ${textPlaceholder} hover:text-[#C06C5D] ${transitionBase}`}
-                          title="Remove"
-                        >
-                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                            <line x1="18" y1="6" x2="6" y2="18" />
-                            <line x1="6" y1="6" x2="18" y2="18" />
-                          </svg>
-                        </button>
-                      </div>
-                      <input
-                        type={isSecretPasswordField(pair.key) ? 'password' : 'text'}
-                        value={pair.value}
-                        onChange={(e) => setConfigEnvVars((prev) => prev.map((p, i) => i === idx ? { ...p, value: e.target.value } : p))}
-                        className={consoleInputClass}
-                        placeholder="value"
-                        autoComplete="off"
-                      />
-                    </div>
-                  ))}
-                  <button
-                    type="button"
-                    onClick={() => setConfigEnvVars((prev) => [...prev, { key: '', value: '' }])}
-                    className={`text-sm ${textPlaceholder} hover:${textPrimary} ${transitionBase}`}
-                  >
-                    + Add env var
-                  </button>
-                </>
-              )}
-            </div>
-            <div className={consoleStructuredDialogFooterClass}>
-              <button
-                type="button"
-                onClick={() => { setShowConfigModal(false); setConfigError(null); }}
-                className={`h-9 px-3 ${bgCanvas} border ${borderHairline} ${textPrimary} rounded-md text-sm font-medium ${hoverBgSecondary} ${transitionBase}`}
-              >
-                Cancel
-              </button>
-              <button
-                type="submit"
-                disabled={configSaving || configLoading}
-                className={`h-9 px-3 flex items-center justify-center gap-2 bg-[#202124] text-white rounded-md text-sm font-medium hover:bg-[#3C4043] disabled:opacity-50 ${transitionBase}`}
-              >
-                {configSaving ? <><Loader2 className="w-4 h-4 animate-spin" /> Saving…</> : 'Save'}
-              </button>
-            </div>
-          </form>
+          <div className="p-4">
+            <ByokConfigForm
+              agentId={selectedAgentId}
+              loading={false}
+              onSave={() => {
+                setShowConfigModal(false);
+                showToast('success', 'Configuration saved.');
+              }}
+            />
+          </div>
         </ConsoleInlineDialog>
       )}
 
