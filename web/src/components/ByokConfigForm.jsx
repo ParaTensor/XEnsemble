@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { HelpCircle, Loader2 } from 'lucide-react';
 import { cn } from '../lib/utils';
+import { apiFetch } from '../lib/api';
 import {
   consoleInputClass,
   consoleButtonFocusClass,
@@ -24,12 +25,8 @@ export default function ByokConfigForm({ agentId, loading, onSave }) {
     setValuesLoading(true);
     setError(null);
     Promise.all([
-      fetch(`/api/v1/agents/${encodeURIComponent(agentId)}/byok-fields`, {
-        headers: { Authorization: `Bearer ${localStorage.getItem('xe_access_token')}` },
-      }).then((r) => r.json()),
-      fetch(`/api/v1/agents/${encodeURIComponent(agentId)}/byok-config`, {
-        headers: { Authorization: `Bearer ${localStorage.getItem('xe_access_token')}` },
-      }).then((r) => r.json()),
+      apiFetch(`/api/v1/agents/${encodeURIComponent(agentId)}/byok-fields`).then((r) => r.json()),
+      apiFetch(`/api/v1/agents/${encodeURIComponent(agentId)}/byok-config`).then((r) => r.json()),
     ]).then(([fieldsRes, configRes]) => {
       const fieldList = Array.isArray(fieldsRes) ? fieldsRes : (fieldsRes.fields || []);
       setFields(fieldList);
@@ -72,12 +69,8 @@ export default function ByokConfigForm({ agentId, loading, onSave }) {
     }
     setSaving(true);
     try {
-      const res = await fetch(`/api/v1/agents/${encodeURIComponent(agentId)}/byok-config`, {
+      const res = await apiFetch(`/api/v1/agents/${encodeURIComponent(agentId)}/byok-config`, {
         method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${localStorage.getItem('xe_access_token')}`,
-        },
         body: JSON.stringify({ values }),
       });
       const data = await res.json();
