@@ -602,4 +602,5 @@ module.exports = {
   getReadyImageRef,
   formatImageRow,
   formatBuildRow,
+  globalSemaphore,
 };

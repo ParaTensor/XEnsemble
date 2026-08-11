@@ -358,6 +358,24 @@ const customImageBuilds = pgTable('custom_image_builds', {
   imageStateIdx: index('idx_custom_image_builds_image_state').on(table.customImageId, table.state),
 }));
 
+const agentImageBuilds = pgTable('agent_image_builds', {
+  id: text('id').primaryKey(),
+  agentId: text('agent_id').notNull().references(() => agents.id),
+  state: text('state').notNull().default('queued'),
+  imageRef: text('image_ref'),
+  tag: text('tag'),
+  logsRef: text('logs_ref'),
+  failureReason: text('failure_reason'),
+  versionId: text('version_id'),
+  notes: text('notes'),
+  startedAt: bigint('started_at', { mode: 'number' }),
+  finishedAt: bigint('finished_at', { mode: 'number' }),
+  createdBy: text('created_by').references(() => users.id),
+  createdAt: bigint('created_at', { mode: 'number' }).notNull(),
+}, (table) => ({
+  agentBuildStateIdx: index('idx_agent_image_builds_agent_state').on(table.agentId, table.state),
+}));
+
 module.exports = {
   users,
   userQuotas,
@@ -384,6 +402,7 @@ module.exports = {
   gitOAuthStates,
   mergeRequests,
   agentBoxImages,
+  agentImageBuilds,
   customImages,
   customImageBuilds,
 };

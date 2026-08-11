@@ -1,4 +1,7 @@
 const crypto = require('crypto');
+const path = require('path');
+const fs = require('fs');
+const { exec } = require('child_process');
 const { eq, and, desc } = require('drizzle-orm');
 const { db } = require('../db/index');
 const schema = require('../db/schema');
@@ -10,6 +13,10 @@ const {
     resolveAgentBoxImageDefault,
     resolveBoxBaseImage,
 } = require('./agentBoxImages');
+
+const BUILD_LOG_DIR = process.env.CUSTOM_IMAGE_BUILD_LOG_DIR
+    || path.join(process.cwd(), '.data', 'custom-image-builds');
+const BUILD_TIMEOUT_MS = parseInt(process.env.CUSTOM_IMAGE_BUILD_TIMEOUT_MS || String(30 * 60 * 1000), 10);
 
 function formatVersionRow(row) {
     if (!row) return null;
@@ -204,6 +211,269 @@ async function deprecateVersion(versionId) {
     return formatVersionRow(updated[0]);
 }
 
+// ── Build pipeline ──
+
+function generateTag() {
+    const now = new Date();
+    const pad = (n) => String(n).padStart(2, '0');
+    return `${now.getFullYear()}.${pad(now.getMonth() + 1)}.${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}`;
+}
+
+async function resolveUniqueTag(agentId, baseTag) {
+    const existing = await db.select({ tag: schema.agentBoxImages.tag })
+        .from(schema.agentBoxImages)
+        .where(eq(schema.agentBoxImages.agentId, agentId));
+    const existingTags = new Set(existing.map((r) => r.tag));
+    if (!existingTags.has(baseTag)) return baseTag;
+    for (let i = 2; i < 100; i += 1) {
+        if (!existingTags.has(`${baseTag}-${i}`)) return `${baseTag}-${i}`;
+    }
+    return `${baseTag}-${Date.now()}`;
+}
+
+function renderAgentDockerfile(agentId) {
+    const baseImage = resolveBoxBaseImage();
+    const installCmd = getAgentBoxInstallCommand(agentId);
+    if (!installCmd) throw new RuntimeError(`No install command for agent "${agentId}"`, 400);
+
+    return `# syntax=docker/dockerfile:1.7
+ARG BASE_IMAGE=${baseImage}
+FROM \${BASE_IMAGE}
+
+ENV PATH="/usr/local/bin:/root/.local/bin:/root/.cargo/bin:\${PATH}" HOME="/root" \
+    KIMI_CODE_NO_AUTO_UPDATE=1 \
+    DISABLE_UPDATES=1 \
+    FACTORY_DROID_AUTO_UPDATE_ENABLED=false \
+    OPENCLAW_NO_AUTO_UPDATE=1
+
+RUN set -eux; \\
+  echo ">>> ${agentId}" && \\
+  ${installCmd}
+
+RUN rm -rf /root/.npm /root/.cache /tmp/* /var/tmp/* 2>/dev/null; true \\
+  && find /usr/lib/node_modules -path "*/prebuilds/win32-*" -prune -exec rm -rf {} + 2>/dev/null || true \\
+  && find /usr/lib/node_modules -path "*/prebuilds/darwin-*" -prune -exec rm -rf {} + 2>/dev/null || true \\
+  && find /usr/lib/node_modules -name "*.pdb" -delete 2>/dev/null || true \\
+  && find /usr/lib/node_modules -maxdepth 4 -type d -name '.*-*' -exec rm -rf {} + 2>/dev/null || true \\
+  && mkdir -p /root/.config/opencode /root/.qwen \\
+  && echo '{"autoupdate":false}' > /root/.config/opencode/opencode.json \\
+  && echo '{"general":{"enableAutoUpdate":false}}' > /root/.qwen/settings.json
+
+WORKDIR /workspace
+`;
+}
+
+let agentBuildLoopRunning = false;
+
+async function processAgentBuildQueue() {
+    if (agentBuildLoopRunning) return;
+    agentBuildLoopRunning = true;
+    try {
+        const { globalSemaphore } = require('./CustomImageService');
+        await globalSemaphore.acquire();
+        const queued = await db.select().from(schema.agentImageBuilds)
+            .where(eq(schema.agentImageBuilds.state, 'queued'))
+            .orderBy(schema.agentImageBuilds.createdAt)
+            .limit(1);
+        if (queued.length === 0) {
+            globalSemaphore.release();
+            return;
+        }
+        const build = queued[0];
+        await db.update(schema.agentImageBuilds)
+            .set({ state: 'building', startedAt: Date.now() })
+            .where(eq(schema.agentImageBuilds.id, build.id));
+        setImmediate(() => executeAgentBuild(build).finally(() => {
+            globalSemaphore.release();
+        }));
+    } catch {
+        try { const { globalSemaphore } = require('./CustomImageService'); globalSemaphore.release(); } catch (_) {}
+    } finally {
+        agentBuildLoopRunning = false;
+    }
+}
+
+async function executeAgentBuild(build) {
+    const buildId = build.id;
+    const agentId = build.agentId;
+    let logsRef = null;
+    let outputTail = '';
+    const appendTail = (chunk) => { outputTail = (outputTail + chunk.toString()).slice(-2000); };
+
+    try {
+        const dockerfile = renderAgentDockerfile(agentId);
+        const logFile = path.join(BUILD_LOG_DIR, `${buildId}.log`);
+        const contextDir = path.join(BUILD_LOG_DIR, buildId);
+        const dockerfilePath = path.join(contextDir, 'Dockerfile');
+        logsRef = path.relative(BUILD_LOG_DIR, logFile);
+
+        fs.mkdirSync(contextDir, { recursive: true });
+        fs.writeFileSync(dockerfilePath, dockerfile);
+
+        const imageRef = build.imageRef;
+        const buildCmd = `docker build -t ${imageRef} -f ${dockerfilePath} ${contextDir}`;
+        const pushCmd = `docker push ${imageRef}`;
+
+        const logStream = fs.createWriteStream(logFile);
+        logStream.write(`=== Build started at ${new Date().toISOString()} ===\n`);
+        logStream.write(`=== Agent: ${agentId} ===\n`);
+        logStream.write(`=== Image: ${imageRef} ===\n\n`);
+        logStream.write(`=== Dockerfile ===\n${dockerfile}\n\n=== Build output ===\n`);
+
+        await new Promise((resolve, reject) => {
+            const proc = exec(buildCmd, { timeout: BUILD_TIMEOUT_MS, maxBuffer: 4 * 1024 * 1024 });
+            proc.stdout.on('data', appendTail);
+            proc.stderr.on('data', appendTail);
+            proc.stdout.pipe(logStream);
+            proc.stderr.pipe(logStream);
+            proc.on('close', (code) => code === 0 ? resolve() : reject(new Error(`docker build exited with code ${code}`)));
+            proc.on('error', reject);
+        });
+        await new Promise((resolve, reject) => {
+            const proc = exec(pushCmd, { timeout: BUILD_TIMEOUT_MS, maxBuffer: 4 * 1024 * 1024 });
+            proc.stdout.on('data', appendTail);
+            proc.stderr.on('data', appendTail);
+            proc.on('close', (code) => code === 0 ? resolve() : reject(new Error(`docker push exited with code ${code}`)));
+            proc.on('error', reject);
+        });
+        logStream.end();
+
+        const version = await registerVersion({
+            agentId,
+            tag: build.tag,
+            imageRef,
+            notes: build.notes || `Built from UI`,
+            builtAt: Date.now(),
+            createdBy: build.createdBy,
+        });
+
+        await db.update(schema.agentImageBuilds)
+            .set({ state: 'ready', logsRef, versionId: version.id, finishedAt: Date.now() })
+            .where(eq(schema.agentImageBuilds.id, buildId));
+
+        try { fs.rmSync(contextDir, { recursive: true }); } catch { /* ok */ }
+    } catch (err) {
+        const tail = outputTail.trim();
+        const failureReason = (tail ? `${err.message}\n${tail}` : err.message).slice(-500);
+        try {
+            await db.update(schema.agentImageBuilds)
+                .set({ state: 'failed', logsRef, failureReason, finishedAt: Date.now() })
+                .where(eq(schema.agentImageBuilds.id, buildId));
+        } catch { /* best effort */ }
+        try { fs.rmSync(path.join(BUILD_LOG_DIR, buildId), { recursive: true }); } catch { /* ok */ }
+    }
+    processAgentBuildQueue().catch(() => {});
+}
+
+async function buildImage({ agentId, tag, notes, createdBy }) {
+    if (!isAgentBoxBuildable(agentId)) {
+        throw new RuntimeError('This agent does not support image builds', 400);
+    }
+    const versionTag = tag ? normalizeTag(tag) : await resolveUniqueTag(agentId, generateTag());
+    const imageRef = buildDefaultImageRef(agentId, versionTag);
+    const buildId = `abld_${crypto.randomBytes(6).toString('hex')}`;
+    const now = Date.now();
+
+    await db.insert(schema.agentImageBuilds).values({
+        id: buildId,
+        agentId,
+        state: 'queued',
+        imageRef,
+        tag: versionTag,
+        notes: notes?.trim() || null,
+        createdBy: createdBy || null,
+        createdAt: now,
+    });
+
+    setImmediate(() => processAgentBuildQueue().catch(() => {}));
+
+    const rows = await db.select().from(schema.agentImageBuilds).where(eq(schema.agentImageBuilds.id, buildId));
+    return formatBuildRow(rows[0]);
+}
+
+function formatBuildRow(row) {
+    if (!row) return null;
+    return {
+        id: row.id,
+        agent_id: row.agentId,
+        state: row.state,
+        image_ref: row.imageRef || null,
+        tag: row.tag || null,
+        logs_ref: row.logsRef || null,
+        failure_reason: row.failureReason || null,
+        version_id: row.versionId || null,
+        notes: row.notes || null,
+        started_at: row.startedAt || null,
+        finished_at: row.finishedAt || null,
+        created_by: row.createdBy || null,
+        created_at: row.createdAt,
+    };
+}
+
+async function getBuilds(agentId) {
+    const rows = await db.select().from(schema.agentImageBuilds)
+        .where(eq(schema.agentImageBuilds.agentId, agentId))
+        .orderBy(desc(schema.agentImageBuilds.createdAt));
+    return rows.map(formatBuildRow);
+}
+
+async function getBuildLogs(buildId) {
+    const rows = await db.select().from(schema.agentImageBuilds)
+        .where(eq(schema.agentImageBuilds.id, buildId));
+    if (rows.length === 0) throw new RuntimeError('Build not found', 404);
+    const build = rows[0];
+    if (!build.logsRef) return { content: '', build: formatBuildRow(build) };
+    const logFile = path.join(BUILD_LOG_DIR, build.logsRef);
+    let content = '';
+    try { content = fs.readFileSync(logFile, 'utf-8'); } catch { /* file may not exist */ }
+    return { content, build: formatBuildRow(build) };
+}
+
+async function retryBuild(buildId, actorId) {
+    const rows = await db.select().from(schema.agentImageBuilds)
+        .where(eq(schema.agentImageBuilds.id, buildId));
+    if (rows.length === 0) throw new RuntimeError('Build not found', 404);
+    const build = rows[0];
+    if (build.state !== 'failed') {
+        throw new RuntimeError('Only failed builds can be retried', 400);
+    }
+    return buildImage({
+        agentId: build.agentId,
+        tag: build.tag,
+        notes: build.notes,
+        createdBy: actorId || build.createdBy,
+    });
+}
+
+async function deleteBuild(buildId) {
+    const rows = await db.select().from(schema.agentImageBuilds)
+        .where(eq(schema.agentImageBuilds.id, buildId));
+    if (rows.length === 0) throw new RuntimeError('Build not found', 404);
+    const build = rows[0];
+    if (build.state === 'building' || build.state === 'queued') {
+        throw new RuntimeError('Cannot delete a build that is queued or in progress', 400);
+    }
+    if (build.logsRef) {
+        try { fs.unlinkSync(path.join(BUILD_LOG_DIR, build.logsRef)); } catch { /* ok */ }
+    }
+    await db.delete(schema.agentImageBuilds).where(eq(schema.agentImageBuilds.id, buildId));
+    return { ok: true };
+}
+
+async function deleteVersion(versionId) {
+    const rows = await db.select().from(schema.agentBoxImages).where(eq(schema.agentBoxImages.id, versionId));
+    if (rows.length === 0) throw new RuntimeError('Image version not found', 404);
+    const row = rows[0];
+    if (row.isActive) {
+        throw new RuntimeError('Cannot delete the active version. Deprecate it first.', 409);
+    }
+    const { promisify } = require('util');
+    const execAsyncFn = promisify(require('child_process').exec);
+    await execAsyncFn(`docker rmi ${row.imageRef} 2>/dev/null`, { timeout: 15000 }).catch(() => {});
+    await db.delete(schema.agentBoxImages).where(eq(schema.agentBoxImages.id, versionId));
+    return { ok: true };
+}
+
 module.exports = {
     buildDefaultImageRef,
     formatVersionRow,
@@ -213,5 +483,11 @@ module.exports = {
     registerVersion,
     activateVersion,
     deprecateVersion,
+    deleteVersion,
+    buildImage,
+    getBuilds,
+    getBuildLogs,
+    retryBuild,
+    deleteBuild,
     resolveBoxBaseImage,
 };

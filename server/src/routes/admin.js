@@ -20,6 +20,12 @@ const {
     registerVersion,
     activateVersion,
     deprecateVersion,
+    deleteVersion,
+    buildImage,
+    getBuilds,
+    getBuildLogs,
+    retryBuild,
+    deleteBuild,
     resolveBoxBaseImage,
 } = require('../runtime/AgentBoxImageService');
 const { listBuildableAgentImages } = require('../runtime/agentBoxImages');
@@ -599,11 +605,82 @@ function registerAdminRoutes(fastify) {
         }
     };
 
+    const deleteAgentImageVersion = async (request, reply) => {
+        try {
+            const result = await deleteVersion(request.params.versionId);
+            return result;
+        } catch (err) {
+            const statusCode = err instanceof RuntimeError ? err.statusCode : 500;
+            return sendPublicError(reply, err, 'Failed to delete image version', statusCode);
+        }
+    };
+
+    const buildAgentImage = async (request, reply) => {
+        try {
+            const body = request.body || {};
+            const build = await buildImage({
+                agentId: request.params.agentId,
+                tag: body.tag,
+                notes: body.notes,
+                createdBy: request.user.id,
+            });
+            return reply.code(201).send({ build });
+        } catch (err) {
+            const statusCode = err instanceof RuntimeError ? err.statusCode : 500;
+            return sendPublicError(reply, err, 'Failed to build image', statusCode);
+        }
+    };
+
+    const getAgentImageBuilds = async (request, reply) => {
+        try {
+            const builds = await getBuilds(request.params.agentId);
+            return { builds };
+        } catch (err) {
+            return reply.code(500).send({ error: 'Failed to list builds' });
+        }
+    };
+
+    const getAgentImageBuildLogs = async (request, reply) => {
+        try {
+            const result = await getBuildLogs(request.params.buildId);
+            return result;
+        } catch (err) {
+            const statusCode = err instanceof RuntimeError ? err.statusCode : 500;
+            return sendPublicError(reply, err, 'Failed to get build logs', statusCode);
+        }
+    };
+
+    const retryAgentImageBuild = async (request, reply) => {
+        try {
+            const build = await retryBuild(request.params.buildId, request.user.id);
+            return reply.code(201).send({ build });
+        } catch (err) {
+            const statusCode = err instanceof RuntimeError ? err.statusCode : 500;
+            return sendPublicError(reply, err, 'Failed to retry build', statusCode);
+        }
+    };
+
+    const deleteAgentImageBuild = async (request, reply) => {
+        try {
+            const result = await deleteBuild(request.params.buildId);
+            return result;
+        } catch (err) {
+            const statusCode = err instanceof RuntimeError ? err.statusCode : 500;
+            return sendPublicError(reply, err, 'Failed to delete build', statusCode);
+        }
+    };
+
     for (const prefix of ['/api/v1/admin/agent-images', '/api/v1/admin/boxlite/agent-images']) {
         fastify.get(prefix, { preValidation: adminPre }, getAgentImagesCatalog);
         fastify.post(`${prefix}/:agentId/versions`, { preValidation: adminPre }, registerAgentImageVersion);
         fastify.post(`${prefix}/versions/:versionId/activate`, { preValidation: adminPre }, activateAgentImageVersion);
         fastify.post(`${prefix}/versions/:versionId/deprecate`, { preValidation: adminPre }, deprecateAgentImageVersion);
+        fastify.delete(`${prefix}/versions/:versionId`, { preValidation: adminPre }, deleteAgentImageVersion);
+        fastify.post(`${prefix}/:agentId/build`, { preValidation: adminPre }, buildAgentImage);
+        fastify.get(`${prefix}/:agentId/builds`, { preValidation: adminPre }, getAgentImageBuilds);
+        fastify.get(`${prefix}/builds/:buildId/logs`, { preValidation: adminPre }, getAgentImageBuildLogs);
+        fastify.post(`${prefix}/builds/:buildId/retry`, { preValidation: adminPre }, retryAgentImageBuild);
+        fastify.delete(`${prefix}/builds/:buildId`, { preValidation: adminPre }, deleteAgentImageBuild);
     }
 }
 

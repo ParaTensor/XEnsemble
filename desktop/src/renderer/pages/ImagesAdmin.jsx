@@ -7,9 +7,9 @@ import { ConsoleDialogShell } from '../components/ConsoleDialog';
 import Input from '../components/Input';
 import Button from '../components/Button';
 import { useToast } from '../components/Toast';
-import { consoleButtonFocusClass, consoleInputClass } from '../lib/consoleTheme';
-import { apiFetch } from '../lib/api';
-import { cn } from '../lib/utils';
+import { consoleButtonFocusClass, consoleInputClass } from '@/lib/consoleTheme';
+import { apiFetch } from '@/lib/api';
+import { cn } from '@/lib/utils';
 
 const API_BASE = '/api/v1/admin/agent-images';
 
