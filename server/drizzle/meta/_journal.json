@@ -43,6 +43,13 @@
       "when": 1785243000000,
       "tag": "0005_session_configs",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1785933000000,
+      "tag": "0006_agent_image_builds",
+      "breakpoints": true
     }
   ]
 }
