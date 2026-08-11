@@ -127,8 +127,6 @@ function VersionRow({ version, actionId, onActivate, onDeactivate, onDelete }) {
             <span className="font-mono text-xs text-[#202124] truncate flex-1">{version.tag}</span>
             {version.is_active ? (
                 <span className="inline-flex items-center rounded-full bg-green-100 px-2 py-0.5 text-[10px] font-medium text-green-700">Active</span>
-            ) : version.status === 'deprecated' ? (
-                <span className="inline-flex items-center rounded-full bg-zinc-100 px-2 py-0.5 text-[10px] font-medium text-zinc-400">Inactive</span>
             ) : (
                 <span className="inline-flex items-center rounded-full bg-[#F4F5F6] px-2 py-0.5 text-[10px] font-medium text-[#5F6368]">Ready</span>
             )}
@@ -144,7 +142,7 @@ function VersionRow({ version, actionId, onActivate, onDeactivate, onDelete }) {
                             </button>
                         )}
                         {version.is_active && (
-                            <button type="button" onClick={() => onDeactivate(version.id)} title="Deactivate" className={cn('p-0.5 rounded text-[#9AA0A6] hover:bg-[#E8EAED]', consoleButtonFocusClass)}>
+                            <button type="button" onClick={() => onDeactivate(version)} title="Deactivate" className={cn('p-0.5 rounded text-[#9AA0A6] hover:bg-[#E8EAED]', consoleButtonFocusClass)}>
                                 <XCircle className="h-3.5 w-3.5" />
                             </button>
                         )}
@@ -172,6 +170,7 @@ export function ImagesAdminContent() {
     const [buildNotes, setBuildNotes] = useState('');
     const [building, setBuilding] = useState(false);
     const [deleteVersionTarget, setDeleteVersionTarget] = useState(null);
+    const [deactivateTarget, setDeactivateTarget] = useState(null);
     const [logsBuildId, setLogsBuildId] = useState(null);
     const [logsContent, setLogsContent] = useState('');
     const [logsLoading, setLogsLoading] = useState(false);
@@ -280,7 +279,6 @@ export function ImagesAdminContent() {
     };
 
     const handleDeactivate = async (versionId) => {
-        if (!window.confirm('Deactivate this version? The agent will fall back to the default image. You can re-activate it anytime.')) return;
         setActionId(`deprecate:${versionId}`);
         try {
             await api(`/versions/${versionId}/deprecate`, { method: 'POST' });
@@ -396,7 +394,7 @@ export function ImagesAdminContent() {
                                         </div>
                                         <button
                                             type="button"
-                                            onClick={() => handleDeactivate(selectedAgent.active_version.id)}
+                                            onClick={() => setDeactivateTarget(selectedAgent.active_version)}
                                             disabled={actionId === `deprecate:${selectedAgent.active_version.id}`}
                                             className={cn('text-xs text-[#9AA0A6] hover:text-[#5F6368] shrink-0', consoleButtonFocusClass)}
                                         >
@@ -474,7 +472,7 @@ export function ImagesAdminContent() {
                                                 version={v}
                                                 actionId={actionId}
                                                 onActivate={handleActivate}
-                                                onDeactivate={handleDeactivate}
+                                                onDeactivate={(version) => setDeactivateTarget(version)}
                                                 onDelete={(version) => setDeleteVersionTarget(version)}
                                             />
                                         ))}
@@ -560,6 +558,24 @@ export function ImagesAdminContent() {
                     <div className="flex justify-end gap-2 px-5 py-3 border-t border-[#E8EAED]">
                         <Button type="button" variant="secondary" size="sm" onClick={() => setDeleteVersionTarget(null)}>Cancel</Button>
                         <Button type="button" size="sm" onClick={handleDeleteVersion} className="bg-[#C06C5D] hover:bg-[#a55a4d] text-white">Delete</Button>
+                    </div>
+                </ConsoleDialogShell>
+            )}
+
+            {deactivateTarget && (
+                <ConsoleDialogShell onClose={() => setDeactivateTarget(null)} panelClassName="w-96">
+                    <div className="px-5 pt-5 pb-2">
+                        <h3 className="text-sm font-semibold text-[#202124]">Deactivate version</h3>
+                    </div>
+                    <div className="px-5 pb-4">
+                        <p className="text-xs text-[#5F6368]">
+                            Deactivate <span className="font-mono font-medium text-[#202124]">{deactivateTarget.tag}</span>?
+                        </p>
+                        <p className="text-xs text-[#9AA0A6] mt-1">The agent will fall back to the default image. You can re-activate this version anytime.</p>
+                    </div>
+                    <div className="flex justify-end gap-2 px-5 py-3 border-t border-[#E8EAED]">
+                        <Button type="button" variant="secondary" size="sm" onClick={() => setDeactivateTarget(null)}>Cancel</Button>
+                        <Button type="button" size="sm" onClick={() => { const t = deactivateTarget; setDeactivateTarget(null); handleDeactivate(t.id); }}>Deactivate</Button>
                     </div>
                 </ConsoleDialogShell>
             )}
