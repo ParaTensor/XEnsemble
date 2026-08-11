@@ -1115,7 +1115,7 @@ export default React.forwardRef(function Sessions({
               <div>
                 <div className="flex items-center justify-between gap-2 mb-1">
                   <label className={`text-xs font-semibold uppercase tracking-wider ${textPlaceholder}`}>Agent</label>
-                  {selectedAgent && (
+                  {selectedAgent && selectedAgent.llm_auth_mode === 'byok' && (
                     <button type="button" onClick={() => openLaunchConfigModal()} className={`text-xs font-medium ${textPlaceholder} hover:text-[#202124] ${transitionBase}`}>
                       <Settings2 className="w-3.5 h-3.5 inline" /> Configure
                     </button>
