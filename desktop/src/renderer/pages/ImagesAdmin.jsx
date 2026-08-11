@@ -82,18 +82,20 @@ function WorkflowStrip({ hasVersions, hasActive }) {
 
 function AgentListItem({ agent, selected, onClick }) {
     const activeVersion = agent.active_version;
+    const hasDefault = Boolean(agent.default_image_ref);
     const isBuilding = agent.build_state === 'building';
     const isQueued = agent.build_state === 'queued';
     const isFailed = agent.build_state === 'failed';
     const dotClass = isBuilding ? STATUS_DOT.building
         : isQueued ? STATUS_DOT.queued
         : isFailed ? STATUS_DOT.failed
-        : activeVersion ? STATUS_DOT.active
+        : (activeVersion || hasDefault) ? STATUS_DOT.active
         : STATUS_DOT.none;
     const statusText = isBuilding ? 'Building'
         : isQueued ? 'Queued'
         : isFailed ? 'Build failed'
         : activeVersion ? activeVersion.tag
+        : hasDefault ? 'default:latest'
         : 'No image';
 
     return (
@@ -349,7 +351,7 @@ export function ImagesAdminContent() {
                 </button>
             </div>
 
-            <WorkflowStrip hasVersions={Boolean(selectedAgent?.versions?.length)} hasActive={Boolean(selectedAgent?.active_version)} />
+            <WorkflowStrip hasVersions={Boolean(selectedAgent?.versions?.length || selectedAgent?.default_image_ref)} hasActive={Boolean(selectedAgent?.active_version)} />
 
             <div className="flex flex-1 min-h-0">
                 <div className="w-56 shrink-0 border-r border-[#E8EAED] bg-white overflow-y-auto p-1">
@@ -381,7 +383,7 @@ export function ImagesAdminContent() {
                                     <div className="flex items-center justify-between gap-2">
                                         <div className="min-w-0">
                                             <div className="flex items-center gap-2">
-                                                <span className="inline-flex items-center rounded-full bg-green-100 px-2 py-0.5 text-[10px] font-medium text-green-700">Ready</span>
+                                                <span className="inline-flex items-center rounded-full bg-green-100 px-2 py-0.5 text-[10px] font-medium text-green-700">Active</span>
                                                 <span className="text-xs font-mono text-[#202124] truncate">{selectedAgent.active_version.image_ref}</span>
                                             </div>
                                             <div className="text-[10px] text-[#9AA0A6] mt-0.5">
@@ -397,8 +399,13 @@ export function ImagesAdminContent() {
                                             {actionId === `deprecate:${selectedAgent.active_version.id}` ? <Loader2 className="h-3 w-3 animate-spin" /> : 'Deprecate'}
                                         </button>
                                     </div>
+                                ) : selectedAgent.default_image_ref ? (
+                                    <div className="flex items-center gap-2">
+                                        <span className="inline-flex items-center rounded-full bg-[#F4F5F6] px-2 py-0.5 text-[10px] font-medium text-[#5F6368]">Default</span>
+                                        <span className="text-xs font-mono text-[#5F6368] truncate">{selectedAgent.default_image_ref}</span>
+                                    </div>
                                 ) : (
-                                    <p className="text-xs text-[#9AA0A6]">No active version. Build a new image to get started.</p>
+                                    <p className="text-xs text-[#9AA0A6]">No image. Build a new image to get started.</p>
                                 )}
 
                                 <div className="border-t border-[#E8EAED] mt-3 pt-3">
