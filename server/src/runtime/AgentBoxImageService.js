@@ -87,11 +87,22 @@ async function listAgentBoxImageCatalog() {
         versionsByAgent.set(row.agentId, list);
     }
 
+    const builds = await db.select().from(schema.agentImageBuilds)
+        .orderBy(desc(schema.agentImageBuilds.createdAt));
+    const latestBuildByAgent = new Map();
+    for (const row of builds) {
+        if (!latestBuildByAgent.has(row.agentId)) {
+            latestBuildByAgent.set(row.agentId, row);
+        }
+    }
+
     return agents.map((agent) => {
         const catalog = getCatalogEntry(agent.id);
         const agentVersions = versionsByAgent.get(agent.id) || [];
         const activeVersion = agentVersions.find((entry) => entry.is_active) || null;
         const buildable = isAgentBoxBuildable(agent.id);
+        const latestBuild = latestBuildByAgent.get(agent.id);
+        const buildState = latestBuild ? latestBuild.state : null;
         return {
             agent_id: agent.id,
             agent_name: agent.name,
@@ -101,6 +112,8 @@ async function listAgentBoxImageCatalog() {
             default_image_ref: buildable ? resolveAgentBoxImageDefault(agent.id) : null,
             active_version: activeVersion,
             versions: agentVersions,
+            build_state: buildState,
+            latest_build: latestBuild ? formatBuildRow(latestBuild) : null,
         };
     });
 }
