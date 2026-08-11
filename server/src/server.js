@@ -256,7 +256,8 @@ fastify.get('/api/v1/agents/:agentId/byok-config', { preValidation: [fastify.aut
 
 fastify.put('/api/v1/agents/:agentId/byok-config', { preValidation: [fastify.authenticate] }, async (request, reply) => {
     const { agentId } = request.params;
-    const values = request.body || {};
+    const body = request.body || {};
+    const values = body.values || body;
     const { BYOK_FIELDS, applyByokToSecrets } = require('./agents/byokFields');
 
     const fields = BYOK_FIELDS[agentId];
