@@ -111,14 +111,6 @@ class BoxLiteRuntimeProvider extends RuntimeProvider {
 
         let initError = null;
         try {
-            // Sync VM clock with host (libkrun VMs boot with 1999-11-30 default)
-            const hostEpoch = Math.floor(Date.now() / 1000);
-            await this.client.execForResult(name, 'sh', ['-c', `date -s @${hostEpoch} 2>/dev/null || true`]);
-        } catch (_) {
-            // Best-effort: clock sync failure does not block the session.
-        }
-
-        try {
             await this.ensureWorkspacePath(name, guestWorkspacePath);
         } catch (e) {
             initError = e;
