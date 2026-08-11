@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState, useRef } from 'react';
 import {
     Check, CheckCircle2, ChevronDown, ChevronRight, Loader2, RefreshCw,
-    RotateCcw, Star, Trash2, Upload,
+    RotateCcw, Trash2, Upload, XCircle,
 } from 'lucide-react';
 import { ConsoleDialogShell } from '../components/ConsoleDialog';
 import Input from '../components/Input';
@@ -120,7 +120,7 @@ function AgentListItem({ agent, selected, onClick }) {
     );
 }
 
-function VersionRow({ version, actionId, onActivate, onDeprecate, onDelete }) {
+function VersionRow({ version, actionId, onActivate, onDeactivate, onDelete }) {
     const isBusy = actionId === `activate:${version.id}` || actionId === `deprecate:${version.id}` || actionId === `delete:${version.id}`;
     return (
         <div className="flex items-center gap-2 px-3 py-2 hover:bg-[#F4F5F6] transition-colors border-b border-[#E8EAED] last:border-b-0">
@@ -128,7 +128,7 @@ function VersionRow({ version, actionId, onActivate, onDeprecate, onDelete }) {
             {version.is_active ? (
                 <span className="inline-flex items-center rounded-full bg-green-100 px-2 py-0.5 text-[10px] font-medium text-green-700">Active</span>
             ) : version.status === 'deprecated' ? (
-                <span className="inline-flex items-center rounded-full bg-zinc-100 px-2 py-0.5 text-[10px] font-medium text-zinc-400 line-through">Deprecated</span>
+                <span className="inline-flex items-center rounded-full bg-zinc-100 px-2 py-0.5 text-[10px] font-medium text-zinc-400">Inactive</span>
             ) : (
                 <span className="inline-flex items-center rounded-full bg-[#F4F5F6] px-2 py-0.5 text-[10px] font-medium text-[#5F6368]">Ready</span>
             )}
@@ -138,14 +138,14 @@ function VersionRow({ version, actionId, onActivate, onDeprecate, onDelete }) {
                     <Loader2 className="h-3 w-3 animate-spin text-[#9AA0A6]" />
                 ) : (
                     <>
-                        {!version.is_active && version.status !== 'deprecated' && (
-                            <button type="button" onClick={() => onActivate(version.id)} title="Activate" className={cn('p-0.5 rounded text-[#5B8DB8] hover:bg-[#E8EAED]', consoleButtonFocusClass)}>
-                                <Star className="h-3 w-3" />
+                        {!version.is_active && (
+                            <button type="button" onClick={() => onActivate(version.id)} title="Activate" className={cn('p-0.5 rounded text-[#4A7C59] hover:bg-[#E8F5E9]', consoleButtonFocusClass)}>
+                                <Check className="h-3.5 w-3.5" />
                             </button>
                         )}
-                        {version.is_active && version.status !== 'deprecated' && (
-                            <button type="button" onClick={() => onDeprecate(version.id)} title="Deprecate" className={cn('p-0.5 rounded text-[#C06C5D] hover:bg-[#FDECEA]', consoleButtonFocusClass)}>
-                                <RotateCcw className="h-3 w-3" />
+                        {version.is_active && (
+                            <button type="button" onClick={() => onDeactivate(version.id)} title="Deactivate" className={cn('p-0.5 rounded text-[#9AA0A6] hover:bg-[#E8EAED]', consoleButtonFocusClass)}>
+                                <XCircle className="h-3.5 w-3.5" />
                             </button>
                         )}
                         {!version.is_active && (
@@ -275,12 +275,12 @@ export function ImagesAdminContent() {
         }
     };
 
-    const handleDeprecate = async (versionId) => {
-        if (!window.confirm('Deprecate this version? It can no longer be activated. Delete it instead if you no longer need it.')) return;
+    const handleDeactivate = async (versionId) => {
+        if (!window.confirm('Deactivate this version? The agent will fall back to the default image. You can re-activate it anytime.')) return;
         setActionId(`deprecate:${versionId}`);
         try {
             await api(`/versions/${versionId}/deprecate`, { method: 'POST' });
-            showToast('success', 'Version deprecated.');
+            showToast('success', 'Version deactivated.');
             await loadCatalog();
         } catch (err) {
             showToast('error', err.message);
@@ -392,11 +392,11 @@ export function ImagesAdminContent() {
                                         </div>
                                         <button
                                             type="button"
-                                            onClick={() => handleDeprecate(selectedAgent.active_version.id)}
+                                            onClick={() => handleDeactivate(selectedAgent.active_version.id)}
                                             disabled={actionId === `deprecate:${selectedAgent.active_version.id}`}
-                                            className={cn('text-xs text-[#C06C5D] hover:underline shrink-0', consoleButtonFocusClass)}
+                                            className={cn('text-xs text-[#9AA0A6] hover:text-[#5F6368] shrink-0', consoleButtonFocusClass)}
                                         >
-                                            {actionId === `deprecate:${selectedAgent.active_version.id}` ? <Loader2 className="h-3 w-3 animate-spin" /> : 'Deprecate'}
+                                            {actionId === `deprecate:${selectedAgent.active_version.id}` ? <Loader2 className="h-3 w-3 animate-spin" /> : 'Deactivate'}
                                         </button>
                                     </div>
                                 ) : selectedAgent.default_image_ref ? (
@@ -458,16 +458,23 @@ export function ImagesAdminContent() {
                                 {selectedAgent.versions?.length === 0 ? (
                                     <div className="px-4 py-6 text-center text-xs text-[#9AA0A6]">No versions yet.</div>
                                 ) : (
-                                    selectedAgent.versions.map((v) => (
-                                        <VersionRow
-                                            key={v.id}
-                                            version={v}
-                                            actionId={actionId}
-                                            onActivate={handleActivate}
-                                            onDeprecate={handleDeprecate}
-                                            onDelete={(version) => setDeleteVersionTarget(version)}
-                                        />
-                                    ))
+                                    <>
+                                        {!selectedAgent.active_version && selectedAgent.default_image_ref && (
+                                            <div className="px-4 py-2 bg-[#FAFBFC] border-b border-[#E8EAED] text-[10px] text-[#5F6368]">
+                                                Using default image. Activate a version to override.
+                                            </div>
+                                        )}
+                                        {selectedAgent.versions.map((v) => (
+                                            <VersionRow
+                                                key={v.id}
+                                                version={v}
+                                                actionId={actionId}
+                                                onActivate={handleActivate}
+                                                onDeactivate={handleDeactivate}
+                                                onDelete={(version) => setDeleteVersionTarget(version)}
+                                            />
+                                        ))}
+                                    </>
                                 )}
                             </div>
 

@@ -175,14 +175,10 @@ async function activateVersion(versionId, actorId = null) {
     if (rows.length === 0) {
         throw new RuntimeError('Image version not found', 404);
     }
-    const row = rows[0];
-    if (row.status === 'deprecated') {
-        throw new RuntimeError('Deprecated image versions cannot be activated', 409);
-    }
 
     await db.update(schema.agentBoxImages)
         .set({ isActive: false })
-        .where(eq(schema.agentBoxImages.agentId, row.agentId));
+        .where(eq(schema.agentBoxImages.agentId, rows[0].agentId));
 
     await db.update(schema.agentBoxImages)
         .set({
