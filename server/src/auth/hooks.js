@@ -4,7 +4,11 @@ const { assertActiveUser } = require('./assertActiveUser');
 function registerAuthHooks(fastify) {
     fastify.decorate('authenticate', async function authenticate(request, reply) {
         try {
-            const token = request.headers.authorization?.replace('Bearer ', '');
+            // Prefer Authorization header; fall back to ?access_token= query
+            // param (needed by EventSource/SSE, which cannot set headers).
+            const token = request.headers.authorization?.replace('Bearer ', '')
+                || request.query?.access_token
+                || null;
             if (!token) throw new Error('Missing token');
             const payload = auth.verifyAccessToken(token);
             if (!payload?.id) throw new Error('Invalid token');
