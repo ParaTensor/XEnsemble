@@ -31,10 +31,11 @@ export default function ByokConfigForm({ agentId, loading, onSave }) {
         headers: { Authorization: `Bearer ${localStorage.getItem('xe_access_token')}` },
       }).then((r) => r.json()),
     ]).then(([fieldsRes, configRes]) => {
-      setFields(fieldsRes.fields || []);
+      const fieldList = Array.isArray(fieldsRes) ? fieldsRes : (fieldsRes.fields || []);
+      setFields(fieldList);
       const savedValues = {};
-      const config = configRes.values || {};
-      for (const f of (fieldsRes.fields || [])) {
+      const config = configRes || {};
+      for (const f of fieldList) {
         if (f.key in config && config[f.key]) {
           savedValues[f.key] = config[f.key];
         } else if (f.defaultValue) {
