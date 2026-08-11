@@ -177,7 +177,10 @@ export function ImagesAdminContent() {
     const [logsLoading, setLogsLoading] = useState(false);
     const tagInputRef = useRef(null);
 
-    const loadCatalog = useCallback(async () => {
+    const [refreshing, setRefreshing] = useState(false);
+
+    const loadCatalog = useCallback(async (opts = {}) => {
+        if (!opts.silent) setRefreshing(true);
         try {
             const data = await api('');
             setCatalog(data);
@@ -185,6 +188,7 @@ export function ImagesAdminContent() {
             showToast('error', err.message);
         } finally {
             setLoading(false);
+            setRefreshing(false);
         }
     }, [showToast]);
 
@@ -346,8 +350,8 @@ export function ImagesAdminContent() {
         <div className="flex flex-col h-full min-h-0">
             <div className="flex items-center justify-between border-b border-[#DADCE0] bg-white px-4 py-2.5 shrink-0 shadow-sm">
                 <h2 className="text-sm font-bold text-[#202124]">Agent Images</h2>
-                <button type="button" onClick={loadCatalog} disabled={loading} className={cn('p-1.5 rounded text-[#5F6368] hover:bg-[#E8EAED]', consoleButtonFocusClass)}>
-                    {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
+                <button type="button" onClick={() => loadCatalog()} disabled={refreshing} className={cn('p-1.5 rounded text-[#5F6368] hover:bg-[#E8EAED]', consoleButtonFocusClass)}>
+                    {refreshing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className={cn('h-3.5 w-3.5', refreshing && 'animate-spin')} />}
                 </button>
             </div>
 
