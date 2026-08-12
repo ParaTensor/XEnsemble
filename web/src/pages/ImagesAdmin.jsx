@@ -299,6 +299,14 @@ export function ImagesAdminContent() {
     const tagInputRef = useRef(null);
     const [refreshing, setRefreshing] = useState(false);
 
+    const loadBuilds = useCallback(async (agentId) => {
+        if (!agentId) return;
+        try {
+            const data = await api(`/${agentId}/builds`);
+            setBuilds(data.builds || []);
+        } catch { setBuilds([]); }
+    }, []);
+
     const loadCatalog = useCallback(async (opts = {}) => {
         if (!opts.silent) setRefreshing(true);
         try {
@@ -314,14 +322,6 @@ export function ImagesAdminContent() {
             setRefreshing(false);
         }
     }, [showToast, selectedAgentId, loadBuilds]);
-
-    const loadBuilds = useCallback(async (agentId) => {
-        if (!agentId) return;
-        try {
-            const data = await api(`/${agentId}/builds`);
-            setBuilds(data.builds || []);
-        } catch { setBuilds([]); }
-    }, []);
 
     useEffect(() => { loadCatalog(); }, [loadCatalog]);
 
