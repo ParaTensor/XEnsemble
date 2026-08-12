@@ -1164,16 +1164,32 @@ export default React.forwardRef(function Sessions({
                   </button>
                 </div>
               </div>
-              <div className="flex-1 min-h-0 overflow-y-auto flex items-start justify-center px-5 pb-6">
-                <div className="w-full max-w-lg space-y-6 pt-2">
+              <div className="flex-1 min-h-0 overflow-y-auto px-6 pb-6">
+                <div className="w-full space-y-8 pt-4">
                   {launchModalError && (
                     <p className="text-sm text-[#C06C5D] bg-[#FDECEA] border border-[#FADBD8] rounded-lg px-3 py-2">{launchModalError}</p>
                   )}
 
+                  {/* Page description */}
+                  {launchModalMode === 'workspace' ? (
+                    <p className="text-sm text-[#5F6368] leading-relaxed">
+                      Create a new workspace to organize your projects and sessions. A workspace is an isolated environment with its own file system, Git history, and agent configurations. You can import code from an existing Git repository or start from scratch.
+                    </p>
+                  ) : (
+                    <p className="text-sm text-[#5F6368] leading-relaxed">
+                      Launch a new AI agent session. Select a workspace, choose an agent, and optionally import a Git repository. The agent will run inside an isolated sandbox with access to your code for editing, testing, and development.
+                    </p>
+                  )}
+
+                  <div className="h-px bg-[#E8EAED]" />
+
+                  {/* Form fields */}
+                  <div className="space-y-6">
+
                   {/* Workspace */}
                   {launchModalMode === 'workspace' && (
-                    <div className="flex items-start gap-12">
-                      <div className="w-44 shrink-0 pt-2">
+                    <div className="flex items-start gap-6">
+                      <div className="w-36 shrink-0 pt-2">
                         <label className="block text-sm font-medium text-[#3C4043]">Workspace</label>
                         <p className="text-[11px] text-[#9AA0A6] mt-0.5">A workspace is an isolated environment that stores your project files and session history.</p>
                       </div>
@@ -1183,8 +1199,8 @@ export default React.forwardRef(function Sessions({
                     </div>
                   )}
                   {(launchModalMode === 'quickstart' || launchModalMode === 'session') && (
-                    <div className="flex items-start gap-12">
-                      <div className="w-44 shrink-0 pt-2">
+                    <div className="flex items-start gap-6">
+                      <div className="w-36 shrink-0 pt-2">
                         <label className="block text-sm font-medium text-[#3C4043]">Workspace</label>
                         <p className="text-[11px] text-[#9AA0A6] mt-0.5">{importedProject ? 'Imported from Git (locked)' : 'Select an existing workspace or create a new one.'}</p>
                       </div>
@@ -1211,8 +1227,8 @@ export default React.forwardRef(function Sessions({
 
                   {/* Agent (built-in|custom buttons + dropdown) */}
                   {launchModalMode !== 'workspace' && (
-                    <div className="flex items-start gap-12">
-                      <div className="w-44 shrink-0 pt-2">
+                    <div className="flex items-start gap-6">
+                      <div className="w-36 shrink-0 pt-2">
                         <div className="flex items-center justify-between">
                           <label className="text-sm font-medium text-[#3C4043]">Agent</label>
                           {selectedAgent && selectedAgent.llm_auth_mode === 'byok' && (
@@ -1269,8 +1285,8 @@ export default React.forwardRef(function Sessions({
 
                   {/* Git */}
                   {launchModalMode !== 'workspace' && (
-                    <div className="flex items-start gap-12">
-                      <div className="w-44 shrink-0 pt-2">
+                    <div className="flex items-start gap-6">
+                      <div className="w-36 shrink-0 pt-2">
                         <label className="block text-sm font-medium text-[#3C4043]">Git</label>
                         <p className="text-[11px] text-[#9AA0A6] mt-0.5">Optionally import a Git repository. The agent will have access to the code for editing and development.</p>
                       </div>
@@ -1293,6 +1309,9 @@ export default React.forwardRef(function Sessions({
                     </div>
                   )}
                   {gitImportMode && !importedProject && gitProvider && (
+                    gitProvider === 'gitea' ? (
+                      <p className="text-sm text-[#C06C5D] bg-[#FDECEA] border border-[#FADBD8] rounded-lg px-3 py-2">Gitea OAuth is not configured. Please ask an administrator to set it up.</p>
+                    ) : (
                     <RepoImportDialog
                       key={gitProvider}
                       open={true}
@@ -1315,7 +1334,9 @@ export default React.forwardRef(function Sessions({
                       }}
                       fetchWorkspaces={fetchWorkspaces}
                     />
+                    )
                   )}
+                  </div>
                 </div>
               </div>
               <div className="flex items-center justify-end gap-2 border-t border-[#E8EAED] px-5 py-3 shrink-0">
