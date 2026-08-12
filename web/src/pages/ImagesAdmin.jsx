@@ -313,8 +313,13 @@ export function ImagesAdminContent() {
         else setBuilds([]);
     }, [selectedAgentId, loadBuilds]);
 
+    // Refresh builds when the selected agent's build_state transitions
+    // (e.g., building -> ready/failed). Without this, the builds list keeps
+    // the stale 'building' state after polling stops.
     useEffect(() => {
-        if (pollIds.has(selectedAgentId)) loadBuilds(selectedAgentId);
+        if (selectedAgentId && !pollIds.has(selectedAgentId)) {
+            loadBuilds(selectedAgentId);
+        }
     }, [pollIds, selectedAgentId, loadBuilds]);
 
     useEffect(() => {
@@ -333,9 +338,9 @@ export function ImagesAdminContent() {
     );
 
     const latestBuild = builds[0] || null;
-    const isBuilding = latestBuild?.state === 'building';
-    const isQueued = latestBuild?.state === 'queued';
-    const isFailed = latestBuild?.state === 'failed';
+    const isBuilding = selectedAgent?.build_state === 'building';
+    const isQueued = selectedAgent?.build_state === 'queued';
+    const isFailed = selectedAgent?.build_state === 'failed';
 
     const handleBuild = async () => {
         if (!selectedAgentId || !buildTag.trim()) return;
