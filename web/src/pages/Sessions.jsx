@@ -1172,7 +1172,7 @@ export default React.forwardRef(function Sessions({
 
                   {/* Workspace */}
                   {launchModalMode === 'workspace' && (
-                    <div className="flex items-start gap-4">
+                    <div className="flex items-start gap-8">
                       <div className="w-40 shrink-0 pt-2">
                         <label className="block text-sm font-medium text-[#3C4043]">Workspace</label>
                         <p className="text-[11px] text-[#9AA0A6] mt-0.5">A workspace is an isolated environment that stores your project files and session history.</p>
@@ -1183,7 +1183,7 @@ export default React.forwardRef(function Sessions({
                     </div>
                   )}
                   {(launchModalMode === 'quickstart' || launchModalMode === 'session') && (
-                    <div className="flex items-start gap-4">
+                    <div className="flex items-start gap-8">
                       <div className="w-40 shrink-0 pt-2">
                         <label className="block text-sm font-medium text-[#3C4043]">Workspace</label>
                         <p className="text-[11px] text-[#9AA0A6] mt-0.5">{importedProject ? 'Imported from Git (locked)' : 'Select an existing workspace or create a new one.'}</p>
@@ -1209,43 +1209,49 @@ export default React.forwardRef(function Sessions({
                     </div>
                   )}
 
-                  {/* Image type */}
+                  {/* Agent (merged: image type + agent) */}
                   {launchModalMode !== 'workspace' && (
-                    <div className="flex items-start gap-4">
-                      <div className="w-40 shrink-0 pt-2">
-                        <label className="block text-sm font-medium text-[#3C4043]">Image type</label>
-                        <p className="text-[11px] text-[#9AA0A6] mt-0.5">Built-in uses the pre-built agent image. Custom uses images you have built with specific tools and dependencies.</p>
-                      </div>
-                      <div className="flex-1 min-w-0 space-y-2">
-                        <div className="flex items-center gap-2">
-                          <button type="button" onClick={() => { setCustomImageId(''); setSelectedAgentId(''); }} className={`flex-1 h-9 px-3 text-xs font-medium rounded-md border transition-colors ${consoleButtonFocusClass} ${!customImageId ? 'bg-[#202124] text-white border-[#202124]' : 'bg-white text-[#5F6368] border-[#E8EAED] hover:bg-[#F4F5F6]'}`}>Built-in</button>
-                          {customImages.length > 0 && (
-                            <button type="button" onClick={() => { setCustomImageId(customImages[0]?.id || ''); const img = customImages[0]; if (img) { const ac = (img.components || []).find((c) => (c.component_id || '').startsWith('agent:')); const aid = ac ? ac.component_id.replace('agent:', '') : ''; if (aid && agents.find((a) => a.id === aid)) setSelectedAgentId(aid); } }} className={`flex-1 h-9 px-3 text-xs font-medium rounded-md border transition-colors ${consoleButtonFocusClass} ${customImageId ? 'bg-[#202124] text-white border-[#202124]' : 'bg-white text-[#5F6368] border-[#E8EAED] hover:bg-[#F4F5F6]'}`}>Custom</button>
-                          )}
-                        </div>
-                        {customImageId && (
-                          <SelectMenu value={customImageId} onChange={(v) => { setCustomImageId(v); const img = customImages.find((c) => c.id === v); if (img) { const ac = (img.components || []).find((c) => (c.component_id || '').startsWith('agent:')); const aid = ac ? ac.component_id.replace('agent:', '') : ''; if (aid && agents.find((a) => a.id === aid)) setSelectedAgentId(aid); } }} options={customImages.map((img) => ({ value: img.id, label: img.name }))} placeholder="Select custom image" />
-                        )}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Agent */}
-                  {launchModalMode !== 'workspace' && (
-                    <div className="flex items-start gap-4">
+                    <div className="flex items-start gap-8">
                       <div className="w-40 shrink-0 pt-2">
                         <div className="flex items-center justify-between">
                           <label className="text-sm font-medium text-[#3C4043]">Agent</label>
                           {selectedAgent && selectedAgent.llm_auth_mode === 'byok' && (
                             <button type="button" onClick={() => setShowLaunchConfigModal(v => !v)} className={`text-xs font-medium text-[#5B8DB8] hover:text-[#4A7298] ${consoleButtonFocusClass}`}>
-                              <Settings2 className="w-3.5 h-3.5 inline" />
+                              <Settings2 className="w-3.5 h-3.5" />
                             </button>
                           )}
                         </div>
-                        <p className="text-[11px] text-[#9AA0A6] mt-0.5">The AI coding agent that will run inside the sandbox. Each agent has its own capabilities and configuration.</p>
+                        <p className="text-[11px] text-[#9AA0A6] mt-0.5">Select a built-in agent or a custom image you have built. Each agent has its own capabilities and configuration.</p>
                       </div>
-                      <div className="flex-1 min-w-0">
-                        <SelectMenu value={selectedAgentId} onChange={setSelectedAgentId} options={customImageId ? agentSelectOptions.filter((opt) => { const img = customImages.find((c) => c.id === customImageId); if (!img) return true; const ac = (img.components || []).find((c) => (c.component_id || '').startsWith('agent:')); return !ac || opt.value === ac.component_id.replace('agent:', ''); }) : agentSelectOptions} placeholder="Select agent" />
+                      <div className="flex-1 min-w-0 space-y-2">
+                        <SelectMenu
+                          value={customImageId ? `custom:${customImageId}` : selectedAgentId}
+                          onChange={(v) => {
+                            if (v.startsWith('custom:')) {
+                              const imgId = v.slice(7);
+                              setCustomImageId(imgId);
+                              const img = customImages.find((c) => c.id === imgId);
+                              if (img) {
+                                const ac = (img.components || []).find((c) => (c.component_id || '').startsWith('agent:'));
+                                const aid = ac ? ac.component_id.replace('agent:', '') : '';
+                                if (aid && agents.find((a) => a.id === aid)) setSelectedAgentId(aid);
+                              }
+                            } else {
+                              setCustomImageId('');
+                              setSelectedAgentId(v);
+                            }
+                          }}
+                          options={[
+                            ...agentSelectOptions,
+                            ...(customImages.length > 0 ? [{ label: '— Custom Images —', options: customImages.map((img) => {
+                              const ac = (img.components || []).find((c) => (c.component_id || '').startsWith('agent:'));
+                              const agentId = ac ? ac.component_id.replace('agent:', '') : '';
+                              const agent = agents.find((a) => a.id === agentId);
+                              return { value: `custom:${img.id}`, label: `${img.name}${agent ? ` (${agent.name})` : ''}` };
+                            }) }] : []),
+                          ]}
+                          placeholder="Select agent"
+                        />
                       </div>
                     </div>
                   )}
@@ -1261,7 +1267,7 @@ export default React.forwardRef(function Sessions({
 
                   {/* Git */}
                   {launchModalMode !== 'workspace' && (
-                    <div className="flex items-start gap-4">
+                    <div className="flex items-start gap-8">
                       <div className="w-40 shrink-0 pt-2">
                         <label className="block text-sm font-medium text-[#3C4043]">Git</label>
                         <p className="text-[11px] text-[#9AA0A6] mt-0.5">Optionally import a Git repository. The agent will have access to the code for editing and development.</p>
