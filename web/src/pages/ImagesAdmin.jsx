@@ -1,13 +1,31 @@
 import { useCallback, useEffect, useMemo, useState, useRef } from 'react';
 import {
-    Check, CheckCircle2, ChevronDown, ChevronRight, Loader2, RefreshCw,
-    RotateCcw, Trash2, Upload, XCircle,
+    Check, ChevronRight, Loader2, RefreshCw,
+    Trash2, Upload, XCircle, Terminal as TerminalIcon,
 } from 'lucide-react';
 import { ConsoleDialogShell } from '../components/ConsoleDialog';
 import Input from '../components/Input';
 import Button from '../components/Button';
 import { useToast } from '../components/Toast';
-import { consoleButtonFocusClass, consoleInputClass } from '../lib/consoleTheme';
+import {
+    consoleButtonFocusClass,
+    consoleInputClass,
+    textPrimary,
+    textSecondary,
+    textPlaceholder,
+    borderHairline,
+    bgCanvas,
+    bgContainer,
+    bgSecondary,
+    bgTertiary,
+    bgActive,
+    accentGreen,
+    accentGreenBg,
+    accentGreenText,
+    accentRed,
+    accentRedBg,
+    accentBlue,
+} from '../lib/consoleTheme';
 import { apiFetch } from '../lib/api';
 import { cn } from '../lib/utils';
 
@@ -53,33 +71,6 @@ const STATUS_DOT = {
     none: 'bg-[#DADCE0]',
 };
 
-function WorkflowStrip({ hasVersions, hasActive }) {
-    const steps = [
-        { num: 1, label: 'Build', desc: 'Click to build', done: hasVersions },
-        { num: 2, label: 'Register', desc: 'Automatic', done: hasVersions },
-        { num: 3, label: 'Activate', desc: 'Pick a version', done: hasActive },
-    ];
-    return (
-        <div className="flex items-center gap-2 border-b border-[#DADCE0] bg-white px-4 py-2.5 shrink-0">
-            {steps.map((s, i) => (
-                <div key={s.num} className="flex items-center gap-2 flex-1 last:flex-none">
-                    <div className={cn(
-                        'w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0',
-                        s.done ? 'bg-[#4A7C59] text-white' : 'bg-[#E8EAED] text-[#9AA0A6]',
-                    )}>{s.num}</div>
-                    <div className="min-w-0">
-                        <div className="text-xs font-semibold text-[#202124]">{s.label}</div>
-                        <div className="text-[10px] text-[#9AA0A6]">{s.desc}</div>
-                    </div>
-                    {i < steps.length - 1 && (
-                        <div className={cn('flex-1 border-t-2 border-dashed mx-1', s.done ? 'border-[#4A7C59]' : 'border-[#DADCE0]')} />
-                    )}
-                </div>
-            ))}
-        </div>
-    );
-}
-
 function AgentListItem({ agent, selected, onClick }) {
     const activeVersion = agent.active_version;
     const hasDefault = Boolean(agent.default_image_ref);
@@ -93,27 +84,31 @@ function AgentListItem({ agent, selected, onClick }) {
         : STATUS_DOT.none;
     const statusText = isBuilding ? 'Building'
         : isQueued ? 'Queued'
-        : isFailed ? 'Build failed'
+        : isFailed ? 'Failed'
         : activeVersion ? activeVersion.tag
-        : hasDefault ? 'default:latest'
-        : 'No image';
+        : hasDefault ? 'default'
+        : 'Not built';
 
     return (
         <button
             type="button"
             onClick={onClick}
             className={cn(
-                'w-full text-left px-3 py-2 rounded-md transition-colors',
-                selected ? 'bg-[#F4F5F6] border-l-2 border-[#5B8DB8]' : 'hover:bg-[#F4F5F6]',
+                'w-full text-left px-3 py-2.5 transition-colors border-l-2',
+                selected ? cn(bgSecondary, 'border-[#5B8DB8]') : cn('border-transparent hover:bg-[#F4F5F6]'),
                 consoleButtonFocusClass,
             )}
         >
             <div className="flex items-center gap-2">
                 <div className={cn('w-2 h-2 rounded-full shrink-0', dotClass)} />
-                <span className="text-xs font-medium text-[#202124] truncate">{agent.agent_name}</span>
+                <span className={cn('text-xs font-medium truncate', textPrimary)}>{agent.agent_name}</span>
                 {isBuilding && <Loader2 className="h-3 w-3 animate-spin text-[#5B8DB8] shrink-0" />}
             </div>
-            <div className={cn('text-[10px] mt-0.5 ml-4 truncate', isFailed ? 'text-[#C06C5D]' : 'text-[#9AA0A6]', !activeVersion && !isBuilding && !isQueued && !isFailed && 'italic')}>
+            <div className={cn(
+                'text-[10px] mt-0.5 ml-4 truncate',
+                isFailed ? accentRed : textPlaceholder,
+                !activeVersion && !isBuilding && !isQueued && !isFailed && 'italic',
+            )}>
                 {statusText}
             </div>
         </button>
@@ -123,37 +118,135 @@ function AgentListItem({ agent, selected, onClick }) {
 function VersionRow({ version, actionId, onActivate, onDeactivate, onDelete }) {
     const isBusy = actionId === `activate:${version.id}` || actionId === `deprecate:${version.id}` || actionId === `delete:${version.id}`;
     return (
-        <div className="flex items-center gap-2 px-3 py-2 hover:bg-[#F4F5F6] transition-colors border-b border-[#E8EAED] last:border-b-0">
-            <span className="font-mono text-xs text-[#202124] truncate flex-1">{version.tag}</span>
-            {version.is_active ? (
-                <span className="inline-flex items-center rounded-full bg-green-100 px-2 py-0.5 text-[10px] font-medium text-green-700">Active</span>
-            ) : (
-                <span className="inline-flex items-center rounded-full bg-[#F4F5F6] px-2 py-0.5 text-[10px] font-medium text-[#5F6368]">Ready</span>
-            )}
-            <span className="text-[10px] text-[#9AA0A6] shrink-0">{formatTime(version.built_at || version.created_at)}</span>
+        <div className={cn('flex items-center gap-3 px-4 py-2.5 transition-colors border-b last:border-b-0', borderHairline, 'hover:bg-[#F4F5F6]')}>
+            <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-2">
+                    <span className={cn('font-mono text-xs truncate', textPrimary)}>{version.tag}</span>
+                    {version.is_active ? (
+                        <span className="inline-flex items-center rounded-full bg-[#E8F5E9] px-1.5 py-0.5 text-[10px] font-medium text-[#4A7C59] shrink-0">
+                            <Check className="h-2.5 w-2.5 mr-0.5" />Active
+                        </span>
+                    ) : (
+                        <span className={cn('inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-medium shrink-0', bgActive, textSecondary)}>Ready</span>
+                    )}
+                </div>
+                <div className={cn('text-[10px] mt-0.5', textPlaceholder)}>
+                    {formatTime(version.built_at || version.created_at)}
+                </div>
+            </div>
             <div className="flex items-center gap-1 shrink-0">
                 {isBusy ? (
-                    <Loader2 className="h-3 w-3 animate-spin text-[#9AA0A6]" />
+                    <Loader2 className="h-3.5 w-3.5 animate-spin text-[#9AA0A6]" />
                 ) : (
                     <>
                         {!version.is_active && (
-                            <button type="button" onClick={() => onActivate(version.id)} title="Activate" className={cn('p-0.5 rounded text-[#4A7C59] hover:bg-[#E8F5E9]', consoleButtonFocusClass)}>
+                            <button type="button" onClick={() => onActivate(version.id)} title="Activate" className={cn('p-1 rounded text-[#4A7C59] hover:bg-[#E8F5E9]', consoleButtonFocusClass)}>
                                 <Check className="h-3.5 w-3.5" />
                             </button>
                         )}
                         {version.is_active && (
-                            <button type="button" onClick={() => onDeactivate(version)} title="Deactivate" className={cn('p-0.5 rounded text-[#9AA0A6] hover:bg-[#E8EAED]', consoleButtonFocusClass)}>
+                            <button type="button" onClick={() => onDeactivate(version)} title="Deactivate" className={cn('p-1 rounded text-[#9AA0A6] hover:bg-[#E8EAED]', consoleButtonFocusClass)}>
                                 <XCircle className="h-3.5 w-3.5" />
                             </button>
                         )}
                         {!version.is_active && (
-                            <button type="button" onClick={() => onDelete(version)} title="Delete" className={cn('p-0.5 rounded text-[#C06C5D] hover:bg-[#FDECEA]', consoleButtonFocusClass)}>
+                            <button type="button" onClick={() => onDelete(version)} title="Delete" className={cn('p-1 rounded text-[#C06C5D] hover:bg-[#FDECEA]', consoleButtonFocusClass)}>
                                 <Trash2 className="h-3 w-3" />
                             </button>
                         )}
                     </>
                 )}
             </div>
+        </div>
+    );
+}
+
+function BuildStatusCard({ agent, latestBuild, isBuilding, isQueued, isFailed, onBuild, onRetry, onViewLogs, onDiscard, logsBuildId, actionId }) {
+    if (isBuilding || isQueued) {
+        return (
+            <div className={cn('flex items-center gap-3 px-4 py-3 rounded-lg', bgTertiary)}>
+                <Loader2 className="h-4 w-4 animate-spin text-[#5B8DB8] shrink-0" />
+                <div className="min-w-0">
+                    <div className={cn('text-xs font-medium', textPrimary)}>{isBuilding ? 'Building image…' : 'Queued for build…'}</div>
+                    {latestBuild && (
+                        <div className={cn('text-[10px] mt-0.5', textPlaceholder)}>
+                            Started {formatTime(latestBuild.started_at)} · {formatDuration(latestBuild.started_at, latestBuild.finished_at)}
+                        </div>
+                    )}
+                </div>
+            </div>
+        );
+    }
+
+    if (isFailed) {
+        return (
+            <div className={cn('rounded-lg border', accentRedBg, 'border-[#FADBD8]')}>
+                <div className="flex items-center gap-2 px-4 py-2.5">
+                    <XCircle className={cn('h-4 w-4 shrink-0', accentRed)} />
+                    <span className={cn('text-xs font-medium', accentRed)}>Build failed</span>
+                </div>
+                {latestBuild?.failure_reason && (
+                    <pre className={cn('mx-4 mb-2 rounded p-2 text-[10px] font-mono overflow-auto whitespace-pre-wrap max-h-20', accentRed, bgTertiary)}>
+                        {latestBuild.failure_reason}
+                    </pre>
+                )}
+                <div className="flex items-center gap-3 px-4 py-2 border-t border-[#FADBD8]">
+                    {latestBuild && (
+                        <button type="button" onClick={() => onViewLogs(latestBuild.id)} className={cn('text-xs text-[#5B8DB8] hover:underline', consoleButtonFocusClass)}>
+                            {logsBuildId === latestBuild.id ? 'Hide logs' : 'View logs'}
+                        </button>
+                    )}
+                    {latestBuild && (
+                        <button type="button" onClick={() => onRetry(latestBuild.id)} className={cn('text-xs', accentGreenText, 'hover:underline', consoleButtonFocusClass)}>
+                            Retry
+                        </button>
+                    )}
+                    {latestBuild && (
+                        <button type="button" onClick={() => onDiscard(latestBuild.id)} className={cn('text-xs', accentRed, 'hover:underline', consoleButtonFocusClass)}>
+                            Discard
+                        </button>
+                    )}
+                </div>
+            </div>
+        );
+    }
+
+    return (
+        <button
+            type="button"
+            onClick={onBuild}
+            className={cn(
+                'flex items-center gap-2 px-4 py-2.5 text-xs font-medium rounded-lg text-white',
+                'bg-[#202124] hover:bg-[#3C4043] transition-colors',
+                consoleButtonFocusClass,
+            )}
+        >
+            <Upload className="h-3.5 w-3.5" />
+            Build new image
+        </button>
+    );
+}
+
+function EmptyState({ onBuild }) {
+    return (
+        <div className="flex flex-col items-center justify-center py-16">
+            <div className={cn('flex items-center justify-center w-12 h-12 rounded-xl mb-4', bgSecondary)}>
+                <TerminalIcon className={cn('h-6 w-6', textPlaceholder)} />
+            </div>
+            <p className={cn('text-sm font-medium', textPrimary)}>No image configured</p>
+            <p className={cn('text-xs mt-1 mb-4', textPlaceholder)}>Build a custom image to install this agent in sandboxes.</p>
+            <button
+                type="button"
+                onClick={onBuild}
+                className={cn(
+                    'flex items-center gap-2 px-4 py-2 text-xs font-medium rounded-lg text-white',
+                    'bg-[#202124] hover:bg-[#3C4043] transition-colors',
+                    consoleButtonFocusClass,
+                )}
+            >
+                <Upload className="h-3.5 w-3.5" />
+                Build image
+            </button>
         </div>
     );
 }
@@ -175,7 +268,6 @@ export function ImagesAdminContent() {
     const [logsContent, setLogsContent] = useState('');
     const [logsLoading, setLogsLoading] = useState(false);
     const tagInputRef = useRef(null);
-
     const [refreshing, setRefreshing] = useState(false);
 
     const loadCatalog = useCallback(async (opts = {}) => {
@@ -344,20 +436,33 @@ export function ImagesAdminContent() {
         }
     };
 
+    const buildableAgents = (catalog?.agents || []).filter((a) => a.buildable);
+    const hasNoVersions = !selectedAgent?.versions?.length && !selectedAgent?.default_image_ref;
+
     return (
-        <div className="flex flex-col h-full min-h-0">
-            <div className="flex items-center justify-between border-b border-[#DADCE0] bg-white px-4 py-2.5 shrink-0 shadow-sm">
-                <h2 className="text-sm font-bold text-[#202124]">Agent Images</h2>
-                <button type="button" onClick={() => loadCatalog()} disabled={refreshing} className={cn('p-1.5 rounded text-[#5F6368] hover:bg-[#E8EAED]', consoleButtonFocusClass)}>
+        <div className={cn('flex flex-col h-full min-h-0', bgContainer)}>
+            {/* Header bar */}
+            <div className={cn('flex items-center justify-between border-b px-4 py-3 shrink-0', borderHairline, bgCanvas)}>
+                <div className="flex items-center gap-2">
+                    <h2 className={cn('text-sm font-bold', textPrimary)}>Agent Images</h2>
+                    <span className={cn('text-xs', textPlaceholder)}>
+                        {buildableAgents.length} buildable
+                    </span>
+                </div>
+                <button
+                    type="button"
+                    onClick={() => loadCatalog()}
+                    disabled={refreshing}
+                    className={cn('p-1.5 rounded-md text-[#5F6368] hover:bg-[#E8EAED] transition-colors', consoleButtonFocusClass)}
+                >
                     {refreshing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className={cn('h-3.5 w-3.5', refreshing && 'animate-spin')} />}
                 </button>
             </div>
 
-            <WorkflowStrip hasVersions={Boolean(selectedAgent?.versions?.length || selectedAgent?.default_image_ref)} hasActive={Boolean(selectedAgent?.active_version)} />
-
             <div className="flex flex-1 min-h-0">
-                <div className="w-56 shrink-0 border-r border-[#E8EAED] bg-white overflow-y-auto p-1">
-                    {(catalog?.agents || []).filter((a) => a.buildable).map((agent) => (
+                {/* Agent list sidebar */}
+                <div className={cn('w-56 shrink-0 border-r overflow-y-auto p-1.5', borderHairline, bgCanvas)}>
+                    {buildableAgents.map((agent) => (
                         <AgentListItem
                             key={agent.agent_id}
                             agent={agent}
@@ -366,32 +471,56 @@ export function ImagesAdminContent() {
                         />
                     ))}
                     {loading && (
-                        <div className="flex items-center justify-center py-8"><Loader2 className="h-4 w-4 animate-spin text-[#9AA0A6]" /></div>
+                        <div className="flex items-center justify-center py-8">
+                            <Loader2 className="h-4 w-4 animate-spin text-[#9AA0A6]" />
+                        </div>
+                    )}
+                    {!loading && buildableAgents.length === 0 && (
+                        <div className={cn('px-3 py-8 text-center text-xs', textPlaceholder)}>
+                            No buildable agents
+                        </div>
                     )}
                 </div>
 
-                <div className="flex-1 min-h-0 overflow-y-auto bg-[#F0F1F3] p-4 space-y-3">
+                {/* Detail panel */}
+                <div className={cn('flex-1 min-h-0 overflow-y-auto p-5 space-y-4', bgContainer)}>
                     {!selectedAgent ? (
-                        <div className="flex flex-col items-center justify-center h-full text-[#9AA0A6]">
-                            <p className="text-sm">Select an agent from the left to manage its images.</p>
+                        <div className="flex flex-col items-center justify-center h-full">
+                            <div className={cn('flex items-center justify-center w-12 h-12 rounded-xl mb-4', bgSecondary)}>
+                                <TerminalIcon className={cn('h-6 w-6', textPlaceholder)} />
+                            </div>
+                            <p className={cn('text-sm', textPlaceholder)}>
+                                Select an agent to manage its images
+                            </p>
                         </div>
                     ) : (
                         <>
-                            <div className="rounded-xl bg-white shadow-sm border border-[#E8EAED] px-4 py-3">
-                                <div className="flex items-center gap-2 mb-1">
-                                    <h3 className="text-sm font-bold text-[#202124]">{selectedAgent.agent_name}</h3>
-                                </div>
-                                {selectedAgent.active_version ? (
-                                    <div className="flex items-center justify-between gap-2">
-                                        <div className="min-w-0">
-                                            <div className="flex items-center gap-2">
-                                                <span className="inline-flex items-center rounded-full bg-green-100 px-2 py-0.5 text-[10px] font-medium text-green-700">Active</span>
-                                                <span className="text-xs font-mono text-[#202124] truncate">{selectedAgent.active_version.image_ref}</span>
+                            {/* Agent header card */}
+                            <div className={cn('rounded-lg border px-5 py-4', borderHairline, bgCanvas)}>
+                                <div className="flex items-start justify-between gap-4">
+                                    <div className="min-w-0">
+                                        <h3 className={cn('text-sm font-bold', textPrimary)}>{selectedAgent.agent_name}</h3>
+                                        {selectedAgent.active_version ? (
+                                            <div className="mt-2 flex items-center gap-2">
+                                                <span className="inline-flex items-center rounded-full bg-[#E8F5E9] px-2 py-0.5 text-[10px] font-medium text-[#4A7C59]">
+                                                    <Check className="h-2.5 w-2.5 mr-0.5" />Active
+                                                </span>
+                                                <span className={cn('text-xs font-mono truncate', textPrimary)}>
+                                                    {selectedAgent.active_version.image_ref}
+                                                </span>
                                             </div>
-                                            <div className="text-[10px] text-[#9AA0A6] mt-0.5">
-                                                Tag {selectedAgent.active_version.tag} · Built {formatTime(selectedAgent.active_version.built_at)}
+                                        ) : selectedAgent.default_image_ref ? (
+                                            <div className="mt-2 flex items-center gap-2">
+                                                <span className={cn('inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium', bgActive, textSecondary)}>
+                                                    Default
+                                                </span>
+                                                <span className={cn('text-xs font-mono truncate', textSecondary)}>
+                                                    {selectedAgent.default_image_ref}
+                                                </span>
                                             </div>
-                                        </div>
+                                        ) : null}
+                                    </div>
+                                    {selectedAgent.active_version && (
                                         <button
                                             type="button"
                                             onClick={() => setDeactivateTarget(selectedAgent.active_version)}
@@ -400,73 +529,47 @@ export function ImagesAdminContent() {
                                         >
                                             {actionId === `deprecate:${selectedAgent.active_version.id}` ? <Loader2 className="h-3 w-3 animate-spin" /> : 'Deactivate'}
                                         </button>
-                                    </div>
-                                ) : selectedAgent.default_image_ref ? (
-                                    <div className="flex items-center gap-2">
-                                        <span className="inline-flex items-center rounded-full bg-[#F4F5F6] px-2 py-0.5 text-[10px] font-medium text-[#5F6368]">Default</span>
-                                        <span className="text-xs font-mono text-[#5F6368] truncate">{selectedAgent.default_image_ref}</span>
-                                    </div>
-                                ) : (
-                                    <p className="text-xs text-[#9AA0A6]">No image. Build a new image to get started.</p>
-                                )}
-
-                                <div className="border-t border-[#E8EAED] mt-3 pt-3">
-                                    {isBuilding || isQueued ? (
-                                        <div className="flex items-center gap-2 text-sm text-[#5B8DB8]">
-                                            <Loader2 className="h-4 w-4 animate-spin" />
-                                            <span>{isBuilding ? 'Building...' : 'Queued...'}</span>
-                                            {latestBuild && <span className="text-[10px] text-[#9AA0A6]">Started {formatTime(latestBuild.started_at)} · {formatDuration(latestBuild.started_at, latestBuild.finished_at)}</span>}
-                                        </div>
-                                    ) : isFailed ? (
-                                        <div>
-                                            <div className="flex items-center gap-2 text-sm text-[#C06C5D]">
-                                                <CheckCircle2 className="h-4 w-4 rotate-180" />
-                                                <span>Build failed</span>
-                                            </div>
-                                            {latestBuild?.failure_reason && (
-                                                <pre className="mt-1.5 rounded-lg bg-[#FDECEA] p-2 text-[10px] font-mono text-[#C06C5D] max-h-20 overflow-auto whitespace-pre-wrap">{latestBuild.failure_reason}</pre>
-                                            )}
-                                            <div className="flex items-center gap-2 mt-2">
-                                                {latestBuild && (
-                                                    <button type="button" onClick={() => handleViewLogs(latestBuild.id)} className={cn('text-xs text-[#5B8DB8] hover:underline', consoleButtonFocusClass)}>
-                                                        {logsBuildId === latestBuild.id ? 'Hide Logs' : 'View Logs'}
-                                                    </button>
-                                                )}
-                                                {latestBuild && (
-                                                    <button type="button" onClick={() => handleRetry(latestBuild.id)} className={cn('text-xs text-[#4A7C59] hover:underline', consoleButtonFocusClass)}>Retry</button>
-                                                )}
-                                                {latestBuild && (
-                                                    <button type="button" onClick={() => handleDiscardBuild(latestBuild.id)} className={cn('text-xs text-[#C06C5D] hover:underline', consoleButtonFocusClass)}>Discard</button>
-                                                )}
-                                            </div>
-                                        </div>
-                                    ) : (
-                                        <button
-                                            type="button"
-                                            onClick={() => setBuildDialogOpen(true)}
-                                            className={cn('flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md text-white bg-[#4A7C59] hover:bg-[#3d684a] transition-colors', consoleButtonFocusClass)}
-                                        >
-                                            <Upload className="h-3.5 w-3.5" />
-                                            Build New Image
-                                        </button>
                                     )}
+                                </div>
+
+                                {/* Build status / action */}
+                                <div className={cn('mt-4 pt-4 border-t', borderHairline)}>
+                                    <BuildStatusCard
+                                        agent={selectedAgent}
+                                        latestBuild={latestBuild}
+                                        isBuilding={isBuilding}
+                                        isQueued={isQueued}
+                                        isFailed={isFailed}
+                                        onBuild={() => setBuildDialogOpen(true)}
+                                        onRetry={handleRetry}
+                                        onViewLogs={handleViewLogs}
+                                        onDiscard={handleDiscardBuild}
+                                        logsBuildId={logsBuildId}
+                                        actionId={actionId}
+                                    />
                                 </div>
                             </div>
 
-                            <div className="rounded-xl bg-white shadow-sm border border-[#E8EAED] overflow-hidden">
-                                <div className="px-4 py-2.5 border-b border-[#E8EAED]">
-                                    <span className="text-xs font-semibold text-[#5F6368]">Versions ({selectedAgent.versions?.length || 0})</span>
+                            {/* Versions list */}
+                            <div className={cn('rounded-lg border overflow-hidden', borderHairline, bgCanvas)}>
+                                <div className={cn('flex items-center justify-between px-4 py-3 border-b', borderHairline)}>
+                                    <span className={cn('text-xs font-semibold', textSecondary)}>
+                                        Versions
+                                    </span>
+                                    <span className={cn('text-[10px]', textPlaceholder)}>
+                                        {selectedAgent.versions?.length || 0} total
+                                    </span>
                                 </div>
-                                {selectedAgent.versions?.length === 0 ? (
-                                    <div className="px-4 py-6 text-center text-xs text-[#9AA0A6]">No versions yet.</div>
+                                {hasNoVersions ? (
+                                    <EmptyState onBuild={() => setBuildDialogOpen(true)} />
                                 ) : (
                                     <>
                                         {!selectedAgent.active_version && selectedAgent.default_image_ref && (
-                                            <div className="px-4 py-2 bg-[#FAFBFC] border-b border-[#E8EAED] text-[10px] text-[#5F6368]">
+                                            <div className={cn('px-4 py-2 border-b text-[10px]', borderHairline, bgTertiary, textSecondary)}>
                                                 Using default image. Activate a version to override.
                                             </div>
                                         )}
-                                        {selectedAgent.versions.map((v) => (
+                                        {selectedAgent.versions?.map((v) => (
                                             <VersionRow
                                                 key={v.id}
                                                 version={v}
@@ -480,35 +583,85 @@ export function ImagesAdminContent() {
                                 )}
                             </div>
 
+                            {/* Build logs */}
                             {logsBuildId && (
-                                <div className="rounded-xl bg-[#0D1117] border border-[#0D1117] overflow-hidden">
-                                    <div className="flex items-center justify-between px-3 py-2 border-b border-[#21262d]">
-                                        <span className="text-[10px] font-medium text-[#C9D1D9]">Build Logs ({logsBuildId})</span>
-                                        <button type="button" onClick={() => setLogsBuildId(null)} className={cn('text-[10px] text-[#8B949E] hover:text-[#C9D1D9]', consoleButtonFocusClass)}>Close</button>
+                                <div className="rounded-lg bg-[#0D1117] border border-[#0D1117] overflow-hidden">
+                                    <div className={cn('flex items-center justify-between px-4 py-2.5 border-b border-[#21262d]')}>
+                                        <div className="flex items-center gap-2">
+                                            <TerminalIcon className="h-3.5 w-3.5 text-[#8B949E]" />
+                                            <span className="text-[10px] font-medium text-[#C9D1D9]">
+                                                Build logs
+                                            </span>
+                                            <span className="text-[10px] font-mono text-[#8B949E]">{logsBuildId}</span>
+                                        </div>
+                                        <button
+                                            type="button"
+                                            onClick={() => setLogsBuildId(null)}
+                                            className={cn('text-[10px] text-[#8B949E] hover:text-[#C9D1D9] transition-colors', consoleButtonFocusClass)}
+                                        >
+                                            Close
+                                        </button>
                                     </div>
-                                    <pre className="p-3 text-[10px] font-mono text-[#C9D1D9] max-h-64 overflow-auto whitespace-pre-wrap">
-                                        {logsLoading ? 'Loading...' : logsContent}
+                                    <pre className="p-4 text-[10px] font-mono text-[#C9D1D9] max-h-72 overflow-auto whitespace-pre-wrap leading-relaxed">
+                                        {logsLoading ? 'Loading…' : logsContent}
                                     </pre>
                                 </div>
                             )}
 
+                            {/* Build history */}
                             {builds.filter((b) => b.state === 'ready' || b.state === 'failed').length > 1 && (
-                                <div className="rounded-xl bg-white shadow-sm border border-[#E8EAED] overflow-hidden">
-                                    <div className="px-4 py-2.5 border-b border-[#E8EAED]">
-                                        <span className="text-xs font-semibold text-[#5F6368]">Build History ({builds.length})</span>
+                                <div className={cn('rounded-lg border overflow-hidden', borderHairline, bgCanvas)}>
+                                    <div className={cn('flex items-center justify-between px-4 py-3 border-b', borderHairline)}>
+                                        <span className={cn('text-xs font-semibold', textSecondary)}>
+                                            Build history
+                                        </span>
+                                        <span className={cn('text-[10px]', textPlaceholder)}>
+                                            {builds.length} builds
+                                        </span>
                                     </div>
                                     {builds.map((b) => (
-                                        <div key={b.id} className="flex items-center gap-2 px-4 py-2 hover:bg-[#F4F5F6] transition-colors border-b border-[#E8EAED] last:border-b-0">
-                                            <span className={cn('w-1.5 h-1.5 rounded-full shrink-0', b.state === 'ready' ? 'bg-[#4A7C59]' : 'bg-[#C06C5D]')} />
-                                            <span className="font-mono text-[10px] text-[#5F6368] truncate flex-1">{b.id}</span>
-                                            <span className={cn('text-[10px]', b.state === 'ready' ? 'text-[#4A7C59]' : 'text-[#C06C5D]')}>{b.state}</span>
-                                            <span className="text-[10px] text-[#9AA0A6]">{formatDuration(b.started_at, b.finished_at)}</span>
-                                            <span className="text-[10px] text-[#9AA0A6]">{formatTime(b.started_at)}</span>
-                                            <button type="button" onClick={() => handleViewLogs(b.id)} className={cn('text-[10px] text-[#5B8DB8] hover:underline', consoleButtonFocusClass)}>
+                                        <div
+                                            key={b.id}
+                                            className={cn(
+                                                'flex items-center gap-3 px-4 py-2.5 transition-colors border-b last:border-b-0',
+                                                borderHairline,
+                                                'hover:bg-[#F4F5F6]',
+                                            )}
+                                        >
+                                            <span className={cn(
+                                                'w-1.5 h-1.5 rounded-full shrink-0',
+                                                b.state === 'ready' ? 'bg-[#4A7C59]' : 'bg-[#C06C5D]',
+                                            )} />
+                                            <span className={cn('font-mono text-[10px] truncate flex-1', textSecondary)}>
+                                                {b.id}
+                                            </span>
+                                            <span className={cn(
+                                                'text-[10px] font-medium shrink-0',
+                                                b.state === 'ready' ? accentGreenText : accentRed,
+                                            )}>
+                                                {b.state}
+                                            </span>
+                                            <span className={cn('text-[10px] shrink-0', textPlaceholder)}>
+                                                {formatDuration(b.started_at, b.finished_at)}
+                                            </span>
+                                            <span className={cn('text-[10px] shrink-0', textPlaceholder)}>
+                                                {formatTime(b.started_at)}
+                                            </span>
+                                            <button
+                                                type="button"
+                                                onClick={() => handleViewLogs(b.id)}
+                                                className={cn('text-[10px] text-[#5B8DB8] hover:underline shrink-0', consoleButtonFocusClass)}
+                                            >
                                                 {logsBuildId === b.id ? 'Hide' : 'Logs'}
                                             </button>
                                             {b.state === 'failed' && (
-                                                <button type="button" onClick={() => handleDiscardBuild(b.id)} className={cn('text-[10px] text-[#C06C5D] hover:underline', consoleButtonFocusClass)}>Discard</button>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => handleDiscardBuild(b.id)}
+                                                    className={cn('text-[10px] text-[#C06C5D] hover:underline shrink-0', consoleButtonFocusClass)}
+                                                >
+                                                    Discard
+                                                </button>
                                             )}
                                         </div>
                                     ))}
@@ -519,61 +672,81 @@ export function ImagesAdminContent() {
                 </div>
             </div>
 
+            {/* Build dialog */}
             {buildDialogOpen && (
                 <ConsoleDialogShell onClose={() => setBuildDialogOpen(false)} panelClassName="w-96">
                     <div className="px-5 pt-5 pb-2">
-                        <h3 className="text-sm font-semibold text-[#202124]">Build new image</h3>
-                        <p className="text-xs text-[#9AA0A6] mt-1">Build {selectedAgent?.agent_name} from the latest definition.</p>
+                        <h3 className={cn('text-sm font-semibold', textPrimary)}>Build new image</h3>
+                        <p className={cn('text-xs mt-1', textPlaceholder)}>
+                            Build {selectedAgent?.agent_name} from the latest definition.
+                        </p>
                     </div>
                     <div className="px-5 pb-5 space-y-3">
                         <label className="block">
-                            <span className="text-[10px] font-semibold uppercase tracking-wider text-[#9AA0A6]">Version tag</span>
-                            <input ref={tagInputRef} type="text" value={buildTag} onChange={(e) => setBuildTag(e.target.value)} className={cn('mt-1 w-full', consoleInputClass, 'text-xs')} />
+                            <span className={cn('text-[10px] font-semibold uppercase tracking-wider', textPlaceholder)}>Version tag</span>
+                            <input
+                                ref={tagInputRef}
+                                type="text"
+                                value={buildTag}
+                                onChange={(e) => setBuildTag(e.target.value)}
+                                className={cn('mt-1 w-full', consoleInputClass, 'text-xs')}
+                            />
                         </label>
                         <label className="block">
-                            <span className="text-[10px] font-semibold uppercase tracking-wider text-[#9AA0A6]">Notes (optional)</span>
-                            <input type="text" value={buildNotes} onChange={(e) => setBuildNotes(e.target.value)} className={cn('mt-1 w-full', consoleInputClass, 'text-xs')} />
+                            <span className={cn('text-[10px] font-semibold uppercase tracking-wider', textPlaceholder)}>Notes (optional)</span>
+                            <input
+                                type="text"
+                                value={buildNotes}
+                                onChange={(e) => setBuildNotes(e.target.value)}
+                                className={cn('mt-1 w-full', consoleInputClass, 'text-xs')}
+                            />
                         </label>
                     </div>
-                    <div className="flex justify-end gap-2 px-5 py-3 border-t border-[#E8EAED]">
+                    <div className={cn('flex justify-end gap-2 px-5 py-3 border-t', borderHairline)}>
                         <Button type="button" variant="secondary" size="sm" onClick={() => setBuildDialogOpen(false)} disabled={building}>Cancel</Button>
                         <Button type="button" size="sm" onClick={handleBuild} disabled={!buildTag.trim() || building}>
-                            {building ? <><Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />Building...</> : 'Build'}
+                            {building ? <><Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />Building…</> : 'Build'}
                         </Button>
                     </div>
                 </ConsoleDialogShell>
             )}
 
+            {/* Delete version dialog */}
             {deleteVersionTarget && (
                 <ConsoleDialogShell onClose={() => setDeleteVersionTarget(null)} panelClassName="w-96">
                     <div className="px-5 pt-5 pb-2">
-                        <h3 className="text-sm font-semibold text-[#202124]">Delete version</h3>
+                        <h3 className={cn('text-sm font-semibold', textPrimary)}>Delete version</h3>
                     </div>
                     <div className="px-5 pb-4">
-                        <p className="text-xs text-[#5F6368]">
-                            Delete <span className="font-mono font-medium text-[#202124]">{deleteVersionTarget.tag}</span>?
+                        <p className={cn('text-xs', textSecondary)}>
+                            Delete <span className={cn('font-mono font-medium', textPrimary)}>{deleteVersionTarget.tag}</span>?
                         </p>
-                        <p className="text-xs text-[#9AA0A6] mt-1">This removes the version and its image from the registry. This cannot be undone.</p>
+                        <p className={cn('text-xs mt-1', textPlaceholder)}>
+                            This removes the version and its image from the registry. This cannot be undone.
+                        </p>
                     </div>
-                    <div className="flex justify-end gap-2 px-5 py-3 border-t border-[#E8EAED]">
+                    <div className={cn('flex justify-end gap-2 px-5 py-3 border-t', borderHairline)}>
                         <Button type="button" variant="secondary" size="sm" onClick={() => setDeleteVersionTarget(null)}>Cancel</Button>
                         <Button type="button" size="sm" onClick={handleDeleteVersion} className="bg-[#C06C5D] hover:bg-[#a55a4d] text-white">Delete</Button>
                     </div>
                 </ConsoleDialogShell>
             )}
 
+            {/* Deactivate version dialog */}
             {deactivateTarget && (
                 <ConsoleDialogShell onClose={() => setDeactivateTarget(null)} panelClassName="w-96">
                     <div className="px-5 pt-5 pb-2">
-                        <h3 className="text-sm font-semibold text-[#202124]">Deactivate version</h3>
+                        <h3 className={cn('text-sm font-semibold', textPrimary)}>Deactivate version</h3>
                     </div>
                     <div className="px-5 pb-4">
-                        <p className="text-xs text-[#5F6368]">
-                            Deactivate <span className="font-mono font-medium text-[#202124]">{deactivateTarget.tag}</span>?
+                        <p className={cn('text-xs', textSecondary)}>
+                            Deactivate <span className={cn('font-mono font-medium', textPrimary)}>{deactivateTarget.tag}</span>?
                         </p>
-                        <p className="text-xs text-[#9AA0A6] mt-1">The agent will fall back to the default image. You can re-activate this version anytime.</p>
+                        <p className={cn('text-xs mt-1', textPlaceholder)}>
+                            The agent will fall back to the default image. You can re-activate this version anytime.
+                        </p>
                     </div>
-                    <div className="flex justify-end gap-2 px-5 py-3 border-t border-[#E8EAED]">
+                    <div className={cn('flex justify-end gap-2 px-5 py-3 border-t', borderHairline)}>
                         <Button type="button" variant="secondary" size="sm" onClick={() => setDeactivateTarget(null)}>Cancel</Button>
                         <Button type="button" size="sm" onClick={() => { const t = deactivateTarget; setDeactivateTarget(null); handleDeactivate(t.id); }}>Deactivate</Button>
                     </div>
