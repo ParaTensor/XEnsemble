@@ -107,8 +107,9 @@ function AuthenticatedLayout({
         {user?.role === 'admin' && isAgentsAdmin && (
             <div
               className={cn(
-                'relative z-10 flex min-h-0 flex-1 flex-col overflow-auto console-scroll-hidden',
+                'flex min-h-0 flex-1 flex-col overflow-auto console-scroll-hidden',
                 APP_SHELL_ADMIN_CLASS,
+                launchPanelOpen ? offRouteClass : 'relative z-10',
               )}
             >
               <AgentsAdmin />
@@ -117,8 +118,9 @@ function AuthenticatedLayout({
         {user?.role === 'admin' && isUsersAdmin && (
             <div
               className={cn(
-                'relative z-10 flex min-h-0 flex-1 flex-col overflow-auto console-scroll-hidden',
+                'flex min-h-0 flex-1 flex-col overflow-auto console-scroll-hidden',
                 APP_SHELL_ADMIN_CLASS,
+                launchPanelOpen ? offRouteClass : 'relative z-10',
               )}
             >
               <UsersAdmin />
@@ -127,8 +129,9 @@ function AuthenticatedLayout({
         {user?.role === 'admin' && isGatewayAdmin && (
             <div
               className={cn(
-                'relative z-10 flex min-h-0 flex-1 flex-col overflow-auto console-scroll-hidden',
+                'flex min-h-0 flex-1 flex-col overflow-auto console-scroll-hidden',
                 APP_SHELL_ADMIN_CLASS,
+                launchPanelOpen ? offRouteClass : 'relative z-10',
               )}
             >
               <GatewayAdmin />
@@ -137,8 +140,9 @@ function AuthenticatedLayout({
         {isImagesManager && (
             <div
               className={cn(
-                'relative z-10 flex min-h-0 flex-1 flex-col overflow-auto console-scroll-hidden',
+                'flex min-h-0 flex-1 flex-col overflow-auto console-scroll-hidden',
                 APP_SHELL_ADMIN_CLASS,
+                launchPanelOpen ? offRouteClass : 'relative z-10',
               )}
             >
               <ImagesManager />
