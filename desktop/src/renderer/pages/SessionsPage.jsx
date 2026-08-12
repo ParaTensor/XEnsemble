@@ -1164,7 +1164,7 @@ export default React.forwardRef(function Sessions({
                   </button>
                 </div>
               </div>
-              <div className="flex-1 min-h-0 overflow-y-auto px-6 pb-6">
+              <div className="flex-1 min-h-0 overflow-y-auto px-[16.66%] pb-6">
                 <div className="w-full space-y-8 pt-4">
                   {launchModalError && (
                     <p className="text-sm text-[#C06C5D] bg-[#FDECEA] border border-[#FADBD8] rounded-lg px-3 py-2">{launchModalError}</p>
