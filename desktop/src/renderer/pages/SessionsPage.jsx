@@ -1127,8 +1127,6 @@ export default React.forwardRef(function Sessions({
       {/* Main area */}
       <div className="flex min-h-0 flex-1 w-full flex-row items-stretch bg-white">
         <div className="flex min-h-0 min-w-0 flex-1 flex-col bg-white">
-          <div className="h-12 border-b border-[#E8EAED] flex items-center justify-between px-5 shrink-0 bg-white">
-            <div className="flex items-center gap-3 min-w-0">
           {showNewInstanceModal ? (
             <div className="flex min-h-0 flex-1 flex-col bg-[#F0F1F3]">
               <div className="flex items-center justify-between border-b border-[#DADCE0] bg-white px-4 py-2.5 shrink-0 shadow-sm">
@@ -1301,7 +1299,11 @@ export default React.forwardRef(function Sessions({
                 </button>
               </div>
             </div>
-          ) : activeSession ? (
+          ) : (
+            <>
+          <div className="h-12 border-b border-[#E8EAED] flex items-center justify-between px-5 shrink-0 bg-white">
+            <div className="flex items-center gap-3 min-w-0">
+              {activeSession ? (
                 <>
                   <div className="flex items-center gap-2 min-w-0">
                     <h1 className="truncate text-[15px] font-semibold text-[#202124]">
@@ -1521,6 +1523,8 @@ export default React.forwardRef(function Sessions({
                   : 'Select a session from the sidebar, or use New Agent to start one in a workspace.'}
               </p>
             </div>
+          )}
+            </>
           )}
         </div>
       </div>
