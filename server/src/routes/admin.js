@@ -318,7 +318,7 @@ function registerAdminRoutes(fastify) {
         const { applyGatewaySynthesis, findMissing } = require('../agents/agentEnv');
         const allRows = await db.select().from(schema.agents);
         // Hide agents that don't support gateway mode yet
-        const HIDDEN_AGENTS = new Set(['cursor', 'amp', 'commandcode']);
+        const HIDDEN_AGENTS = new Set(['cursor', 'amp', 'commandcode', 'minimax-cli']);
         const rows = allRows.filter((r) => !HIDDEN_AGENTS.has(r.id));
         const platformVault = await platformSecrets.getRaw();
         const platformSynth = applyGatewaySynthesis(platformVault);

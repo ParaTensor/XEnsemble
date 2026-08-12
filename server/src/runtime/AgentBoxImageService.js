@@ -80,7 +80,7 @@ function normalizeImageRef(imageRef) {
 async function listAgentBoxImageCatalog() {
     const agents = await db.select().from(schema.agents);
     // Hide agents that don't support gateway mode yet
-    const HIDDEN_AGENTS = new Set(['cursor', 'amp', 'commandcode']);
+    const HIDDEN_AGENTS = new Set(['cursor', 'amp', 'commandcode', 'minimax-cli']);
     const visibleAgents = agents.filter((a) => !HIDDEN_AGENTS.has(a.id));
     const versions = await db.select().from(schema.agentBoxImages).orderBy(desc(schema.agentBoxImages.createdAt));
     const versionsByAgent = new Map();
