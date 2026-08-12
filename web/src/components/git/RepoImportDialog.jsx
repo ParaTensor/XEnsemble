@@ -62,9 +62,10 @@ const PROVIDER_OPTIONS = [
   { id: 'gitea', label: 'Gitea' },
 ];
 
-export default function RepoImportDialog({ open, onClose, onImported, fetchWorkspaces, inline = false }) {
+export default function RepoImportDialog({ open, onClose, onImported, fetchWorkspaces, inline = false, forceProvider = null }) {
   const { showToast } = useToast();
-  const [provider, setProvider] = useState('github');
+  const [provider, setProvider] = useState(forceProvider || 'github');
+  const [providerButtonsVisible, setProviderButtonsVisible] = useState(!forceProvider);
   const { connection, loading: connectionLoading, error: connectError, connect, connectWithPat, disconnect } = useGitProvider(provider);
   const [providerOAuthConfigured, setProviderOAuthConfigured] = useState(null);
 
@@ -325,6 +326,7 @@ export default function RepoImportDialog({ open, onClose, onImported, fetchWorks
 
   const dialogBody = (
     <>
+      {providerButtonsVisible && (
       <div className="flex items-center gap-2 mb-4">
         {PROVIDER_OPTIONS.map((p) => (
           <button
@@ -349,6 +351,7 @@ export default function RepoImportDialog({ open, onClose, onImported, fetchWorks
           </button>
         ))}
       </div>
+      )}
 
       {!connection ? (
         <div className="space-y-4">

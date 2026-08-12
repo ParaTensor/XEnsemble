@@ -38,10 +38,8 @@ function AuthenticatedLayout({
   const [launchPanelOpen, setLaunchPanelOpen] = useState(false);
 
   useEffect(() => {
-    if (launchPanelOpen && location.pathname !== '/sessions') {
-      setLaunchPanelOpen(false);
-    }
-  }, [location.pathname, launchPanelOpen]);
+    setLaunchPanelOpen(false);
+  }, [location.pathname]);
 
   const isSessions = location.pathname === '/sessions';
   const isAgentsAdmin = location.pathname === '/admin/agents';
