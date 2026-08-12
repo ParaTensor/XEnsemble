@@ -1153,16 +1153,6 @@ export default React.forwardRef(function Sessions({
                   </h3>
                 </div>
                 <div className="flex items-center gap-1">
-                  {launchModalMode !== 'workspace' && (
-                    <button
-                      type="button"
-                      onClick={() => { setGitImportMode(v => !v); setImportedProject(null); }}
-                      className={`flex items-center gap-1.5 px-2 py-1 rounded-md text-xs font-medium transition-colors ${consoleButtonFocusClass} ${gitImportMode ? 'text-[#5B8DB8] bg-[#E8F0FE]' : 'text-[#5F6368] hover:bg-[#F4F5F6]'}`}
-                    >
-                      <GitBranch className="w-3.5 h-3.5" />
-                      {gitImportMode ? 'Hide import' : 'Import from Git'}
-                    </button>
-                  )}
                   <button
                     type="button"
                     onClick={() => { setShowNewInstanceModal(false); setLaunchModalError(null); setCreateNewWorkspaceInline(false); setShowLaunchConfigModal(false); setGitImportMode(false); setImportedProject(null); onLaunchPanelClose?.(); }}
@@ -1177,207 +1167,102 @@ export default React.forwardRef(function Sessions({
                   {launchModalError && (
                     <p className="text-sm text-[#C06C5D] bg-[#FDECEA] border border-[#FADBD8] rounded-lg px-3 py-2">{launchModalError}</p>
                   )}
-                  {gitImportMode ? (
-                    <>
-                      {importedProject ? (
-                        <div className="space-y-5">
-                          <div>
-                            <label className="block text-xs font-medium text-[#5F6368] mb-1.5">Workspace</label>
-                            <div className="flex items-center gap-2 px-3 py-2 text-sm bg-[#F4F5F6] border border-[#E8EAED] rounded-md text-[#5F6368]">
-                              <Check className="w-3.5 h-3.5 shrink-0 text-[#4A7C59]" />
-                              <span className="font-medium truncate">{importedProject.name}</span>
-                              <span className="text-[10px] text-[#9AA0A6] ml-auto shrink-0">Imported</span>
-                            </div>
-                          </div>
-                        </div>
-                      ) : (
-                        <RepoImportDialog
-                          open={true}
-                          inline={true}
-                          onClose={() => { setGitImportMode(false); setImportedProject(null); }}
-                          onImported={(projectId) => {
-                            fetchWorkspaces();
-                            const ws = projects.find((p) => p.id === projectId);
-                            setImportedProject({ id: projectId, name: ws?.name || projectId });
-                            if (!ws) {
-                              setTimeout(() => {
-                                setProjects((prev) => {
-                                  const found = prev.find((p) => p.id === projectId);
-                                  if (found) setImportedProject({ id: projectId, name: found.name });
-                                  return prev;
-                                });
-                              }, 1000);
-                            }
-                          }}
-                          fetchWorkspaces={fetchWorkspaces}
-                        />
-                      )}
-                      {importedProject && (
-                        <>
-                          {launchModalMode !== 'workspace' && customImages.length > 0 && (
-                            <div>
-                              <label className="block text-xs font-medium text-[#5F6368] mb-1.5">Image type</label>
-                              <SelectMenu
-                                value={customImageId ? 'custom' : ''}
-                                onChange={(v) => {
-                                  if (v === 'custom') {
-                                    setCustomImageId(customImages[0]?.id || '');
-                                    const img = customImages[0];
-                                    if (img) {
-                                      const agentComp = (img.components || []).find((c) => (c.component_id || '').startsWith('agent:'));
-                                      const agentId = agentComp ? agentComp.component_id.replace('agent:', '') : '';
-                                      if (agentId && agents.find((a) => a.id === agentId)) setSelectedAgentId(agentId);
-                                    }
-                                  } else {
-                                    setCustomImageId('');
-                                    setSelectedAgentId('');
-                                  }
-                                }}
-                                options={[{ value: '', label: 'Built-in' }, { value: 'custom', label: 'Custom (your images)' }]}
-                                placeholder="Built-in"
-                              />
-                            </div>
-                          )}
-                          {launchModalMode !== 'workspace' && customImageId && (
-                            <div>
-                              <label className="block text-xs font-medium text-[#5F6368] mb-1.5">Custom image</label>
-                              <SelectMenu
-                                value={customImageId}
-                                onChange={(v) => {
-                                  setCustomImageId(v);
-                                  const img = customImages.find((c) => c.id === v);
-                                  if (img) {
-                                    const agentComp = (img.components || []).find((c) => (c.component_id || '').startsWith('agent:'));
-                                    const agentId = agentComp ? agentComp.component_id.replace('agent:', '') : '';
-                                    if (agentId && agents.find((a) => a.id === agentId)) setSelectedAgentId(agentId);
-                                  }
-                                }}
-                                options={customImages.map((img) => ({ value: img.id, label: img.name }))}
-                                placeholder="Select image"
-                              />
-                            </div>
-                          )}
-                          {launchModalMode !== 'workspace' && (
-                            <div>
-                              <div className="flex items-center justify-between gap-2 mb-1.5">
-                                <label className="text-xs font-medium text-[#5F6368]">Agent</label>
-                                {selectedAgent && selectedAgent.llm_auth_mode === 'byok' && (
-                                  <button type="button" onClick={() => setShowLaunchConfigModal(v => !v)} className={`text-xs font-medium text-[#5B8DB8] hover:text-[#4A7298] ${consoleButtonFocusClass}`}>
-                                    <Settings2 className="w-3.5 h-3.5 inline" /> {showLaunchConfigModal ? 'Hide config' : 'Configure'}
-                                  </button>
-                                )}
-                              </div>
-                              <SelectMenu
-                                value={selectedAgentId}
-                                onChange={setSelectedAgentId}
-                                options={agentSelectOptions}
-                                placeholder="Select agent"
-                              />
-                            </div>
-                          )}
-                          {showLaunchConfigModal && selectedAgent && (
-                            <div className="rounded-lg bg-white border border-[#E8EAED] p-4">
-                              <div className="flex items-center gap-2 mb-3">
-                                <Settings2 className="w-3.5 h-3.5 text-[#9AA0A6]" />
-                                <h4 className="text-xs font-medium text-[#5F6368]">Configure {selectedAgent.name}</h4>
-                              </div>
-                              <ByokConfigForm
-                                agentId={selectedAgentId}
-                                loading={false}
-                                onSave={() => { setShowLaunchConfigModal(false); showToast('success', 'Configuration saved.'); }}
-                              />
-                            </div>
-                          )}
-                        </>
-                      )}
-                    </>
-                  ) : (
-                  <>
+
+                  {/* Workspace */}
                   {launchModalMode === 'workspace' && (
                     <div>
-                      <label className="block text-xs font-medium text-[#5F6368] mb-1.5">Workspace name</label>
+                      <label className="block text-xs font-medium text-[#5F6368] mb-1">Workspace</label>
+                      <p className="text-[10px] text-[#9AA0A6] mb-2">Name your new workspace</p>
                       <input type="text" value={newProjectName} onChange={e => setNewProjectName(e.target.value)} placeholder="my-workspace" className={consoleInputClass} autoFocus />
                     </div>
                   )}
                   {(launchModalMode === 'quickstart' || launchModalMode === 'session') && (
                     <div>
-                      <div className="flex items-center justify-between gap-2 mb-1.5">
-                        <label className="text-xs font-medium text-[#5F6368]">Workspace</label>
-                        {launchModalMode === 'session' && !createNewWorkspaceInline && projects.length > 0 && (
+                      <label className="block text-xs font-medium text-[#5F6368] mb-1">Workspace</label>
+                      <p className="text-[10px] text-[#9AA0A6] mb-2">
+                        {importedProject ? 'Imported from Git (locked)' : 'Select an existing workspace or create a new one'}
+                      </p>
+                      {importedProject ? (
+                        <div className="flex items-center gap-2 px-3 py-2 text-sm bg-[#F4F5F6] border border-[#E8EAED] rounded-md text-[#5F6368]">
+                          <Check className="w-3.5 h-3.5 shrink-0 text-[#4A7C59]" />
+                          <span className="font-medium truncate">{importedProject.name}</span>
+                          <span className="text-[10px] text-[#9AA0A6] ml-auto shrink-0">Imported</span>
+                        </div>
+                      ) : createNewWorkspaceInline ? (
+                        <input type="text" value={newProjectName} onChange={e => setNewProjectName(e.target.value)} placeholder="my-workspace" className={consoleInputClass} autoFocus />
+                      ) : (
+                        <div className="flex items-center gap-2">
+                          <div className="flex-1">
+                            <SelectMenu
+                              value={launchWorkspaceId}
+                              onChange={setLaunchWorkspaceId}
+                              options={projects.map((p) => ({ value: p.id, label: p.name }))}
+                              placeholder="Select workspace"
+                            />
+                          </div>
                           <button
                             type="button"
                             onClick={() => { setCreateNewWorkspaceInline(true); setNewProjectName(''); setLaunchWorkspaceId(''); }}
-                            className={`text-xs font-medium text-[#5B8DB8] hover:text-[#4A7298] ${consoleButtonFocusClass}`}
+                            className={`shrink-0 h-9 px-2.5 text-xs font-medium text-[#5F6368] bg-[#F4F5F6] border border-[#E8EAED] rounded-md hover:bg-[#E8EAED] ${consoleButtonFocusClass}`}
                           >
-                            New workspace
+                            New
                           </button>
-                        )}
-                      </div>
-                      {launchModalMode === 'quickstart' || createNewWorkspaceInline ? (
-                        <input
-                          type="text"
-                          value={newProjectName}
-                          onChange={e => setNewProjectName(e.target.value)}
-                          placeholder={launchModalMode === 'quickstart' ? 'Optional - auto-generated if empty' : 'my-workspace'}
-                          className={consoleInputClass}
-                          autoFocus
-                        />
-                      ) : (
-                        <SelectMenu
-                          value={launchWorkspaceId}
-                          onChange={setLaunchWorkspaceId}
-                          options={projects.map((p) => ({ value: p.id, label: p.name }))}
-                          placeholder="Select workspace"
-                        />
+                        </div>
                       )}
                     </div>
                   )}
-                  {launchModalMode !== 'workspace' && customImages.length > 0 && (
+
+                  {/* Image type + Agent */}
+                  {launchModalMode !== 'workspace' && (
                     <div>
-                      <label className="block text-xs font-medium text-[#5F6368] mb-1.5">Image type</label>
-                      <SelectMenu
-                        value={customImageId ? 'custom' : ''}
-                        onChange={(v) => {
-                          if (v === 'custom') {
-                            setCustomImageId(customImages[0]?.id || '');
-                            const img = customImages[0];
-                            if (img) {
-                              const agentComp = (img.components || []).find((c) => (c.component_id || '').startsWith('agent:'));
-                              const agentId = agentComp ? agentComp.component_id.replace('agent:', '') : '';
-                              if (agentId && agents.find((a) => a.id === agentId)) setSelectedAgentId(agentId);
-                            }
-                          } else {
-                            setCustomImageId('');
-                            setSelectedAgentId('');
-                          }
-                        }}
-                        options={[{ value: '', label: 'Built-in' }, { value: 'custom', label: 'Custom (your images)' }]}
-                        placeholder="Built-in"
-                      />
-                    </div>
-                  )}
-                  {launchModalMode !== 'workspace' && customImageId && (
-                    <div>
-                      <label className="block text-xs font-medium text-[#5F6368] mb-1.5">Custom image</label>
-                      <SelectMenu
-                        value={customImageId}
-                        onChange={(v) => {
-                          setCustomImageId(v);
-                          const img = customImages.find((c) => c.id === v);
-                          if (img) {
-                            const agentComp = (img.components || []).find((c) => (c.component_id || '').startsWith('agent:'));
-                            const agentId = agentComp ? agentComp.component_id.replace('agent:', '') : '';
-                            if (agentId && agents.find((a) => a.id === agentId)) setSelectedAgentId(agentId);
-                          }
-                        }}
-                        options={customImages.map((img) => ({ value: img.id, label: img.name }))}
-                        placeholder="Select image"
-                      />
+                      <label className="block text-xs font-medium text-[#5F6368] mb-1">Image type</label>
+                      <p className="text-[10px] text-[#9AA0A6] mb-2">Built-in uses the platform default image. Custom uses your built images.</p>
+                      <div className="flex items-center gap-2">
+                        <div className="flex-1">
+                          <SelectMenu
+                            value={customImageId ? 'custom' : ''}
+                            onChange={(v) => {
+                              if (v === 'custom') {
+                                setCustomImageId(customImages[0]?.id || '');
+                                const img = customImages[0];
+                                if (img) {
+                                  const agentComp = (img.components || []).find((c) => (c.component_id || '').startsWith('agent:'));
+                                  const agentId = agentComp ? agentComp.component_id.replace('agent:', '') : '';
+                                  if (agentId && agents.find((a) => a.id === agentId)) setSelectedAgentId(agentId);
+                                }
+                              } else {
+                                setCustomImageId('');
+                                setSelectedAgentId('');
+                              }
+                            }}
+                            options={[{ value: '', label: 'Built-in' }, ...(customImages.length > 0 ? [{ value: 'custom', label: 'Custom' }] : [])]}
+                            placeholder="Built-in"
+                          />
+                        </div>
+                        {customImageId && (
+                          <div className="flex-1">
+                            <SelectMenu
+                              value={customImageId}
+                              onChange={(v) => {
+                                setCustomImageId(v);
+                                const img = customImages.find((c) => c.id === v);
+                                if (img) {
+                                  const agentComp = (img.components || []).find((c) => (c.component_id || '').startsWith('agent:'));
+                                  const agentId = agentComp ? agentComp.component_id.replace('agent:', '') : '';
+                                  if (agentId && agents.find((a) => a.id === agentId)) setSelectedAgentId(agentId);
+                                }
+                              }}
+                              options={customImages.map((img) => ({ value: img.id, label: img.name }))}
+                              placeholder="Select image"
+                            />
+                          </div>
+                        )}
+                      </div>
                     </div>
                   )}
                   {launchModalMode !== 'workspace' && (
                     <div>
-                      <div className="flex items-center justify-between gap-2 mb-1.5">
+                      <div className="flex items-center justify-between gap-2 mb-1">
                         <label className="text-xs font-medium text-[#5F6368]">Agent</label>
                         {selectedAgent && selectedAgent.llm_auth_mode === 'byok' && (
                           <button type="button" onClick={() => setShowLaunchConfigModal(v => !v)} className={`text-xs font-medium text-[#5B8DB8] hover:text-[#4A7298] ${consoleButtonFocusClass}`}>
@@ -1385,6 +1270,7 @@ export default React.forwardRef(function Sessions({
                           </button>
                         )}
                       </div>
+                      <p className="text-[10px] text-[#9AA0A6] mb-2">Select the AI agent to run in this session</p>
                       <SelectMenu
                         value={selectedAgentId}
                         onChange={setSelectedAgentId}
@@ -1415,7 +1301,55 @@ export default React.forwardRef(function Sessions({
                       />
                     </div>
                   )}
-                  </>
+
+                  {/* Git */}
+                  {launchModalMode !== 'workspace' && (
+                    <div>
+                      <label className="block text-xs font-medium text-[#5F6368] mb-1">Git</label>
+                      <p className="text-[10px] text-[#9AA0A6] mb-2">Import a repository. Leave empty to skip.</p>
+                      {importedProject ? (
+                        <div className="flex items-center gap-2 px-3 py-2 text-sm bg-[#F4F5F6] border border-[#E8EAED] rounded-md text-[#5F6368]">
+                          <Check className="w-3.5 h-3.5 shrink-0 text-[#4A7C59]" />
+                          <span className="font-medium truncate">{importedProject.name}</span>
+                          <button
+                            type="button"
+                            onClick={() => { setImportedProject(null); setGitImportMode(false); }}
+                            className={`ml-auto text-xs text-[#C06C5D] hover:underline shrink-0 ${consoleButtonFocusClass}`}
+                          >
+                            Remove
+                          </button>
+                        </div>
+                      ) : (
+                        <SelectMenu
+                          value={gitImportMode ? 'import' : ''}
+                          onChange={(v) => { setGitImportMode(v === 'import'); setImportedProject(null); }}
+                          options={[{ value: '', label: 'None' }, { value: 'import', label: 'Import from Git' }]}
+                          placeholder="None"
+                        />
+                      )}
+                    </div>
+                  )}
+                  {gitImportMode && !importedProject && (
+                    <RepoImportDialog
+                      open={true}
+                      inline={true}
+                      onClose={() => { setGitImportMode(false); setImportedProject(null); }}
+                      onImported={(projectId) => {
+                        fetchWorkspaces();
+                        const ws = projects.find((p) => p.id === projectId);
+                        setImportedProject({ id: projectId, name: ws?.name || projectId });
+                        if (!ws) {
+                          setTimeout(() => {
+                            setProjects((prev) => {
+                              const found = prev.find((p) => p.id === projectId);
+                              if (found) setImportedProject({ id: projectId, name: found.name });
+                              return prev;
+                            });
+                          }, 1000);
+                        }
+                      }}
+                      fetchWorkspaces={fetchWorkspaces}
+                    />
                   )}
                 </div>
               </div>
