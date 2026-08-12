@@ -25,17 +25,17 @@ const BYOK_FIELDS = {
     ],
     'opencode': [
         { key: 'apiKey', label: 'API Key', tooltip: 'LLM Provider API 密钥', type: 'secret', defaultValue: '', required: true },
-        { key: 'baseURL', label: 'Base URL', tooltip: 'API 基础地址', type: 'string', defaultValue: 'https://api.deepseek.com', required: false },
-        { key: 'model', label: 'Model', tooltip: '默认模型，格式为 provider/model', type: 'string', defaultValue: 'my-deepseek/deepseek-chat', required: false },
-        { key: 'provider', label: 'Provider Name', tooltip: 'Provider 标识名', type: 'string', defaultValue: 'my-deepseek', required: false },
+        { key: 'baseURL', label: 'Base URL', tooltip: 'API 基础地址', type: 'string', defaultValue: 'https://api.openai.com/v1', required: false },
+        { key: 'model', label: 'Model', tooltip: '默认模型，格式为 provider/model', type: 'string', defaultValue: 'openai/gpt-4o', required: false },
+        { key: 'provider', label: 'Provider Name', tooltip: 'Provider 标识名', type: 'string', defaultValue: 'openai', required: false },
     ],
     'cline': [
         { key: 'ANTHROPIC_API_KEY', label: 'API Key', tooltip: 'Anthropic API 密钥', type: 'secret', defaultValue: '', required: true },
     ],
     'droid': [
         { key: 'apiKey', label: 'API Key', tooltip: 'LLM Provider API 密钥', type: 'secret', defaultValue: '', required: true },
-        { key: 'baseUrl', label: 'Base URL', tooltip: 'API 基础地址', type: 'string', defaultValue: 'https://api.deepseek.com/v1', required: false },
-        { key: 'model', label: 'Model', tooltip: '模型 ID', type: 'string', defaultValue: 'deepseek-chat', required: false },
+        { key: 'baseUrl', label: 'Base URL', tooltip: 'API 基础地址', type: 'string', defaultValue: 'https://api.openai.com/v1', required: false },
+        { key: 'model', label: 'Model', tooltip: '模型 ID', type: 'string', defaultValue: 'gpt-4o', required: false },
         { key: 'provider', label: 'Provider Type', tooltip: 'Provider 类型', type: 'string', defaultValue: 'generic-chat-completion-api', required: false },
     ],
     'glm-agent': [
@@ -45,15 +45,15 @@ const BYOK_FIELDS = {
     ],
     'qoder': [
         { key: 'QODER_PERSONAL_ACCESS_TOKEN', label: 'Access Token', tooltip: 'Qoder 平台访问令牌', type: 'secret', defaultValue: '', required: true },
-        { key: 'apiKey', label: 'Provider API Key', tooltip: 'LLM Provider API 密钥（配置文件内）', type: 'secret', defaultValue: '', required: true },
-        { key: 'baseUrl', label: 'Base URL', tooltip: 'API 基础地址', type: 'string', defaultValue: 'https://api.deepseek.com', required: false },
-        { key: 'model', label: 'Model', tooltip: '模型 ID', type: 'string', defaultValue: 'deepseek-chat', required: false },
+        { key: 'apiKey', label: 'Provider API Key', tooltip: 'LLM Provider API 密钥（选填，不填则使用 Qoder 官方 API）', type: 'secret', defaultValue: '', required: false },
+        { key: 'baseUrl', label: 'Base URL', tooltip: 'API 基础地址（选填）', type: 'string', defaultValue: '', required: false },
+        { key: 'model', label: 'Model', tooltip: '模型 ID（选填）', type: 'string', defaultValue: '', required: false },
     ],
     'qwen-code': [
         { key: 'DASHSCOPE_API_KEY', label: 'API Key', tooltip: '阿里云 DashScope API 密钥（用于 Qwen 默认模型）', type: 'secret', defaultValue: '', required: true },
         { key: 'customApiKey', label: 'Custom Provider Key', tooltip: '自定义 Provider 的 API 密钥（选填，填了则使用自定义 Provider 而非 DashScope）', type: 'secret', defaultValue: '', required: false },
-        { key: 'baseUrl', label: 'Custom Base URL', tooltip: '自定义 Provider API 基础地址（选填，配合 customApiKey 使用）', type: 'string', defaultValue: 'https://api.deepseek.com/v1', required: false },
-        { key: 'model', label: 'Custom Model', tooltip: '自定义模型 ID（选填，配合 customApiKey 使用）', type: 'string', defaultValue: 'deepseek-chat', required: false },
+        { key: 'baseUrl', label: 'Custom Base URL', tooltip: '自定义 Provider API 基础地址（选填，配合 customApiKey 使用）', type: 'string', defaultValue: '', required: false },
+        { key: 'model', label: 'Custom Model', tooltip: '自定义模型 ID（选填，配合 customApiKey 使用）', type: 'string', defaultValue: '', required: false },
     ],
     'minimax-cli': [
         { key: 'MINIMAX_API_KEY', label: 'API Key', tooltip: 'MiniMax API 密钥', type: 'secret', defaultValue: '', required: true },
@@ -61,23 +61,23 @@ const BYOK_FIELDS = {
     'pi': [
         { key: 'ANTHROPIC_API_KEY', label: 'Anthropic API Key', tooltip: 'Anthropic API 密钥', type: 'secret', defaultValue: '', required: true },
         { key: 'OPENAI_API_KEY', label: 'OpenAI API Key', tooltip: 'OpenAI API 密钥', type: 'secret', defaultValue: '', required: true },
-        { key: 'apiKey', label: 'Custom Provider Key', tooltip: '自定义 Provider API 密钥（选填，用于 DeepSeek 等第三方）', type: 'secret', defaultValue: '', required: false },
-        { key: 'baseUrl', label: 'Custom Base URL', tooltip: '自定义 Provider API 地址', type: 'string', defaultValue: 'https://api.deepseek.com/v1', required: false },
-        { key: 'model', label: 'Custom Model', tooltip: '自定义模型 ID', type: 'string', defaultValue: 'deepseek-chat', required: false },
+        { key: 'apiKey', label: 'Custom Provider Key', tooltip: '自定义 Provider API 密钥（选填，用于第三方 LLM）', type: 'secret', defaultValue: '', required: false },
+        { key: 'baseUrl', label: 'Custom Base URL', tooltip: '自定义 Provider API 地址（选填）', type: 'string', defaultValue: '', required: false },
+        { key: 'model', label: 'Custom Model', tooltip: '自定义模型 ID（选填）', type: 'string', defaultValue: '', required: false },
     ],
     'commandcode': [
         { key: 'COHERE_API_KEY', label: 'API Key', tooltip: 'Cohere API 密钥', type: 'secret', defaultValue: '', required: true },
     ],
     'hermes': [
         { key: 'api_key', label: 'API Key', tooltip: 'LLM Provider API 密钥', type: 'secret', defaultValue: '', required: true },
-        { key: 'base_url', label: 'Base URL', tooltip: 'API 基础地址', type: 'string', defaultValue: 'https://api.deepseek.com/v1', required: false },
-        { key: 'model', label: 'Model', tooltip: '模型 ID', type: 'string', defaultValue: 'deepseek-chat', required: false },
+        { key: 'base_url', label: 'Base URL', tooltip: 'API 基础地址', type: 'string', defaultValue: 'https://api.openai.com/v1', required: false },
+        { key: 'model', label: 'Model', tooltip: '模型 ID', type: 'string', defaultValue: 'gpt-4o', required: false },
         { key: 'api_mode', label: 'API Mode', tooltip: 'API 协议模式', type: 'string', defaultValue: 'openai', required: false },
     ],
     'openclaw': [
         { key: 'apiKey', label: 'API Key', tooltip: 'LLM Provider API 密钥', type: 'secret', defaultValue: '', required: true },
-        { key: 'baseUrl', label: 'Base URL', tooltip: 'API 基础地址', type: 'string', defaultValue: 'https://api.deepseek.com/v1', required: false },
-        { key: 'model', label: 'Model', tooltip: '模型 ID', type: 'string', defaultValue: 'deepseek-chat', required: false },
+        { key: 'baseUrl', label: 'Base URL', tooltip: 'API 基础地址', type: 'string', defaultValue: 'https://api.openai.com/v1', required: false },
+        { key: 'model', label: 'Model', tooltip: '模型 ID', type: 'string', defaultValue: 'gpt-4o', required: false },
         { key: 'api', label: 'API Type', tooltip: 'API 协议类型', type: 'string', defaultValue: 'openai-completions', required: false },
     ],
 };
@@ -192,9 +192,9 @@ function generateOpencode(values) {
     const env = {};
     const configFiles = [];
     const apiKey = str(values.apiKey);
-    const baseURL = str(values.baseURL) || 'https://api.deepseek.com';
-    const model = str(values.model) || 'my-deepseek/deepseek-chat';
-    const provider = str(values.provider) || 'my-deepseek';
+    const baseURL = str(values.baseURL) || 'https://api.openai.com/v1';
+    const model = str(values.model) || 'openai/gpt-4o';
+    const provider = str(values.provider) || 'openai';
 
     if (apiKey) {
         const modelPart = model.includes('/') ? model.split('/').slice(1).join('/') : model;
@@ -228,8 +228,8 @@ function generateDroid(values) {
     const env = {};
     const configFiles = [];
     const apiKey = str(values.apiKey);
-    const baseUrl = str(values.baseUrl) || 'https://api.deepseek.com/v1';
-    const model = str(values.model) || 'deepseek-chat';
+    const baseUrl = str(values.baseUrl) || 'https://api.openai.com/v1';
+    const model = str(values.model) || 'gpt-4o';
     const provider = str(values.provider) || 'generic-chat-completion-api';
 
     if (apiKey) {
@@ -283,33 +283,34 @@ function generateQoder(values) {
     const configFiles = [];
     const token = str(values.QODER_PERSONAL_ACCESS_TOKEN);
     const apiKey = str(values.apiKey);
-    const baseUrl = str(values.baseUrl) || 'https://api.deepseek.com';
-    const model = str(values.model) || 'deepseek-chat';
+    const baseUrl = str(values.baseUrl) || 'https://api.openai.com/v1';
+    const model = str(values.model) || 'gpt-4o';
 
     if (token) env.QODER_PERSONAL_ACCESS_TOKEN = token;
 
     if (apiKey) {
+        const providerName = 'custom';
         const config = {
             general: {
                 enableAutoUpdate: false,
             },
-            model: `my-deepseek/${model}`,
+            model: `${providerName}/${model}`,
             permissions: {
                 allow: ['Bash(git:*)', 'Read(//**)'],
                 deny: [],
             },
             providers: {
-                'my-deepseek': {
+                [providerName]: {
                     baseUrl: baseUrl,
                     apiKey: apiKey,
-                    displayName: 'DeepSeek',
+                    displayName: 'Custom',
                     model: model,
                     contextWindow: 64000,
                     maxOutputTokens: 8192,
                     models: [
                         {
                             model: model,
-                            displayName: 'DeepSeek Chat',
+                            displayName: model,
                             contextWindow: 64000,
                             maxOutputTokens: 8192,
                         },
@@ -329,13 +330,14 @@ function generateQwenCode(values) {
     const configFiles = [];
     const dashscopeKey = str(values.DASHSCOPE_API_KEY);
     const customApiKey = str(values.customApiKey);
-    const baseUrl = str(values.baseUrl) || 'https://api.deepseek.com/v1';
-    const model = str(values.model) || 'deepseek-chat';
+    const baseUrl = str(values.baseUrl) || 'https://api.openai.com/v1';
+    const model = str(values.model) || 'gpt-4o';
 
     if (dashscopeKey) env.DASHSCOPE_API_KEY = dashscopeKey;
 
     // Only generate settings.json if customApiKey is filled
     if (customApiKey) {
+        const providerName = 'custom';
         const config = {
             general: {
                 enableAutoUpdate: false,
@@ -344,11 +346,11 @@ function generateQwenCode(values) {
                 name: model,
             },
             modelProviders: {
-                'my-deepseek': [
+                [providerName]: [
                     {
                         id: model,
                         baseUrl: baseUrl,
-                        envKey: 'DEEPSEEK_API_KEY',
+                        envKey: 'CUSTOM_API_KEY',
                         generationConfig: {
                             contextWindowSize: 64000,
                         },
@@ -356,7 +358,7 @@ function generateQwenCode(values) {
                 ],
             },
             providerProtocol: {
-                'my-deepseek': 'openai',
+                [providerName]: 'openai',
             },
             security: {
                 auth: {
@@ -364,7 +366,7 @@ function generateQwenCode(values) {
                 },
             },
             env: {
-                DEEPSEEK_API_KEY: customApiKey,
+                CUSTOM_API_KEY: customApiKey,
             },
         };
         configFiles.push({ path: '${STATE_DIR}/settings.json', content: JSON.stringify(config, null, 2) });
@@ -380,17 +382,18 @@ function generatePi(values) {
     const anthropicKey = str(values.ANTHROPIC_API_KEY);
     const openaiKey = str(values.OPENAI_API_KEY);
     const apiKey = str(values.apiKey);
-    const baseUrl = str(values.baseUrl) || 'https://api.deepseek.com/v1';
-    const model = str(values.model) || 'deepseek-chat';
+    const baseUrl = str(values.baseUrl) || 'https://api.openai.com/v1';
+    const model = str(values.model) || 'gpt-4o';
 
     if (anthropicKey) env.ANTHROPIC_API_KEY = anthropicKey;
     if (openaiKey) env.OPENAI_API_KEY = openaiKey;
 
     // Only generate models.json if apiKey (custom provider key) is filled
     if (apiKey) {
+        const providerName = 'custom';
         const config = {
             providers: {
-                'my-deepseek': {
+                [providerName]: {
                     baseUrl: baseUrl,
                     api: 'openai-completions',
                     apiKey: apiKey,
@@ -415,19 +418,20 @@ function generateHermes(values) {
     const env = {};
     const configFiles = [];
     const apiKey = str(values.api_key);
-    const baseUrl = str(values.base_url) || 'https://api.deepseek.com/v1';
-    const model = str(values.model) || 'deepseek-chat';
+    const baseUrl = str(values.base_url) || 'https://api.openai.com/v1';
+    const model = str(values.model) || 'gpt-4o';
     const apiMode = str(values.api_mode) || 'openai';
 
     if (apiKey) {
+        const providerName = 'openai';
         const yaml = [
             'model:',
             `  model: ${model}`,
-            '  provider: my-deepseek',
+            `  provider: ${providerName}`,
             '',
             'providers:',
-            '  my-deepseek:',
-            '    name: DeepSeek',
+            `  ${providerName}:`,
+            '    name: OpenAI',
             `    base_url: ${baseUrl}`,
             `    api_key: ${apiKey}`,
             `    api_mode: ${apiMode}`,
@@ -444,11 +448,12 @@ function generateOpenclaw(values) {
     const env = {};
     const configFiles = [];
     const apiKey = str(values.apiKey);
-    const baseUrl = str(values.baseUrl) || 'https://api.deepseek.com/v1';
-    const model = str(values.model) || 'deepseek-chat';
+    const baseUrl = str(values.baseUrl) || 'https://api.openai.com/v1';
+    const model = str(values.model) || 'gpt-4o';
     const api = str(values.api) || 'openai-completions';
 
     if (apiKey) {
+        const providerName = 'openai';
         const config = {
             logging: {
                 level: 'info',
@@ -456,14 +461,14 @@ function generateOpenclaw(values) {
             agents: {
                 defaults: {
                     model: {
-                        primary: `my-deepseek/${model}`,
+                        primary: `${providerName}/${model}`,
                     },
                 },
             },
             models: {
                 mode: 'merge',
                 providers: {
-                    'my-deepseek': {
+                    [providerName]: {
                         baseUrl: baseUrl,
                         apiKey: apiKey,
                         api: api,

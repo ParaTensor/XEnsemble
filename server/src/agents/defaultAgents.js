@@ -94,18 +94,18 @@ const DEFAULT_AGENTS = [
                 description: 'OpenCode 配置文件（Provider、模型、自动更新等）',
                 example: JSON.stringify({
                     autoupdate: false,
-                    model: 'my-deepseek/deepseek-chat',
+                    model: 'openai/gpt-4o',
                     provider: {
-                        'my-deepseek': {
-                            name: 'DeepSeek',
+                        'openai': {
+                            name: 'OpenAI',
                             npm: '@ai-sdk/openai-compatible',
                             options: {
-                                baseURL: 'https://api.deepseek.com',
+                                baseURL: 'https://api.openai.com/v1',
                                 apiKey: 'sk-xxxx',
                             },
                             models: {
-                                'deepseek-chat': {
-                                    name: 'DeepSeek Chat',
+                                'gpt-4o': {
+                                    name: 'GPT-4o',
                                 },
                             },
                         },
@@ -183,8 +183,8 @@ const DEFAULT_AGENTS = [
                     customModels: [
                         {
                             provider: 'generic-chat-completion-api',
-                            model: 'deepseek-chat',
-                            baseUrl: 'https://api.deepseek.com/v1',
+                            model: 'gpt-4o',
+                            baseUrl: 'https://api.openai.com/v1',
                             apiKey: 'your-api-key',
                         },
                     ],
@@ -257,23 +257,23 @@ const DEFAULT_AGENTS = [
                     general: {
                         enableAutoUpdate: false,
                     },
-                    model: 'my-deepseek/deepseek-chat',
+                    model: 'openai/gpt-4o',
                     permissions: {
                         allow: ['Bash(git:*)', 'Read(//**)'],
                         deny: [],
                     },
                     providers: {
-                        'my-deepseek': {
-                            baseUrl: 'https://api.deepseek.com',
+                        'openai': {
+                            baseUrl: 'https://api.openai.com/v1',
                             apiKey: 'sk-xxxx',
-                            displayName: 'DeepSeek',
-                            model: 'deepseek-chat',
+                            displayName: 'OpenAI',
+                            model: 'gpt-4o',
                             contextWindow: 64000,
                             maxOutputTokens: 8192,
                             models: [
                                 {
-                                    model: 'deepseek-chat',
-                                    displayName: 'DeepSeek Chat',
+                                    model: 'gpt-4o',
+                                    displayName: 'GPT-4o',
                                     contextWindow: 64000,
                                     maxOutputTokens: 8192,
                                 },
@@ -306,13 +306,13 @@ const DEFAULT_AGENTS = [
                         enableAutoUpdate: false,
                     },
                     model: {
-                        name: 'deepseek-chat',
+                        name: 'gpt-4o',
                     },
                     modelProviders: {
-                        'my-deepseek': [
+                        'openai': [
                             {
-                                id: 'deepseek-chat',
-                                baseUrl: 'https://api.deepseek.com/v1',
+                                id: 'gpt-4o',
+                                baseUrl: 'https://api.openai.com/v1',
                                 envKey: 'DEEPSEEK_API_KEY',
                                 generationConfig: {
                                     contextWindowSize: 64000,
@@ -321,7 +321,7 @@ const DEFAULT_AGENTS = [
                         ],
                     },
                     providerProtocol: {
-                        'my-deepseek': 'openai',
+                        'openai': 'openai',
                     },
                     security: {
                         auth: {
@@ -361,14 +361,14 @@ const DEFAULT_AGENTS = [
                 description: 'Pi 模型配置文件（自定义 Provider、模型、API Key）',
                 example: JSON.stringify({
                     providers: {
-                        'my-deepseek': {
-                            baseUrl: 'https://api.deepseek.com/v1',
+                        'openai': {
+                            baseUrl: 'https://api.openai.com/v1',
                             api: 'openai-completions',
                             apiKey: 'sk-xxxx',
                             models: [
                                 {
-                                    id: 'deepseek-chat',
-                                    name: 'DeepSeek Chat',
+                                    id: 'gpt-4o',
+                                    name: 'GPT-4o',
                                     contextWindow: 64000,
                                 },
                             ],
@@ -416,16 +416,16 @@ const DEFAULT_AGENTS = [
                 description: 'Hermes 配置文件（Provider、模型、API Key）',
                 example: [
                     'model:',
-                    '  model: deepseek-chat',
-                    '  provider: my-deepseek',
+                    '  model: gpt-4o',
+                    '  provider: openai',
                     '',
                     'providers:',
-                    '  my-deepseek:',
+                    '  openai:',
                     '    name: DeepSeek',
-                    '    base_url: https://api.deepseek.com/v1',
+                    '    base_url: https://api.openai.com/v1',
                     '    api_key: sk-xxxx',
                     '    api_mode: openai',
-                    '    model: deepseek-chat',
+                    '    model: gpt-4o',
                 ].join('\n'),
             }],
         },
@@ -456,21 +456,21 @@ const DEFAULT_AGENTS = [
                     agents: {
                         defaults: {
                             model: {
-                                primary: 'my-deepseek/deepseek-chat',
+                                primary: 'openai/gpt-4o',
                             },
                         },
                     },
                     models: {
                         mode: 'merge',
                         providers: {
-                            'my-deepseek': {
-                                baseUrl: 'https://api.deepseek.com/v1',
+                            'openai': {
+                                baseUrl: 'https://api.openai.com/v1',
                                 apiKey: 'sk-xxxx',
                                 api: 'openai-completions',
                                 models: [
                                     {
-                                        id: 'deepseek-chat',
-                                        name: 'DeepSeek Chat',
+                                        id: 'gpt-4o',
+                                        name: 'GPT-4o',
                                     },
                                 ],
                             },
