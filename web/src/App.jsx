@@ -1,4 +1,4 @@
-import React, { useState, useRef, useCallback } from 'react';
+import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { Routes, Route, useNavigate, useLocation, Navigate } from 'react-router-dom';
 import Login from './pages/Login';
 import Sessions from './pages/Sessions';
@@ -36,6 +36,12 @@ function AuthenticatedLayout({
   const navigate = useNavigate();
   const sessionsRef = useRef(null);
   const [launchPanelOpen, setLaunchPanelOpen] = useState(false);
+
+  useEffect(() => {
+    if (launchPanelOpen && location.pathname !== '/sessions') {
+      setLaunchPanelOpen(false);
+    }
+  }, [location.pathname, launchPanelOpen]);
 
   const isSessions = location.pathname === '/sessions';
   const isAgentsAdmin = location.pathname === '/admin/agents';
