@@ -189,7 +189,7 @@ export default function RepoImportDialog({ open, onClose, onImported, fetchWorks
   };
 
   useEffect(() => {
-    if (!open) {
+    if (!open && !inline) {
       resetForm();
       setProviderOAuthConfigured(null);
       return;
@@ -204,7 +204,7 @@ export default function RepoImportDialog({ open, onClose, onImported, fetchWorks
       })
       .catch(() => setProviderOAuthConfigured({}));
     if (connection) loadRepos();
-  }, [open, connection, provider]);
+  }, [open, inline, connection, provider]);
 
   const oauthNotConfigured = providerOAuthConfigured?.[provider] === false;
   const oauthAlertMessage = connectError
@@ -403,7 +403,7 @@ export default function RepoImportDialog({ open, onClose, onImported, fetchWorks
                   className="w-full px-3 py-2 text-sm border border-[#DADCE0] rounded-md bg-white focus:outline-none focus:border-[#5B8DB8]"
                 />
                 {urlError && <p className="text-xs text-[#C06C5D]">{urlError}</p>}
-                <button type="button" onClick={handleUrlFetch} disabled={urlFetching || !urlInput.trim()} className="text-xs font-medium text-[#5B8DB8] hover:underline disabled:opacity-40">
+                <button type="button" onClick={handleFetchUrl} disabled={urlFetching || !urlInput.trim()} className="text-xs font-medium text-[#5B8DB8] hover:underline disabled:opacity-40">
                   {urlFetching ? <Loader2 className="h-3 w-3 inline animate-spin" /> : null} Fetch repository info
                 </button>
               </div>
