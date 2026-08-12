@@ -82,14 +82,14 @@ function WorkflowStrip({ hasVersions, hasActive }) {
             {steps.map((s, i) => (
                 <div key={s.label} className="flex items-center gap-2 flex-1 last:flex-none">
                     <div className={cn(
-                        'w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0 transition-colors',
+                        'w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold shrink-0 transition-colors',
                         s.done ? 'bg-[#4A7C59] text-white' : cn(bgActive, textPlaceholder),
                     )}>
                         {s.done ? <Check className="h-3 w-3" /> : i + 1}
                     </div>
                     <div className="min-w-0">
                         <div className={cn('text-xs font-semibold', s.done ? textPrimary : textSecondary)}>{s.label}</div>
-                        <div className={cn('text-[10px]', textPlaceholder)}>{s.desc}</div>
+                        <div className={cn('text-xs', textPlaceholder)}>{s.desc}</div>
                     </div>
                     {i < steps.length - 1 && (
                         <div className={cn('flex-1 border-t-2 border-dashed mx-1', s.done ? 'border-[#4A7C59]' : 'border-[#DADCE0]')} />
@@ -134,7 +134,7 @@ function AgentListItem({ agent, selected, onClick }) {
                 {isBuilding && <Loader2 className="h-3 w-3 animate-spin text-[#5B8DB8] shrink-0" />}
             </div>
             <div className={cn(
-                'text-[10px] mt-0.5 ml-4 truncate',
+                'text-xs mt-0.5 ml-4 truncate',
                 isFailed ? accentRed : textPlaceholder,
                 !activeVersion && !isBuilding && !isQueued && !isFailed && 'italic',
             )}>
@@ -152,14 +152,14 @@ function VersionRow({ version, actionId, onActivate, onDeactivate, onDelete }) {
                 <div className="flex items-center gap-2">
                     <span className={cn('font-mono text-xs truncate', textPrimary)}>{version.tag}</span>
                     {version.is_active ? (
-                        <span className="inline-flex items-center rounded-full bg-[#E8F5E9] px-1.5 py-0.5 text-[10px] font-medium text-[#4A7C59] shrink-0">
+                        <span className="inline-flex items-center rounded-full bg-[#E8F5E9] px-1.5 py-0.5 text-xs font-medium text-[#4A7C59] shrink-0">
                             <Check className="h-2.5 w-2.5 mr-0.5" />Active
                         </span>
                     ) : (
-                        <span className={cn('inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-medium shrink-0', bgActive, textSecondary)}>Ready</span>
+                        <span className={cn('inline-flex items-center rounded-full px-1.5 py-0.5 text-xs font-medium shrink-0', bgActive, textSecondary)}>Ready</span>
                     )}
                 </div>
-                <div className={cn('text-[10px] mt-0.5', textPlaceholder)}>
+                <div className={cn('text-xs mt-0.5', textPlaceholder)}>
                     {formatTime(version.built_at || version.created_at)}
                 </div>
             </div>
@@ -198,7 +198,7 @@ function BuildStatusCard({ agent, latestBuild, isBuilding, isQueued, isFailed, o
                 <div className="min-w-0">
                     <div className={cn('text-xs font-medium', textPrimary)}>{isBuilding ? 'Building image…' : 'Queued for build…'}</div>
                     {latestBuild && (
-                        <div className={cn('text-[10px] mt-0.5', textPlaceholder)}>
+                        <div className={cn('text-xs mt-0.5', textPlaceholder)}>
                             Started {formatTime(latestBuild.started_at)} · {formatDuration(latestBuild.started_at, latestBuild.finished_at)}
                         </div>
                     )}
@@ -215,7 +215,7 @@ function BuildStatusCard({ agent, latestBuild, isBuilding, isQueued, isFailed, o
                     <span className={cn('text-xs font-medium', accentRed)}>Build failed</span>
                 </div>
                 {latestBuild?.failure_reason && (
-                    <pre className={cn('mx-4 mb-2 rounded p-2 text-[10px] font-mono overflow-auto whitespace-pre-wrap max-h-20', accentRed, bgTertiary)}>
+                    <pre className={cn('mx-4 mb-2 rounded p-2 text-xs font-mono overflow-auto whitespace-pre-wrap max-h-20', accentRed, bgTertiary)}>
                         {latestBuild.failure_reason}
                     </pre>
                 )}
@@ -549,7 +549,7 @@ export function ImagesAdminContent() {
                                         <h3 className={cn('text-sm font-bold', textPrimary)}>{selectedAgent.agent_name}</h3>
                                         {selectedAgent.active_version ? (
                                             <div className="mt-2 flex items-center gap-2">
-                                                <span className="inline-flex items-center rounded-full bg-[#E8F5E9] px-2 py-0.5 text-[10px] font-medium text-[#4A7C59]">
+                                                <span className="inline-flex items-center rounded-full bg-[#E8F5E9] px-2 py-0.5 text-xs font-medium text-[#4A7C59]">
                                                     <Check className="h-2.5 w-2.5 mr-0.5" />Active
                                                 </span>
                                                 <span className={cn('text-xs font-mono truncate', textPrimary)}>
@@ -558,7 +558,7 @@ export function ImagesAdminContent() {
                                             </div>
                                         ) : selectedAgent.default_image_ref ? (
                                             <div className="mt-2 flex items-center gap-2">
-                                                <span className={cn('inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium', bgActive, textSecondary)}>
+                                                <span className={cn('inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium', bgActive, textSecondary)}>
                                                     Default
                                                 </span>
                                                 <span className={cn('text-xs font-mono truncate', textSecondary)}>
@@ -567,7 +567,7 @@ export function ImagesAdminContent() {
                                             </div>
                                         ) : null}
                                         {!selectedAgent.active_version && selectedAgent.default_image_ref && (
-                                            <p className={cn('text-[10px] mt-2', textPlaceholder)}>
+                                            <p className={cn('text-xs mt-2', textPlaceholder)}>
                                                 No active version. The default image will be used for new agent sessions.
                                             </p>
                                         )}
@@ -608,7 +608,7 @@ export function ImagesAdminContent() {
                                     <span className={cn('text-xs font-semibold', textSecondary)}>
                                         Versions
                                     </span>
-                                    <span className={cn('text-[10px]', textPlaceholder)}>
+                                    <span className={cn('text-xs', textPlaceholder)}>
                                         {selectedAgent.versions?.length || 0} total
                                     </span>
                                 </div>
@@ -617,7 +617,7 @@ export function ImagesAdminContent() {
                                 ) : (
                                     <>
                                         {!selectedAgent.active_version && selectedAgent.default_image_ref && (
-                                            <div className={cn('px-4 py-2 border-b text-[10px]', borderHairline, bgTertiary, textSecondary)}>
+                                            <div className={cn('px-4 py-2 border-b text-xs', borderHairline, bgTertiary, textSecondary)}>
                                                 Using default image. Activate a version to override.
                                             </div>
                                         )}
@@ -641,20 +641,20 @@ export function ImagesAdminContent() {
                                     <div className={cn('flex items-center justify-between px-4 py-2.5 border-b border-[#21262d]')}>
                                         <div className="flex items-center gap-2">
                                             <TerminalIcon className="h-3.5 w-3.5 text-[#8B949E]" />
-                                            <span className="text-[10px] font-medium text-[#C9D1D9]">
+                                            <span className="text-xs font-medium text-[#C9D1D9]">
                                                 Build logs
                                             </span>
-                                            <span className="text-[10px] font-mono text-[#8B949E]">{logsBuildId}</span>
+                                            <span className="text-xs font-mono text-[#8B949E]">{logsBuildId}</span>
                                         </div>
                                         <button
                                             type="button"
                                             onClick={() => setLogsBuildId(null)}
-                                            className={cn('text-[10px] text-[#8B949E] hover:text-[#C9D1D9] transition-colors', consoleButtonFocusClass)}
+                                            className={cn('text-xs text-[#8B949E] hover:text-[#C9D1D9] transition-colors', consoleButtonFocusClass)}
                                         >
                                             Close
                                         </button>
                                     </div>
-                                    <pre className="p-4 text-[10px] font-mono text-[#C9D1D9] max-h-72 overflow-auto whitespace-pre-wrap leading-relaxed">
+                                    <pre className="p-4 text-xs font-mono text-[#C9D1D9] max-h-72 overflow-auto whitespace-pre-wrap leading-relaxed">
                                         {logsLoading ? 'Loading…' : logsContent}
                                     </pre>
                                 </div>
@@ -667,7 +667,7 @@ export function ImagesAdminContent() {
                                         <span className={cn('text-xs font-semibold', textSecondary)}>
                                             Build history
                                         </span>
-                                        <span className={cn('text-[10px]', textPlaceholder)}>
+                                        <span className={cn('text-xs', textPlaceholder)}>
                                             {builds.length} builds
                                         </span>
                                     </div>
@@ -684,25 +684,25 @@ export function ImagesAdminContent() {
                                                 'w-1.5 h-1.5 rounded-full shrink-0',
                                                 b.state === 'ready' ? 'bg-[#4A7C59]' : 'bg-[#C06C5D]',
                                             )} />
-                                            <span className={cn('font-mono text-[10px] truncate flex-1', textSecondary)}>
+                                            <span className={cn('font-mono text-xs truncate flex-1', textSecondary)}>
                                                 {b.id}
                                             </span>
                                             <span className={cn(
-                                                'text-[10px] font-medium shrink-0',
+                                                'text-xs font-medium shrink-0',
                                                 b.state === 'ready' ? accentGreenText : accentRed,
                                             )}>
                                                 {b.state}
                                             </span>
-                                            <span className={cn('text-[10px] shrink-0', textPlaceholder)}>
+                                            <span className={cn('text-xs shrink-0', textPlaceholder)}>
                                                 {formatDuration(b.started_at, b.finished_at)}
                                             </span>
-                                            <span className={cn('text-[10px] shrink-0', textPlaceholder)}>
+                                            <span className={cn('text-xs shrink-0', textPlaceholder)}>
                                                 {formatTime(b.started_at)}
                                             </span>
                                             <button
                                                 type="button"
                                                 onClick={() => handleViewLogs(b.id)}
-                                                className={cn('text-[10px] text-[#5B8DB8] hover:underline shrink-0', consoleButtonFocusClass)}
+                                                className={cn('text-xs text-[#5B8DB8] hover:underline shrink-0', consoleButtonFocusClass)}
                                             >
                                                 {logsBuildId === b.id ? 'Hide' : 'Logs'}
                                             </button>
@@ -710,7 +710,7 @@ export function ImagesAdminContent() {
                                                 <button
                                                     type="button"
                                                     onClick={() => handleDiscardBuild(b.id)}
-                                                    className={cn('text-[10px] text-[#C06C5D] hover:underline shrink-0', consoleButtonFocusClass)}
+                                                    className={cn('text-xs text-[#C06C5D] hover:underline shrink-0', consoleButtonFocusClass)}
                                                 >
                                                     Discard
                                                 </button>
@@ -735,7 +735,7 @@ export function ImagesAdminContent() {
                     </div>
                     <div className="px-5 pb-5 space-y-3">
                         <label className="block">
-                            <span className={cn('text-[10px] font-semibold uppercase tracking-wider', textPlaceholder)}>Version tag</span>
+                            <span className={cn('text-xs font-semibold uppercase tracking-wider', textPlaceholder)}>Version tag</span>
                             <input
                                 ref={tagInputRef}
                                 type="text"
@@ -745,7 +745,7 @@ export function ImagesAdminContent() {
                             />
                         </label>
                         <label className="block">
-                            <span className={cn('text-[10px] font-semibold uppercase tracking-wider', textPlaceholder)}>Notes (optional)</span>
+                            <span className={cn('text-xs font-semibold uppercase tracking-wider', textPlaceholder)}>Notes (optional)</span>
                             <input
                                 type="text"
                                 value={buildNotes}
