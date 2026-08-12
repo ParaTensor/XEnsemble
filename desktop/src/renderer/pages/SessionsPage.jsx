@@ -362,7 +362,7 @@ export default React.forwardRef(function Sessions({
           agent_id: selectedAgentId,
           project_id: projectId,
           terminal_theme_id: themeId,
-          custom_image_id: customImageId || undefined,
+          custom_image_id: (customImageId && customImageId !== '__none__') ? customImageId : undefined,
           ...(cleanConfigFiles.length ? { config_files: cleanConfigFiles } : {}),
           ...(Object.keys(cleanCustomEnv).length ? { custom_env: cleanCustomEnv } : {}),
         })
@@ -1238,7 +1238,7 @@ export default React.forwardRef(function Sessions({
                       <div className="flex-1 min-w-0 space-y-2">
                         <div className="flex items-center gap-2">
                           <button type="button" onClick={() => { setCustomImageId(''); setSelectedAgentId(''); }} className={`flex-1 h-9 px-3 text-xs font-medium rounded-md border transition-colors ${consoleButtonFocusClass} ${!customImageId ? 'bg-[#202124] text-white border-[#202124]' : 'bg-white text-[#5F6368] border-[#E8EAED] hover:bg-[#F4F5F6]'}`}>Built-in</button>
-                          <button type="button" onClick={() => { if (customImages.length > 0) { setCustomImageId(customImages[0]?.id || ''); const img = customImages[0]; if (img) { const ac = (img.components || []).find((c) => (c.component_id || '').startsWith('agent:')); const aid = ac ? ac.component_id.replace('agent:', '') : ''; if (aid && agents.find((a) => a.id === aid)) setSelectedAgentId(aid); } } }} className={`flex-1 h-9 px-3 text-xs font-medium rounded-md border transition-colors ${consoleButtonFocusClass} ${customImageId ? 'bg-[#202124] text-white border-[#202124]' : 'bg-white text-[#5F6368] border-[#E8EAED] hover:bg-[#F4F5F6]'}`}>Custom</button>
+                          <button type="button" onClick={() => { if (customImages.length > 0) { setCustomImageId(customImages[0]?.id || ''); const img = customImages[0]; if (img) { const ac = (img.components || []).find((c) => (c.component_id || '').startsWith('agent:')); const aid = ac ? ac.component_id.replace('agent:', '') : ''; if (aid && agents.find((a) => a.id === aid)) setSelectedAgentId(aid); } } else { setCustomImageId('__none__'); setSelectedAgentId(''); } }} className={`flex-1 h-9 px-3 text-xs font-medium rounded-md border transition-colors ${consoleButtonFocusClass} ${customImageId ? 'bg-[#202124] text-white border-[#202124]' : 'bg-white text-[#5F6368] border-[#E8EAED] hover:bg-[#F4F5F6]'}`}>Custom</button>
                         </div>
                         <div className="flex items-center gap-2">
                           <div className="flex-1 min-w-0">
