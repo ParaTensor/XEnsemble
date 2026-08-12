@@ -71,6 +71,35 @@ const STATUS_DOT = {
     none: 'bg-[#DADCE0]',
 };
 
+function WorkflowStrip({ hasVersions, hasActive }) {
+    const steps = [
+        { label: 'Build', desc: 'Build an image', done: hasVersions },
+        { label: 'Register', desc: 'Auto on build success', done: hasVersions },
+        { label: 'Activate', desc: 'Pick a version to use', done: hasActive },
+    ];
+    return (
+        <div className={cn('flex items-center gap-2 px-4 py-2 border-b shrink-0', borderHairline, bgTertiary)}>
+            {steps.map((s, i) => (
+                <div key={s.label} className="flex items-center gap-2 flex-1 last:flex-none">
+                    <div className={cn(
+                        'w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0 transition-colors',
+                        s.done ? 'bg-[#4A7C59] text-white' : cn(bgActive, textPlaceholder),
+                    )}>
+                        {s.done ? <Check className="h-3 w-3" /> : i + 1}
+                    </div>
+                    <div className="min-w-0">
+                        <div className={cn('text-xs font-semibold', s.done ? textPrimary : textSecondary)}>{s.label}</div>
+                        <div className={cn('text-[10px]', textPlaceholder)}>{s.desc}</div>
+                    </div>
+                    {i < steps.length - 1 && (
+                        <div className={cn('flex-1 border-t-2 border-dashed mx-1', s.done ? 'border-[#4A7C59]' : 'border-[#DADCE0]')} />
+                    )}
+                </div>
+            ))}
+        </div>
+    );
+}
+
 function AgentListItem({ agent, selected, onClick }) {
     const activeVersion = agent.active_version;
     const hasDefault = Boolean(agent.default_image_ref);
@@ -275,13 +304,16 @@ export function ImagesAdminContent() {
         try {
             const data = await api('');
             setCatalog(data);
+            if (opts.reloadBuilds && selectedAgentId) {
+                await loadBuilds(selectedAgentId);
+            }
         } catch (err) {
             showToast('error', err.message);
         } finally {
             setLoading(false);
             setRefreshing(false);
         }
-    }, [showToast]);
+    }, [showToast, selectedAgentId, loadBuilds]);
 
     const loadBuilds = useCallback(async (agentId) => {
         if (!agentId) return;
@@ -304,7 +336,7 @@ export function ImagesAdminContent() {
 
     useEffect(() => {
         if (pollIds.size === 0) return;
-        const timer = setInterval(() => { loadCatalog(); }, 5000);
+        const timer = setInterval(() => { loadCatalog({ reloadBuilds: true }); }, 5000);
         return () => clearInterval(timer);
     }, [pollIds.size, loadCatalog]);
 
@@ -456,13 +488,18 @@ export function ImagesAdminContent() {
                 </div>
                 <button
                     type="button"
-                    onClick={() => loadCatalog()}
+                    onClick={() => loadCatalog({ reloadBuilds: true })}
                     disabled={refreshing}
                     className={cn('p-1.5 rounded-md text-[#5F6368] hover:bg-[#E8EAED] transition-colors', consoleButtonFocusClass)}
                 >
                     {refreshing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className={cn('h-3.5 w-3.5', refreshing && 'animate-spin')} />}
                 </button>
             </div>
+
+            <WorkflowStrip
+                hasVersions={Boolean(selectedAgent?.versions?.length || selectedAgent?.default_image_ref)}
+                hasActive={Boolean(selectedAgent?.active_version)}
+            />
 
             <div className="flex flex-1 min-h-0">
                 {/* Agent list sidebar */}
