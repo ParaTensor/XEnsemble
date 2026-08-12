@@ -443,6 +443,7 @@ export default React.forwardRef(function Sessions({
   }, [activeSession?.projectId, projects]);
 
   const openLaunchModal = (mode = 'session', workspace = null) => {
+    goToSessions();
     setLaunchModalError(null);
     setCreateNewWorkspaceInline(false);
     setCustomImageId('');
