@@ -318,9 +318,12 @@ fastify.get('/api/v1/agents', { preValidation: [fastify.authenticate] }, async (
     const grantedIds = await policy.listGrantedAgentIds(request.user.id, request.user.role);
     const grantedSet = new Set(grantedIds);
     const allAgents = await installedAgents.listInstalledAgentRows();
+    // Hide agents that don't support gateway mode yet
+    const HIDDEN_AGENTS = new Set(['cursor', 'amp', 'commandcode']);
+    const visibleAgents = allAgents.filter((a) => !HIDDEN_AGENTS.has(a.id));
     const filtered = request.user.role === 'admin'
-        ? allAgents
-        : allAgents.filter((a) => grantedSet.has(a.id));
+        ? visibleAgents
+        : visibleAgents.filter((a) => grantedSet.has(a.id));
     filtered.sort((a, b) => {
         if (a.id === DEFAULT_AGENT_ID) return -1;
         if (b.id === DEFAULT_AGENT_ID) return 1;
