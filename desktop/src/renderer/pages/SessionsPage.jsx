@@ -1180,12 +1180,15 @@ export default React.forwardRef(function Sessions({
                   {gitImportMode ? (
                     <>
                       {importedProject ? (
-                        <div className="rounded-lg bg-white border border-[#E8EAED] p-4 space-y-3">
-                          <div className="flex items-center gap-2 text-sm text-[#4A7C59]">
-                            <Check className="w-4 h-4" />
-                            <span className="font-medium">Repository imported: {importedProject.name}</span>
+                        <div className="space-y-5">
+                          <div>
+                            <label className="block text-xs font-medium text-[#5F6368] mb-1.5">Workspace</label>
+                            <div className="flex items-center gap-2 px-3 py-2 text-sm bg-[#F4F5F6] border border-[#E8EAED] rounded-md text-[#5F6368]">
+                              <Check className="w-3.5 h-3.5 shrink-0 text-[#4A7C59]" />
+                              <span className="font-medium truncate">{importedProject.name}</span>
+                              <span className="text-[10px] text-[#9AA0A6] ml-auto shrink-0">Imported</span>
+                            </div>
                           </div>
-                          <p className="text-xs text-[#9AA0A6]">Select an agent below and click Start agent to launch a session in this workspace.</p>
                         </div>
                       ) : (
                         <RepoImportDialog
@@ -1193,9 +1196,18 @@ export default React.forwardRef(function Sessions({
                           inline={true}
                           onClose={() => { setGitImportMode(false); setImportedProject(null); }}
                           onImported={(projectId) => {
-                            const ws = { id: projectId, name: projectId };
-                            setImportedProject(ws);
                             fetchWorkspaces();
+                            const ws = projects.find((p) => p.id === projectId);
+                            setImportedProject({ id: projectId, name: ws?.name || projectId });
+                            if (!ws) {
+                              setTimeout(() => {
+                                setProjects((prev) => {
+                                  const found = prev.find((p) => p.id === projectId);
+                                  if (found) setImportedProject({ id: projectId, name: found.name });
+                                  return prev;
+                                });
+                              }, 1000);
+                            }
                           }}
                           fetchWorkspaces={fetchWorkspaces}
                         />
