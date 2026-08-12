@@ -95,6 +95,8 @@ export default React.forwardRef(function Sessions({
   activeSession,
   setActiveSession,
   fetchWorkspaces,
+  launchPanelOpen,
+  onLaunchPanelClose,
   className,
 }, ref) {
   const navigate = useNavigate();
@@ -414,7 +416,7 @@ export default React.forwardRef(function Sessions({
         ];
       });
       fetchWorkspaces();
-      if (closeLaunchModal) setShowNewInstanceModal(false);
+      if (closeLaunchModal) { setShowNewInstanceModal(false); onLaunchPanelClose?.(); }
       return true;
     } catch (err) {
       setLaunchModalError(err.message);
@@ -443,7 +445,6 @@ export default React.forwardRef(function Sessions({
   }, [activeSession?.projectId, projects]);
 
   const openLaunchModal = (mode = 'session', workspace = null) => {
-    goToSessions();
     setLaunchModalError(null);
     setCreateNewWorkspaceInline(false);
     setCustomImageId('');
@@ -526,7 +527,7 @@ export default React.forwardRef(function Sessions({
         if (!started) fetchWorkspaces();
       } else {
         fetchWorkspaces();
-        setShowNewInstanceModal(false);
+        setShowNewInstanceModal(false); onLaunchPanelClose?.();
       }
     } finally {
       if (!started) setLaunchingSession(false);
@@ -1143,7 +1144,7 @@ export default React.forwardRef(function Sessions({
                 </div>
                 <button
                   type="button"
-                  onClick={() => { setShowNewInstanceModal(false); setLaunchModalError(null); setCreateNewWorkspaceInline(false); setShowLaunchConfigModal(false); }}
+                  onClick={() => { setShowNewInstanceModal(false); setLaunchModalError(null); setCreateNewWorkspaceInline(false); setShowLaunchConfigModal(false); onLaunchPanelClose?.(); }}
                   className={`p-1.5 rounded text-[#5F6368] hover:bg-[#E8EAED] ${consoleButtonFocusClass}`}
                 >
                   <X className="w-4 h-4" />
@@ -1285,7 +1286,7 @@ export default React.forwardRef(function Sessions({
               <div className="flex items-center justify-end gap-2 border-t border-[#DADCE0] bg-white px-4 py-3 shrink-0">
                 <button
                   type="button"
-                  onClick={() => { setShowNewInstanceModal(false); setCreateNewWorkspaceInline(false); }}
+                  onClick={() => { setShowNewInstanceModal(false); setCreateNewWorkspaceInline(false); onLaunchPanelClose?.(); }}
                   className={`${buttonClass('secondary', 'sm')} ${consoleButtonFocusClass}`}
                 >
                   Cancel

@@ -35,6 +35,7 @@ function AuthenticatedLayout({
   const location = useLocation();
   const navigate = useNavigate();
   const sessionsRef = useRef(null);
+  const [launchPanelOpen, setLaunchPanelOpen] = useState(false);
 
   const isSessions = location.pathname === '/sessions';
   const isAgentsAdmin = location.pathname === '/admin/agents';
@@ -72,7 +73,7 @@ function AuthenticatedLayout({
         onSelectSession={onSelectSession}
         onCreateWorkspace={() => sessionsRef.current?.openLaunchModal?.('workspace')}
         onImportFromGit={() => sessionsRef.current?.openImportDialog?.()}
-        onNewAgent={() => sessionsRef.current?.openLaunchModal?.('session')}
+        onNewAgent={() => { setLaunchPanelOpen(true); sessionsRef.current?.openLaunchModal?.('session'); }}
         onRequestDeleteSession={(session, ws) => sessionsRef.current?.requestDeleteSession?.(session, ws)}
         onRequestDeleteWorkspace={(ws) => sessionsRef.current?.requestDeleteWorkspace?.(ws)}
         onArchiveSession={onArchiveSession}
@@ -95,11 +96,13 @@ function AuthenticatedLayout({
           activeSession={activeSession}
           setActiveSession={setActiveSession}
           fetchWorkspaces={fetchWorkspaces}
+          launchPanelOpen={launchPanelOpen}
+          onLaunchPanelClose={() => setLaunchPanelOpen(false)}
           className={cn(
             'flex h-full min-h-0 flex-1 flex-col',
-            isSessions ? 'relative z-10' : offRouteClass,
+            (isSessions || launchPanelOpen) ? 'relative z-20' : offRouteClass,
           )}
-          aria-hidden={!isSessions}
+          aria-hidden={!isSessions && !launchPanelOpen}
         />
         {user?.role === 'admin' && isAgentsAdmin && (
             <div
