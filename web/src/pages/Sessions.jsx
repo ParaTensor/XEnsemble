@@ -1243,7 +1243,7 @@ export default React.forwardRef(function Sessions({
                         <div className="flex items-center gap-2">
                           <div className="flex-1 min-w-0">
                             {!customImageId && (
-                              <SelectMenu value={selectedAgentId} onChange={setSelectedAgentId} options={agentSelectOptions} placeholder="Select agent" />
+                              <SelectMenu value={selectedAgentId} onChange={(v) => { setSelectedAgentId(v); setShowLaunchConfigModal(false); }} options={agentSelectOptions} placeholder="Select agent" />
                             )}
                             {customImageId && customImages.length > 0 && (
                               <SelectMenu
