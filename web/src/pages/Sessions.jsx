@@ -1172,8 +1172,8 @@ export default React.forwardRef(function Sessions({
 
                   {/* Workspace */}
                   {launchModalMode === 'workspace' && (
-                    <div className="flex items-start gap-8">
-                      <div className="w-40 shrink-0 pt-2">
+                    <div className="flex items-start gap-12">
+                      <div className="w-44 shrink-0 pt-2">
                         <label className="block text-sm font-medium text-[#3C4043]">Workspace</label>
                         <p className="text-[11px] text-[#9AA0A6] mt-0.5">A workspace is an isolated environment that stores your project files and session history.</p>
                       </div>
@@ -1183,8 +1183,8 @@ export default React.forwardRef(function Sessions({
                     </div>
                   )}
                   {(launchModalMode === 'quickstart' || launchModalMode === 'session') && (
-                    <div className="flex items-start gap-8">
-                      <div className="w-40 shrink-0 pt-2">
+                    <div className="flex items-start gap-12">
+                      <div className="w-44 shrink-0 pt-2">
                         <label className="block text-sm font-medium text-[#3C4043]">Workspace</label>
                         <p className="text-[11px] text-[#9AA0A6] mt-0.5">{importedProject ? 'Imported from Git (locked)' : 'Select an existing workspace or create a new one.'}</p>
                       </div>
@@ -1209,10 +1209,10 @@ export default React.forwardRef(function Sessions({
                     </div>
                   )}
 
-                  {/* Agent (merged: image type + agent) */}
+                  {/* Agent (built-in|custom buttons + dropdown) */}
                   {launchModalMode !== 'workspace' && (
-                    <div className="flex items-start gap-8">
-                      <div className="w-40 shrink-0 pt-2">
+                    <div className="flex items-start gap-12">
+                      <div className="w-44 shrink-0 pt-2">
                         <div className="flex items-center justify-between">
                           <label className="text-sm font-medium text-[#3C4043]">Agent</label>
                           {selectedAgent && selectedAgent.llm_auth_mode === 'byok' && (
@@ -1224,34 +1224,36 @@ export default React.forwardRef(function Sessions({
                         <p className="text-[11px] text-[#9AA0A6] mt-0.5">Select a built-in agent or a custom image you have built. Each agent has its own capabilities and configuration.</p>
                       </div>
                       <div className="flex-1 min-w-0 space-y-2">
-                        <SelectMenu
-                          value={customImageId ? `custom:${customImageId}` : selectedAgentId}
-                          onChange={(v) => {
-                            if (v.startsWith('custom:')) {
-                              const imgId = v.slice(7);
-                              setCustomImageId(imgId);
-                              const img = customImages.find((c) => c.id === imgId);
+                        <div className="flex items-center gap-2">
+                          <button type="button" onClick={() => { setCustomImageId(''); setSelectedAgentId(''); }} className={`flex-1 h-9 px-3 text-xs font-medium rounded-md border transition-colors ${consoleButtonFocusClass} ${!customImageId ? 'bg-[#202124] text-white border-[#202124]' : 'bg-white text-[#5F6368] border-[#E8EAED] hover:bg-[#F4F5F6]'}`}>Built-in</button>
+                          {customImages.length > 0 && (
+                            <button type="button" onClick={() => { setCustomImageId(customImages[0]?.id || ''); const img = customImages[0]; if (img) { const ac = (img.components || []).find((c) => (c.component_id || '').startsWith('agent:')); const aid = ac ? ac.component_id.replace('agent:', '') : ''; if (aid && agents.find((a) => a.id === aid)) setSelectedAgentId(aid); } }} className={`flex-1 h-9 px-3 text-xs font-medium rounded-md border transition-colors ${consoleButtonFocusClass} ${customImageId ? 'bg-[#202124] text-white border-[#202124]' : 'bg-white text-[#5F6368] border-[#E8EAED] hover:bg-[#F4F5F6]'}`}>Custom</button>
+                          )}
+                        </div>
+                        {!customImageId && (
+                          <SelectMenu value={selectedAgentId} onChange={setSelectedAgentId} options={agentSelectOptions} placeholder="Select agent" />
+                        )}
+                        {customImageId && (
+                          <SelectMenu
+                            value={customImageId}
+                            onChange={(v) => {
+                              setCustomImageId(v);
+                              const img = customImages.find((c) => c.id === v);
                               if (img) {
                                 const ac = (img.components || []).find((c) => (c.component_id || '').startsWith('agent:'));
                                 const aid = ac ? ac.component_id.replace('agent:', '') : '';
                                 if (aid && agents.find((a) => a.id === aid)) setSelectedAgentId(aid);
                               }
-                            } else {
-                              setCustomImageId('');
-                              setSelectedAgentId(v);
-                            }
-                          }}
-                          options={[
-                            ...agentSelectOptions,
-                            ...(customImages.length > 0 ? [{ label: '— Custom Images —', options: customImages.map((img) => {
+                            }}
+                            options={customImages.map((img) => {
                               const ac = (img.components || []).find((c) => (c.component_id || '').startsWith('agent:'));
                               const agentId = ac ? ac.component_id.replace('agent:', '') : '';
                               const agent = agents.find((a) => a.id === agentId);
-                              return { value: `custom:${img.id}`, label: `${img.name}${agent ? ` (${agent.name})` : ''}` };
-                            }) }] : []),
-                          ]}
-                          placeholder="Select agent"
-                        />
+                              return { value: img.id, label: `${img.name}${agent ? ` (${agent.name})` : ''}` };
+                            })}
+                            placeholder="Select custom image"
+                          />
+                        )}
                       </div>
                     </div>
                   )}
@@ -1267,8 +1269,8 @@ export default React.forwardRef(function Sessions({
 
                   {/* Git */}
                   {launchModalMode !== 'workspace' && (
-                    <div className="flex items-start gap-8">
-                      <div className="w-40 shrink-0 pt-2">
+                    <div className="flex items-start gap-12">
+                      <div className="w-44 shrink-0 pt-2">
                         <label className="block text-sm font-medium text-[#3C4043]">Git</label>
                         <p className="text-[11px] text-[#9AA0A6] mt-0.5">Optionally import a Git repository. The agent will have access to the code for editing and development.</p>
                       </div>
@@ -1290,8 +1292,9 @@ export default React.forwardRef(function Sessions({
                       </div>
                     </div>
                   )}
-                  {gitImportMode && !importedProject && (
+                  {gitImportMode && !importedProject && gitProvider && (
                     <RepoImportDialog
+                      key={gitProvider}
                       open={true}
                       inline={true}
                       forceProvider={gitProvider}
