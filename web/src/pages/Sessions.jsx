@@ -1184,11 +1184,11 @@ export default React.forwardRef(function Sessions({
                   <div className="h-px bg-[#E8EAED]" />
 
                   {/* Form fields */}
-                  <div className="space-y-6 px-[18%]">
+                  <div className="px-[18%] divide-y divide-[#E8EAED]">
 
                   {/* Workspace */}
                   {launchModalMode === 'workspace' && (
-                    <div className="flex items-start gap-12">
+                    <div className="flex items-start gap-12 py-5">
                       <div className="w-52 shrink-0 pt-2">
                         <label className="block text-sm font-medium text-[#3C4043]">Workspace</label>
                         <p className="text-[11px] text-[#9AA0A6] mt-0.5">A workspace is an isolated environment that stores your project files and session history.</p>
@@ -1199,7 +1199,7 @@ export default React.forwardRef(function Sessions({
                     </div>
                   )}
                   {(launchModalMode === 'quickstart' || launchModalMode === 'session') && (
-                    <div className="flex items-start gap-12">
+                    <div className="flex items-start gap-12 py-5">
                       <div className="w-52 shrink-0 pt-2">
                         <label className="block text-sm font-medium text-[#3C4043]">Workspace</label>
                         <p className="text-[11px] text-[#9AA0A6] mt-0.5">{importedProject ? 'Imported from Git (locked)' : 'Select an existing workspace or create a new one.'}</p>
@@ -1212,7 +1212,10 @@ export default React.forwardRef(function Sessions({
                             <span className="text-[10px] text-[#9AA0A6] ml-auto shrink-0">Imported</span>
                           </div>
                         ) : createNewWorkspaceInline ? (
-                          <input type="text" value={newProjectName} onChange={e => setNewProjectName(e.target.value)} placeholder="my-workspace" className={consoleInputClass} autoFocus />
+                          <div className="flex items-center gap-2">
+                            <input type="text" value={newProjectName} onChange={e => setNewProjectName(e.target.value)} placeholder="my-workspace" className="flex-1 min-w-0 px-3 py-2 text-sm border border-[#DADCE0] rounded-md bg-white focus:outline-none focus:border-[#5B8DB8]" autoFocus />
+                            <button type="button" onClick={() => { setCreateNewWorkspaceInline(false); setNewProjectName(''); }} className={`shrink-0 h-9 px-3 text-xs font-medium text-[#5F6368] bg-[#F4F5F6] border border-[#E8EAED] rounded-md hover:bg-[#E8EAED] ${consoleButtonFocusClass}`}>Back</button>
+                          </div>
                         ) : (
                           <div className="flex items-center gap-2">
                             <div className="flex-1 min-w-0">
@@ -1227,16 +1230,9 @@ export default React.forwardRef(function Sessions({
 
                   {/* Agent (built-in|custom buttons + dropdown) */}
                   {launchModalMode !== 'workspace' && (
-                    <div className="flex items-start gap-12">
+                    <div className="flex items-start gap-12 py-5">
                       <div className="w-52 shrink-0 pt-2">
-                        <div className="flex items-center justify-between">
-                          <label className="text-sm font-medium text-[#3C4043]">Agent</label>
-                          {selectedAgent && selectedAgent.llm_auth_mode === 'byok' && (
-                            <button type="button" onClick={() => setShowLaunchConfigModal(v => !v)} className={`text-xs font-medium text-[#5B8DB8] hover:text-[#4A7298] ${consoleButtonFocusClass}`}>
-                              <Settings2 className="w-3.5 h-3.5" />
-                            </button>
-                          )}
-                        </div>
+                        <label className="text-sm font-medium text-[#3C4043]">Agent</label>
                         <p className="text-[11px] text-[#9AA0A6] mt-0.5">Select a built-in agent or a custom image you have built. Each agent has its own capabilities and configuration.</p>
                       </div>
                       <div className="flex-1 min-w-0 space-y-2">
@@ -1244,11 +1240,13 @@ export default React.forwardRef(function Sessions({
                           <button type="button" onClick={() => { setCustomImageId(''); setSelectedAgentId(''); }} className={`flex-1 h-9 px-3 text-xs font-medium rounded-md border transition-colors ${consoleButtonFocusClass} ${!customImageId ? 'bg-[#202124] text-white border-[#202124]' : 'bg-white text-[#5F6368] border-[#E8EAED] hover:bg-[#F4F5F6]'}`}>Built-in</button>
                           <button type="button" onClick={() => { if (customImages.length > 0) { setCustomImageId(customImages[0]?.id || ''); const img = customImages[0]; if (img) { const ac = (img.components || []).find((c) => (c.component_id || '').startsWith('agent:')); const aid = ac ? ac.component_id.replace('agent:', '') : ''; if (aid && agents.find((a) => a.id === aid)) setSelectedAgentId(aid); } } }} className={`flex-1 h-9 px-3 text-xs font-medium rounded-md border transition-colors ${consoleButtonFocusClass} ${customImageId ? 'bg-[#202124] text-white border-[#202124]' : 'bg-white text-[#5F6368] border-[#E8EAED] hover:bg-[#F4F5F6]'}`}>Custom</button>
                         </div>
-                        {!customImageId && (
-                          <SelectMenu value={selectedAgentId} onChange={setSelectedAgentId} options={agentSelectOptions} placeholder="Select agent" />
-                        )}
-                        {customImageId && customImages.length > 0 && (
-                          <SelectMenu
+                        <div className="flex items-center gap-2">
+                          <div className="flex-1 min-w-0">
+                            {!customImageId && (
+                              <SelectMenu value={selectedAgentId} onChange={setSelectedAgentId} options={agentSelectOptions} placeholder="Select agent" />
+                            )}
+                            {customImageId && customImages.length > 0 && (
+                              <SelectMenu
                             value={customImageId}
                             onChange={(v) => {
                               setCustomImageId(v);
@@ -1271,6 +1269,12 @@ export default React.forwardRef(function Sessions({
                         {customImageId && customImages.length === 0 && (
                           <p className="text-xs text-[#9AA0A6] py-2">No custom images found. Build one in the Images page first.</p>
                         )}
+                        </div>
+                        {selectedAgent && (selectedAgent.llm_auth_mode === 'byok' || !selectedAgent.llm_auth_mode) && (
+                          <button type="button" onClick={() => setShowLaunchConfigModal(v => !v)} className={`shrink-0 h-9 px-2.5 text-xs font-medium text-[#5B8DB8] hover:text-[#4A7298] border border-[#E8EAED] rounded-md hover:bg-[#F4F5F6] ${consoleButtonFocusClass}`}>
+                            <Settings2 className="w-3.5 h-3.5" />
+                          </button>
+                        )}
                       </div>
                     </div>
                   )}
@@ -1286,7 +1290,7 @@ export default React.forwardRef(function Sessions({
 
                   {/* Git */}
                   {launchModalMode !== 'workspace' && (
-                    <div className="flex items-start gap-12">
+                    <div className="flex items-start gap-12 py-5">
                       <div className="w-52 shrink-0 pt-2">
                         <label className="block text-sm font-medium text-[#3C4043]">Git</label>
                         <p className="text-[11px] text-[#9AA0A6] mt-0.5">Optionally import a Git repository. The agent will have access to the code for editing and development.</p>
