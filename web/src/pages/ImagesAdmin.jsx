@@ -566,6 +566,11 @@ export function ImagesAdminContent() {
                                                 </span>
                                             </div>
                                         ) : null}
+                                        {!selectedAgent.active_version && selectedAgent.default_image_ref && (
+                                            <p className={cn('text-[10px] mt-2', textPlaceholder)}>
+                                                No active version. The default image will be used for new agent sessions.
+                                            </p>
+                                        )}
                                     </div>
                                     {selectedAgent.active_version && (
                                         <button
