@@ -1172,7 +1172,7 @@ export default React.forwardRef(function Sessions({
                   {launchModalMode === 'workspace' && (
                     <div>
                       <label className="block text-xs font-medium text-[#5F6368] mb-1">Workspace</label>
-                      <p className="text-[10px] text-[#9AA0A6] mb-2">Name your new workspace</p>
+                      <p className="text-[10px] text-[#9AA0A6] mb-2">A workspace is an isolated environment that stores your project files and session history.</p>
                       <input type="text" value={newProjectName} onChange={e => setNewProjectName(e.target.value)} placeholder="my-workspace" className={consoleInputClass} autoFocus />
                     </div>
                   )}
@@ -1216,7 +1216,7 @@ export default React.forwardRef(function Sessions({
                   {launchModalMode !== 'workspace' && (
                     <div>
                       <label className="block text-xs font-medium text-[#5F6368] mb-1">Image type</label>
-                      <p className="text-[10px] text-[#9AA0A6] mb-2">Built-in uses the platform default image. Custom uses your built images.</p>
+                      <p className="text-[10px] text-[#9AA0A6] mb-2">Built-in uses the pre-built agent image from the registry. Custom uses images you have built with specific tools and dependencies pre-installed.</p>
                       <div className="flex items-center gap-2">
                         <div className="flex-1">
                           <SelectMenu
@@ -1270,7 +1270,7 @@ export default React.forwardRef(function Sessions({
                           </button>
                         )}
                       </div>
-                      <p className="text-[10px] text-[#9AA0A6] mb-2">Select the AI agent to run in this session</p>
+                      <p className="text-[10px] text-[#9AA0A6] mb-2">The AI coding agent that will run inside the sandbox. Each agent has its own capabilities and configuration requirements.</p>
                       <SelectMenu
                         value={selectedAgentId}
                         onChange={setSelectedAgentId}
@@ -1306,7 +1306,7 @@ export default React.forwardRef(function Sessions({
                   {launchModalMode !== 'workspace' && (
                     <div>
                       <label className="block text-xs font-medium text-[#5F6368] mb-1">Git</label>
-                      <p className="text-[10px] text-[#9AA0A6] mb-2">Import a repository. Leave empty to skip.</p>
+                      <p className="text-[10px] text-[#9AA0A6] mb-2">Optionally import a Git repository into the workspace. The agent will have access to the code for editing and development.</p>
                       {importedProject ? (
                         <div className="flex items-center gap-2 px-3 py-2 text-sm bg-[#F4F5F6] border border-[#E8EAED] rounded-md text-[#5F6368]">
                           <Check className="w-3.5 h-3.5 shrink-0 text-[#4A7C59]" />
