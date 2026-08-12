@@ -1295,8 +1295,8 @@ export default React.forwardRef(function Sessions({
                         {importedProject ? (
                           <div className="flex items-center gap-2 px-3 py-2 text-sm bg-[#F4F5F6] border border-[#E8EAED] rounded-md text-[#5F6368]">
                             <Check className="w-3.5 h-3.5 shrink-0 text-[#4A7C59]" />
-                            <span className="font-medium truncate">{importedProject.name}</span>
-                            <button type="button" onClick={() => { setImportedProject(null); setGitImportMode(false); setGitProvider(''); }} className={`ml-auto text-xs text-[#C06C5D] hover:underline shrink-0 ${consoleButtonFocusClass}`}>Remove</button>
+                            <span className="font-medium truncate">{gitProvider}</span>
+                            <span className="text-[10px] text-[#9AA0A6] ml-auto shrink-0">Imported</span>
                           </div>
                         ) : (
                           <div className="flex items-center gap-2">

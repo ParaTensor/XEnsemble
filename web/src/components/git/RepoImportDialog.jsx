@@ -231,7 +231,7 @@ export default function RepoImportDialog({ open, onClose, onImported, fetchWorks
           clearInterval(id);
           showToast('success', 'Repository imported and ready.');
           onImported?.(importedProjectId);
-          handleClose();
+          if (!inline) handleClose();
         } else if (res?.clone_status === 'failed') {
           setCloneStatus('failed');
           setCloneError(res.clone_error || 'Clone failed. Please check your repository URL and credentials.');
