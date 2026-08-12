@@ -486,14 +486,19 @@ export function ImagesAdminContent() {
                         {buildableAgents.length} buildable
                     </span>
                 </div>
-                <button
-                    type="button"
-                    onClick={() => loadCatalog({ reloadBuilds: true })}
-                    disabled={refreshing}
-                    className={cn('p-1.5 rounded-md text-[#5F6368] hover:bg-[#E8EAED] transition-colors', consoleButtonFocusClass)}
-                >
-                    {refreshing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className={cn('h-3.5 w-3.5', refreshing && 'animate-spin')} />}
-                </button>
+                <div className="flex items-center gap-3">
+                    <p className={cn('text-xs hidden sm:block max-w-md', textPlaceholder)}>
+                        Rebuild agent sandbox images to update the runtime environment (CLI upgrades, new dependencies). Activate a version after build to use it for new agent sessions.
+                    </p>
+                    <button
+                        type="button"
+                        onClick={() => loadCatalog({ reloadBuilds: true })}
+                        disabled={refreshing}
+                        className={cn('p-1.5 rounded-md text-[#5F6368] hover:bg-[#E8EAED] transition-colors shrink-0', consoleButtonFocusClass)}
+                    >
+                        {refreshing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className={cn('h-3.5 w-3.5', refreshing && 'animate-spin')} />}
+                    </button>
+                </div>
             </div>
 
             <WorkflowStrip

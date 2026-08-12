@@ -222,7 +222,7 @@ export function CustomImagesContent() {
     <>
       <PageHeader
         title="Custom Images"
-        description="Build custom agent images from curated components"
+        description="Combine multiple components (languages, databases, dev tools) into a single image. When creating a new agent, select this image to get a sandbox with everything pre-installed."
         actions={
           <div className="flex items-center gap-2">
             <Button onClick={loadAll} disabled={loading} size="sm" variant="secondary">
