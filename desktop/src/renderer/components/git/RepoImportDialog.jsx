@@ -1,5 +1,5 @@
-import React, { useEffect, useMemo, useState, useRef } from 'react';
-import { GitBranch, Loader2, Search, AlertCircle } from 'lucide-react';
+import { useEffect, useMemo, useState, useRef } from 'react';
+import { GitBranch, Loader2, Search, AlertCircle, Link2 } from 'lucide-react';
 import {
   ConsoleDialogShell,
   ConsoleStructuredDialogHeader,
@@ -9,10 +9,12 @@ import {
 import Input, { FormLabel } from '../Input';
 import Button from '../Button';
 import GitConnectButton from './GitConnectButton';
+import GitOAuthAlert from './GitOAuthAlert';
 import { useGitProvider } from '../../hooks/useGitProvider';
+import { formatGitOAuthError } from '../../lib/gitLabels';
 import { useToast } from '../Toast';
-import * as gitApi from '../../lib/gitApi.js';
-import * as githubApi from '../../lib/githubApi.js';
+import * as gitApi from '../../lib/gitApi';
+import * as githubApi from '../../lib/githubApi';
 import {
   consoleDialogLgClass,
   textPlaceholder,
@@ -24,22 +26,58 @@ import {
 const CLONE_POLL_INTERVAL_MS = 2000;
 const MAX_CLONE_POLL_ATTEMPTS = 300;
 
+function parseRepoUrl(input) {
+  const trimmed = input.trim();
+  if (!trimmed) return null;
+  let path = trimmed;
+  // Only treat as URL if it starts with http(s) or contains a dot in the
+  // first segment (e.g. github.com/owner/repo). Otherwise it's likely a
+  // bare owner/repo path and new URL would misinterpret "owner" as hostname.
+  const looksLikeUrl = /^https?:\/\//i.test(trimmed) || /^[^/]+\.[^/]+\//.test(trimmed);
+  if (looksLikeUrl) {
+    try {
+      const url = new URL(trimmed.startsWith('http') ? trimmed : `https://${trimmed}`);
+      path = url.pathname;
+    } catch {
+      path = trimmed;
+    }
+  }
+  path = path.replace(/^\/+/, '').replace(/\.git$/, '').replace(/\/(tree|blob)\/.*$/, '').replace(/\/+$/, '');
+  return path || null;
+}
+
+function normalizeRepo(repo) {
+  const fullName = repo.full_name || repo.fullName || '';
+  return {
+    ...repo,
+    full_name: fullName,
+    name: repo.name || fullName.split('/').pop() || '',
+    default_branch: repo.default_branch || repo.defaultBranch || 'main',
+  };
+}
+
 const PROVIDER_OPTIONS = [
-  { id: 'github', label: 'GitHub', icon: '🐙' },
-  { id: 'gitlab', label: 'GitLab', icon: '🦊' },
-  { id: 'gitea', label: 'Gitea', icon: '🍵' },
+  { id: 'github', label: 'GitHub' },
+  { id: 'gitlab', label: 'GitLab' },
+  { id: 'gitea', label: 'Gitea' },
 ];
 
-export default function RepoImportDialog({ open, onClose, onImported, fetchWorkspaces }) {
+export default function RepoImportDialog({ open, onClose, onImported, fetchWorkspaces, inline = false }) {
   const { showToast } = useToast();
   const [provider, setProvider] = useState('github');
-  const { connection, loading: connectionLoading, connect, connectWithPat, disconnect } = useGitProvider(provider);
-  const repoReqIdRef = useRef(0);
+  const { connection, loading: connectionLoading, error: connectError, connect, connectWithPat, disconnect } = useGitProvider(provider);
+  const [providerOAuthConfigured, setProviderOAuthConfigured] = useState(null);
 
   const [repos, setRepos] = useState([]);
   const [reposLoading, setReposLoading] = useState(false);
   const [query, setQuery] = useState('');
   const [selectedFullName, setSelectedFullName] = useState('');
+  const [mode, setMode] = useState('browse');
+  const [urlInput, setUrlInput] = useState('');
+  const [urlFetching, setUrlFetching] = useState(false);
+  const [urlError, setUrlError] = useState(null);
+  const urlInputRef = useRef(null);
+  const repoReqIdRef = useRef(0);
 
   const [patToken, setPatToken] = useState('');
   const [patConnecting, setPatConnecting] = useState(false);
@@ -61,55 +99,14 @@ export default function RepoImportDialog({ open, onClose, onImported, fetchWorks
     [repos, selectedFullName],
   );
 
-  const prTerm = provider === 'gitlab' ? 'Merge Request' : 'Pull Request';
-
-  useEffect(() => {
-    if (!open) {
-      resetForm();
-      return;
-    }
-    if (connection) {
-      loadRepos();
-    }
-  }, [open, connection, provider]);
-
-  useEffect(() => {
-    if (selectedRepo) {
-      setName(selectedRepo.name || '');
-      setBranch(selectedRepo.default_branch || 'main');
-    }
-  }, [selectedRepo]);
-
-  useEffect(() => {
-    if (!importedProjectId || cloneStatus === 'ready' || cloneStatus === 'failed') return;
-    let attempts = 0;
-    const id = setInterval(async () => {
-      attempts += 1;
-      try {
-        await fetchWorkspaces?.();
-        const res = await githubApi.getGitStatus(importedProjectId);
-        if (res?.branch) {
-          setCloneStatus('ready');
-          clearInterval(id);
-          showToast('success', 'Repository imported and ready.');
-          onImported?.(importedProjectId);
-          handleClose();
-        }
-      } catch {
-        // Still cloning
-      }
-      if (attempts >= MAX_CLONE_POLL_ATTEMPTS) {
-        clearInterval(id);
-        setCloneError('Clone is taking longer than expected. It will continue in the background.');
-      }
-    }, CLONE_POLL_INTERVAL_MS);
-    return () => clearInterval(id);
-  }, [importedProjectId, cloneStatus, fetchWorkspaces, onImported, showToast]);
-
   const resetForm = () => {
     setRepos([]);
     setQuery('');
     setSelectedFullName('');
+    setMode('browse');
+    setUrlInput('');
+    setUrlFetching(false);
+    setUrlError(null);
     setName('');
     setBranch('');
     setWorkBranchName(`xensemble/${Date.now()}`);
@@ -118,6 +115,26 @@ export default function RepoImportDialog({ open, onClose, onImported, fetchWorks
     setImportedProjectId(null);
     setCloneStatus(null);
     setCloneError(null);
+    setPatToken('');
+    setPatConnecting(false);
+    setPatError(null);
+    setPatSectionOpen(false);
+  };
+
+  const handleConnectPat = async () => {
+    setPatConnecting(true);
+    setPatError(null);
+    try {
+      const ok = await connectWithPat(patToken.trim());
+      if (ok) {
+        setPatToken(''); // Do not keep the token in the dialog after connecting.
+        setPatSectionOpen(false);
+      }
+    } catch (err) {
+      setPatError(err.message);
+    } finally {
+      setPatConnecting(false);
+    }
   };
 
   const handleClose = () => {
@@ -133,7 +150,7 @@ export default function RepoImportDialog({ open, onClose, onImported, fetchWorks
       const data = await gitApi.listRepos(provider, { per_page: '100' });
       if (reqId !== repoReqIdRef.current) return;
       const rows = data.repos || data;
-      setRepos(Array.isArray(rows) ? rows : []);
+      setRepos(Array.isArray(rows) ? rows.map(normalizeRepo) : []);
     } catch (err) {
       if (reqId !== repoReqIdRef.current) return;
       showToast('error', err.message);
@@ -142,6 +159,93 @@ export default function RepoImportDialog({ open, onClose, onImported, fetchWorks
       if (reqId === repoReqIdRef.current) setReposLoading(false);
     }
   };
+
+  const handleFetchUrl = async () => {
+    const repoPath = parseRepoUrl(urlInput);
+    if (!repoPath) {
+      setUrlError('Invalid URL. Use owner/repo or https://github.com/owner/repo');
+      return;
+    }
+    setUrlFetching(true);
+    setUrlError(null);
+    try {
+      const data = await gitApi.getRepo(provider, repoPath);
+      const repo = normalizeRepo(data.repo || data);
+      setRepos((prev) => prev.some((r) => r.full_name === repo.full_name) ? prev : [...prev, repo]);
+      setSelectedFullName(repo.full_name);
+    } catch (err) {
+      setUrlError(err.message || 'Repository not found or no access');
+    } finally {
+      setUrlFetching(false);
+    }
+  };
+
+  const switchMode = (next) => {
+    setMode(next);
+    setUrlError(null);
+    if (next === 'url') {
+      requestAnimationFrame(() => urlInputRef.current?.focus());
+    }
+  };
+
+  useEffect(() => {
+    if (!open) {
+      resetForm();
+      setProviderOAuthConfigured(null);
+      return;
+    }
+    gitApi.listProviders()
+      .then((data) => {
+        const map = {};
+        for (const p of data.providers || []) {
+          map[p.name] = p.oauth_configured ?? p.oauthConfigured ?? false;
+        }
+        setProviderOAuthConfigured(map);
+      })
+      .catch(() => setProviderOAuthConfigured({}));
+    if (connection) loadRepos();
+  }, [open, connection, provider]);
+
+  const oauthNotConfigured = providerOAuthConfigured?.[provider] === false;
+  const oauthAlertMessage = connectError
+    || (oauthNotConfigured ? `${provider} OAuth is not configured` : null);
+
+  useEffect(() => {
+    if (selectedRepo) {
+      setName(selectedRepo.name || '');
+      setBranch(selectedRepo.default_branch || 'main');
+    }
+  }, [selectedRepo]);
+
+  useEffect(() => {
+    if (!importedProjectId || cloneStatus === 'ready' || cloneStatus === 'failed') return;
+    let attempts = 0;
+    const id = setInterval(async () => {
+      attempts += 1;
+      try {
+        await fetchWorkspaces?.();
+        const res = await githubApi.getCloneStatus(importedProjectId);
+        if (res?.clone_status === 'ready') {
+          setCloneStatus('ready');
+          clearInterval(id);
+          showToast('success', 'Repository imported and ready.');
+          onImported?.(importedProjectId);
+          handleClose();
+        } else if (res?.clone_status === 'failed') {
+          setCloneStatus('failed');
+          setCloneError(res.clone_error || 'Clone failed. Please check your repository URL and credentials.');
+          clearInterval(id);
+        }
+      } catch {
+        // Still cloning or endpoint temporarily unavailable
+      }
+      if (attempts >= MAX_CLONE_POLL_ATTEMPTS) {
+        clearInterval(id);
+        setCloneError('Clone is taking longer than expected. It will continue in the background.');
+      }
+    }, CLONE_POLL_INTERVAL_MS);
+    return () => clearInterval(id);
+  }, [importedProjectId, cloneStatus, fetchWorkspaces, onImported, showToast]);
 
   const filteredRepos = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -178,22 +282,6 @@ export default function RepoImportDialog({ open, onClose, onImported, fetchWorks
     || connection?.github_username || connection?.githubUsername || '';
   const providerLabel = PROVIDER_OPTIONS.find((p) => p.id === provider)?.label || provider;
 
-  const handleConnectPat = async () => {
-    setPatConnecting(true);
-    setPatError(null);
-    try {
-      const ok = await connectWithPat(patToken.trim());
-      if (ok) {
-        setPatToken(''); // Do not keep the token in the dialog after connecting.
-        setPatSectionOpen(false);
-      }
-    } catch (err) {
-      setPatError(err.message);
-    } finally {
-      setPatConnecting(false);
-    }
-  };
-
   const patSection = (
     <div className="space-y-2">
       <FormLabel htmlFor="pat-token">Personal Access Token</FormLabel>
@@ -217,7 +305,7 @@ export default function RepoImportDialog({ open, onClose, onImported, fetchWorks
           {patConnecting ? 'Connecting…' : 'Connect with token'}
         </button>
         {patToken && (
-          <span className="text-xs text-zinc-500">
+          <span className="text-xs text-[#9AA0A6]">
             {provider === 'github'
               ? 'Requires the "repo" scope to push.'
               : 'Stored encrypted; used for Git operations.'}
@@ -233,6 +321,144 @@ export default function RepoImportDialog({ open, onClose, onImported, fetchWorks
     </div>
   );
 
+  if (!open && !inline) return null;
+
+  if (inline) {
+    return (
+      <div className="space-y-4">
+        <div className="flex items-center gap-2 mb-2">
+          {PROVIDER_OPTIONS.map((p) => (
+            <button
+              key={p.id}
+              type="button"
+              onClick={() => { setProvider(p.id); setRepos([]); setSelectedFullName(''); }}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
+                provider === p.id
+                  ? 'bg-[#202124] text-white'
+                  : 'bg-[#F4F5F6] text-[#5F6368] hover:bg-[#E8EAED] hover:text-[#202124]'
+              }`}
+            >
+              {p.label}
+            </button>
+          ))}
+        </div>
+
+        {!connection ? (
+          <div className="space-y-3">
+            <p className={`text-sm ${textSecondary}`}>
+              Connect your {providerLabel} account to import repositories.
+            </p>
+            <GitConnectButton provider={provider} connected={false} onConnect={connect} loading={connectionLoading} />
+            {connectError && <GitOAuthAlert message={connectError} provider={provider} />}
+            {patSection}
+          </div>
+        ) : (
+          <div className="space-y-3">
+            <div className="flex items-center gap-2">
+              <GitConnectButton provider={provider} connected={true} onDisconnect={disconnect} />
+              <button type="button" onClick={() => setMode(mode === 'browse' ? 'url' : 'browse')} className={`text-xs font-medium text-[#5B8DB8] hover:underline`}>
+                {mode === 'browse' ? 'Enter URL instead' : 'Browse repositories'}
+              </button>
+            </div>
+
+            {mode === 'browse' ? (
+              <>
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-[#9AA0A6]" />
+                  <input
+                    type="text"
+                    value={query}
+                    onChange={(e) => setQuery(e.target.value)}
+                    placeholder="Search repositories…"
+                    className="w-full pl-9 pr-3 py-2 text-sm border border-[#DADCE0] rounded-md bg-white focus:outline-none focus:border-[#5B8DB8]"
+                  />
+                </div>
+                {reposLoading ? (
+                  <div className="flex items-center justify-center py-4"><Loader2 className="h-4 w-4 animate-spin text-[#9AA0A6]" /></div>
+                ) : filteredRepos.length === 0 ? (
+                  <p className="text-xs text-[#9AA0A6] text-center py-4">No repositories found.</p>
+                ) : (
+                  <div className="max-h-48 overflow-y-auto rounded-lg border border-[#E8EAED] divide-y divide-[#E8EAED]">
+                    {filteredRepos.map((r) => (
+                      <button
+                        key={r.id || r.full_name}
+                        type="button"
+                        onClick={() => { setSelectedFullName(r.full_name); setName(r.name); setBranch(r.default_branch || 'main'); }}
+                        className={`w-full text-left px-3 py-2 text-xs transition-colors ${selectedFullName === r.full_name ? 'bg-[#E8F0FE] text-[#202124] font-medium' : 'hover:bg-[#F4F5F6] text-[#5F6368]'}`}
+                      >
+                        {r.full_name}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </>
+            ) : (
+              <div className="space-y-2">
+                <input
+                  ref={urlInputRef}
+                  type="text"
+                  value={urlInput}
+                  onChange={(e) => setUrlInput(e.target.value)}
+                  placeholder="owner/repo or https://github.com/owner/repo"
+                  className="w-full px-3 py-2 text-sm border border-[#DADCE0] rounded-md bg-white focus:outline-none focus:border-[#5B8DB8]"
+                />
+                {urlError && <p className="text-xs text-[#C06C5D]">{urlError}</p>}
+                <button type="button" onClick={handleUrlFetch} disabled={urlFetching || !urlInput.trim()} className="text-xs font-medium text-[#5B8DB8] hover:underline disabled:opacity-40">
+                  {urlFetching ? <Loader2 className="h-3 w-3 inline animate-spin" /> : null} Fetch repository info
+                </button>
+              </div>
+            )}
+
+            {selectedFullName && (
+              <div className="space-y-3 pt-2 border-t border-[#E8EAED]">
+                <div>
+                  <FormLabel>Workspace name</FormLabel>
+                  <Input value={name} onChange={(e) => setName(e.target.value)} className="mt-1.5" />
+                </div>
+                <div>
+                  <FormLabel>Branch</FormLabel>
+                  <Input value={branch} onChange={(e) => setBranch(e.target.value)} className="mt-1.5" />
+                </div>
+                <label className="flex items-center gap-2 text-xs text-[#5F6368]">
+                  <input type="checkbox" checked={autoCreateBranch} onChange={(e) => setAutoCreateBranch(e.target.checked)} className="rounded border-[#DADCE0] text-[#202124] focus:ring-[#202124]" />
+                  Auto-create work branch
+                </label>
+                {autoCreateBranch && (
+                  <div>
+                    <FormLabel>Work branch name</FormLabel>
+                    <Input value={workBranchName} onChange={(e) => setWorkBranchName(e.target.value)} className="mt-1.5" />
+                  </div>
+                )}
+              </div>
+            )}
+
+            {importedProjectId && (
+              <div className={`flex items-center gap-2 rounded-md px-3 py-2 text-sm ${cloneStatus === 'failed' ? 'bg-red-50 text-red-600' : 'bg-[#E8F0FE] text-[#1967D2]'}`}>
+                {cloneStatus === 'failed' ? (
+                  <AlertCircle className="h-3.5 w-3.5 shrink-0" />
+                ) : (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin shrink-0" />
+                )}
+                {cloneError || 'Cloning repository, please wait…'}
+              </div>
+            )}
+
+            {connection && (
+              <button
+                type="button"
+                disabled={!canImport || importing}
+                onClick={handleImport}
+                className={`w-full h-9 flex items-center justify-center gap-2 bg-[#202124] text-white rounded-md text-sm font-medium hover:bg-[#3C4043] disabled:opacity-50 transition-colors`}
+              >
+                {importing ? <><Loader2 className="h-3.5 w-3.5 animate-spin" />Importing…</> : 'Import repository'}
+              </button>
+            )}
+          </div>
+        )}
+      </div>
+    );
+  }
+
   return (
     <ConsoleDialogShell
       onClose={handleClose}
@@ -243,7 +469,6 @@ export default function RepoImportDialog({ open, onClose, onImported, fetchWorks
         subtitle={connection ? 'Select a repository to import as a workspace.' : 'Connect a Git provider to import repositories.'}
       />
       <ConsoleStructuredDialogBody>
-        {/* Provider selector */}
         <div className="flex items-center gap-2 mb-4">
           {PROVIDER_OPTIONS.map((p) => (
             <button
@@ -256,16 +481,28 @@ export default function RepoImportDialog({ open, onClose, onImported, fetchWorks
                   : 'bg-[#F4F5F6] text-[#5F6368] hover:bg-[#E8EAED] hover:text-[#202124]'
               }`}
             >
-              <span>{p.icon}</span>
               {p.label}
+              {providerOAuthConfigured?.[p.id] === false && (
+                <span
+                  className={`inline-block h-1.5 w-1.5 rounded-full ${
+                    provider === p.id ? 'bg-[#FADBD8]' : 'bg-[#C06C5D]'
+                  }`}
+                  title="OAuth not configured"
+                />
+              )}
             </button>
           ))}
         </div>
 
         {!connection ? (
           <div className="space-y-4">
+            {oauthAlertMessage && (
+              <GitOAuthAlert message={oauthAlertMessage} provider={provider} />
+            )}
             <p className={textSecondary}>
-              Connect your {providerLabel} account to import repositories.
+              {oauthNotConfigured
+                ? `An administrator must configure ${providerLabel} OAuth before you can connect.`
+                : `Connect your ${providerLabel} account to import repositories.`}
             </p>
             <GitConnectButton
               provider={provider}
@@ -273,11 +510,13 @@ export default function RepoImportDialog({ open, onClose, onImported, fetchWorks
               loading={connectionLoading}
               onConnect={connect}
               onDisconnect={disconnect}
+              disabled={oauthNotConfigured}
+              disabledReason={oauthNotConfigured ? formatGitOAuthError(`${provider} OAuth is not configured`, provider) : null}
             />
             <div className="flex items-center gap-2 py-1">
-              <div className="h-px flex-1 bg-zinc-200" />
-              <span className="text-xs text-zinc-500">or use a personal access token</span>
-              <div className="h-px flex-1 bg-zinc-200" />
+              <div className="h-px flex-1 bg-[#E8EAED]" />
+              <span className="text-xs text-[#9AA0A6]">or use a personal access token</span>
+              <div className="h-px flex-1 bg-[#E8EAED]" />
             </div>
             {patSection}
           </div>
@@ -285,11 +524,9 @@ export default function RepoImportDialog({ open, onClose, onImported, fetchWorks
           <div className="space-y-4">
             <div className="flex items-center justify-between gap-3">
               <div className="flex items-center gap-2">
-                <GitBranch className="h-4 w-4 text-zinc-500" />
-                <span className={`text-sm font-medium ${textPrimary}`}>
-                  {username}
-                </span>
-                <span className="text-xs text-zinc-400">
+                <GitBranch className="h-4 w-4 text-[#9AA0A6]" />
+                <span className={`text-sm font-medium ${textPrimary}`}>{username}</span>
+                <span className="text-xs text-[#9AA0A6]">
                   ({provider}
                   {connection.connection_type === 'pat' ? ' · PAT' : ''})
                 </span>
@@ -298,7 +535,7 @@ export default function RepoImportDialog({ open, onClose, onImported, fetchWorks
                 type="button"
                 onClick={disconnect}
                 disabled={connectionLoading}
-                className="text-xs text-zinc-500 hover:text-zinc-900"
+                className="text-xs text-[#5F6368] hover:text-[#202124]"
               >
                 Disconnect
               </button>
@@ -315,6 +552,66 @@ export default function RepoImportDialog({ open, onClose, onImported, fetchWorks
             </button>
             {patSectionOpen && patSection}
 
+            <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                onClick={() => switchMode('browse')}
+                className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${mode === 'browse' ? 'bg-[#202124] text-white' : 'bg-[#F4F5F6] text-[#5F6368] hover:bg-[#E8EAED]'}`}
+              >
+                <Search className="h-3 w-3" />
+                Browse
+              </button>
+              <button
+                type="button"
+                onClick={() => switchMode('url')}
+                className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${mode === 'url' ? 'bg-[#202124] text-white' : 'bg-[#F4F5F6] text-[#5F6368] hover:bg-[#E8EAED]'}`}
+              >
+                <Link2 className="h-3 w-3" />
+                Paste URL
+              </button>
+            </div>
+
+            {mode === 'url' ? (
+              <div className="space-y-2">
+                <div>
+                  <FormLabel htmlFor="repo-url">Repository URL</FormLabel>
+                  <div className="relative mt-1.5">
+                    <Link2 className={`pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 ${textPlaceholder}`} />
+                    <Input
+                      ref={urlInputRef}
+                      id="repo-url"
+                      value={urlInput}
+                      onChange={(e) => setUrlInput(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === 'Enter' && !urlFetching) handleFetchUrl(); }}
+                      placeholder="https://github.com/owner/repo"
+                      className="pl-8"
+                      disabled={urlFetching}
+                    />
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleFetchUrl}
+                  disabled={urlFetching || !urlInput.trim()}
+                  className="text-xs font-medium text-[#1967D2] hover:text-[#174EA6] disabled:opacity-50"
+                >
+                  {urlFetching ? 'Fetching…' : 'Fetch repository'}
+                </button>
+                {urlError && (
+                  <div className="flex items-center gap-1.5 text-xs text-red-600">
+                    <AlertCircle className="h-3 w-3 shrink-0" />
+                    {urlError}
+                  </div>
+                )}
+                {selectedRepo && mode === 'url' && (
+                  <div className="flex items-center justify-between rounded-md border border-[#E8EAED] bg-[#FAFBFC] px-3 py-2">
+                    <span className="min-w-0 truncate text-sm font-medium text-[#202124]">{selectedRepo.full_name}</span>
+                    <span className="shrink-0 text-xs text-[#5F6368]">{selectedRepo.private ? 'Private' : 'Public'}{selectedRepo.language ? ` · ${selectedRepo.language}` : ''}</span>
+                  </div>
+                )}
+              </div>
+            ) : (
+            <>
             <div>
               <FormLabel htmlFor="repo-search">Search repositories</FormLabel>
               <div className="relative mt-1.5">
@@ -331,29 +628,29 @@ export default function RepoImportDialog({ open, onClose, onImported, fetchWorks
 
             <div className={`max-h-48 overflow-auto rounded-lg border ${borderHairline}`}>
               {reposLoading ? (
-                <div className="flex items-center justify-center gap-2 p-4 text-sm text-zinc-500">
+                <div className="flex items-center justify-center gap-2 p-4 text-sm text-[#5F6368]">
                   <Loader2 className="h-4 w-4 animate-spin" />
                   Loading repositories…
                 </div>
               ) : filteredRepos.length === 0 ? (
-                <div className="p-4 text-center text-sm text-zinc-500">
+                <div className="p-4 text-center text-sm text-[#5F6368]">
                   {repos.length === 0 ? 'No repositories found.' : 'No matches.'}
                 </div>
               ) : (
-                <ul className="divide-y divide-zinc-100">
+                <ul className="divide-y divide-[#E8EAED]">
                   {filteredRepos.map((repo) => (
                     <li key={repo.id || repo.full_name}>
                       <button
                         type="button"
                         onClick={() => setSelectedFullName(repo.full_name)}
                         className={`flex w-full items-center justify-between px-3 py-2 text-left text-sm transition-colors ${
-                          selectedFullName === repo.full_name ? 'bg-zinc-100' : 'hover:bg-[#FAFBFC]'
+                          selectedFullName === repo.full_name ? 'bg-[#F4F5F6]' : 'hover:bg-[#FAFBFC]'
                         }`}
                       >
-                        <span className="min-w-0 truncate font-medium text-zinc-900">
+                        <span className="min-w-0 truncate font-medium text-[#202124]">
                           {repo.full_name}
                         </span>
-                        <span className="shrink-0 text-xs text-zinc-500">
+                        <span className="shrink-0 text-xs text-[#5F6368]">
                           {repo.private ? 'Private' : 'Public'}
                           {repo.language ? ` · ${repo.language}` : ''}
                         </span>
@@ -363,9 +660,11 @@ export default function RepoImportDialog({ open, onClose, onImported, fetchWorks
                 </ul>
               )}
             </div>
+            </>
+            )}
 
             {selectedRepo && (
-              <div className="space-y-3 rounded-lg border border-zinc-200 bg-zinc-50/70 p-4">
+              <div className="space-y-3 rounded-lg border border-[#E8EAED] bg-[#FAFBFC] p-4">
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <FormLabel htmlFor="import-name">Project name</FormLabel>
@@ -389,12 +688,12 @@ export default function RepoImportDialog({ open, onClose, onImported, fetchWorks
                   </div>
                 </div>
 
-                <label className="flex items-center gap-2 text-sm text-zinc-700">
+                <label className="flex items-center gap-2 text-sm text-[#3C4043]">
                   <input
                     type="checkbox"
                     checked={autoCreateBranch}
                     onChange={(e) => setAutoCreateBranch(e.target.checked)}
-                    className="rounded border-zinc-300 text-black focus:ring-black"
+                    className="rounded border-[#DADCE0] text-[#202124] focus:ring-[#202124]"
                   />
                   Auto-create work branch
                 </label>
@@ -415,8 +714,12 @@ export default function RepoImportDialog({ open, onClose, onImported, fetchWorks
             )}
 
             {importedProjectId && (
-              <div className="flex items-center gap-2 rounded-md bg-blue-50 px-3 py-2 text-sm text-blue-800">
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              <div className={`flex items-center gap-2 rounded-md px-3 py-2 text-sm ${cloneStatus === 'failed' ? 'bg-red-50 text-red-600' : 'bg-[#E8F0FE] text-[#1967D2]'}`}>
+                {cloneStatus === 'failed' ? (
+                  <AlertCircle className="h-3.5 w-3.5 shrink-0" />
+                ) : (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin shrink-0" />
+                )}
                 {cloneError || 'Cloning repository, please wait…'}
               </div>
             )}

@@ -62,7 +62,7 @@ const PROVIDER_OPTIONS = [
   { id: 'gitea', label: 'Gitea' },
 ];
 
-export default function RepoImportDialog({ open, onClose, onImported, fetchWorkspaces }) {
+export default function RepoImportDialog({ open, onClose, onImported, fetchWorkspaces, inline = false }) {
   const { showToast } = useToast();
   const [provider, setProvider] = useState('github');
   const { connection, loading: connectionLoading, error: connectError, connect, connectWithPat, disconnect } = useGitProvider(provider);
@@ -321,7 +321,143 @@ export default function RepoImportDialog({ open, onClose, onImported, fetchWorks
     </div>
   );
 
-  if (!open) return null;
+  if (!open && !inline) return null;
+
+  if (inline) {
+    return (
+      <div className="space-y-4">
+        <div className="flex items-center gap-2 mb-2">
+          {PROVIDER_OPTIONS.map((p) => (
+            <button
+              key={p.id}
+              type="button"
+              onClick={() => { setProvider(p.id); setRepos([]); setSelectedFullName(''); }}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
+                provider === p.id
+                  ? 'bg-[#202124] text-white'
+                  : 'bg-[#F4F5F6] text-[#5F6368] hover:bg-[#E8EAED] hover:text-[#202124]'
+              }`}
+            >
+              {p.label}
+            </button>
+          ))}
+        </div>
+
+        {!connection ? (
+          <div className="space-y-3">
+            <p className={`text-sm ${textSecondary}`}>
+              Connect your {providerLabel} account to import repositories.
+            </p>
+            <GitConnectButton provider={provider} connected={false} onConnect={connect} loading={connectionLoading} />
+            {connectError && <GitOAuthAlert message={connectError} provider={provider} />}
+            {patSection}
+          </div>
+        ) : (
+          <div className="space-y-3">
+            <div className="flex items-center gap-2">
+              <GitConnectButton provider={provider} connected={true} onDisconnect={disconnect} />
+              <button type="button" onClick={() => setMode(mode === 'browse' ? 'url' : 'browse')} className={`text-xs font-medium text-[#5B8DB8] hover:underline`}>
+                {mode === 'browse' ? 'Enter URL instead' : 'Browse repositories'}
+              </button>
+            </div>
+
+            {mode === 'browse' ? (
+              <>
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-[#9AA0A6]" />
+                  <input
+                    type="text"
+                    value={query}
+                    onChange={(e) => setQuery(e.target.value)}
+                    placeholder="Search repositories…"
+                    className="w-full pl-9 pr-3 py-2 text-sm border border-[#DADCE0] rounded-md bg-white focus:outline-none focus:border-[#5B8DB8]"
+                  />
+                </div>
+                {reposLoading ? (
+                  <div className="flex items-center justify-center py-4"><Loader2 className="h-4 w-4 animate-spin text-[#9AA0A6]" /></div>
+                ) : filteredRepos.length === 0 ? (
+                  <p className="text-xs text-[#9AA0A6] text-center py-4">No repositories found.</p>
+                ) : (
+                  <div className="max-h-48 overflow-y-auto rounded-lg border border-[#E8EAED] divide-y divide-[#E8EAED]">
+                    {filteredRepos.map((r) => (
+                      <button
+                        key={r.id || r.full_name}
+                        type="button"
+                        onClick={() => { setSelectedFullName(r.full_name); setName(r.name); setBranch(r.default_branch || 'main'); }}
+                        className={`w-full text-left px-3 py-2 text-xs transition-colors ${selectedFullName === r.full_name ? 'bg-[#E8F0FE] text-[#202124] font-medium' : 'hover:bg-[#F4F5F6] text-[#5F6368]'}`}
+                      >
+                        {r.full_name}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </>
+            ) : (
+              <div className="space-y-2">
+                <input
+                  ref={urlInputRef}
+                  type="text"
+                  value={urlInput}
+                  onChange={(e) => setUrlInput(e.target.value)}
+                  placeholder="owner/repo or https://github.com/owner/repo"
+                  className="w-full px-3 py-2 text-sm border border-[#DADCE0] rounded-md bg-white focus:outline-none focus:border-[#5B8DB8]"
+                />
+                {urlError && <p className="text-xs text-[#C06C5D]">{urlError}</p>}
+                <button type="button" onClick={handleUrlFetch} disabled={urlFetching || !urlInput.trim()} className="text-xs font-medium text-[#5B8DB8] hover:underline disabled:opacity-40">
+                  {urlFetching ? <Loader2 className="h-3 w-3 inline animate-spin" /> : null} Fetch repository info
+                </button>
+              </div>
+            )}
+
+            {selectedFullName && (
+              <div className="space-y-3 pt-2 border-t border-[#E8EAED]">
+                <div>
+                  <FormLabel>Workspace name</FormLabel>
+                  <Input value={name} onChange={(e) => setName(e.target.value)} className="mt-1.5" />
+                </div>
+                <div>
+                  <FormLabel>Branch</FormLabel>
+                  <Input value={branch} onChange={(e) => setBranch(e.target.value)} className="mt-1.5" />
+                </div>
+                <label className="flex items-center gap-2 text-xs text-[#5F6368]">
+                  <input type="checkbox" checked={autoCreateBranch} onChange={(e) => setAutoCreateBranch(e.target.checked)} className="rounded border-[#DADCE0] text-[#202124] focus:ring-[#202124]" />
+                  Auto-create work branch
+                </label>
+                {autoCreateBranch && (
+                  <div>
+                    <FormLabel>Work branch name</FormLabel>
+                    <Input value={workBranchName} onChange={(e) => setWorkBranchName(e.target.value)} className="mt-1.5" />
+                  </div>
+                )}
+              </div>
+            )}
+
+            {importedProjectId && (
+              <div className={`flex items-center gap-2 rounded-md px-3 py-2 text-sm ${cloneStatus === 'failed' ? 'bg-red-50 text-red-600' : 'bg-[#E8F0FE] text-[#1967D2]'}`}>
+                {cloneStatus === 'failed' ? (
+                  <AlertCircle className="h-3.5 w-3.5 shrink-0" />
+                ) : (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin shrink-0" />
+                )}
+                {cloneError || 'Cloning repository, please wait…'}
+              </div>
+            )}
+
+            {connection && (
+              <button
+                type="button"
+                disabled={!canImport || importing}
+                onClick={handleImport}
+                className={`w-full h-9 flex items-center justify-center gap-2 bg-[#202124] text-white rounded-md text-sm font-medium hover:bg-[#3C4043] disabled:opacity-50 transition-colors`}
+              >
+                {importing ? <><Loader2 className="h-3.5 w-3.5 animate-spin" />Importing…</> : 'Import repository'}
+              </button>
+            )}
+          </div>
+        )}
+      </div>
+    );
+  }
 
   return (
     <ConsoleDialogShell
