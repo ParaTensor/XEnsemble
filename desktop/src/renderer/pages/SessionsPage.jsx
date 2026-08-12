@@ -1277,6 +1277,7 @@ export default React.forwardRef(function Sessions({
                         )}
                       </div>
                     </div>
+                  </div>
                   )}
                   {showLaunchConfigModal && selectedAgent && (
                     <div className="rounded-lg bg-white border border-[#E8EAED] p-4">
