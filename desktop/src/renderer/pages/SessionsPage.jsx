@@ -1164,8 +1164,8 @@ export default React.forwardRef(function Sessions({
                   </button>
                 </div>
               </div>
-              <div className="flex-1 min-h-0 overflow-y-auto px-[16.66%] pb-6">
-                <div className="w-full space-y-8 pt-4">
+              <div className="flex-1 min-h-0 overflow-y-auto pb-6">
+                <div className="w-full px-6 pt-4 space-y-8">
                   {launchModalError && (
                     <p className="text-sm text-[#C06C5D] bg-[#FDECEA] border border-[#FADBD8] rounded-lg px-3 py-2">{launchModalError}</p>
                   )}
@@ -1184,11 +1184,11 @@ export default React.forwardRef(function Sessions({
                   <div className="h-px bg-[#E8EAED]" />
 
                   {/* Form fields */}
-                  <div className="space-y-6">
+                  <div className="space-y-6 px-[18%]">
 
                   {/* Workspace */}
                   {launchModalMode === 'workspace' && (
-                    <div className="flex items-start gap-6">
+                    <div className="flex items-start gap-12">
                       <div className="w-36 shrink-0 pt-2">
                         <label className="block text-sm font-medium text-[#3C4043]">Workspace</label>
                         <p className="text-[11px] text-[#9AA0A6] mt-0.5">A workspace is an isolated environment that stores your project files and session history.</p>
@@ -1199,7 +1199,7 @@ export default React.forwardRef(function Sessions({
                     </div>
                   )}
                   {(launchModalMode === 'quickstart' || launchModalMode === 'session') && (
-                    <div className="flex items-start gap-6">
+                    <div className="flex items-start gap-12">
                       <div className="w-36 shrink-0 pt-2">
                         <label className="block text-sm font-medium text-[#3C4043]">Workspace</label>
                         <p className="text-[11px] text-[#9AA0A6] mt-0.5">{importedProject ? 'Imported from Git (locked)' : 'Select an existing workspace or create a new one.'}</p>
@@ -1227,7 +1227,7 @@ export default React.forwardRef(function Sessions({
 
                   {/* Agent (built-in|custom buttons + dropdown) */}
                   {launchModalMode !== 'workspace' && (
-                    <div className="flex items-start gap-6">
+                    <div className="flex items-start gap-12">
                       <div className="w-36 shrink-0 pt-2">
                         <div className="flex items-center justify-between">
                           <label className="text-sm font-medium text-[#3C4043]">Agent</label>
@@ -1285,7 +1285,7 @@ export default React.forwardRef(function Sessions({
 
                   {/* Git */}
                   {launchModalMode !== 'workspace' && (
-                    <div className="flex items-start gap-6">
+                    <div className="flex items-start gap-12">
                       <div className="w-36 shrink-0 pt-2">
                         <label className="block text-sm font-medium text-[#3C4043]">Git</label>
                         <p className="text-[11px] text-[#9AA0A6] mt-0.5">Optionally import a Git repository. The agent will have access to the code for editing and development.</p>
