@@ -5,7 +5,7 @@ import WorkspaceFileTree from '../components/WorkspaceFileTree';
 import WorkspaceShell from '../components/WorkspaceShell';
 import WorkspacePanel from '../components/WorkspacePanel';
 import RepoImportDialog from '../components/git/RepoImportDialog';
-import GitStatusBar from '../components/github/GitStatusBar';
+import GitStatusBar from '../components/git/GitStatusBar';
 import { apiFetch } from '../lib/api';
 import * as githubApi from '../lib/githubApi';
 import {
@@ -17,6 +17,7 @@ import { useToast } from '../components/Toast';
 import { useTerminalTheme } from '../hooks/useTerminalTheme.jsx';
 import { useEditorTabs } from '../hooks/useEditorTabs';
 import { useGitChanges } from '../hooks/useGitChanges';
+import { usePreview, PreviewControlGroup } from '../components/PreviewPanel';
 import {
   TerminalSquare,
   Play,
@@ -33,6 +34,7 @@ import {
   Loader2,
   Trash2,
 } from 'lucide-react';
+import { getSecretLabel, getSecretPlaceholder, isSecretPasswordField } from '../lib/secretLabels';
 import ByokConfigForm from '../components/ByokConfigForm';
 import { formatQuotaExceeded } from '../lib/quotaLabels';
 import {
@@ -118,6 +120,7 @@ export default React.forwardRef(function Sessions({
   });
   const panelRowRef = useRef(null);
 
+  // Measure actual container width for true 1:1 ratio (sidebar width varies)
   useLayoutEffect(() => {
     const measure = () => {
       if (panelRowRef.current) {
@@ -152,9 +155,9 @@ export default React.forwardRef(function Sessions({
   // 否则编辑器已能保存、Changes 却一直空白（分支显示 —）。
   const changesTabActiveRef = useRef(false);
   const gitChanges = useGitChanges(activeSession?.projectId || null, changesTabActiveRef);
+  const preview = usePreview(activeSession?.projectId, Boolean(activeSession?.projectId));
   const [gitDiffView, setGitDiffView] = useState(null);
 
-  const [showConfigModal, setShowConfigModal] = useState(false);
   const [configEnvVars, setConfigEnvVars] = useState([{ key: '', value: '' }]);
   const [savedConfigKeys, setSavedConfigKeys] = useState({});
   const configModalInitialKeysRef = useRef(null);
@@ -177,6 +180,24 @@ export default React.forwardRef(function Sessions({
   const [createNewWorkspaceInline, setCreateNewWorkspaceInline] = useState(false);
   const [customImageId, setCustomImageId] = useState('');
   const [customImages, setCustomImages] = useState([]);
+
+  // Launch modal: agent config files
+  const [launchConfigFiles, setLaunchConfigFiles] = useState([]);
+  const [showLaunchConfigModal, setShowLaunchConfigModal] = useState(false);
+
+  // Session config dialog (running session)
+  const [showSessionConfigModal, setShowSessionConfigModal] = useState(false);
+  const [sessionConfigFiles, setSessionConfigFiles] = useState([]);
+  const [sessionEnvVars, setSessionEnvVars] = useState([{ key: '', value: '' }]);
+  const [sessionConfigLoading, setSessionConfigLoading] = useState(false);
+  const [sessionConfigSaving, setSessionConfigSaving] = useState(false);
+  const [sessionConfigError, setSessionConfigError] = useState(null);
+  const [showRestartPrompt, setShowRestartPrompt] = useState(false);
+
+  // Reset launch config when agent changes
+  useEffect(() => {
+    setLaunchConfigFiles([]);
+  }, [selectedAgentId]);
 
   const startPanelResize = useCallback((e) => {
     e.preventDefault();
@@ -240,10 +261,10 @@ export default React.forwardRef(function Sessions({
 
   const selectedAgent = agents.find(a => a.id === selectedAgentId);
 
-  const openConfigModal = async () => {
+  const openLaunchConfigModal = async () => {
     setConfigError(null);
     setError(null);
-    setShowConfigModal(true);
+    setShowLaunchConfigModal(true);
   };
 
   const configRequiredKeys = selectedAgent?.env_required || [];
@@ -262,10 +283,10 @@ export default React.forwardRef(function Sessions({
       if (!res.ok) return false;
       const missing = required.filter((k) => !data[k]);
       if (missing.length === 0) return true;
-      openConfigModal();
+      openLaunchConfigModal();
       return false;
     } catch {
-      openConfigModal();
+      openLaunchConfigModal();
       return false;
     }
   };
@@ -314,6 +335,9 @@ export default React.forwardRef(function Sessions({
         return false;
       }
 
+      // Collect non-empty config files from launch modal
+      const cleanConfigFiles = launchConfigFiles.filter((f) => f.path && f.content);
+
       // Collect non-required env vars as custom_env (required ones are injected via secrets)
       const requiredSet = new Set(selectedAgent?.env_required || []);
       const cleanCustomEnv = {};
@@ -330,6 +354,7 @@ export default React.forwardRef(function Sessions({
           project_id: projectId,
           terminal_theme_id: themeId,
           custom_image_id: customImageId || undefined,
+          ...(cleanConfigFiles.length ? { config_files: cleanConfigFiles } : {}),
           ...(Object.keys(cleanCustomEnv).length ? { custom_env: cleanCustomEnv } : {}),
         })
       });
@@ -505,9 +530,7 @@ export default React.forwardRef(function Sessions({
     }
   };
 
-  // eslint-disable-next-line no-unused-vars
-  const handleSaveConfig = async (e) => {
-    e.preventDefault();
+  const handleSaveLaunchConfig = async () => {
     setConfigError(null);
     const payload = {};
     for (const { key, value } of configEnvVars) {
@@ -524,7 +547,7 @@ export default React.forwardRef(function Sessions({
     }
     configModalInitialKeysRef.current = null;
     if (Object.keys(payload).length === 0) {
-      setShowConfigModal(false);
+      setShowLaunchConfigModal(false);
       setLaunchModalError(null);
       return;
     }
@@ -541,13 +564,77 @@ export default React.forwardRef(function Sessions({
         Object.keys(payload).forEach((k) => { next[k] = true; });
         return next;
       });
-      showToast('success', 'Environment variables saved.');
-      setShowConfigModal(false);
+      showToast('success', 'Configuration saved.');
+      setShowLaunchConfigModal(false);
       setLaunchModalError(null);
     } catch (err) {
       setConfigError(err.message);
     } finally {
       setConfigSaving(false);
+    }
+  };
+
+  // ── Session config (config files + custom env for running session) ──
+  const openSessionConfigModal = async () => {
+    if (!activeSession?.sessionId) return;
+    setShowSessionConfigModal(true);
+    setSessionConfigError(null);
+    setSessionConfigLoading(true);
+    try {
+      const res = await apiFetch(`/api/v1/sessions/${encodeURIComponent(activeSession.sessionId)}/config`);
+      const data = await res.json();
+      if (res.ok) {
+        const files = data.config_files || [];
+        setSessionConfigFiles(files);
+        const envObj = data.custom_env || {};
+        const envRows = Object.keys(envObj).length
+          ? Object.entries(envObj).map(([k, v]) => ({ key: k, value: v }))
+          : [{ key: '', value: '' }];
+        setSessionEnvVars(envRows);
+      } else {
+        setSessionConfigFiles([]);
+        setSessionEnvVars([{ key: '', value: '' }]);
+      }
+    } catch {
+      setSessionConfigFiles([]);
+      setSessionEnvVars([{ key: '', value: '' }]);
+      setSessionConfigError('Could not load configuration.');
+    } finally {
+      setSessionConfigLoading(false);
+    }
+  };
+
+  const handleSaveSessionConfig = async () => {
+    if (!activeSession?.sessionId) return;
+    setSessionConfigError(null);
+    setSessionConfigSaving(true);
+    try {
+      const cleanConfigFiles = sessionConfigFiles.filter((f) => f.path && f.content);
+      const cleanCustomEnv = {};
+      for (const { key, value } of sessionEnvVars) {
+        const k = (key || '').trim();
+        const v = (value || '').trim();
+        if (k && v) cleanCustomEnv[k] = v;
+      }
+      const res = await apiFetch(`/api/v1/sessions/${encodeURIComponent(activeSession.sessionId)}/config`, {
+        method: 'PUT',
+        body: JSON.stringify({
+          config_files: cleanConfigFiles,
+          custom_env: cleanCustomEnv,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to save configuration');
+      setShowSessionConfigModal(false);
+      if (data.needs_restart) {
+        setShowRestartPrompt(true);
+      } else {
+        showToast('success', 'Configuration saved.');
+      }
+    } catch (err) {
+      setSessionConfigError(err.message);
+    } finally {
+      setSessionConfigSaving(false);
     }
   };
 
@@ -805,7 +892,11 @@ export default React.forwardRef(function Sessions({
         }
         if (activeSession && !activeSession.projectId) setActiveSession(null);
       } else {
-        await apiFetch(`/api/v1/projects/${encodeURIComponent(workspaceId)}`, { method: 'DELETE' });
+        const res = await apiFetch(`/api/v1/projects/${encodeURIComponent(workspaceId)}`, { method: 'DELETE' });
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({}));
+          throw new Error(data.error || 'Failed to delete workspace');
+        }
         if (activeSession?.projectId === workspaceId) setActiveSession(null);
       }
       purgeWorkspaceSidebarPrefs(workspaceId, sessions);
@@ -818,6 +909,7 @@ export default React.forwardRef(function Sessions({
       showToast('success', workspaceId === '_orphan' ? 'Unassigned sessions cleared.' : 'Workspace deleted.');
     } catch (err) {
       showToast('error', err.message);
+      fetchWorkspaces();
     } finally {
       setDeletingWorkspaceId(null);
     }
@@ -869,174 +961,6 @@ export default React.forwardRef(function Sessions({
 
   return (
     <div className={className || 'h-full w-full'}>
-      {/* Launch modal */}
-      {showNewInstanceModal && (
-        <ConsoleInlineDialog
-          onClose={() => { setShowNewInstanceModal(false); setLaunchModalError(null); setCreateNewWorkspaceInline(false); }}
-          panelClassName={`${consoleDialogPanelClass} w-full max-w-sm shadow-sm`}
-        >
-          <div className={`${consoleStructuredDialogHeaderClass} flex items-center gap-2.5`}>
-            {launchModalMode === 'workspace' ? (
-              <Plus className={`w-4 h-4 shrink-0 ${textPlaceholder}`} />
-            ) : (
-              <Bot className={`w-4 h-4 shrink-0 ${textPlaceholder}`} />
-            )}
-            <h3 className={`font-semibold text-sm ${textPrimary}`}>
-              {launchModalMode === 'workspace'
-                ? 'New Workspace'
-                : launchModalMode === 'quickstart'
-                  ? 'New Agent'
-                  : 'New Agent'}
-            </h3>
-          </div>
-          <div className="p-4 space-y-3">
-            {launchModalError && (
-              <p className="text-sm text-[#C06C5D] bg-[#FDECEA] border border-[#FADBD8] rounded-md px-3 py-2">{launchModalError}</p>
-            )}
-            {launchModalMode === 'workspace' && (
-              <div>
-                <label className={`block text-xs font-semibold uppercase tracking-wider ${textPlaceholder} mb-1`}>Workspace name</label>
-                <input type="text" value={newProjectName} onChange={e => setNewProjectName(e.target.value)} placeholder="my-workspace" className={consoleInputClass} autoFocus />
-              </div>
-            )}
-            {(launchModalMode === 'quickstart' || launchModalMode === 'session') && (
-              <div>
-                <div className="flex items-center justify-between gap-2 mb-1">
-                  <label className={`text-xs font-semibold uppercase tracking-wider ${textPlaceholder}`}>Workspace</label>
-                  {launchModalMode === 'session' && !createNewWorkspaceInline && projects.length > 0 && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setCreateNewWorkspaceInline(true);
-                        setNewProjectName('');
-                        setLaunchWorkspaceId('');
-                      }}
-                      className={`text-xs font-medium ${textPlaceholder} hover:text-[#202124] ${transitionBase}`}
-                    >
-                      New workspace
-                    </button>
-                  )}
-                </div>
-                {launchModalMode === 'quickstart' || createNewWorkspaceInline ? (
-                  <input
-                    type="text"
-                    value={newProjectName}
-                    onChange={e => setNewProjectName(e.target.value)}
-                    placeholder={launchModalMode === 'quickstart' ? 'Optional — auto-generated if empty' : 'my-workspace'}
-                    className={consoleInputClass}
-                    autoFocus
-                  />
-                ) : (
-                  <SelectMenu
-                    value={launchWorkspaceId}
-                    onChange={setLaunchWorkspaceId}
-                    options={projects.map((p) => ({ value: p.id, label: p.name }))}
-                    placeholder="Select workspace"
-                  />
-                )}
-              </div>
-            )}
-            {launchModalMode !== 'workspace' && customImages.length > 0 && (
-              <div>
-                <label className={`text-xs font-semibold uppercase tracking-wider ${textPlaceholder} mb-1 block`}>Image type</label>
-                <SelectMenu
-                  value={customImageId ? 'custom' : ''}
-                  onChange={(v) => {
-                    if (v === 'custom') {
-                      setCustomImageId(customImages[0]?.id || '');
-                      const img = customImages[0];
-                      if (img) {
-                        const agentComp = (img.components || []).find((c) => (c.component_id || '').startsWith('agent:'));
-                        const agentId = agentComp ? agentComp.component_id.replace('agent:', '') : '';
-                        if (agentId && agents.find((a) => a.id === agentId)) {
-                          setSelectedAgentId(agentId);
-                        }
-                      }
-                    } else {
-                      setCustomImageId('');
-                      setSelectedAgentId('');
-                    }
-                  }}
-                  options={[
-                    { value: '', label: 'Built-in' },
-                    { value: 'custom', label: 'Custom (your images)' },
-                  ]}
-                  placeholder="Built-in"
-                />
-              </div>
-            )}
-            {launchModalMode !== 'workspace' && customImageId && (
-              <div>
-                <label className={`text-xs font-semibold uppercase tracking-wider ${textPlaceholder} mb-1 block`}>Custom image</label>
-                <SelectMenu
-                  value={customImageId}
-                  onChange={(v) => {
-                    setCustomImageId(v);
-                    const img = customImages.find((c) => c.id === v);
-                    if (img) {
-                      const agentComp = (img.components || []).find((c) => (c.component_id || '').startsWith('agent:'));
-                      const agentId = agentComp ? agentComp.component_id.replace('agent:', '') : '';
-                      if (agentId && agents.find((a) => a.id === agentId)) {
-                        setSelectedAgentId(agentId);
-                      }
-                    }
-                  }}
-                  options={customImages.map((img) => ({ value: img.id, label: img.name }))}
-                  placeholder="Select image"
-                />
-              </div>
-            )}
-            {launchModalMode !== 'workspace' && (
-              <div>
-                <div className="flex items-center justify-between gap-2 mb-1">
-                  <label className={`text-xs font-semibold uppercase tracking-wider ${textPlaceholder}`}>Agent</label>
-                  {selectedAgent && selectedAgent.llm_auth_mode === 'byok' && (
-                    <button type="button" onClick={() => openConfigModal()} className={`text-xs font-medium ${textPlaceholder} hover:text-[#202124]`}>
-                      <Settings2 className="w-3.5 h-3.5 inline" /> Configure
-                    </button>
-                  )}
-                </div>
-                <SelectMenu
-                  value={selectedAgentId}
-                  onChange={setSelectedAgentId}
-                  options={
-                    customImageId
-                      ? agentSelectOptions.filter((opt) => {
-                          const img = customImages.find((c) => c.id === customImageId);
-                          if (!img) return true;
-                          const agentComp = (img.components || []).find((c) => (c.component_id || '').startsWith('agent:'));
-                          return !agentComp || opt.value === agentComp.component_id.replace('agent:', '');
-                        })
-                      : agentSelectOptions
-                  }
-                  placeholder="Select agent"
-                />
-              </div>
-            )}
-          </div>
-          <div className={consoleStructuredDialogFooterClass}>
-            <button type="button" onClick={() => { setShowNewInstanceModal(false); setCreateNewWorkspaceInline(false); }} className={`h-9 px-3 ${bgCanvas} border ${borderHairline} ${textPrimary} rounded-md text-sm font-medium ${hoverBgSecondary} ${transitionBase}`}>Cancel</button>
-            <button
-              type="button"
-              disabled={
-                isLoading
-                || projectCreating
-                || (launchModalMode !== 'workspace' && !selectedAgentId)
-                || (launchModalMode === 'session' && !createNewWorkspaceInline && !launchWorkspaceId)
-              }
-              onClick={handleLaunchFromModal}
-              className={`h-9 px-3 flex items-center justify-center gap-2 bg-[#202124] text-white rounded-md text-sm font-medium hover:bg-[#3C4043] disabled:opacity-50 ${transitionBase}`}
-            >
-              {isLoading || projectCreating
-                ? 'Starting...'
-                : launchModalMode === 'workspace'
-                  ? 'Create workspace'
-                  : 'Start agent'}
-            </button>
-          </div>
-        </ConsoleInlineDialog>
-      )}
-
       {/* Simple delete confirm */}
       {deleteConfirmSession && (
         <ConsoleInlineDialog onClose={() => setDeleteConfirmSession(null)} panelClassName={`${consoleDialogPanelClass} w-full max-w-md`}>
@@ -1119,27 +1043,81 @@ export default React.forwardRef(function Sessions({
         </ConsoleInlineDialog>
       )}
 
-      {/* Configure BYOK (key-value form) */}
-      {showConfigModal && (
+      {/* Session config dialog (running session) */}
+      {showSessionConfigModal && (
         <ConsoleInlineDialog
-          onClose={() => { setShowConfigModal(false); setConfigError(null); }}
-          panelClassName={`${consoleDialogPanelClass} w-full max-w-md shadow-sm`}
+          onClose={() => { setShowSessionConfigModal(false); setSessionConfigError(null); }}
+          panelClassName={`${consoleDialogPanelClass} w-full max-w-lg shadow-sm`}
         >
           <div className={`${consoleStructuredDialogHeaderClass} flex items-center gap-2.5`}>
             <Settings2 className={`w-4 h-4 shrink-0 ${textPlaceholder}`} />
             <h3 className={`font-semibold text-sm ${textPrimary}`}>
-              Configure{selectedAgent ? ` - ${selectedAgent.name}` : ''}
+              Agent Configuration{activeSession?.agentName ? ` - ${activeSession.agentName}` : ''}
             </h3>
           </div>
-          <div className="p-4">
-            <ByokConfigForm
-              agentId={selectedAgentId}
-              loading={false}
-              onSave={() => {
-                setShowConfigModal(false);
-                showToast('success', 'Configuration saved.');
-              }}
+          <div className="p-4 space-y-3">
+            {sessionConfigError && (
+              <p className="text-sm text-[#C06C5D] bg-[#FDECEA] border border-[#FADBD8] rounded-md px-3 py-2">{sessionConfigError}</p>
+            )}
+            <AgentConfigEditor
+              configSchema={agents.find((a) => a.id === activeSession?.agentId)?.config_schema || null}
+              configFiles={sessionConfigFiles}
+              envVars={sessionEnvVars}
+              onConfigFilesChange={setSessionConfigFiles}
+              onEnvVarsChange={setSessionEnvVars}
+              loading={sessionConfigLoading}
             />
+          </div>
+          <div className={consoleStructuredDialogFooterClass}>
+            <button
+              type="button"
+              onClick={() => { setShowSessionConfigModal(false); setSessionConfigError(null); }}
+              className={`h-9 px-3 ${bgCanvas} border ${borderHairline} ${textPrimary} rounded-md text-sm font-medium ${hoverBgSecondary} ${transitionBase}`}
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              disabled={sessionConfigSaving || sessionConfigLoading}
+              onClick={handleSaveSessionConfig}
+              className={`h-9 px-3 flex items-center justify-center gap-2 bg-[#202124] text-white rounded-md text-sm font-medium hover:bg-[#3C4043] disabled:opacity-50 ${transitionBase}`}
+            >
+              {sessionConfigSaving ? <><Loader2 className="w-4 h-4 animate-spin" /> Saving…</> : 'Save'}
+            </button>
+          </div>
+        </ConsoleInlineDialog>
+      )}
+
+      {/* Restart prompt after config update */}
+      {showRestartPrompt && (
+        <ConsoleInlineDialog
+          onClose={() => setShowRestartPrompt(false)}
+          panelClassName={`${consoleDialogPanelClass} w-full max-w-sm shadow-sm`}
+        >
+          <div className={`${consoleStructuredDialogHeaderClass} flex items-center gap-2.5`}>
+            <RefreshCw className={`w-4 h-4 shrink-0 ${textPlaceholder}`} />
+            <h3 className={`font-semibold text-sm ${textPrimary}`}>Configuration Updated</h3>
+          </div>
+          <div className="p-4 space-y-2">
+            <p className={`text-sm ${textSecondary}`}>
+              Configuration has been updated. Restart this session for the changes to take effect.
+            </p>
+          </div>
+          <div className={consoleStructuredDialogFooterClass}>
+            <button
+              type="button"
+              onClick={() => setShowRestartPrompt(false)}
+              className={`h-9 px-3 ${bgCanvas} border ${borderHairline} ${textPrimary} rounded-md text-sm font-medium ${hoverBgSecondary} ${transitionBase}`}
+            >
+              Later
+            </button>
+            <button
+              type="button"
+              onClick={() => { setShowRestartPrompt(false); handleRestartSession(); }}
+              className={`h-9 px-3 flex items-center justify-center gap-2 bg-[#202124] text-white rounded-md text-sm font-medium hover:bg-[#3C4043] ${transitionBase}`}
+            >
+              <RefreshCw className="w-4 h-4" /> Restart Now
+            </button>
           </div>
         </ConsoleInlineDialog>
       )}
@@ -1149,7 +1127,175 @@ export default React.forwardRef(function Sessions({
         <div className="flex min-h-0 min-w-0 flex-1 flex-col bg-white">
           <div className="h-12 border-b border-[#E8EAED] flex items-center justify-between px-5 shrink-0 bg-white">
             <div className="flex items-center gap-3 min-w-0">
-              {activeSession ? (
+          {showNewInstanceModal ? (
+            <div className="flex min-h-0 flex-1 flex-col bg-[#F0F1F3]">
+              <div className="flex items-center justify-between border-b border-[#DADCE0] bg-white px-4 py-2.5 shrink-0 shadow-sm">
+                <div className="flex items-center gap-2.5">
+                  {launchModalMode === 'workspace' ? (
+                    <Plus className="w-4 h-4 shrink-0 text-[#9AA0A6]" />
+                  ) : (
+                    <Bot className="w-4 h-4 shrink-0 text-[#9AA0A6]" />
+                  )}
+                  <h3 className="text-sm font-bold text-[#202124]">
+                    {launchModalMode === 'workspace' ? 'New Workspace' : 'New Agent'}
+                  </h3>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => { setShowNewInstanceModal(false); setLaunchModalError(null); setCreateNewWorkspaceInline(false); setShowLaunchConfigModal(false); }}
+                  className="p-1.5 rounded text-[#5F6368] hover:bg-[#E8EAED]"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+              <div className="flex-1 min-h-0 overflow-y-auto p-6">
+                <div className="max-w-md mx-auto space-y-4">
+                  {launchModalError && (
+                    <p className="text-sm text-[#C06C5D] bg-[#FDECEA] border border-[#FADBD8] rounded-md px-3 py-2">{launchModalError}</p>
+                  )}
+                  {launchModalMode === 'workspace' && (
+                    <div>
+                      <label className="block text-xs font-semibold uppercase tracking-wider text-[#9AA0A6] mb-1.5">Workspace name</label>
+                      <input type="text" value={newProjectName} onChange={e => setNewProjectName(e.target.value)} placeholder="my-workspace" className="w-full px-3 py-2 text-sm border border-[#DADCE0] rounded-md bg-white focus:outline-none focus:border-[#5B8DB8]" autoFocus />
+                    </div>
+                  )}
+                  {(launchModalMode === 'quickstart' || launchModalMode === 'session') && (
+                    <div>
+                      <div className="flex items-center justify-between gap-2 mb-1.5">
+                        <label className="text-xs font-semibold uppercase tracking-wider text-[#9AA0A6]">Workspace</label>
+                        {launchModalMode === 'session' && !createNewWorkspaceInline && projects.length > 0 && (
+                          <button
+                            type="button"
+                            onClick={() => { setCreateNewWorkspaceInline(true); setNewProjectName(''); setLaunchWorkspaceId(''); }}
+                            className="text-xs font-medium text-[#5B8DB8] hover:underline"
+                          >
+                            New workspace
+                          </button>
+                        )}
+                      </div>
+                      {launchModalMode === 'quickstart' || createNewWorkspaceInline ? (
+                        <input
+                          type="text"
+                          value={newProjectName}
+                          onChange={e => setNewProjectName(e.target.value)}
+                          placeholder={launchModalMode === 'quickstart' ? 'Optional - auto-generated if empty' : 'my-workspace'}
+                          className="w-full px-3 py-2 text-sm border border-[#DADCE0] rounded-md bg-white focus:outline-none focus:border-[#5B8DB8]"
+                          autoFocus
+                        />
+                      ) : (
+                        <SelectMenu
+                          value={launchWorkspaceId}
+                          onChange={setLaunchWorkspaceId}
+                          options={projects.map((p) => ({ value: p.id, label: p.name }))}
+                          placeholder="Select workspace"
+                        />
+                      )}
+                    </div>
+                  )}
+                  {launchModalMode !== 'workspace' && customImages.length > 0 && (
+                    <div>
+                      <label className="block text-xs font-semibold uppercase tracking-wider text-[#9AA0A6] mb-1.5">Image type</label>
+                      <SelectMenu
+                        value={customImageId ? 'custom' : ''}
+                        onChange={(v) => {
+                          if (v === 'custom') {
+                            setCustomImageId(customImages[0]?.id || '');
+                            const img = customImages[0];
+                            if (img) {
+                              const agentComp = (img.components || []).find((c) => (c.component_id || '').startsWith('agent:'));
+                              const agentId = agentComp ? agentComp.component_id.replace('agent:', '') : '';
+                              if (agentId && agents.find((a) => a.id === agentId)) setSelectedAgentId(agentId);
+                            }
+                          } else {
+                            setCustomImageId('');
+                            setSelectedAgentId('');
+                          }
+                        }}
+                        options={[{ value: '', label: 'Built-in' }, { value: 'custom', label: 'Custom (your images)' }]}
+                        placeholder="Built-in"
+                      />
+                    </div>
+                  )}
+                  {launchModalMode !== 'workspace' && customImageId && (
+                    <div>
+                      <label className="block text-xs font-semibold uppercase tracking-wider text-[#9AA0A6] mb-1.5">Custom image</label>
+                      <SelectMenu
+                        value={customImageId}
+                        onChange={(v) => {
+                          setCustomImageId(v);
+                          const img = customImages.find((c) => c.id === v);
+                          if (img) {
+                            const agentComp = (img.components || []).find((c) => (c.component_id || '').startsWith('agent:'));
+                            const agentId = agentComp ? agentComp.component_id.replace('agent:', '') : '';
+                            if (agentId && agents.find((a) => a.id === agentId)) setSelectedAgentId(agentId);
+                          }
+                        }}
+                        options={customImages.map((img) => ({ value: img.id, label: img.name }))}
+                        placeholder="Select image"
+                      />
+                    </div>
+                  )}
+                  {launchModalMode !== 'workspace' && (
+                    <div>
+                      <div className="flex items-center justify-between gap-2 mb-1.5">
+                        <label className="text-xs font-semibold uppercase tracking-wider text-[#9AA0A6]">Agent</label>
+                        {selectedAgent && selectedAgent.llm_auth_mode === 'byok' && (
+                          <button type="button" onClick={() => setShowLaunchConfigModal(v => !v)} className="text-xs font-medium text-[#5B8DB8] hover:underline">
+                            <Settings2 className="w-3.5 h-3.5 inline" /> {showLaunchConfigModal ? 'Hide config' : 'Configure'}
+                          </button>
+                        )}
+                      </div>
+                      <SelectMenu
+                        value={selectedAgentId}
+                        onChange={setSelectedAgentId}
+                        options={
+                          customImageId
+                            ? agentSelectOptions.filter((opt) => {
+                                const img = customImages.find((c) => c.id === customImageId);
+                                if (!img) return true;
+                                const agentComp = (img.components || []).find((c) => (c.component_id || '').startsWith('agent:'));
+                                return !agentComp || opt.value === agentComp.component_id.replace('agent:', '');
+                              })
+                            : agentSelectOptions
+                        }
+                        placeholder="Select agent"
+                      />
+                    </div>
+                  )}
+                  {showLaunchConfigModal && selectedAgent && (
+                    <div className="rounded-xl bg-white border border-[#E8EAED] shadow-sm p-4">
+                      <div className="flex items-center gap-2 mb-3">
+                        <Settings2 className="w-4 h-4 text-[#9AA0A6]" />
+                        <h4 className="text-sm font-semibold text-[#202124]">Configure {selectedAgent.name}</h4>
+                      </div>
+                      <ByokConfigForm
+                        agentId={selectedAgentId}
+                        loading={false}
+                        onSave={() => { setShowLaunchConfigModal(false); showToast('success', 'Configuration saved.'); }}
+                      />
+                    </div>
+                  )}
+                </div>
+              </div>
+              <div className="flex items-center justify-end gap-2 border-t border-[#DADCE0] bg-white px-4 py-3 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => { setShowNewInstanceModal(false); setCreateNewWorkspaceInline(false); }}
+                  className="h-9 px-4 bg-white border border-[#E8EAED] text-[#202124] rounded-md text-sm font-medium hover:bg-[#F4F5F6]"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  disabled={isLoading || projectCreating || (launchModalMode !== 'workspace' && !selectedAgentId) || (launchModalMode === 'session' && !createNewWorkspaceInline && !launchWorkspaceId)}
+                  onClick={handleLaunchFromModal}
+                  className="h-9 px-4 flex items-center justify-center gap-2 bg-[#202124] text-white rounded-md text-sm font-medium hover:bg-[#3C4043] disabled:opacity-50"
+                >
+                  {isLoading || projectCreating ? 'Starting...' : launchModalMode === 'workspace' ? 'Create workspace' : 'Start agent'}
+                </button>
+              </div>
+            </div>
+          ) : activeSession ? (
                 <>
                   <div className="flex items-center gap-2 min-w-0">
                     <h1 className="truncate text-[15px] font-semibold text-[#202124]">
@@ -1229,6 +1375,15 @@ export default React.forwardRef(function Sessions({
                   )}
                   <button
                     type="button"
+                    onClick={() => openSessionConfigModal()}
+                    className={consoleIconButtonClass}
+                    title="Agent configuration"
+                    aria-label="Agent configuration"
+                  >
+                    <Settings2 className="w-4 h-4" strokeWidth={1.75} />
+                  </button>
+                  <button
+                    type="button"
                     onClick={() => setActiveSession(null)}
                     className={consoleIconButtonClass}
                     title="Disconnect view"
@@ -1245,6 +1400,12 @@ export default React.forwardRef(function Sessions({
                   >
                     {panelOpen ? <PanelRightClose className="w-4 h-4" strokeWidth={1.75} /> : <PanelRightOpen className="w-4 h-4" strokeWidth={1.75} />}
                   </button>
+                  {activeSession.projectId ? (
+                    <>
+                      <div className="mx-0.5 h-5 w-px bg-[#E8EAED]" />
+                      <PreviewControlGroup {...preview} />
+                    </>
+                  ) : null}
                 </>
               )}
             </div>
@@ -1286,26 +1447,21 @@ export default React.forwardRef(function Sessions({
                 </div>
               </div>
             ) : (
-            <div ref={panelRowRef} className="flex min-h-0 min-w-0 flex-1 flex-row overflow-hidden">
+<div ref={panelRowRef} className="flex min-h-0 min-w-0 flex-1 flex-row overflow-hidden">
               <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
-                <div className="flex min-h-0 flex-1 flex-col p-4">
-                  <div
-                     className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-[#E8EAED] shadow-sm"
-                     style={{ backgroundColor: preset.xterm.background }}
-                   >
-                      <AgentConsole
-                        key={activeSession.sessionId}
-                        sessionId={activeSession.sessionId}
-                        reconnectVersion={reconnectVersion}
-                       agentName={activeSession.agentName}
-                       projectId={activeSession.projectId}
-                       onSessionEnd={handleSessionEnd}
-                       onSessionConnected={handleSessionConnected}
-sessionLive={sessionAlive}
-                        sessionWakeable={sessionWakeable}
-                        token={true}
-                      />
-                   </div>
+                <div
+                  className="flex min-h-0 flex-1 flex-col overflow-hidden"
+                  style={{ backgroundColor: preset.xterm.background }}
+                >
+                  <AgentConsole
+                    key={activeSession.sessionId}
+                    sessionId={activeSession.sessionId}
+                    reconnectVersion={reconnectVersion}
+                    onSessionEnd={handleSessionEnd}
+                    onSessionConnected={handleSessionConnected}
+                    sessionLive={sessionAlive}
+                    sessionWakeable={sessionWakeable}
+                  />
                 </div>
                 <GitStatusBar projectId={activeSession.projectId} project={activeProject} git={gitChanges} />
               </div>

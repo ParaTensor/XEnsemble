@@ -961,199 +961,6 @@ export default React.forwardRef(function Sessions({
 
   return (
     <div className={className || 'h-full w-full'}>
-      {/* Launch modal */}
-      {showNewInstanceModal && (
-        <ConsoleInlineDialog
-          onClose={() => { if (showLaunchConfigModal) return; setShowNewInstanceModal(false); setLaunchModalError(null); setCreateNewWorkspaceInline(false); }}
-          panelClassName={`${consoleDialogPanelClass} w-full max-w-sm shadow-sm`}
-        >
-          <div className={`${consoleStructuredDialogHeaderClass} flex items-center gap-2.5`}>
-            {launchModalMode === 'workspace' ? (
-              <Plus className={`w-4 h-4 shrink-0 ${textPlaceholder}`} />
-            ) : (
-              <Bot className={`w-4 h-4 shrink-0 ${textPlaceholder}`} />
-            )}
-            <h3 className={`font-semibold text-sm ${textPrimary}`}>
-              {launchModalMode === 'workspace'
-                ? 'New Workspace'
-                : launchModalMode === 'quickstart'
-                  ? 'New Agent'
-                  : 'New Agent'}
-            </h3>
-          </div>
-          <div className="p-4 space-y-3">
-            {launchModalError && (
-              <p className="text-sm text-[#C06C5D] bg-[#FDECEA] border border-[#FADBD8] rounded-md px-3 py-2">{launchModalError}</p>
-            )}
-            {launchModalMode === 'workspace' && (
-              <div>
-                <label className={`block text-xs font-semibold uppercase tracking-wider ${textPlaceholder} mb-1`}>Workspace name</label>
-                <input type="text" value={newProjectName} onChange={e => setNewProjectName(e.target.value)} placeholder="my-workspace" className={consoleInputClass} autoFocus />
-              </div>
-            )}
-            {(launchModalMode === 'quickstart' || launchModalMode === 'session') && (
-              <div>
-                <div className="flex items-center justify-between gap-2 mb-1">
-                  <label className={`text-xs font-semibold uppercase tracking-wider ${textPlaceholder}`}>Workspace</label>
-                  {launchModalMode === 'session' && !createNewWorkspaceInline && projects.length > 0 && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setCreateNewWorkspaceInline(true);
-                        setNewProjectName('');
-                        setLaunchWorkspaceId('');
-                      }}
-                      className={`text-xs font-medium ${textPlaceholder} hover:text-[#202124] ${transitionBase}`}
-                    >
-                      New workspace
-                    </button>
-                  )}
-                </div>
-                {launchModalMode === 'quickstart' || createNewWorkspaceInline ? (
-                  <input
-                    type="text"
-                    value={newProjectName}
-                    onChange={e => setNewProjectName(e.target.value)}
-                    placeholder={launchModalMode === 'quickstart' ? 'Optional — auto-generated if empty' : 'my-workspace'}
-                    className={consoleInputClass}
-                    autoFocus
-                  />
-                ) : (
-                  <SelectMenu
-                    value={launchWorkspaceId}
-                    onChange={setLaunchWorkspaceId}
-                    options={projects.map((p) => ({ value: p.id, label: p.name }))}
-                    placeholder="Select workspace"
-                  />
-                )}
-              </div>
-            )}
-            {launchModalMode !== 'workspace' && customImages.length > 0 && (
-              <div>
-                <label className={`text-xs font-semibold uppercase tracking-wider ${textPlaceholder} mb-1 block`}>Image type</label>
-                <SelectMenu
-                  value={customImageId ? 'custom' : ''}
-                  onChange={(v) => {
-                    if (v === 'custom') {
-                      setCustomImageId(customImages[0]?.id || '');
-                      const img = customImages[0];
-                      if (img) {
-                        const agentComp = (img.components || []).find((c) => (c.component_id || '').startsWith('agent:'));
-                        const agentId = agentComp ? agentComp.component_id.replace('agent:', '') : '';
-                        if (agentId && agents.find((a) => a.id === agentId)) {
-                          setSelectedAgentId(agentId);
-                        }
-                      }
-                    } else {
-                      setCustomImageId('');
-                      setSelectedAgentId('');
-                    }
-                  }}
-                  options={[
-                    { value: '', label: 'Built-in' },
-                    { value: 'custom', label: 'Custom (your images)' },
-                  ]}
-                  placeholder="Built-in"
-                />
-              </div>
-            )}
-            {launchModalMode !== 'workspace' && customImageId && (
-              <div>
-                <label className={`text-xs font-semibold uppercase tracking-wider ${textPlaceholder} mb-1 block`}>Custom image</label>
-                <SelectMenu
-                  value={customImageId}
-                  onChange={(v) => {
-                    setCustomImageId(v);
-                    const img = customImages.find((c) => c.id === v);
-                    if (img) {
-                      const agentComp = (img.components || []).find((c) => (c.component_id || '').startsWith('agent:'));
-                      const agentId = agentComp ? agentComp.component_id.replace('agent:', '') : '';
-                      if (agentId && agents.find((a) => a.id === agentId)) {
-                        setSelectedAgentId(agentId);
-                      }
-                    }
-                  }}
-                  options={customImages.map((img) => ({ value: img.id, label: img.name }))}
-                  placeholder="Select image"
-                />
-              </div>
-            )}
-            {launchModalMode !== 'workspace' && (
-              <div>
-                <div className="flex items-center justify-between gap-2 mb-1">
-                  <label className={`text-xs font-semibold uppercase tracking-wider ${textPlaceholder}`}>Agent</label>
-                  {selectedAgent && selectedAgent.llm_auth_mode === 'byok' && (
-                    <button type="button" onClick={() => openLaunchConfigModal()} className={`text-xs font-medium ${textPlaceholder} hover:text-[#202124] ${transitionBase}`}>
-                      <Settings2 className="w-3.5 h-3.5 inline" /> Configure
-                    </button>
-                  )}
-                </div>
-                <SelectMenu
-                  value={selectedAgentId}
-                  onChange={setSelectedAgentId}
-                  options={
-                    customImageId
-                      ? agentSelectOptions.filter((opt) => {
-                          const img = customImages.find((c) => c.id === customImageId);
-                          if (!img) return true;
-                          const agentComp = (img.components || []).find((c) => (c.component_id || '').startsWith('agent:'));
-                          return !agentComp || opt.value === agentComp.component_id.replace('agent:', '');
-                        })
-                      : agentSelectOptions
-                  }
-                  placeholder="Select agent"
-                />
-              </div>
-            )}
-          </div>
-          <div className={consoleStructuredDialogFooterClass}>
-            <button type="button" onClick={() => { setShowNewInstanceModal(false); setCreateNewWorkspaceInline(false); }} className={`h-9 px-3 ${bgCanvas} border ${borderHairline} ${textPrimary} rounded-md text-sm font-medium ${hoverBgSecondary} ${transitionBase}`}>Cancel</button>
-            <button
-              type="button"
-              disabled={
-                isLoading
-                || projectCreating
-                || (launchModalMode !== 'workspace' && !selectedAgentId)
-                || (launchModalMode === 'session' && !createNewWorkspaceInline && !launchWorkspaceId)
-              }
-              onClick={handleLaunchFromModal}
-              className={`h-9 px-3 flex items-center justify-center gap-2 bg-[#202124] text-white rounded-md text-sm font-medium hover:bg-[#3C4043] disabled:opacity-50 ${transitionBase}`}
-            >
-              {isLoading || projectCreating
-                ? 'Starting...'
-                : launchModalMode === 'workspace'
-                  ? 'Create workspace'
-                  : 'Start agent'}
-            </button>
-          </div>
-        </ConsoleInlineDialog>
-      )}
-
-      {/* Launch config dialog (BYOK key-value form) */}
-      {showLaunchConfigModal && (
-        <ConsoleInlineDialog
-          onClose={() => setShowLaunchConfigModal(false)}
-          panelClassName={`${consoleDialogPanelClass} w-full max-w-md shadow-sm`}
-        >
-          <div className={`${consoleStructuredDialogHeaderClass} flex items-center gap-2.5`}>
-            <Settings2 className={`w-4 h-4 shrink-0 ${textPlaceholder}`} />
-            <h3 className={`font-semibold text-sm ${textPrimary}`}>
-              Configure{selectedAgent ? ` - ${selectedAgent.name}` : ''}
-            </h3>
-          </div>
-          <div className="p-4">
-            <ByokConfigForm
-              agentId={selectedAgentId}
-              loading={false}
-              onSave={() => {
-                setShowLaunchConfigModal(false);
-                showToast('success', 'Configuration saved.');
-              }}
-            />
-          </div>
-        </ConsoleInlineDialog>
-      )}
-
       {/* Simple delete confirm */}
       {deleteConfirmSession && (
         <ConsoleInlineDialog onClose={() => setDeleteConfirmSession(null)} panelClassName={`${consoleDialogPanelClass} w-full max-w-md`}>
@@ -1320,7 +1127,175 @@ export default React.forwardRef(function Sessions({
         <div className="flex min-h-0 min-w-0 flex-1 flex-col bg-white">
           <div className="h-12 border-b border-[#E8EAED] flex items-center justify-between px-5 shrink-0 bg-white">
             <div className="flex items-center gap-3 min-w-0">
-              {activeSession ? (
+          {showNewInstanceModal ? (
+            <div className="flex min-h-0 flex-1 flex-col bg-[#F0F1F3]">
+              <div className="flex items-center justify-between border-b border-[#DADCE0] bg-white px-4 py-2.5 shrink-0 shadow-sm">
+                <div className="flex items-center gap-2.5">
+                  {launchModalMode === 'workspace' ? (
+                    <Plus className="w-4 h-4 shrink-0 text-[#9AA0A6]" />
+                  ) : (
+                    <Bot className="w-4 h-4 shrink-0 text-[#9AA0A6]" />
+                  )}
+                  <h3 className="text-sm font-bold text-[#202124]">
+                    {launchModalMode === 'workspace' ? 'New Workspace' : 'New Agent'}
+                  </h3>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => { setShowNewInstanceModal(false); setLaunchModalError(null); setCreateNewWorkspaceInline(false); setShowLaunchConfigModal(false); }}
+                  className="p-1.5 rounded text-[#5F6368] hover:bg-[#E8EAED]"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+              <div className="flex-1 min-h-0 overflow-y-auto p-6">
+                <div className="max-w-md mx-auto space-y-4">
+                  {launchModalError && (
+                    <p className="text-sm text-[#C06C5D] bg-[#FDECEA] border border-[#FADBD8] rounded-md px-3 py-2">{launchModalError}</p>
+                  )}
+                  {launchModalMode === 'workspace' && (
+                    <div>
+                      <label className="block text-xs font-semibold uppercase tracking-wider text-[#9AA0A6] mb-1.5">Workspace name</label>
+                      <input type="text" value={newProjectName} onChange={e => setNewProjectName(e.target.value)} placeholder="my-workspace" className="w-full px-3 py-2 text-sm border border-[#DADCE0] rounded-md bg-white focus:outline-none focus:border-[#5B8DB8]" autoFocus />
+                    </div>
+                  )}
+                  {(launchModalMode === 'quickstart' || launchModalMode === 'session') && (
+                    <div>
+                      <div className="flex items-center justify-between gap-2 mb-1.5">
+                        <label className="text-xs font-semibold uppercase tracking-wider text-[#9AA0A6]">Workspace</label>
+                        {launchModalMode === 'session' && !createNewWorkspaceInline && projects.length > 0 && (
+                          <button
+                            type="button"
+                            onClick={() => { setCreateNewWorkspaceInline(true); setNewProjectName(''); setLaunchWorkspaceId(''); }}
+                            className="text-xs font-medium text-[#5B8DB8] hover:underline"
+                          >
+                            New workspace
+                          </button>
+                        )}
+                      </div>
+                      {launchModalMode === 'quickstart' || createNewWorkspaceInline ? (
+                        <input
+                          type="text"
+                          value={newProjectName}
+                          onChange={e => setNewProjectName(e.target.value)}
+                          placeholder={launchModalMode === 'quickstart' ? 'Optional - auto-generated if empty' : 'my-workspace'}
+                          className="w-full px-3 py-2 text-sm border border-[#DADCE0] rounded-md bg-white focus:outline-none focus:border-[#5B8DB8]"
+                          autoFocus
+                        />
+                      ) : (
+                        <SelectMenu
+                          value={launchWorkspaceId}
+                          onChange={setLaunchWorkspaceId}
+                          options={projects.map((p) => ({ value: p.id, label: p.name }))}
+                          placeholder="Select workspace"
+                        />
+                      )}
+                    </div>
+                  )}
+                  {launchModalMode !== 'workspace' && customImages.length > 0 && (
+                    <div>
+                      <label className="block text-xs font-semibold uppercase tracking-wider text-[#9AA0A6] mb-1.5">Image type</label>
+                      <SelectMenu
+                        value={customImageId ? 'custom' : ''}
+                        onChange={(v) => {
+                          if (v === 'custom') {
+                            setCustomImageId(customImages[0]?.id || '');
+                            const img = customImages[0];
+                            if (img) {
+                              const agentComp = (img.components || []).find((c) => (c.component_id || '').startsWith('agent:'));
+                              const agentId = agentComp ? agentComp.component_id.replace('agent:', '') : '';
+                              if (agentId && agents.find((a) => a.id === agentId)) setSelectedAgentId(agentId);
+                            }
+                          } else {
+                            setCustomImageId('');
+                            setSelectedAgentId('');
+                          }
+                        }}
+                        options={[{ value: '', label: 'Built-in' }, { value: 'custom', label: 'Custom (your images)' }]}
+                        placeholder="Built-in"
+                      />
+                    </div>
+                  )}
+                  {launchModalMode !== 'workspace' && customImageId && (
+                    <div>
+                      <label className="block text-xs font-semibold uppercase tracking-wider text-[#9AA0A6] mb-1.5">Custom image</label>
+                      <SelectMenu
+                        value={customImageId}
+                        onChange={(v) => {
+                          setCustomImageId(v);
+                          const img = customImages.find((c) => c.id === v);
+                          if (img) {
+                            const agentComp = (img.components || []).find((c) => (c.component_id || '').startsWith('agent:'));
+                            const agentId = agentComp ? agentComp.component_id.replace('agent:', '') : '';
+                            if (agentId && agents.find((a) => a.id === agentId)) setSelectedAgentId(agentId);
+                          }
+                        }}
+                        options={customImages.map((img) => ({ value: img.id, label: img.name }))}
+                        placeholder="Select image"
+                      />
+                    </div>
+                  )}
+                  {launchModalMode !== 'workspace' && (
+                    <div>
+                      <div className="flex items-center justify-between gap-2 mb-1.5">
+                        <label className="text-xs font-semibold uppercase tracking-wider text-[#9AA0A6]">Agent</label>
+                        {selectedAgent && selectedAgent.llm_auth_mode === 'byok' && (
+                          <button type="button" onClick={() => setShowLaunchConfigModal(v => !v)} className="text-xs font-medium text-[#5B8DB8] hover:underline">
+                            <Settings2 className="w-3.5 h-3.5 inline" /> {showLaunchConfigModal ? 'Hide config' : 'Configure'}
+                          </button>
+                        )}
+                      </div>
+                      <SelectMenu
+                        value={selectedAgentId}
+                        onChange={setSelectedAgentId}
+                        options={
+                          customImageId
+                            ? agentSelectOptions.filter((opt) => {
+                                const img = customImages.find((c) => c.id === customImageId);
+                                if (!img) return true;
+                                const agentComp = (img.components || []).find((c) => (c.component_id || '').startsWith('agent:'));
+                                return !agentComp || opt.value === agentComp.component_id.replace('agent:', '');
+                              })
+                            : agentSelectOptions
+                        }
+                        placeholder="Select agent"
+                      />
+                    </div>
+                  )}
+                  {showLaunchConfigModal && selectedAgent && (
+                    <div className="rounded-xl bg-white border border-[#E8EAED] shadow-sm p-4">
+                      <div className="flex items-center gap-2 mb-3">
+                        <Settings2 className="w-4 h-4 text-[#9AA0A6]" />
+                        <h4 className="text-sm font-semibold text-[#202124]">Configure {selectedAgent.name}</h4>
+                      </div>
+                      <ByokConfigForm
+                        agentId={selectedAgentId}
+                        loading={false}
+                        onSave={() => { setShowLaunchConfigModal(false); showToast('success', 'Configuration saved.'); }}
+                      />
+                    </div>
+                  )}
+                </div>
+              </div>
+              <div className="flex items-center justify-end gap-2 border-t border-[#DADCE0] bg-white px-4 py-3 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => { setShowNewInstanceModal(false); setCreateNewWorkspaceInline(false); }}
+                  className="h-9 px-4 bg-white border border-[#E8EAED] text-[#202124] rounded-md text-sm font-medium hover:bg-[#F4F5F6]"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  disabled={isLoading || projectCreating || (launchModalMode !== 'workspace' && !selectedAgentId) || (launchModalMode === 'session' && !createNewWorkspaceInline && !launchWorkspaceId)}
+                  onClick={handleLaunchFromModal}
+                  className="h-9 px-4 flex items-center justify-center gap-2 bg-[#202124] text-white rounded-md text-sm font-medium hover:bg-[#3C4043] disabled:opacity-50"
+                >
+                  {isLoading || projectCreating ? 'Starting...' : launchModalMode === 'workspace' ? 'Create workspace' : 'Start agent'}
+                </button>
+              </div>
+            </div>
+          ) : activeSession ? (
                 <>
                   <div className="flex items-center gap-2 min-w-0">
                     <h1 className="truncate text-[15px] font-semibold text-[#202124]">
