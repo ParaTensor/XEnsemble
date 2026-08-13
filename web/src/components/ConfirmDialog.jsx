@@ -1,5 +1,4 @@
 import { useEffect, useState, useCallback } from 'react';
-import { Loader2 } from 'lucide-react';
 import { ConsoleDialogShell } from './ConsoleDialog';
 import { buttonClass } from '../lib/buttonStyles';
 import { consoleButtonFocusClass, textPrimary, textSecondary } from '../lib/consoleTheme';
@@ -13,7 +12,7 @@ export function confirm(options) {
   return openConfirmFn(options);
 }
 
-export default function ConfirmDialog({ children }) {
+export default function ConfirmDialog() {
   const [state, setState] = useState(null);
 
   const open = useCallback((options) => {

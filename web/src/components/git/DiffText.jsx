@@ -1,5 +1,3 @@
-import React from 'react';
-
 export function renderDiffLines(raw) {
   if (!raw) return null;
   return raw.split('\n').map((line, i) => {

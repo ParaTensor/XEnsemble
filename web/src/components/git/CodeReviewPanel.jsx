@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState, useMemo } from 'react';
+import { useCallback, useEffect, useState, useMemo } from 'react';
 import { ArrowLeft, Check, CheckCircle2, ChevronDown, ChevronRight, CircleDot, GitPullRequest, GitMerge, Loader2, MessageSquare, RefreshCw, Send, X, XCircle, RotateCcw, Trash2, Pencil, CornerDownRight } from 'lucide-react';
 import * as gitApi from '../../lib/gitApi';
 import { confirm } from '../ConfirmDialog';
@@ -11,8 +11,6 @@ import {
   textPrimary,
   textSecondary,
   textPlaceholder,
-  borderHairline,
-  bgCanvas,
 } from '../../lib/consoleTheme';
 
 const REVIEW_STATE_STYLES = {
@@ -226,7 +224,7 @@ function CommentItem({ comment, mrFiles, renderDiffLines, isOwnComment, onReply,
   );
 }
 
-function ThreadGroup({ thread, mrFiles, renderDiffLines, currentUser, onReply, onEdit, onDelete, actionLoading, replyingTo, replyText, setReplyText, onSendReply, onCancelReply }) {
+function ThreadGroup({ thread, mrFiles, renderDiffLines, onReply, onEdit, onDelete, actionLoading, replyingTo, replyText, setReplyText, onSendReply, onCancelReply }) {
   const [collapsed, setCollapsed] = useState(false);
   const firstComment = thread.comments[0];
   const path = firstComment?.path || '';
@@ -576,16 +574,6 @@ export default function CodeReviewPanel({ projectId, mergeRequestId, mergeReques
     }
   };
 
-  const handleEditComment = async (comment, newBody, startEdit) => {
-    if (!startEdit) {
-      // Cancel
-      setCommentActionLoading(null);
-      return;
-    }
-    // Start edit mode
-    setCommentActionLoading({ type: 'edit', id: comment.id });
-  };
-
   const handleSaveEdit = async (comment, newBody) => {
     if (!newBody?.trim()) return;
     setCommentActionLoading({ type: 'edit', id: comment.id, pending: true });
@@ -633,10 +621,6 @@ export default function CodeReviewPanel({ projectId, mergeRequestId, mergeReques
       setCommentActionLoading(null);
     }
   };
-
-  const currentUser = null; // API enforces ownership; show edit/delete for all
-
-  const isOwnComment = true;
 
   return (
     <div className="flex flex-col h-full min-h-0">
@@ -879,7 +863,6 @@ export default function CodeReviewPanel({ projectId, mergeRequestId, mergeReques
                           thread={item}
                           mrFiles={mrFiles}
                           renderDiffLines={renderDiffLines}
-                          currentUser={currentUser}
                           onReply={handleReply}
                           onEdit={handleEditWrapper}
                           onDelete={handleDeleteComment}
