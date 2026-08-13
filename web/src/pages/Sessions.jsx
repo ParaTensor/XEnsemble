@@ -942,12 +942,22 @@ export default React.forwardRef(function Sessions({
     });
   };
 
+  const closeLaunchModal = useCallback(() => {
+    setShowNewInstanceModal(false);
+    setLaunchModalError(null);
+    setCreateNewWorkspaceInline(false);
+    setShowLaunchConfigModal(false);
+    setGitImportMode(false);
+    setImportedProject(null);
+  }, []);
+
   React.useImperativeHandle(ref, () => ({
     openLaunchModal,
+    closeLaunchModal,
     openImportDialog: () => setShowImportDialog(true),
     requestDeleteSession,
     requestDeleteWorkspace,
-  }), [openLaunchModal, requestDeleteSession, requestDeleteWorkspace]);
+  }), [openLaunchModal, closeLaunchModal, requestDeleteSession, requestDeleteWorkspace]);
 
   const agentSelectOptions = useMemo(
     () => sortAgentsByRecentUsage(agents, loadSidebarPrefs()).map((agent) => ({ value: agent.id, label: agent.name })),

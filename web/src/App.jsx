@@ -39,6 +39,7 @@ function AuthenticatedLayout({
 
   useEffect(() => {
     setLaunchPanelOpen(false);
+    sessionsRef.current?.closeLaunchModal?.();
   }, [location.pathname]);
 
   const isSessions = location.pathname === '/sessions';
@@ -52,6 +53,8 @@ function AuthenticatedLayout({
   const offRouteClass = 'pointer-events-none invisible absolute inset-0 z-0 [&_*]:pointer-events-none';
 
   const onSelectSession = useCallback((session) => {
+    setLaunchPanelOpen(false);
+    sessionsRef.current?.closeLaunchModal?.();
     setActiveSession({
       sessionId: session.id,
       agentId: session.agentId,
