@@ -954,6 +954,21 @@ export default React.forwardRef(function Sessions({
     [agents],
   );
 
+  const handleSelectCustomImage = useCallback(() => {
+    if (customImages.length > 0) {
+      const img = customImages[0];
+      setCustomImageId(img?.id || '');
+      if (img) {
+        const ac = (img.components || []).find((c) => (c.component_id || '').startsWith('agent:'));
+        const aid = ac ? ac.component_id.replace('agent:', '') : '';
+        if (aid && agents.find((a) => a.id === aid)) setSelectedAgentId(aid);
+      }
+    } else {
+      setCustomImageId('__none__');
+      setSelectedAgentId('');
+    }
+  }, [customImages, agents]);
+
   const activeProject = useMemo(
     () => projects.find((p) => p.id === activeSession?.projectId) || null,
     [projects, activeSession?.projectId],
@@ -1173,18 +1188,18 @@ export default React.forwardRef(function Sessions({
                   {/* Page description */}
                   {launchModalMode === 'workspace' ? (
                     <p className="text-sm text-[#5F6368] leading-relaxed">
-                      Create a new workspace to organize your projects and sessions. A workspace is an isolated environment with its own file system, Git history, and agent configurations. You can import code from an existing Git repository or start from scratch.
+                      Create a new workspace with its own file system, Git history, and agent configurations.
                     </p>
                   ) : (
                     <p className="text-sm text-[#5F6368] leading-relaxed">
-                      Launch a new AI agent session. Select a workspace, choose an agent, and optionally import a Git repository. The agent will run inside an isolated sandbox with access to your code for editing, testing, and development.
+                      Select a workspace and agent to launch an isolated sandbox session.
                     </p>
                   )}
 
                   <div className="h-px bg-[#E8EAED]" />
 
                   {/* Form fields */}
-                  <div className="px-[18%] divide-y divide-[#E8EAED]">
+                  <div className="max-w-2xl mx-auto divide-y divide-[#E8EAED]">
 
                   {/* Workspace */}
                   {launchModalMode === 'workspace' && (
@@ -1238,7 +1253,7 @@ export default React.forwardRef(function Sessions({
                       <div className="flex-1 min-w-0 space-y-2">
                         <div className="flex items-center gap-2">
                           <button type="button" onClick={() => { setCustomImageId(''); setSelectedAgentId(''); }} className={`flex-1 h-9 px-3 text-xs font-medium rounded-md border transition-colors ${consoleButtonFocusClass} ${!customImageId ? 'bg-[#202124] text-white border-[#202124]' : 'bg-white text-[#5F6368] border-[#E8EAED] hover:bg-[#F4F5F6]'}`}>Built-in</button>
-                          <button type="button" onClick={() => { if (customImages.length > 0) { setCustomImageId(customImages[0]?.id || ''); const img = customImages[0]; if (img) { const ac = (img.components || []).find((c) => (c.component_id || '').startsWith('agent:')); const aid = ac ? ac.component_id.replace('agent:', '') : ''; if (aid && agents.find((a) => a.id === aid)) setSelectedAgentId(aid); } } else { setCustomImageId('__none__'); setSelectedAgentId(''); } }} className={`flex-1 h-9 px-3 text-xs font-medium rounded-md border transition-colors ${consoleButtonFocusClass} ${customImageId ? 'bg-[#202124] text-white border-[#202124]' : 'bg-white text-[#5F6368] border-[#E8EAED] hover:bg-[#F4F5F6]'}`}>Custom</button>
+                          <button type="button" onClick={handleSelectCustomImage} className={`flex-1 h-9 px-3 text-xs font-medium rounded-md border transition-colors ${consoleButtonFocusClass} ${customImageId ? 'bg-[#202124] text-white border-[#202124]' : 'bg-white text-[#5F6368] border-[#E8EAED] hover:bg-[#F4F5F6]'}`}>Custom</button>
                         </div>
                         <div className="flex items-center gap-2">
                           <div className="flex-1 min-w-0">

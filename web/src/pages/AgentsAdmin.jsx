@@ -1,44 +1,24 @@
-import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { Plus, Download, KeyRound, Pencil, Trash2, RefreshCw, Info, MoreHorizontal } from 'lucide-react';
 
 import Button from '../components/Button';
-import Input from '../components/Input';
-import SelectMenu from '../components/SelectMenu';
 import PageHeader from '../components/PageHeader';
-import {
-  ConsoleDialogShell,
-  ConsoleStructuredDialogBody,
-  ConsoleStructuredDialogFooter,
-  ConsoleStructuredDialogHeader,
-} from '../components/ConsoleDialog';
 import { useToast } from '../components/Toast';
 import { confirm } from '../components/ConfirmDialog';
 import {
-  consoleCardClass,
-  consoleDialogAdminFormPanelClass,
   consoleIconButtonClass,
   consoleMenuDropdownZClass,
-  consoleStructuredDialogPanelClass,
   consoleAdminPageClass,
-  consoleSectionLabelClass,
   consoleTableBodyCellClass,
   consoleTableHeadCellClass,
   consoleTableShellClass,
 } from '../lib/consoleTokens';
 import { loadAdminAgentsCache, saveAdminAgentsCache } from '../lib/adminAgentsCache';
-import { getSecretLabel, isSecretPasswordField } from '../lib/secretLabels';
 import { apiFetch } from '../lib/api';
-
-const EMPTY_SPAWN_DRAFT = {
-  envVars: [{ key: '', value: '' }],
-  launch_command: '',
-};
-
-function statusBadge(installed) {
-  return installed
-    ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-    : 'bg-amber-50 text-amber-700 border-amber-200';
-}
+import AgentRegisterDialog from '../components/admin/AgentRegisterDialog';
+import AgentEditDialog from '../components/admin/AgentEditDialog';
+import AgentConfigDialog from '../components/admin/AgentConfigDialog';
+import AgentDetailsDialog from '../components/admin/AgentDetailsDialog';
 
 const ACTION_PROGRESS_LABEL = {
   install: 'Installing',
@@ -50,20 +30,15 @@ const ACTION_LOADING_HINT = {
   install: 'This may take several minutes.',
 };
 
+function statusBadge(installed) {
+  return installed
+    ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+    : 'bg-amber-50 text-amber-700 border-amber-200';
+}
+
 function formatLifecycleTime(ts) {
   if (!ts) return '';
   return new Date(ts).toLocaleString();
-}
-
-function DetailField({ label, children, className, mono = false }) {
-  return (
-    <div className={className ?? 'min-w-0'}>
-      <p className={consoleSectionLabelClass}>{label}</p>
-      <p className={`mt-0.5 text-sm ${mono ? 'break-all font-mono text-zinc-600' : 'text-zinc-700'}`}>
-        {children}
-      </p>
-    </div>
-  );
 }
 
 function getAuthSummary(agent) {
@@ -155,7 +130,6 @@ function AgentActionsMenu({
     };
   }, [open]);
 
-  // When opening, check if there's enough space below; if not, drop up.
   const handleToggle = () => {
     if (!open && rootRef.current) {
       const rect = rootRef.current.getBoundingClientRect();
@@ -217,7 +191,7 @@ function AgentActionsMenu({
               disabled={installLoading}
             >
               <Download className="w-4 h-4 shrink-0" />
-              {installLoading ? 'Installing…' : 'Install on server'}
+              {installLoading ? 'Installing...' : 'Install on server'}
             </button>
           ) : (
             <>
@@ -229,7 +203,7 @@ function AgentActionsMenu({
                 disabled={updateLoading}
               >
                 <RefreshCw className={`w-4 h-4 shrink-0 ${updateLoading ? 'animate-spin' : ''}`} />
-                {updateLoading ? 'Updating…' : 'Check and update'}
+                {updateLoading ? 'Updating...' : 'Check and update'}
               </button>
               <button
                 type="button"
@@ -239,7 +213,7 @@ function AgentActionsMenu({
                 disabled={uninstallLoading}
               >
                 <Trash2 className="w-4 h-4 shrink-0" />
-                {uninstallLoading ? 'Removing…' : 'Uninstall'}
+                {uninstallLoading ? 'Removing...' : 'Uninstall'}
               </button>
             </>
           )}
@@ -256,61 +230,17 @@ function patchAgentLifecycle(agents, agentId, lastLifecycle) {
   ));
 }
 
-function getGatewaySpawnFieldDefs(agent) {
-  if (!agent) return [];
-  const envRequired = agent.env_required || [];
-  const usesOpenRouter = agent.id === 'hermes'
-    || envRequired.includes('OPENROUTER_API_KEY')
-    || envRequired.includes('HERMES_API_KEY');
-  if (!usesOpenRouter) return [];
-  return [
-    {
-      key: 'OPENROUTER_API_KEY',
-      label: 'OpenRouter API Key',
-      source: 'Router API Key',
-      password: true,
-    },
-    {
-      key: 'OPENROUTER_BASE_URL',
-      label: 'OpenRouter Base URL',
-      source: 'Router Base URL (+ /v1)',
-      password: false,
-    },
-  ];
-}
-
 export default function AgentsAdmin() {
-  
   const { showToast } = useToast();
   const [agents, setAgents] = useState(() => loadAdminAgentsCache());
   const [gatewayProviders, setGatewayProviders] = useState([]);
   const [loading, setLoading] = useState(() => loadAdminAgentsCache().length === 0);
   const [refreshing, setRefreshing] = useState(false);
-  const [dialogOpen, setDialogOpen] = useState(false);
+  const [registerOpen, setRegisterOpen] = useState(false);
   const [keysAgent, setKeysAgent] = useState(null);
-  const [authDraft, setAuthDraft] = useState({ llm_auth_mode: 'byok', provider: '', model: '' });
-  const [savingKeys, setSavingKeys] = useState(false);
-  const [gatewayPreview, setGatewayPreview] = useState(null);
-  const [gatewayPreviewLoading, setGatewayPreviewLoading] = useState(false);
-  const [spawnDraft, setSpawnDraft] = useState(EMPTY_SPAWN_DRAFT);
-  const spawnHydratedRef = useRef(false);
   const [actionLoading, setActionLoading] = useState(null);
   const [editAgent, setEditAgent] = useState(null);
   const [detailsAgent, setDetailsAgent] = useState(null);
-  const [editDraft, setEditDraft] = useState({ cmd: '', args: '' });
-  const [savingExecutable, setSavingExecutable] = useState(false);
-  const [vmResources, setVmResources] = useState({ disk_size_gb: '', cpus: '', memory_mib: '' });
-  const [vmResourcesLoaded, setVmResourcesLoaded] = useState(false);
-  const [savingVmResources, setSavingVmResources] = useState(false);
-  const [newAgent, setNewAgent] = useState({
-    id: '',
-    name: '',
-    cmd: '',
-    args: '[]',
-    env_required: '[]',
-  });
-
-  
 
   const fetchAgents = useCallback(({ silent = false } = {}) => {
     if (silent) setRefreshing(true);
@@ -348,268 +278,15 @@ export default function AgentsAdmin() {
     fetchGatewayProviders();
   }, [fetchGatewayProviders]);
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    try {
-      const parsedArgs = JSON.parse(newAgent.args);
-      const parsedEnv = JSON.parse(newAgent.env_required);
-
-      const res = await apiFetch('/api/v1/agents', {
-        method: 'POST',
-        
-        body: JSON.stringify({
-          ...newAgent,
-          args: parsedArgs,
-          env_required: parsedEnv,
-        }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error);
-
-      showToast('success', 'Agent registered.');
-      setDialogOpen(false);
-      setNewAgent({ id: '', name: '', cmd: '', args: '[]', env_required: '[]' });
-      fetchAgents({ silent: true });
-    } catch (err) {
-      showToast('error', err.message || 'Invalid JSON in Args or Env Required');
-    }
-  };
-
-  const openKeysDialog = (agent) => {
-    spawnHydratedRef.current = false;
-    const overrides = agent.gateway_config?.env_overrides || {};
-    const envVars = Object.keys(overrides).length > 0
-      ? Object.entries(overrides).map(([key, value]) => ({ key, value }))
-      : [{ key: '', value: '' }];
-    setSpawnDraft({
-      envVars,
-      launch_command: [agent.cmd, ...(agent.args || [])].filter(Boolean).join(' '),
-    });
-    setKeysAgent(agent);
-    setVmResources({ disk_size_gb: '', cpus: '', memory_mib: '' });
-    setVmResourcesLoaded(false);
-    apiFetch(`/api/v1/admin/agents/${agent.id}/vm-resources`)
-      .then((r) => r.json())
-      .then((data) => {
-        if (data?.vm_resources) {
-          setVmResources({
-            disk_size_gb: data.vm_resources.disk_size_gb != null ? String(data.vm_resources.disk_size_gb) : '',
-            cpus: data.vm_resources.cpus != null ? String(data.vm_resources.cpus) : '',
-            memory_mib: data.vm_resources.memory_mib != null ? String(data.vm_resources.memory_mib) : '',
-          });
-        }
-        setVmResourcesLoaded(true);
-      })
-      .catch(() => setVmResourcesLoaded(true));
-    setAuthDraft({
-      llm_auth_mode: agent.llm_auth_mode || agent.gateway_config?.llm_auth_mode || 'byok',
-      provider: agent.gateway_config?.provider || '',
-      model: agent.gateway_config?.model || '',
-    });
-    fetchGatewayProviders();
-  };
-
-  const closeKeysDialog = () => {
-    setKeysAgent(null);
-    setAuthDraft({ llm_auth_mode: 'byok', provider: '', model: '' });
-    setGatewayPreview(null);
-    setSpawnDraft(EMPTY_SPAWN_DRAFT);
-    spawnHydratedRef.current = false;
-  };
-
-  const fetchGatewayPreview = useCallback(async (agentId, model, llmAuthMode) => {
-    setGatewayPreviewLoading(true);
-    try {
-      const params = new URLSearchParams();
-      if (model?.trim()) params.set('model', model.trim());
-      if (llmAuthMode) params.set('llm_auth_mode', llmAuthMode);
-      const qs = params.toString();
-      const res = await apiFetch(`/api/v1/admin/agents/${agentId}/gateway-spawn-preview${qs ? `?${qs}` : ''}`);
-      const data = await res.json();
-      setGatewayPreview(res.ok ? data : null);
-    } catch {
-      setGatewayPreview(null);
-    } finally {
-      setGatewayPreviewLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    if (!keysAgent || authDraft.llm_auth_mode !== 'gateway') {
-      setGatewayPreview(null);
-      return undefined;
-    }
-    fetchGatewayPreview(keysAgent.id, authDraft.model, authDraft.llm_auth_mode);
-    return undefined;
-  }, [keysAgent, authDraft.llm_auth_mode, authDraft.model, fetchGatewayPreview]);
-
-  const gatewaySpawnFields = useMemo(() => [], []);
-
-  useEffect(() => {
-    if (!gatewayPreview || spawnHydratedRef.current) return;
-    spawnHydratedRef.current = true;
-    setSpawnDraft((prev) => ({
-      ...prev,
-      launch_command: prev.launch_command || gatewayPreview.launch?.command_line || '',
-    }));
-  }, [gatewayPreview]);
-
-  // Auto-select first provider when gateway providers load and none is selected
-  useEffect(() => {
-    if (gatewayProviders.length === 0) return;
-    setAuthDraft((d) => {
-      if (d.llm_auth_mode === 'gateway' && !d.provider) {
-        return { ...d, provider: gatewayProviders[0].name };
-      }
-      return d;
-    });
-  }, [gatewayProviders]);
-
-  const buildEnvOverridesPayload = () => {
-    const out = {};
-    for (const { key, value } of spawnDraft.envVars) {
-      const k = (key || '').trim();
-      if (!k) continue;
-      out[k] = (value || '').trim();
-    }
-    return out;
-  };
-
-  const handleSaveKeys = async (e) => {
-    e.preventDefault();
-    if (!keysAgent) return;
-    const mode = authDraft.llm_auth_mode;
-    if (mode === 'gateway' && !authDraft.provider?.trim()) {
-      showToast('error', 'Select a provider for gateway mode.');
-      return;
-    }
-    if (mode === 'gateway' && !authDraft.model?.trim()) {
-      showToast('error', 'Select a model for gateway mode.');
-      return;
-    }
-    const launchLine = spawnDraft.launch_command.trim();
-    if (mode === 'gateway' && !launchLine) {
-      showToast('error', 'Launch command is required.');
-      return;
-    }
-    setSavingKeys(true);
-    try {
-      const res = await apiFetch(`/api/v1/admin/gateway/agent-configs/${keysAgent.id}`, {
-        method: 'PUT',
-        
-        body: JSON.stringify({
-          llm_auth_mode: mode,
-          provider: mode === 'gateway' ? (authDraft.provider || undefined) : undefined,
-          model: mode === 'gateway' ? authDraft.model.trim() : undefined,
-          env_overrides: buildEnvOverridesPayload(),
-        }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error);
-
-      if (mode === 'gateway') {
-        const parts = launchLine.split(/\s+/);
-        const cmd = parts[0];
-        const args = parts.slice(1);
-        const currentLine = [keysAgent.cmd, ...(keysAgent.args || [])].filter(Boolean).join(' ');
-        if (launchLine !== currentLine) {
-          const execRes = await apiFetch(`/api/v1/agents/${keysAgent.id}`, {
-            method: 'PUT',
-            
-            body: JSON.stringify({ cmd, args }),
-          });
-          const execData = await execRes.json();
-          if (!execRes.ok) throw new Error(execData.error);
-        }
-      }
-
-      if (data.warning) {
-        showToast('warning', data.warning, { durationMs: 12000 });
-      } else {
-        showToast('success', 'Agent configuration saved.');
-      }
-      const diskGb = vmResources.disk_size_gb.trim();
-      const cpus = vmResources.cpus.trim();
-      const memMb = vmResources.memory_mib.trim();
-      if (diskGb || cpus || memMb) {
-        try {
-          setSavingVmResources(true);
-          const body = {};
-          if (diskGb) body.disk_size_gb = Number(diskGb);
-          if (cpus) body.cpus = Number(cpus);
-          if (memMb) body.memory_mib = Number(memMb);
-          const vrRes = await apiFetch(`/api/v1/admin/agents/${keysAgent.id}/vm-resources`, {
-            method: 'PUT',
-            body: JSON.stringify(body),
-          });
-          const vrData = await vrRes.json();
-          if (!vrRes.ok) throw new Error(vrData.error);
-          setSavingVmResources(false);
-        } catch (err) {
-          setSavingVmResources(false);
-          showToast('error', 'VM resources saved, but: ' + (err.message || 'failed'));
-        }
-      }
-      closeKeysDialog();
-      fetchAgents({ silent: true });
-    } catch (err) {
-      showToast('error', err.message || 'Failed to save configuration.');
-    } finally {
-      setSavingKeys(false);
-    }
-  };
-
-  const openEditDialog = (agent) => {
-    setEditAgent(agent);
-    setEditDraft({
-      cmd: agent.cmd,
-      args: agent.args.join(' '),
-    });
-  };
-
-  const closeEditDialog = () => {
-    setEditAgent(null);
-    setEditDraft({ cmd: '', args: '' });
-  };
-
-  const handleSaveExecutable = async (e) => {
-    e.preventDefault();
-    if (!editAgent) return;
-    const cmd = editDraft.cmd.trim();
-    if (!cmd) {
-      showToast('error', 'Command is required.');
-      return;
-    }
-    const args = editDraft.args.trim() ? editDraft.args.trim().split(/\s+/) : [];
-    setSavingExecutable(true);
-    try {
-      const res = await apiFetch(`/api/v1/agents/${editAgent.id}`, {
-        method: 'PUT',
-        
-        body: JSON.stringify({ cmd, args }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error);
-      showToast('success', 'Executable updated.');
-      closeEditDialog();
-      fetchAgents({ silent: true });
-    } catch (err) {
-      showToast('error', err.message || 'Failed to update executable.');
-    } finally {
-      setSavingExecutable(false);
-    }
-  };
-
   const runAgentAction = async (agentId, action, { agentName, method = 'POST', successMsg, onSuccess } = {}) => {
     const label = ACTION_PROGRESS_LABEL[action] || 'Processing';
     const name = agentName || agentId;
     const hint = ACTION_LOADING_HINT[action];
-    showToast('loading', hint ? `${label} ${name}… ${hint}` : `${label} ${name}…`);
+    showToast('loading', hint ? `${label} ${name}... ${hint}` : `${label} ${name}...`);
     setActionLoading(`${agentId}:${action}`);
     try {
       const res = await apiFetch(`/api/v1/admin/agents/${agentId}/${action}`, {
         method,
-        
         ...(method !== 'GET' ? { body: '{}' } : {}),
       });
       const data = await res.json();
@@ -669,10 +346,9 @@ export default function AgentsAdmin() {
         return;
       }
 
-      showToast('loading', `Updating ${agent.name}…`);
+      showToast('loading', `Updating ${agent.name}...`);
       const updateRes = await apiFetch(`/api/v1/admin/agents/${agent.id}/update`, {
         method: 'POST',
-        
         body: '{}',
       });
       const updated = await updateRes.json();
@@ -687,7 +363,7 @@ export default function AgentsAdmin() {
 
       const newVersion = updated.local_version || check.latest_version;
       if (check.update_available && check.local_version && newVersion) {
-        showToast('success', `${agent.name} updated (${check.local_version} → ${newVersion}).`);
+        showToast('success', `${agent.name} updated (${check.local_version} -> ${newVersion}).`);
       } else {
         showToast('success', newVersion ? `${agent.name} updated to ${newVersion}.` : `${agent.name} updated.`);
       }
@@ -699,421 +375,46 @@ export default function AgentsAdmin() {
     }
   };
 
-  const canSaveKeys = keysAgent && (
-    authDraft.llm_auth_mode === 'gateway'
-      ? Boolean(authDraft.model?.trim())
-      : true
-  );
-
-  const providerOptions = useMemo(
-    () => gatewayProviders.map((p) => ({ value: p.name, label: p.name })),
-    [gatewayProviders],
-  );
-
-  const modelOptions = useMemo(() => {
-    const selected = gatewayProviders.find((p) => p.name === authDraft.provider);
-    const models = selected?.models?.length
-      ? selected.models
-      : gatewayProviders.flatMap((p) => p.models || []);
-    const unique = [...new Set(models.filter(Boolean))];
-    return unique.map((m) => ({ value: m, label: m }));
-  }, [gatewayProviders, authDraft.provider]);
-
   return (
     <div className={consoleAdminPageClass}>
       <PageHeader
         title="Agents"
         description={
           refreshing
-            ? 'Refreshing agent status…'
+            ? 'Refreshing agent status...'
             : 'Install agents on the server, configure platform API keys, and manage the registry.'
         }
         actions={(
-          <Button type="button" onClick={() => setDialogOpen(true)} size="md" className="shrink-0">
+          <Button type="button" onClick={() => setRegisterOpen(true)} size="md" className="shrink-0">
             <Plus className="w-4 h-4" />
             Add Agent
           </Button>
         )}
       />
 
-      {dialogOpen && (
-        <ConsoleDialogShell
-          fitContent
-          onClose={() => setDialogOpen(false)}
-          panelClassName={`${consoleDialogAdminFormPanelClass} p-6`}
-        >
-              <h2 className="font-bold text-lg text-zinc-900 mb-4">Register new agent</h2>
-              <form onSubmit={handleSubmit} className="space-y-4">
-                <div className="grid grid-cols-1 gap-4">
-                  <div>
-                    <label className={`block mb-1 ${consoleSectionLabelClass}`}>ID</label>
-                    <Input
-                      required
-                      value={newAgent.id}
-                      onChange={(e) => setNewAgent({ ...newAgent, id: e.target.value })}
-                      className="h-9 py-1.5"
-                    />
-                  </div>
-                  <div>
-                    <label className={`block mb-1 ${consoleSectionLabelClass}`}>Display name</label>
-                    <Input
-                      required
-                      value={newAgent.name}
-                      onChange={(e) => setNewAgent({ ...newAgent, name: e.target.value })}
-                      className="h-9 py-1.5"
-                    />
-                  </div>
-                  <div>
-                    <label className={`block mb-1 ${consoleSectionLabelClass}`}>Command</label>
-                    <Input
-                      required
-                      value={newAgent.cmd}
-                      onChange={(e) => setNewAgent({ ...newAgent, cmd: e.target.value })}
-                      className="h-9 py-1.5"
-                    />
-                  </div>
-                  <div>
-                    <label className={`block mb-1 ${consoleSectionLabelClass}`}>Arguments (JSON)</label>
-                    <Input
-                      required
-                      value={newAgent.args}
-                      onChange={(e) => setNewAgent({ ...newAgent, args: e.target.value })}
-                      className="h-9 py-1.5 font-mono"
-                    />
-                  </div>
-                  <div>
-                    <label className={`block mb-1 ${consoleSectionLabelClass}`}>Required env (JSON)</label>
-                    <Input
-                      required
-                      value={newAgent.env_required}
-                      onChange={(e) => setNewAgent({ ...newAgent, env_required: e.target.value })}
-                      className="h-9 py-1.5 font-mono"
-                    />
-                    <p className="mt-1 text-xs text-zinc-400">
-                      Configure API keys on this page after registration.
-                    </p>
-                  </div>
-                </div>
-                <div className="flex justify-end gap-2 pt-2">
-                  <Button type="button" variant="secondary" size="md" onClick={() => setDialogOpen(false)}>
-                    Cancel
-                  </Button>
-                  <Button type="submit" size="md">
-                    Save
-                  </Button>
-                </div>
-              </form>
-        </ConsoleDialogShell>
-      )}
+      <AgentRegisterDialog
+        open={registerOpen}
+        onClose={() => setRegisterOpen(false)}
+        onRegistered={() => fetchAgents({ silent: true })}
+      />
 
-      {editAgent && (
-        <ConsoleDialogShell
-          fitContent
-          onClose={closeEditDialog}
-          panelClassName={`${consoleDialogAdminFormPanelClass} p-6`}
-        >
-          <h2 className="font-bold text-lg text-zinc-900 mb-1">Executable — {editAgent.name}</h2>
-          <p className="text-sm text-zinc-500 mb-4">
-            Command and arguments used when launching this agent.
-          </p>
-          <form onSubmit={handleSaveExecutable} className="space-y-4">
-            <div>
-              <label className={`block mb-1 ${consoleSectionLabelClass}`}>Command</label>
-              <Input
-                required
-                value={editDraft.cmd}
-                onChange={(e) => setEditDraft({ ...editDraft, cmd: e.target.value })}
-                className="h-9 py-1.5 font-mono"
-                placeholder="claude"
-              />
-            </div>
-            <div>
-              <label className={`block mb-1 ${consoleSectionLabelClass}`}>Arguments</label>
-              <Input
-                value={editDraft.args}
-                onChange={(e) => setEditDraft({ ...editDraft, args: e.target.value })}
-                className="h-9 py-1.5 font-mono"
-                placeholder="--not-interactive"
-              />
-              <p className="mt-1 text-xs text-zinc-400">Space-separated. Leave empty if none.</p>
-            </div>
-            <div className="flex justify-end gap-2 pt-2">
-              <Button type="button" variant="secondary" size="md" onClick={closeEditDialog}>
-                Cancel
-              </Button>
-              <Button type="submit" size="md" disabled={savingExecutable}>
-                {savingExecutable ? 'Saving...' : 'Save'}
-              </Button>
-            </div>
-          </form>
-        </ConsoleDialogShell>
-      )}
+      <AgentEditDialog
+        agent={editAgent}
+        onClose={() => setEditAgent(null)}
+        onSaved={() => fetchAgents({ silent: true })}
+      />
 
-      {keysAgent && (
-        <ConsoleDialogShell
-          fitContent
-          onClose={closeKeysDialog}
-          panelClassName={`${consoleDialogAdminFormPanelClass} p-6`}
-        >
-              <h2 className="font-bold text-lg text-zinc-900 mb-1">
-                Configure — {keysAgent.name}
-              </h2>
-              <p className="text-sm text-zinc-500 mb-4">
-                Choose BYOK (users enter keys in Settings → BYOK) or Gateway (shared router + model).
-              </p>
-              <form onSubmit={handleSaveKeys} className="space-y-4">
-                <div>
-                  <label className={`block mb-1 ${consoleSectionLabelClass}`}>LLM auth</label>
-                  <SelectMenu
-                    value={authDraft.llm_auth_mode}
-                    onChange={(v) => setAuthDraft((d) => ({
-                      ...d,
-                      llm_auth_mode: v,
-                      provider: v === 'gateway' ? (d.provider || gatewayProviders[0]?.name || '') : '',
-                      model: v === 'gateway' ? d.model : '',
-                    }))}
-                    options={[
-                      { value: 'byok', label: 'BYOK' },
-                      { value: 'gateway', label: 'Gateway' },
-                    ]}
-                  />
-                </div>
-                {authDraft.llm_auth_mode === 'gateway' && (
-                  <>
-                    <div>
-                      <label className={`block mb-1 ${consoleSectionLabelClass}`}>Provider</label>
-                      <SelectMenu
-                        value={authDraft.provider}
-                        onChange={(v) => setAuthDraft((d) => ({ ...d, provider: v, model: '' }))}
-                        options={providerOptions}
-                        placeholder="Any provider"
-                      />
-                    </div>
-                    <div>
-                      <label className={`block mb-1 ${consoleSectionLabelClass}`}>Model</label>
-                      <SelectMenu
-                        value={authDraft.model}
-                        onChange={(v) => setAuthDraft((d) => ({ ...d, model: v }))}
-                        options={modelOptions}
-                        placeholder={modelOptions.length ? 'Select model…' : 'Add models in Settings → Gateway'}
-                        disabled={modelOptions.length === 0}
-                      />
-                    </div>
-                    {gatewayPreviewLoading && !gatewayPreview && (
-                      <p className="text-sm text-zinc-500">Loading defaults…</p>
-                    )}
-                    {!gatewayPreviewLoading && gatewayPreview && !gatewayPreview.gateway_running && (
-                      <p className="text-sm text-amber-700">
-                        UniGateway is not running. Start it under Settings → Gateway.
-                      </p>
-                    )}
-                    <div>
-                      <label className={`block mb-1 ${consoleSectionLabelClass}`}>Launch command</label>
-                      <Input
-                        value={spawnDraft.launch_command}
-                        onChange={(ev) => setSpawnDraft((d) => ({ ...d, launch_command: ev.target.value }))}
-                        className="h-9 py-1.5 font-mono"
-                        placeholder="hermes chat --ignore-user-config --provider openrouter"
-                      />
-                      <p className="mt-1 text-xs text-zinc-400">Command and arguments used when launching this agent.</p>
-                    </div>
-                  </>
-                )}
-                <div className="space-y-3 border-t border-zinc-100 pt-4">
-                  <p className={`${consoleSectionLabelClass}`}>Environment variables</p>
-                  <p className="text-xs text-zinc-400">
-                    Injected at session start in both BYOK and Gateway modes. Highest priority, overrides all other env sources. Leave value empty to clear a key (e.g. ANTHROPIC_API_KEY) so lower-priority sources won't inject it.
-                  </p>
-                  {spawnDraft.envVars.map((pair, idx) => (
-                    <div key={idx} className="flex gap-2 items-center">
-                      <Input
-                        value={pair.key}
-                        onChange={(ev) => setSpawnDraft((d) => ({
-                          ...d,
-                          envVars: d.envVars.map((p, i) => i === idx ? { ...p, key: ev.target.value } : p),
-                        }))}
-                        className="h-9 py-1.5 font-mono text-xs flex-1 min-w-0 w-1/2"
-                        placeholder="ENV_VAR_NAME"
-                      />
-                      <Input
-                        type={isSecretPasswordField(pair.key) ? 'password' : 'text'}
-                        value={pair.value}
-                        onChange={(ev) => setSpawnDraft((d) => ({
-                          ...d,
-                          envVars: d.envVars.map((p, i) => i === idx ? { ...p, value: ev.target.value } : p),
-                        }))}
-                        className="h-9 py-1.5 font-mono text-xs flex-1 min-w-0 w-1/2"
-                        placeholder="value"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => setSpawnDraft((d) => ({
-                          ...d,
-                          envVars: d.envVars.filter((_, i) => i !== idx),
-                        }))}
-                        className="flex-shrink-0 text-zinc-400 hover:text-red-500"
-                        title="Remove"
-                      >
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                          <line x1="18" y1="6" x2="6" y2="18" />
-                          <line x1="6" y1="6" x2="18" y2="18" />
-                        </svg>
-                      </button>
-                    </div>
-                  ))}
-                  <button
-                    type="button"
-                    onClick={() => setSpawnDraft((d) => ({
-                      ...d,
-                      envVars: [...d.envVars, { key: '', value: '' }],
-                    }))}
-                    className="text-sm text-zinc-500 hover:text-zinc-700"
-                  >
-                    + Add env var
-                  </button>
-                </div>
-                {authDraft.llm_auth_mode === 'byok' && (
-                  <p className="text-sm text-zinc-500">
-                    Users configure their own API keys in the Sessions page before launching this agent.
-                  </p>
-                )}
-                <div className="space-y-3 border-t border-zinc-100 pt-4">
-                  <p className={`${consoleSectionLabelClass}`}>VM Resources</p>
-                  <p className="text-xs text-zinc-400">
-                    CPU / memory / disk limits for the sandbox VM. Leave empty to use system defaults.
-                  </p>
-                  <div className="grid grid-cols-3 gap-3">
-                    <div>
-                      <label className="block text-xs text-zinc-500 mb-1">Disk (GB)</label>
-                      <Input
-                        type="number"
-                        min="1"
-                        value={vmResources.disk_size_gb}
-                        onChange={(ev) => setVmResources((d) => ({ ...d, disk_size_gb: ev.target.value }))}
-                        className="h-9 py-1.5"
-                        placeholder="Default"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-xs text-zinc-500 mb-1">CPUs</label>
-                      <Input
-                        type="number"
-                        min="1"
-                        value={vmResources.cpus}
-                        onChange={(ev) => setVmResources((d) => ({ ...d, cpus: ev.target.value }))}
-                        className="h-9 py-1.5"
-                        placeholder="Default"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-xs text-zinc-500 mb-1">Memory (MB)</label>
-                      <Input
-                        type="number"
-                        min="1"
-                        value={vmResources.memory_mib}
-                        onChange={(ev) => setVmResources((d) => ({ ...d, memory_mib: ev.target.value }))}
-                        className="h-9 py-1.5"
-                        placeholder="Default"
-                      />
-                    </div>
-                  </div>
-                </div>
-                <div className="flex justify-end gap-2 pt-2">
-                  <Button type="button" variant="secondary" size="md" onClick={closeKeysDialog}>
-                    Cancel
-                  </Button>
-                  <Button type="submit" size="md" disabled={savingKeys || !canSaveKeys}>
-                    {savingKeys ? 'Saving...' : 'Save'}
-                  </Button>
-                </div>
-              </form>
-        </ConsoleDialogShell>
-      )}
+      <AgentConfigDialog
+        agent={keysAgent}
+        gatewayProviders={gatewayProviders}
+        onClose={() => setKeysAgent(null)}
+        onSaved={() => fetchAgents({ silent: true })}
+      />
 
-      {detailsAgent && (() => {
-        const auth = getAuthSummary(detailsAgent);
-        const model = detailsAgent.llm_auth_mode === 'gateway' && detailsAgent.gateway_config?.model
-          ? detailsAgent.gateway_config.model
-          : '—';
-        const executable = [detailsAgent.cmd, ...(detailsAgent.args || [])].filter(Boolean).join(' ') || '—';
-        const path = detailsAgent.executable_path_display || detailsAgent.executable_path || '—';
-
-        return (
-          <ConsoleDialogShell
-            onClose={() => setDetailsAgent(null)}
-            panelClassName={consoleStructuredDialogPanelClass}
-          >
-            <ConsoleStructuredDialogHeader>
-              <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <h3 className="font-bold text-lg text-zinc-900">{detailsAgent.name}</h3>
-                  <p className="mt-0.5 truncate font-mono text-xs text-zinc-500">{detailsAgent.id}</p>
-                </div>
-                <span
-                  className={`inline-flex shrink-0 rounded border px-2 py-0.5 text-xs font-medium ${statusBadge(detailsAgent.installed)}`}
-                >
-                  {detailsAgent.installed ? 'Installed' : 'Not installed'}
-                </span>
-              </div>
-            </ConsoleStructuredDialogHeader>
-            <ConsoleStructuredDialogBody>
-              <div className={`${consoleCardClass} space-y-3 bg-zinc-50/70 p-4`}>
-                <div>
-                  <p className={consoleSectionLabelClass}>Auth</p>
-                  <p className="mt-1 text-sm font-medium text-zinc-900">
-                    {auth.mode}
-                    <span className={`ml-1 text-sm ${auth.hintClass}`}>({auth.hint})</span>
-                  </p>
-                </div>
-                <div>
-                  <p className={consoleSectionLabelClass}>Session readiness</p>
-                  <p className={`mt-1 text-base font-semibold ${auth.hintClass}`}>{auth.hint}</p>
-                </div>
-              </div>
-
-              <div className={`${consoleCardClass} space-y-3 bg-zinc-50/70 p-4`}>
-                <p className={consoleSectionLabelClass}>Runtime</p>
-                <div className="grid grid-cols-1 gap-4">
-                  <DetailField label="Version" mono>
-                    {detailsAgent.local_version ? `v${detailsAgent.local_version}` : '—'}
-                  </DetailField>
-                  <DetailField label="Model" mono>
-                    {model}
-                  </DetailField>
-                  <DetailField label="Path" className="min-w-0" mono>
-                    {path}
-                  </DetailField>
-                  <DetailField label="Executable" className="min-w-0" mono>
-                    {executable}
-                  </DetailField>
-                </div>
-              </div>
-
-              {detailsAgent.last_lifecycle ? (
-                <div className={`${consoleCardClass} space-y-2 bg-zinc-50/70 p-4`}>
-                  <p className={consoleSectionLabelClass}>Last operation</p>
-                  <p className={`text-sm font-medium ${detailsAgent.last_lifecycle.ok ? 'text-zinc-700' : 'text-red-600'}`}>
-                    {detailsAgent.last_lifecycle.ok
-                      ? `${detailsAgent.last_lifecycle.action} OK`
-                      : `${detailsAgent.last_lifecycle.action} failed`}
-                  </p>
-                  {!detailsAgent.last_lifecycle.ok && detailsAgent.last_lifecycle.message ? (
-                    <p className="text-sm text-zinc-500">{detailsAgent.last_lifecycle.message}</p>
-                  ) : null}
-                  <p className="text-xs text-zinc-400">
-                    {formatLifecycleTime(detailsAgent.last_lifecycle.finished_at)}
-                  </p>
-                </div>
-              ) : null}
-            </ConsoleStructuredDialogBody>
-            <ConsoleStructuredDialogFooter>
-              <Button type="button" variant="secondary" size="sm" onClick={() => setDetailsAgent(null)}>
-                Close
-              </Button>
-            </ConsoleStructuredDialogFooter>
-          </ConsoleDialogShell>
-        );
-      })()}
+      <AgentDetailsDialog
+        agent={detailsAgent}
+        onClose={() => setDetailsAgent(null)}
+      />
 
       <div className={consoleTableShellClass}>
         <div className="overflow-auto max-h-[calc(100vh-200px)]">
@@ -1162,7 +463,7 @@ export default function AgentsAdmin() {
                     </td>
                     <td className={consoleTableBodyCellClass}>
                       <span className="font-mono text-xs text-zinc-600">
-                        {agent.local_version ? `v${agent.local_version}` : '—'}
+                        {agent.local_version ? `v${agent.local_version}` : '-'}
                       </span>
                     </td>
                     <td className={`${consoleTableBodyCellClass} min-w-0 max-w-[16rem]`}>
@@ -1192,11 +493,11 @@ export default function AgentsAdmin() {
                         agent={agent}
                         loadingAction={actionLoading}
                         onViewDetails={() => setDetailsAgent(agent)}
-                        onEdit={() => openEditDialog(agent)}
+                        onEdit={() => setEditAgent(agent)}
                         onInstall={() => handleInstall(agent)}
                         onCheckUpdate={() => handleCheckAndUpdate(agent)}
                         onUninstall={() => handleUninstall(agent)}
-                        onConfigure={() => openKeysDialog(agent)}
+                        onConfigure={() => setKeysAgent(agent)}
                       />
                     </td>
                   </tr>

@@ -20,6 +20,7 @@ import {
     bgSecondary,
     bgTertiary,
     bgActive,
+    bgInverse,
     accentGreen,
     accentGreenBg,
     accentGreenText,
@@ -69,7 +70,7 @@ const STATUS_DOT = {
     building: 'bg-[#5B8DB8] animate-pulse',
     queued: 'bg-[#9AA0A6]',
     failed: 'bg-[#C06C5D]',
-    none: 'bg-[#DADCE0]',
+    none: bgActive,
 };
 
 function WorkflowStrip({ hasVersions, hasActive }) {
@@ -170,18 +171,21 @@ function VersionRow({ version, actionId, onActivate, onDeactivate, onDelete }) {
                 ) : (
                     <>
                         {!version.is_active && (
-                            <button type="button" onClick={() => onActivate(version.id)} title="Activate" className={cn('p-1 rounded text-[#4A7C59] hover:bg-[#E8F5E9]', consoleButtonFocusClass)}>
+                            <button type="button" onClick={() => onActivate(version.id)} title="Activate" className={cn('group/btn inline-flex items-center gap-1 p-1 rounded text-[#4A7C59] hover:bg-[#E8F5E9]', consoleButtonFocusClass)}>
                                 <Check className="h-3.5 w-3.5" />
+                                <span className="text-xs hidden group-hover/btn:inline">Activate</span>
                             </button>
                         )}
                         {version.is_active && (
-                            <button type="button" onClick={() => onDeactivate(version)} title="Deactivate" className={cn('p-1 rounded text-[#9AA0A6] hover:bg-[#E8EAED]', consoleButtonFocusClass)}>
+                            <button type="button" onClick={() => onDeactivate(version)} title="Deactivate" className={cn('group/btn inline-flex items-center gap-1 p-1 rounded text-[#9AA0A6] hover:bg-[#E8EAED]', consoleButtonFocusClass)}>
                                 <XCircle className="h-3.5 w-3.5" />
+                                <span className="text-xs hidden group-hover/btn:inline">Deactivate</span>
                             </button>
                         )}
                         {!version.is_active && (
-                            <button type="button" onClick={() => onDelete(version)} title="Delete" className={cn('p-1 rounded text-[#C06C5D] hover:bg-[#FDECEA]', consoleButtonFocusClass)}>
+                            <button type="button" onClick={() => onDelete(version)} title="Delete" className={cn('group/btn inline-flex items-center gap-1 p-1 rounded text-[#C06C5D] hover:bg-[#FDECEA]', consoleButtonFocusClass)}>
                                 <Trash2 className="h-3 w-3" />
+                                <span className="text-xs hidden group-hover/btn:inline">Delete</span>
                             </button>
                         )}
                     </>
@@ -247,7 +251,7 @@ function BuildStatusCard({ agent, latestBuild, isBuilding, isQueued, isFailed, o
             onClick={onBuild}
             className={cn(
                 'flex items-center gap-2 px-4 py-2.5 text-xs font-medium rounded-lg text-white',
-                'bg-[#202124] hover:bg-[#3C4043] transition-colors',
+                `${bgInverse} hover:bg-[#3C4043] transition-colors`,
                 consoleButtonFocusClass,
             )}
         >
@@ -270,7 +274,7 @@ function EmptyState({ onBuild }) {
                 onClick={onBuild}
                 className={cn(
                     'flex items-center gap-2 px-4 py-2 text-xs font-medium rounded-lg text-white',
-                    'bg-[#202124] hover:bg-[#3C4043] transition-colors',
+                    `${bgInverse} hover:bg-[#3C4043] transition-colors`,
                     consoleButtonFocusClass,
                 )}
             >
