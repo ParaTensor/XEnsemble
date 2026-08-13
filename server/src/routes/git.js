@@ -668,3 +668,5 @@ function registerGitRoutes(fastify) {
         }
     });
 }
+
+module.exports = { registerGitRoutes };
