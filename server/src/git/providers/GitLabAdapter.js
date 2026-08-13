@@ -273,6 +273,7 @@ class GitLabAdapter extends GitProviderService {
             `/projects/${encoded}/merge_requests/${mrIid}/notes?${query}`);
         return notes.filter((n) => !n.system && n.position).map((n) => ({
             id: n.id,
+            discussionId: n.discussion_id || null,
             path: n.position?.new_path || n.position?.old_path || null,
             line: n.position?.new_line || n.position?.old_line || null,
             side: n.position?.new_line ? 'RIGHT' : 'LEFT',
@@ -292,6 +293,7 @@ class GitLabAdapter extends GitProviderService {
             `/projects/${encoded}/merge_requests/${mrIid}/notes?${query}`);
         return notes.filter((n) => !n.system && !n.position).map((n) => ({
             id: n.id,
+            discussionId: n.discussion_id || null,
             user: { login: n.author?.username, avatarUrl: n.author?.avatar_url },
             body: n.body || '',
             createdAt: n.created_at,
@@ -339,6 +341,16 @@ class GitLabAdapter extends GitProviderService {
         return { state: res.state || 'closed' };
     }
 
+    async reopenPR(token, repoIdentifier, mrIid, { apiBase } = {}) {
+        const encoded = encodeURIComponent(repoIdentifier);
+        const res = await gitlabFetch(token, apiBase,
+            `/projects/${encoded}/merge_requests/${mrIid}`, {
+            method: 'PUT',
+            body: JSON.stringify({ state_event: 'reopen' }),
+        });
+        return { state: res.state || 'opened' };
+    }
+
     async submitApproval(token, repoIdentifier, mrIid, { apiBase } = {}) {
         const encoded = encodeURIComponent(repoIdentifier);
         await gitlabFetch(token, apiBase,
@@ -361,6 +373,44 @@ class GitLabAdapter extends GitProviderService {
             createdAt: res.created_at,
             user: { login: res.author?.username, avatarUrl: res.author?.avatar_url },
         };
+    }
+
+    // ── Comment management ──
+
+    async replyToReviewComment(token, repoIdentifier, mrIid, commentId, body, { apiBase, discussionId } = {}) {
+        const encoded = encodeURIComponent(repoIdentifier);
+        if (!discussionId) throw new Error('discussionId is required for GitLab reply');
+        const res = await gitlabFetch(token, apiBase,
+            `/projects/${encoded}/merge_requests/${mrIid}/discussions/${discussionId}/notes`, {
+            method: 'POST',
+            body: JSON.stringify({ body }),
+        });
+        return {
+            id: res.id,
+            discussionId: res.discussion_id || discussionId,
+            user: { login: res.author?.username, avatarUrl: res.author?.avatar_url },
+            body: res.body || '',
+            createdAt: res.created_at,
+        };
+    }
+
+    async editComment(token, repoIdentifier, mrIid, commentId, body, { apiBase } = {}) {
+        const encoded = encodeURIComponent(repoIdentifier);
+        const res = await gitlabFetch(token, apiBase,
+            `/projects/${encoded}/merge_requests/${mrIid}/notes/${commentId}`, {
+            method: 'PUT',
+            body: JSON.stringify({ body }),
+        });
+        return { id: res.id, body: res.body, updatedAt: res.updated_at };
+    }
+
+    async deleteComment(token, repoIdentifier, mrIid, commentId, { apiBase } = {}) {
+        const encoded = encodeURIComponent(repoIdentifier);
+        await gitlabFetch(token, apiBase,
+            `/projects/${encoded}/merge_requests/${mrIid}/notes/${commentId}`, {
+            method: 'DELETE',
+        });
+        return { deleted: true };
     }
 
     // ── Utility ──

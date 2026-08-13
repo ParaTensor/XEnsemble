@@ -231,9 +231,11 @@ class MergeRequestService {
         const ctx = await this._resolveProvider(project, null);
         if (!ctx) return { synced: 0 };
 
+        // Fetch ALL states (open + closed + merged) so the list panel
+        // doesn't go stale for merged/closed PRs.
         const remotePRs = await ctx.provider.listPRs(ctx.token, ctx.repoFullName, {
-            state: ctx.provider.name === 'gitlab' ? 'opened' : 'open',
-            perPage: 50,
+            state: 'all',
+            perPage: 100,
             apiBase: ctx.apiBase,
         });
 
@@ -313,6 +315,16 @@ class MergeRequestService {
         return result;
     }
 
+    async reopenPR(project, mrId) {
+        const mr = await this.get(mrId);
+        if (!mr || mr.projectId !== project.id) throw new Error('Merge request not found');
+        const ctx = await this._resolveProvider(project, mr);
+        if (!ctx) throw new Error('Provider not available');
+        const result = await ctx.provider.reopenPR(ctx.token, ctx.repoFullName, mr.remoteMrNumber, { apiBase: ctx.apiBase });
+        try { await this.sync(project, mrId); } catch (_) {}
+        return result;
+    }
+
     async approvePR(project, mrId) {
         const mr = await this.get(mrId);
         if (!mr || mr.projectId !== project.id) throw new Error('Merge request not found');
@@ -327,6 +339,67 @@ class MergeRequestService {
         const ctx = await this._resolveProvider(project, mr);
         if (!ctx) throw new Error('Provider not available');
         return ctx.provider.addIssueComment(ctx.token, ctx.repoFullName, mr.remoteMrNumber, body, { apiBase: ctx.apiBase });
+    }
+
+    async replyToReviewComment(project, mrId, commentId, body, opts = {}) {
+        const mr = await this.get(mrId);
+        if (!mr || mr.projectId !== project.id) throw new Error('Merge request not found');
+        const ctx = await this._resolveProvider(project, mr);
+        if (!ctx) throw new Error('Provider not available');
+        return ctx.provider.replyToReviewComment(
+            ctx.token, ctx.repoFullName, mr.remoteMrNumber, commentId, body,
+            { apiBase: ctx.apiBase, discussionId: opts.discussionId },
+        );
+    }
+
+    async editComment(project, mrId, commentId, body, commentType, opts = {}) {
+        const mr = await this.get(mrId);
+        if (!mr || mr.projectId !== project.id) throw new Error('Merge request not found');
+        const ctx = await this._resolveProvider(project, mr);
+        if (!ctx) throw new Error('Provider not available');
+        const providerName = ctx.provider.name;
+        if (providerName === 'gitlab') {
+            return ctx.provider.editComment(
+                ctx.token, ctx.repoFullName, mr.remoteMrNumber, commentId, body,
+                { apiBase: ctx.apiBase },
+            );
+        }
+        // GitHub: different endpoints for review vs issue comments
+        if (commentType === 'review') {
+            return ctx.provider.editReviewComment(
+                ctx.token, ctx.repoFullName, mr.remoteMrNumber, commentId, body,
+                { apiBase: ctx.apiBase },
+            );
+        }
+        return ctx.provider.editIssueComment(
+            ctx.token, ctx.repoFullName, mr.remoteMrNumber, commentId, body,
+            { apiBase: ctx.apiBase },
+        );
+    }
+
+    async deleteComment(project, mrId, commentId, commentType, opts = {}) {
+        const mr = await this.get(mrId);
+        if (!mr || mr.projectId !== project.id) throw new Error('Merge request not found');
+        const ctx = await this._resolveProvider(project, mr);
+        if (!ctx) throw new Error('Provider not available');
+        const providerName = ctx.provider.name;
+        if (providerName === 'gitlab') {
+            return ctx.provider.deleteComment(
+                ctx.token, ctx.repoFullName, mr.remoteMrNumber, commentId,
+                { apiBase: ctx.apiBase },
+            );
+        }
+        // GitHub: different endpoints for review vs issue comments
+        if (commentType === 'review') {
+            return ctx.provider.deleteReviewComment(
+                ctx.token, ctx.repoFullName, mr.remoteMrNumber, commentId,
+                { apiBase: ctx.apiBase },
+            );
+        }
+        return ctx.provider.deleteIssueComment(
+            ctx.token, ctx.repoFullName, mr.remoteMrNumber, commentId,
+            { apiBase: ctx.apiBase },
+        );
     }
 }
 

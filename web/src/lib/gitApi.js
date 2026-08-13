@@ -74,6 +74,9 @@ export const syncAllMergeRequests = (projectId) =>
     method: 'POST',
   });
 
+export const getMergeRequest = (projectId, mrId) =>
+  request(`/api/v1/projects/${encodeURIComponent(projectId)}/merge-requests/${encodeURIComponent(mrId)}`);
+
 export const mergeMergeRequest = (projectId, mrId) =>
   request(`/api/v1/projects/${encodeURIComponent(projectId)}/merge-requests/${encodeURIComponent(mrId)}/merge`, {
     method: 'POST',
@@ -81,6 +84,11 @@ export const mergeMergeRequest = (projectId, mrId) =>
 
 export const closeMergeRequest = (projectId, mrId) =>
   request(`/api/v1/projects/${encodeURIComponent(projectId)}/merge-requests/${encodeURIComponent(mrId)}/close`, {
+    method: 'POST',
+  });
+
+export const reopenMergeRequest = (projectId, mrId) =>
+  request(`/api/v1/projects/${encodeURIComponent(projectId)}/merge-requests/${encodeURIComponent(mrId)}/reopen`, {
     method: 'POST',
   });
 
@@ -94,6 +102,27 @@ export const addMergeRequestComment = (projectId, mrId, body) =>
     method: 'POST',
     body: JSON.stringify({ body }),
   });
+
+export const replyToReviewComment = (projectId, mrId, commentId, body, discussionId) =>
+  request(`/api/v1/projects/${encodeURIComponent(projectId)}/merge-requests/${encodeURIComponent(mrId)}/comments/${encodeURIComponent(commentId)}/reply`, {
+    method: 'POST',
+    body: JSON.stringify({ body, discussionId }),
+  });
+
+export const editMergeRequestComment = (projectId, mrId, commentId, body, commentType = 'issue') => {
+  const qs = new URLSearchParams({ type: commentType });
+  return request(`/api/v1/projects/${encodeURIComponent(projectId)}/merge-requests/${encodeURIComponent(mrId)}/comments/${encodeURIComponent(commentId)}?${qs}`, {
+    method: 'PUT',
+    body: JSON.stringify({ body }),
+  });
+};
+
+export const deleteMergeRequestComment = (projectId, mrId, commentId, commentType = 'issue') => {
+  const qs = new URLSearchParams({ type: commentType });
+  return request(`/api/v1/projects/${encodeURIComponent(projectId)}/merge-requests/${encodeURIComponent(mrId)}/comments/${encodeURIComponent(commentId)}?${qs}`, {
+    method: 'DELETE',
+  });
+};
 
 export const listReviews = (projectId, mrId) =>
   request(`/api/v1/projects/${encodeURIComponent(projectId)}/merge-requests/${encodeURIComponent(mrId)}/reviews`);

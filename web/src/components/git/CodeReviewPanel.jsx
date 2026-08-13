@@ -1,5 +1,5 @@
-import React, { useCallback, useEffect, useState } from 'react';
-import { ArrowLeft, Check, CheckCircle2, ChevronDown, ChevronRight, CircleDot, GitPullRequest, GitMerge, Loader2, MessageSquare, RefreshCw, Send, X, XCircle } from 'lucide-react';
+import React, { useCallback, useEffect, useState, useMemo } from 'react';
+import { ArrowLeft, Check, CheckCircle2, ChevronDown, ChevronRight, CircleDot, GitPullRequest, GitMerge, Loader2, MessageSquare, RefreshCw, Send, X, XCircle, RotateCcw, Trash2, Pencil, CornerDownRight } from 'lucide-react';
 import * as gitApi from '../../lib/gitApi';
 import { useToast } from '../Toast';
 import {
@@ -66,14 +66,64 @@ function ReviewItem({ review }) {
   );
 }
 
-function CommentItem({ comment, mrFiles, renderDiffLines }) {
+function CommentActionButtons({ comment, isOwnComment, onReply, onEdit, onDelete, disabled }) {
+  return (
+    <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+      {onReply && (
+        <button
+          type="button"
+          onClick={() => onReply(comment)}
+          disabled={disabled}
+          title="Reply"
+          className={`p-1 rounded text-[#9AA0A6] hover:text-[#5F6368] hover:bg-[#F4F5F6] disabled:opacity-40 ${consoleButtonFocusClass}`}
+        >
+          <CornerDownRight className="h-3 w-3" />
+        </button>
+      )}
+      {isOwnComment && (
+        <>
+          <button
+            type="button"
+            onClick={() => onEdit(comment)}
+            disabled={disabled}
+            title="Edit"
+            className={`p-1 rounded text-[#9AA0A6] hover:text-[#5F6368] hover:bg-[#F4F5F6] disabled:opacity-40 ${consoleButtonFocusClass}`}
+          >
+            <Pencil className="h-3 w-3" />
+          </button>
+          <button
+            type="button"
+            onClick={() => onDelete(comment)}
+            disabled={disabled}
+            title="Delete"
+            className={`p-1 rounded text-[#9AA0A6] hover:text-[#C06C5D] hover:bg-[#FDECEA] disabled:opacity-40 ${consoleButtonFocusClass}`}
+          >
+            <Trash2 className="h-3 w-3" />
+          </button>
+        </>
+      )}
+    </div>
+  );
+}
+
+function CommentItem({ comment, mrFiles, renderDiffLines, isOwnComment, onReply, onEdit, onDelete, actionLoading }) {
   const isInline = Boolean(comment.path);
   const fileDiff = isInline ? (mrFiles || []).find((f) => f.path === comment.path)?.diff : null;
   const [codeExpanded, setCodeExpanded] = useState(true);
   const hasCode = Boolean(fileDiff || (comment.diffHunk && !fileDiff));
+  const isEditing = actionLoading?.type === 'edit' && actionLoading?.id === comment.id;
+  const [editBody, setEditBody] = useState(comment.body || '');
+
+  useEffect(() => {
+    if (isEditing) setEditBody(comment.body || '');
+  }, [isEditing, comment.body]);
+
+  const handleSaveEdit = () => {
+    onEdit(comment, editBody, 'save');
+  };
 
   return (
-    <div className="rounded-xl bg-white shadow-sm border border-[#E8EAED] p-3.5 transition-shadow hover:shadow-md">
+    <div className={`rounded-xl bg-white shadow-sm border border-[#E8EAED] p-3.5 transition-shadow hover:shadow-md group ${comment._isReply ? 'ml-6 border-l-2 border-l-[#5B8DB8]/30' : ''}`}>
       <div className="flex items-center justify-between gap-2 mb-2">
         <div className="flex items-center gap-2 min-w-0">
           {comment.user?.avatarUrl ? (
@@ -87,6 +137,9 @@ function CommentItem({ comment, mrFiles, renderDiffLines }) {
           <span className={`text-[10px] ${textPlaceholder}`}>
             {formatDate(comment.createdAt)}
           </span>
+          {comment.updatedAt && comment.updatedAt !== comment.createdAt && (
+            <span className={`text-[10px] ${textPlaceholder}`}>(edited)</span>
+          )}
         </div>
         <div className="flex items-center gap-1.5 shrink-0">
           {isInline && (
@@ -109,6 +162,14 @@ function CommentItem({ comment, mrFiles, renderDiffLines }) {
               {codeExpanded ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
             </button>
           )}
+          <CommentActionButtons
+            comment={comment}
+            isOwnComment={isOwnComment}
+            onReply={onReply}
+            onEdit={(c) => onEdit(c, null, 'start')}
+            onDelete={onDelete}
+            disabled={Boolean(actionLoading)}
+          />
         </div>
       </div>
 
@@ -126,9 +187,147 @@ function CommentItem({ comment, mrFiles, renderDiffLines }) {
         </pre>
       )}
 
-      <p className={`text-xs ${textSecondary} whitespace-pre-wrap leading-relaxed`}>
-        {comment.body}
-      </p>
+      {isEditing ? (
+        <div className="space-y-2">
+          <textarea
+            value={editBody}
+            onChange={(e) => setEditBody(e.target.value)}
+            rows={2}
+            autoFocus
+            className={`w-full text-xs ${consoleInputClass} resize-none`}
+          />
+          <div className="flex items-center gap-1.5">
+            <button
+              type="button"
+              onClick={handleSaveEdit}
+              disabled={!editBody.trim() || actionLoading?.pending}
+              className={`flex items-center gap-1 px-2 h-6 text-[11px] font-medium rounded-md text-white bg-[#5B8DB8] hover:bg-[#4A7298] disabled:opacity-40 transition-colors ${consoleButtonFocusClass}`}
+            >
+              {actionLoading?.pending ? <Loader2 className="h-3 w-3 animate-spin" /> : <Check className="h-3 w-3" />}
+              Save
+            </button>
+            <button
+              type="button"
+              onClick={() => onEdit(null, null, 'cancel')}
+              className={`px-2 h-6 text-[11px] font-medium rounded-md text-[#5F6368] bg-[#F4F5F6] hover:bg-[#E8EAED] ${consoleButtonFocusClass}`}
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      ) : (
+        <p className={`text-xs ${textSecondary} whitespace-pre-wrap leading-relaxed`}>
+          {comment.body}
+        </p>
+      )}
+    </div>
+  );
+}
+
+function ThreadGroup({ thread, mrFiles, renderDiffLines, currentUser, onReply, onEdit, onDelete, actionLoading, replyingTo, replyText, setReplyText, onSendReply, onCancelReply }) {
+  const [collapsed, setCollapsed] = useState(false);
+  const firstComment = thread.comments[0];
+  const path = firstComment?.path || '';
+  const line = firstComment?.line;
+  const fileDiff = (mrFiles || []).find((f) => f.path === path)?.diff;
+  const [codeExpanded, setCodeExpanded] = useState(true);
+
+  return (
+    <div className="rounded-xl border border-[#E8EAED] overflow-hidden bg-white shadow-sm">
+      <button
+        type="button"
+        onClick={() => setCollapsed((v) => !v)}
+        className={`w-full flex items-center gap-2 px-3 py-2 bg-[#FAFBFC] hover:bg-[#F4F5F6] transition-colors text-left ${consoleButtonFocusClass}`}
+      >
+        {collapsed ? <ChevronRight className="h-3.5 w-3.5 shrink-0 text-[#9AA0A6]" /> : <ChevronDown className="h-3.5 w-3.5 shrink-0 text-[#9AA0A6]" />}
+        <span className="font-mono text-[10px] bg-[#F4F5F6] rounded-md px-1.5 py-0.5 text-[#5F6368] truncate max-w-[12rem]">
+          {path}
+        </span>
+        {line && (
+          <span className="font-mono text-[10px] text-[#9AA0A6]">L{line}</span>
+        )}
+        <span className="text-[10px] text-[#9AA0A6]">
+          {thread.comments.length} {thread.comments.length === 1 ? 'comment' : 'comments'}
+        </span>
+      </button>
+      {!collapsed && (
+        <div className="p-2.5 space-y-2">
+          {fileDiff && codeExpanded && (
+            <div className="mb-1 rounded-lg border border-[#E8EAED] overflow-hidden">
+              <div className="flex items-center justify-between px-2 py-1 bg-[#FAFBFC]">
+                <span className="text-[10px] text-[#9AA0A6]">Diff context</span>
+                <button
+                  type="button"
+                  onClick={() => setCodeExpanded(false)}
+                  className={`p-0.5 rounded text-[#9AA0A6] hover:text-[#5F6368] ${consoleButtonFocusClass}`}
+                >
+                  <ChevronDown className="h-3 w-3" />
+                </button>
+              </div>
+              <div className="text-[11px] leading-relaxed overflow-x-auto font-mono select-text max-h-32 overflow-y-auto" style={{ tabSize: 4, MozTabSize: 4 }}>
+                {renderDiffLines(fileDiff)}
+              </div>
+            </div>
+          )}
+          {fileDiff && !codeExpanded && (
+            <button
+              type="button"
+              onClick={() => setCodeExpanded(true)}
+              className={`text-[10px] text-[#5B8DB8] hover:text-[#4A7298] ${consoleButtonFocusClass}`}
+            >
+              Show diff context
+            </button>
+          )}
+          {thread.comments.map((comment, idx) => (
+            <CommentItem
+              key={comment.id || idx}
+              comment={{ ...comment, _isReply: idx > 0 }}
+              mrFiles={mrFiles}
+              renderDiffLines={renderDiffLines}
+              isOwnComment={true}
+              onReply={onReply}
+              onEdit={onEdit}
+              onDelete={onDelete}
+              actionLoading={actionLoading}
+            />
+          ))}
+          {replyingTo && thread.comments.some((c) => c.id === replyingTo) && (
+            <div className="ml-6 flex items-end gap-2">
+              <textarea
+                value={replyText}
+                onChange={(e) => setReplyText(e.target.value)}
+                placeholder="Reply…"
+                rows={1}
+                autoFocus
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+                    e.preventDefault();
+                    onSendReply();
+                  }
+                  if (e.key === 'Escape') onCancelReply();
+                }}
+                className={`flex-1 min-h-[28px] max-h-24 text-xs ${consoleInputClass} resize-none`}
+              />
+              <button
+                type="button"
+                onClick={onSendReply}
+                disabled={!replyText.trim() || actionLoading?.pending}
+                className={`shrink-0 flex items-center gap-1 px-2 h-7 text-[11px] font-medium rounded-md text-white bg-[#5B8DB8] hover:bg-[#4A7298] disabled:opacity-40 transition-colors ${consoleButtonFocusClass}`}
+              >
+                {actionLoading?.pending ? <Loader2 className="h-3 w-3 animate-spin" /> : <Send className="h-3 w-3" />}
+                Reply
+              </button>
+              <button
+                type="button"
+                onClick={onCancelReply}
+                className={`shrink-0 px-2 h-7 text-[11px] font-medium rounded-md text-[#5F6368] bg-[#F4F5F6] hover:bg-[#E8EAED] ${consoleButtonFocusClass}`}
+              >
+                Cancel
+              </button>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -146,28 +345,38 @@ export default function CodeReviewPanel({ projectId, mergeRequestId, mergeReques
   const [actionLoading, setActionLoading] = useState(null);
   const [commentText, setCommentText] = useState('');
   const [commentSending, setCommentSending] = useState(false);
+  const [localMR, setLocalMR] = useState(mergeRequest);
+  const [replyingTo, setReplyingTo] = useState(null);
+  const [replyText, setReplyText] = useState('');
+  const [commentActionLoading, setCommentActionLoading] = useState(null);
   const COMMENTS_PER_PAGE = 50;
 
   const fetchData = useCallback(async () => {
     if (!projectId || !mergeRequestId) return;
     setLoading(true);
     try {
-      const [reviewsRes, commentsRes, issueRes, filesRes] = await Promise.all([
+      const [reviewsRes, commentsRes, issueRes, filesRes, mrRes] = await Promise.all([
         gitApi.listReviews(projectId, mergeRequestId),
         gitApi.listReviewComments(projectId, mergeRequestId, { per_page: COMMENTS_PER_PAGE }),
         gitApi.listIssueComments(projectId, mergeRequestId, { per_page: COMMENTS_PER_PAGE }),
         gitApi.listMrFiles(projectId, mergeRequestId),
+        gitApi.getMergeRequest(projectId, mergeRequestId).catch(() => null),
       ]);
       setReviews(reviewsRes.reviews || []);
       setComments(commentsRes.comments || []);
       setIssueComments(issueRes.comments || []);
       setMrFiles(filesRes.files || []);
+      if (mrRes) setLocalMR(mrRes);
     } catch (err) {
       showToast('error', err.message);
     } finally {
       setLoading(false);
     }
   }, [projectId, mergeRequestId, showToast]);
+
+  useEffect(() => {
+    setLocalMR(mergeRequest);
+  }, [mergeRequest]);
 
   useEffect(() => {
     fetchData();
@@ -199,14 +408,46 @@ export default function CodeReviewPanel({ projectId, mergeRequestId, mergeReques
   const approvedCount = reviews.filter((r) => r.state === 'APPROVED').length;
   const changesCount = reviews.filter((r) => r.state === 'CHANGES_REQUESTED').length;
 
-  const conversation = [
-    ...comments,
-    ...issueComments,
-  ].sort((a, b) => new Date(a.createdAt || 0) - new Date(b.createdAt || 0));
+  // Build conversation with thread grouping
+  const conversation = useMemo(() => {
+    // Tag comments with their type
+    const taggedReview = comments.map((c) => ({ ...c, _type: 'review' }));
+    const taggedIssue = issueComments.map((c) => ({ ...c, _type: 'issue' }));
 
-  const mrTitle = mergeRequest?.title || mergeRequest?.description || '';
-  const mrNumber = mergeRequest?.remoteMrNumber || mergeRequest?.remote_mr_number || '';
-  const mrStatus = mergeRequest?.status || (mergeRequest?.remoteState === 'opened' ? 'open' : mergeRequest?.remoteState) || 'open';
+    // Group review comments into threads by path:line or discussionId
+    const threadMap = new Map();
+    const standaloneReview = [];
+    for (const c of taggedReview) {
+      const key = c.discussionId || `${c.path || 'unknown'}:${c.line || 0}`;
+      if (c.path) {
+        if (!threadMap.has(key)) threadMap.set(key, []);
+        threadMap.get(key).push(c);
+      } else {
+        standaloneReview.push(c);
+      }
+    }
+
+    // Build thread objects
+    const threads = [];
+    for (const [, group] of threadMap) {
+      group.sort((a, b) => new Date(a.createdAt || 0) - new Date(b.createdAt || 0));
+      threads.push({ type: 'thread', comments: group, earliestAt: group[0]?.createdAt || 0 });
+    }
+
+    // Standalone items (issue comments + non-inline review comments)
+    const standalones = [...standaloneReview, ...taggedIssue].map((c) => ({
+      type: 'standalone',
+      comments: [c],
+      earliestAt: c.createdAt || 0,
+    }));
+
+    // Sort all by earliest timestamp
+    return [...threads, ...standalones].sort((a, b) => new Date(a.earliestAt) - new Date(b.earliestAt));
+  }, [comments, issueComments]);
+
+  const mrTitle = localMR?.title || mergeRequest?.title || mergeRequest?.description || '';
+  const mrNumber = localMR?.remoteMrNumber || mergeRequest?.remoteMrNumber || '';
+  const mrStatus = localMR?.status || mergeRequest?.status || (mergeRequest?.remoteState === 'opened' ? 'open' : mergeRequest?.remoteState) || 'open';
   const isOpen = mrStatus === 'open';
   const isMerged = mrStatus === 'merged';
   const isClosed = mrStatus === 'closed';
@@ -214,6 +455,24 @@ export default function CodeReviewPanel({ projectId, mergeRequestId, mergeReques
   const refreshMR = () => {
     fetchData();
     onChanged?.();
+  };
+
+  const handleReopen = async () => {
+    setActionLoading('reopen');
+    try {
+      await gitApi.reopenMergeRequest(projectId, mergeRequestId);
+      showToast('success', 'Pull request reopened.');
+      refreshMR();
+    } catch (err) {
+      if (err.code === 'REAUTH_REQUIRED') {
+        showToast('warning', err.message);
+        window.dispatchEvent(new CustomEvent('xe:open-settings'));
+      } else {
+        showToast('error', err.message);
+      }
+    } finally {
+      setActionLoading(null);
+    }
   };
 
   const handleMerge = async () => {
@@ -292,6 +551,102 @@ export default function CodeReviewPanel({ projectId, mergeRequestId, mergeReques
     }
   };
 
+  // Comment reply/edit/delete handlers
+  const handleReply = (comment) => {
+    setReplyingTo(comment.id);
+    setReplyText('');
+  };
+
+  const handleCancelReply = () => {
+    setReplyingTo(null);
+    setReplyText('');
+  };
+
+  const handleSendReply = async () => {
+    if (!replyText.trim() || !replyingTo) return;
+    const targetComment = comments.find((c) => c.id === replyingTo);
+    if (!targetComment) return;
+    setCommentActionLoading({ type: 'reply', id: replyingTo, pending: true });
+    try {
+      await gitApi.replyToReviewComment(projectId, mergeRequestId, replyingTo, replyText.trim(), targetComment.discussionId);
+      setReplyText('');
+      setReplyingTo(null);
+      showToast('success', 'Reply added.');
+      refreshMR();
+    } catch (err) {
+      if (err.code === 'REAUTH_REQUIRED') {
+        showToast('warning', err.message);
+        window.dispatchEvent(new CustomEvent('xe:open-settings'));
+      } else {
+        showToast('error', err.message);
+      }
+    } finally {
+      setCommentActionLoading(null);
+    }
+  };
+
+  const handleEditComment = async (comment, newBody, startEdit) => {
+    if (!startEdit) {
+      // Cancel
+      setCommentActionLoading(null);
+      return;
+    }
+    // Start edit mode
+    setCommentActionLoading({ type: 'edit', id: comment.id });
+  };
+
+  const handleSaveEdit = async (comment, newBody) => {
+    if (!newBody?.trim()) return;
+    setCommentActionLoading({ type: 'edit', id: comment.id, pending: true });
+    try {
+      await gitApi.editMergeRequestComment(projectId, mergeRequestId, comment.id, newBody.trim(), comment._type || 'issue');
+      showToast('success', 'Comment updated.');
+      setCommentActionLoading(null);
+      refreshMR();
+    } catch (err) {
+      if (err.code === 'REAUTH_REQUIRED') {
+        showToast('warning', err.message);
+        window.dispatchEvent(new CustomEvent('xe:open-settings'));
+      } else {
+        showToast('error', err.message);
+      }
+      setCommentActionLoading(null);
+    }
+  };
+
+  const handleDeleteComment = async (comment) => {
+    if (!window.confirm('Delete this comment? This cannot be undone.')) return;
+    setCommentActionLoading({ type: 'delete', id: comment.id, pending: true });
+    try {
+      await gitApi.deleteMergeRequestComment(projectId, mergeRequestId, comment.id, comment._type || 'issue');
+      showToast('success', 'Comment deleted.');
+      refreshMR();
+    } catch (err) {
+      if (err.code === 'REAUTH_REQUIRED') {
+        showToast('warning', err.message);
+        window.dispatchEvent(new CustomEvent('xe:open-settings'));
+      } else {
+        showToast('error', err.message);
+      }
+    } finally {
+      setCommentActionLoading(null);
+    }
+  };
+
+  const handleEditWrapper = (comment, body, mode) => {
+    if (mode === 'start') {
+      setCommentActionLoading({ type: 'edit', id: comment.id });
+    } else if (mode === 'save') {
+      handleSaveEdit(comment, body);
+    } else {
+      setCommentActionLoading(null);
+    }
+  };
+
+  const currentUser = null; // API enforces ownership; show edit/delete for all
+
+  const isOwnComment = true;
+
   return (
     <div className="flex flex-col h-full min-h-0">
       <div className="flex items-center justify-between border-b border-[#DADCE0] px-3 py-2 shrink-0 bg-white shadow-sm z-10">
@@ -358,16 +713,28 @@ export default function CodeReviewPanel({ projectId, mergeRequestId, mergeReques
               </button>
             </>
           )}
+          {isClosed && (
+            <>
+              <span className="flex items-center gap-1 px-2 h-7 text-[11px] font-medium rounded-md text-[#5F6368] bg-[#F4F5F6]">
+                <XCircle className="h-3.5 w-3.5" />
+                Closed
+              </span>
+              <button
+                type="button"
+                onClick={handleReopen}
+                disabled={actionLoading !== null}
+                title="Reopen pull request"
+                className={`flex items-center gap-1 px-2 h-7 text-[11px] font-medium rounded-md text-[#5B8DB8] bg-blue-50 hover:bg-blue-100 disabled:opacity-40 transition-colors ${consoleButtonFocusClass}`}
+              >
+                {actionLoading === 'reopen' ? <Loader2 className="h-3 w-3 animate-spin" /> : <RotateCcw className="h-3.5 w-3.5" />}
+                Reopen
+              </button>
+            </>
+          )}
           {isMerged && (
             <span className="flex items-center gap-1 px-2 h-7 text-[11px] font-medium rounded-md text-purple-700 bg-purple-50">
               <GitMerge className="h-3.5 w-3.5" />
               Merged
-            </span>
-          )}
-          {isClosed && (
-            <span className="flex items-center gap-1 px-2 h-7 text-[11px] font-medium rounded-md text-[#5F6368] bg-[#F4F5F6]">
-              <XCircle className="h-3.5 w-3.5" />
-              Closed
             </span>
           )}
           <button
@@ -512,9 +879,79 @@ export default function CodeReviewPanel({ projectId, mergeRequestId, mergeReques
                 </div>
               ) : (
                 <>
-                  {conversation.map((comment, idx) => (
-                    <CommentItem key={comment.id || idx} comment={comment} mrFiles={mrFiles} renderDiffLines={renderDiffLines} />
-                  ))}
+                  {conversation.map((item, idx) => {
+                    if (item.type === 'thread' && item.comments.length > 0) {
+                      const threadHasReply = item.comments.some((c) => c.id === replyingTo);
+                      return (
+                        <ThreadGroup
+                          key={`thread-${idx}`}
+                          thread={item}
+                          mrFiles={mrFiles}
+                          renderDiffLines={renderDiffLines}
+                          currentUser={currentUser}
+                          onReply={handleReply}
+                          onEdit={handleEditWrapper}
+                          onDelete={handleDeleteComment}
+                          actionLoading={commentActionLoading}
+                          replyingTo={threadHasReply ? replyingTo : null}
+                          replyText={replyText}
+                          setReplyText={setReplyText}
+                          onSendReply={handleSendReply}
+                          onCancelReply={handleCancelReply}
+                        />
+                      );
+                    }
+                    const comment = item.comments[0];
+                    return (
+                      <div key={`standalone-${comment.id || idx}`}>
+                        <CommentItem
+                          comment={comment}
+                          mrFiles={mrFiles}
+                          renderDiffLines={renderDiffLines}
+                          isOwnComment={true}
+                          onReply={comment._type === 'review' ? handleReply : null}
+                          onEdit={handleEditWrapper}
+                          onDelete={handleDeleteComment}
+                          actionLoading={commentActionLoading}
+                        />
+                        {replyingTo === comment.id && (
+                          <div className="ml-6 mt-2 flex items-end gap-2">
+                            <textarea
+                              value={replyText}
+                              onChange={(e) => setReplyText(e.target.value)}
+                              placeholder="Reply…"
+                              rows={1}
+                              autoFocus
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+                                  e.preventDefault();
+                                  handleSendReply();
+                                }
+                                if (e.key === 'Escape') handleCancelReply();
+                              }}
+                              className={`flex-1 min-h-[28px] max-h-24 text-xs ${consoleInputClass} resize-none`}
+                            />
+                            <button
+                              type="button"
+                              onClick={handleSendReply}
+                              disabled={!replyText.trim() || commentActionLoading?.pending}
+                              className={`shrink-0 flex items-center gap-1 px-2 h-7 text-[11px] font-medium rounded-md text-white bg-[#5B8DB8] hover:bg-[#4A7298] disabled:opacity-40 transition-colors ${consoleButtonFocusClass}`}
+                            >
+                              {commentActionLoading?.pending ? <Loader2 className="h-3 w-3 animate-spin" /> : <Send className="h-3 w-3" />}
+                              Reply
+                            </button>
+                            <button
+                              type="button"
+                              onClick={handleCancelReply}
+                              className={`shrink-0 px-2 h-7 text-[11px] font-medium rounded-md text-[#5F6368] bg-[#F4F5F6] hover:bg-[#E8EAED] ${consoleButtonFocusClass}`}
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
                   {(comments.length >= COMMENTS_PER_PAGE || issueComments.length >= COMMENTS_PER_PAGE) && (
                     <div className="flex justify-center pt-2">
                       <button

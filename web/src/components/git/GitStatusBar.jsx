@@ -1,11 +1,12 @@
-import { useState, useRef, useEffect, useLayoutEffect } from 'react';
+import { useState, useRef, useEffect, useLayoutEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
-import { ArrowDown, ArrowUp, GitBranch, GitPullRequest, Loader2, Pencil, Upload, Download, RefreshCw, Check, Plus } from 'lucide-react';
+import { ArrowDown, ArrowUp, GitBranch, GitPullRequest, Loader2, Pencil, Upload, Download, RefreshCw, Check, Plus, User } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import * as githubApi from '../../lib/githubApi';
 import CreatePRDialog from './CreatePRDialog';
 import {
   ConsoleInlineDialog,
+  ConsoleDialogShell,
 } from '../ConsoleDialog';
 import Input from '../Input';
 import Button from '../Button';
@@ -22,6 +23,7 @@ import {
   textPrimary,
   textPlaceholder,
 } from '../../lib/consoleTheme';
+import { buttonClass } from '../../lib/buttonStyles';
 
 const GIT_PROVIDERS = new Set(['github', 'gitlab', 'gitea', 'local_git']);
 
@@ -52,6 +54,9 @@ export default function GitStatusBar({ projectId, project, git }) {
   const [showCommitDialog, setShowCommitDialog] = useState(false);
   const [commitMessage, setCommitMessage] = useState('');
   const [committing, setCommitting] = useState(false);
+  const [showAuthorDialog, setShowAuthorDialog] = useState(false);
+  const [authorName, setAuthorName] = useState(() => localStorage.getItem('xe_git_author_name') || '');
+  const [authorEmail, setAuthorEmail] = useState(() => localStorage.getItem('xe_git_author_email') || '');
   const [createPROpen, setCreatePROpen] = useState(false);
   const [branchMenuOpen, setBranchMenuOpen] = useState(false);
   const [branchMenuRect, setBranchMenuRect] = useState(null);
@@ -123,13 +128,36 @@ export default function GitStatusBar({ projectId, project, git }) {
           await stage(paths);
         }
       }
-      await commit(commitMessage);
+      const author = authorName && authorEmail ? { name: authorName, email: authorEmail } : undefined;
+      await commit(commitMessage, author);
       setCommitMessage('');
       setShowCommitDialog(false);
+    } catch (err) {
+      if (err.code === 'AUTHOR_REQUIRED') {
+        setShowAuthorDialog(true);
+        return;
+      }
     } finally {
       setCommitting(false);
     }
   };
+
+  const handleAuthorConfirm = useCallback(async () => {
+    if (!authorName.trim() || !authorEmail.trim()) return;
+    localStorage.setItem('xe_git_author_name', authorName.trim());
+    localStorage.setItem('xe_git_author_email', authorEmail.trim());
+    setShowAuthorDialog(false);
+    setCommitting(true);
+    try {
+      const author = { name: authorName.trim(), email: authorEmail.trim() };
+      await commit(commitMessage, author);
+      setCommitMessage('');
+      setShowCommitDialog(false);
+    } catch (_) {
+    } finally {
+      setCommitting(false);
+    }
+  }, [commitMessage, commit, authorName, authorEmail]);
 
   return (
     <>
@@ -271,7 +299,28 @@ export default function GitStatusBar({ projectId, project, git }) {
               onChange={(e) => setCommitMessage(e.target.value)}
               placeholder="Describe your changes"
               autoFocus
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+                  e.preventDefault();
+                  handleCommit();
+                }
+              }}
             />
+            <div className="flex items-center gap-1.5">
+              <User className="h-3 w-3 text-[#9AA0A6] shrink-0" />
+              <span className="text-xs text-[#5F6368] truncate">
+                {authorName && authorEmail
+                  ? `${authorName} <${authorEmail}>`
+                  : 'No author identity set'}
+              </span>
+              <button
+                type="button"
+                onClick={() => setShowAuthorDialog(true)}
+                className={`text-xs text-[#5B8DB8] hover:text-[#4A7298] shrink-0 ${consoleButtonFocusClass}`}
+              >
+                {authorName ? 'Edit' : 'Set'}
+              </button>
+            </div>
           </div>
           <div className={consoleStructuredDialogFooterClass}>
             <Button
@@ -292,6 +341,46 @@ export default function GitStatusBar({ projectId, project, git }) {
             </Button>
           </div>
         </ConsoleInlineDialog>
+      )}
+
+      {showAuthorDialog && (
+        <ConsoleDialogShell onClose={() => setShowAuthorDialog(false)} panelClassName="w-80">
+          <div className="px-5 pt-5 pb-2">
+            <h3 className="text-sm font-semibold text-[#202124]">Set Git author info</h3>
+          </div>
+          <div className="px-5 pb-5 flex flex-col gap-3">
+            <input
+              type="text"
+              placeholder="Name"
+              value={authorName}
+              onChange={(e) => setAuthorName(e.target.value)}
+              autoFocus
+              className={`w-full ${consoleInputClass} text-xs`}
+            />
+            <input
+              type="email"
+              placeholder="Email"
+              value={authorEmail}
+              onChange={(e) => setAuthorEmail(e.target.value)}
+              className={`w-full ${consoleInputClass} text-xs`}
+            />
+          </div>
+          <div className="flex justify-end gap-2 px-5 py-3 border-t border-[#E8EAED]">
+            <button
+              onClick={() => setShowAuthorDialog(false)}
+              className={buttonClass('secondary', 'sm')}
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleAuthorConfirm}
+              disabled={!authorName.trim() || !authorEmail.trim()}
+              className={buttonClass('primary', 'sm')}
+            >
+              Confirm
+            </button>
+          </div>
+        </ConsoleDialogShell>
       )}
 
       <CreatePRDialog

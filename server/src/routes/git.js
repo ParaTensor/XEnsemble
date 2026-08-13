@@ -491,6 +491,21 @@ function registerGitRoutes(fastify) {
         }
     });
 
+    fastify.post('/api/v1/projects/:id/merge-requests/:mrId/reopen', {
+        preValidation: [fastify.authenticate, fastify.requireActive],
+    }, async (request, reply) => {
+        const project = await getProjectForUser(request.user.id, request.params.id);
+        if (!project) return reply.code(404).send({ error: 'Project not found' });
+        try {
+            const result = await mergeRequestService.reopenPR(project, request.params.mrId);
+            return result;
+        } catch (err) {
+            request.log.error(err);
+            const isAuth = err.code === 'token_expired' || err.status === 401;
+            return reply.code(isAuth ? 400 : 500).send({ error: err.message, code: isAuth ? 'REAUTH_REQUIRED' : undefined });
+        }
+    });
+
     fastify.post('/api/v1/projects/:id/merge-requests/:mrId/approve', {
         preValidation: [fastify.authenticate, fastify.requireActive],
     }, async (request, reply) => {
@@ -518,6 +533,72 @@ function registerGitRoutes(fastify) {
         try {
             const result = await mergeRequestService.addComment(project, request.params.mrId, String(body).trim());
             return reply.code(201).send(result);
+        } catch (err) {
+            request.log.error(err);
+            const isAuth = err.code === 'token_expired' || err.status === 401;
+            return reply.code(isAuth ? 400 : 500).send({ error: err.message, code: isAuth ? 'REAUTH_REQUIRED' : undefined });
+        }
+    });
+
+    // Reply to an inline review comment
+    fastify.post('/api/v1/projects/:id/merge-requests/:mrId/comments/:commentId/reply', {
+        preValidation: [fastify.authenticate, fastify.requireActive],
+    }, async (request, reply) => {
+        const project = await getProjectForUser(request.user.id, request.params.id);
+        if (!project) return reply.code(404).send({ error: 'Project not found' });
+        const body = request.body?.body;
+        if (!body || !String(body).trim()) {
+            return reply.code(400).send({ error: 'Comment body is required' });
+        }
+        try {
+            const result = await mergeRequestService.replyToReviewComment(
+                project, request.params.mrId, request.params.commentId, String(body).trim(),
+                { discussionId: request.body?.discussionId },
+            );
+            return reply.code(201).send(result);
+        } catch (err) {
+            request.log.error(err);
+            const isAuth = err.code === 'token_expired' || err.status === 401;
+            return reply.code(isAuth ? 400 : 500).send({ error: err.message, code: isAuth ? 'REAUTH_REQUIRED' : undefined });
+        }
+    });
+
+    // Edit a comment (review or issue)
+    fastify.put('/api/v1/projects/:id/merge-requests/:mrId/comments/:commentId', {
+        preValidation: [fastify.authenticate, fastify.requireActive],
+    }, async (request, reply) => {
+        const project = await getProjectForUser(request.user.id, request.params.id);
+        if (!project) return reply.code(404).send({ error: 'Project not found' });
+        const body = request.body?.body;
+        if (!body || !String(body).trim()) {
+            return reply.code(400).send({ error: 'Comment body is required' });
+        }
+        const commentType = request.query?.type || 'issue';
+        try {
+            const result = await mergeRequestService.editComment(
+                project, request.params.mrId, request.params.commentId,
+                String(body).trim(), commentType,
+            );
+            return result;
+        } catch (err) {
+            request.log.error(err);
+            const isAuth = err.code === 'token_expired' || err.status === 401;
+            return reply.code(isAuth ? 400 : 500).send({ error: err.message, code: isAuth ? 'REAUTH_REQUIRED' : undefined });
+        }
+    });
+
+    // Delete a comment (review or issue)
+    fastify.delete('/api/v1/projects/:id/merge-requests/:mrId/comments/:commentId', {
+        preValidation: [fastify.authenticate, fastify.requireActive],
+    }, async (request, reply) => {
+        const project = await getProjectForUser(request.user.id, request.params.id);
+        if (!project) return reply.code(404).send({ error: 'Project not found' });
+        const commentType = request.query?.type || 'issue';
+        try {
+            const result = await mergeRequestService.deleteComment(
+                project, request.params.mrId, request.params.commentId, commentType,
+            );
+            return result;
         } catch (err) {
             request.log.error(err);
             const isAuth = err.code === 'token_expired' || err.status === 401;
