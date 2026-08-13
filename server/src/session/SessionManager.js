@@ -2,9 +2,11 @@ const { readScrollback, removeScrollback } = require('../runtime/LocalScrollback
 const transcriptStore = require('../runtime/TranscriptStore');
 const titleService = require('./titleService');
 
-const TITLE_HISTORY_THRESHOLD = Number(process.env.SESSION_TITLE_HISTORY_THRESHOLD) || 200;
+const TITLE_HISTORY_THRESHOLD = Number(process.env.SESSION_TITLE_HISTORY_THRESHOLD) || 2000;
 const TITLE_DEBOUNCE_MS = Number(process.env.SESSION_TITLE_DEBOUNCE_MS) || 5000;
 const TITLE_EXIT_MIN_HISTORY = 30;
+const TITLE_FIRST_DELAY_MS = Number(process.env.SESSION_TITLE_FIRST_DELAY_MS) || 60000;
+const TITLE_INPUT_COUNT_THRESHOLD = Number(process.env.SESSION_TITLE_INPUT_COUNT_THRESHOLD) || 10;
 const MAX_OUTPUT_LISTENERS = Number(process.env.SESSION_MAX_OUTPUT_LISTENERS) || 5;
 
 /**
@@ -59,6 +61,7 @@ class SessionManager {
             hibernating: false,
             titleGenerated: false,
             titleTimeout: null,
+            inputCount: 0,
         };
 
         transcriptStore.bindSession(sessionId, session.transcriptRef);
@@ -151,6 +154,7 @@ class SessionManager {
         if (!session) return null;
         if (kind === 'input') {
             session.lastInputAt = at;
+            session.inputCount = (session.inputCount || 0) + 1;
         } else if (kind === 'attach') {
             session.lastAttachAt = at;
         } else if (kind === 'output') {
@@ -266,7 +270,11 @@ class SessionManager {
     _scheduleTitleGeneration(sessionId) {
         const session = this.sessions.get(sessionId);
         if (!session || session.titleGenerated) return;
-        if (session.history.length < TITLE_HISTORY_THRESHOLD) return;
+        const elapsed = Date.now() - (session.createdAt || 0);
+        if (elapsed < TITLE_FIRST_DELAY_MS) return;
+        const historyEnough = session.history.length >= TITLE_HISTORY_THRESHOLD;
+        const inputEnough = (session.inputCount || 0) >= TITLE_INPUT_COUNT_THRESHOLD;
+        if (!historyEnough && !inputEnough) return;
 
         if (session.titleTimeout) {
             clearTimeout(session.titleTimeout);
@@ -286,6 +294,8 @@ class SessionManager {
     _maybeGenerateTitleOnExit(sessionId) {
         const session = this.sessions.get(sessionId);
         if (!session || session.titleGenerated) return;
+        const elapsed = Date.now() - (session.createdAt || 0);
+        if (elapsed < TITLE_FIRST_DELAY_MS) return;
         if ((session.history || '').length < TITLE_EXIT_MIN_HISTORY) return;
 
         titleService.generateSessionTitle(sessionId)

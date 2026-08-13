@@ -9,9 +9,21 @@ const MODEL = process.env.DEEPSEEK_MODEL || 'deepseek-chat';
 const MAX_HISTORY_CHARS = 4000;
 const MAX_TITLE_LENGTH = 40;
 
+const STARTUP_KEYWORDS = /\b(welcome|config|setup|initializ|loading|checking|ready|starting|booting|installing|verifying|preparing|configur)\b/i;
+
 function stripAnsi(input) {
     // eslint-disable-next-line no-control-regex
     return input.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '');
+}
+
+function filterStartupNoise(text) {
+    const lines = text.split('\n');
+    const filtered = lines.filter((line) => {
+        const trimmed = line.trim();
+        if (!trimmed) return true;
+        return !STARTUP_KEYWORDS.test(trimmed);
+    });
+    return filtered.join('\n').trim();
 }
 
 function sanitizeTitle(raw) {
@@ -91,10 +103,11 @@ async function generateSessionTitle(sessionId) {
     if (!liveSession) return null;
 
     const history = stripAnsi(liveSession.history || '').slice(-MAX_HISTORY_CHARS).trim();
-    if (history.length < 10) return null;
+    const filteredHistory = filterStartupNoise(history);
+    if (filteredHistory.length < 10) return null;
 
     const agentName = await loadAgentName(sessionRow[0].agentId);
-    const title = await fetchSummary(history, agentName);
+    const title = await fetchSummary(filteredHistory, agentName);
     if (!title) return null;
 
     await db
