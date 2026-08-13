@@ -196,10 +196,6 @@ export default React.forwardRef(function Sessions({
 
   // Session config dialog (running session)
   const [showSessionConfigModal, setShowSessionConfigModal] = useState(false);
-  const [sessionConfigFiles, setSessionConfigFiles] = useState([]);
-  const [sessionEnvVars, setSessionEnvVars] = useState([{ key: '', value: '' }]);
-  const [sessionConfigLoading, setSessionConfigLoading] = useState(false);
-  const [sessionConfigSaving, setSessionConfigSaving] = useState(false);
   const [sessionConfigError, setSessionConfigError] = useState(null);
   const [showRestartPrompt, setShowRestartPrompt] = useState(false);
 
@@ -587,70 +583,6 @@ export default React.forwardRef(function Sessions({
       setConfigError(err.message);
     } finally {
       setConfigSaving(false);
-    }
-  };
-
-  // ── Session config (config files + custom env for running session) ──
-  const openSessionConfigModal = async () => {
-    if (!activeSession?.sessionId) return;
-    setShowSessionConfigModal(true);
-    setSessionConfigError(null);
-    setSessionConfigLoading(true);
-    try {
-      const res = await apiFetch(`/api/v1/sessions/${encodeURIComponent(activeSession.sessionId)}/config`);
-      const data = await res.json();
-      if (res.ok) {
-        const files = data.config_files || [];
-        setSessionConfigFiles(files);
-        const envObj = data.custom_env || {};
-        const envRows = Object.keys(envObj).length
-          ? Object.entries(envObj).map(([k, v]) => ({ key: k, value: v }))
-          : [{ key: '', value: '' }];
-        setSessionEnvVars(envRows);
-      } else {
-        setSessionConfigFiles([]);
-        setSessionEnvVars([{ key: '', value: '' }]);
-      }
-    } catch {
-      setSessionConfigFiles([]);
-      setSessionEnvVars([{ key: '', value: '' }]);
-      setSessionConfigError('Could not load configuration.');
-    } finally {
-      setSessionConfigLoading(false);
-    }
-  };
-
-  const handleSaveSessionConfig = async () => {
-    if (!activeSession?.sessionId) return;
-    setSessionConfigError(null);
-    setSessionConfigSaving(true);
-    try {
-      const cleanConfigFiles = sessionConfigFiles.filter((f) => f.path && f.content);
-      const cleanCustomEnv = {};
-      for (const { key, value } of sessionEnvVars) {
-        const k = (key || '').trim();
-        const v = (value || '').trim();
-        if (k && v) cleanCustomEnv[k] = v;
-      }
-      const res = await apiFetch(`/api/v1/sessions/${encodeURIComponent(activeSession.sessionId)}/config`, {
-        method: 'PUT',
-        body: JSON.stringify({
-          config_files: cleanConfigFiles,
-          custom_env: cleanCustomEnv,
-        }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Failed to save configuration');
-      setShowSessionConfigModal(false);
-      if (data.needs_restart) {
-        setShowRestartPrompt(true);
-      } else {
-        showToast('success', 'Configuration saved.');
-      }
-    } catch (err) {
-      setSessionConfigError(err.message);
-    } finally {
-      setSessionConfigSaving(false);
     }
   };
 
@@ -1135,7 +1067,7 @@ export default React.forwardRef(function Sessions({
       )}
 
       {/* Session config dialog (running session) */}
-      {showSessionConfigModal && (
+      {showSessionConfigModal && activeSession?.agentId && (
         <ConsoleInlineDialog
           onClose={() => { setShowSessionConfigModal(false); setSessionConfigError(null); }}
           panelClassName={`${consoleDialogPanelClass} w-full max-w-lg shadow-sm`}
@@ -1150,13 +1082,10 @@ export default React.forwardRef(function Sessions({
             {sessionConfigError && (
               <p className="text-sm text-[#C06C5D] bg-[#FDECEA] border border-[#FADBD8] rounded-md px-3 py-2">{sessionConfigError}</p>
             )}
-            <AgentConfigEditor
-              configSchema={agents.find((a) => a.id === activeSession?.agentId)?.config_schema || null}
-              configFiles={sessionConfigFiles}
-              envVars={sessionEnvVars}
-              onConfigFilesChange={setSessionConfigFiles}
-              onEnvVarsChange={setSessionEnvVars}
-              loading={sessionConfigLoading}
+            <ByokConfigForm
+              agentId={activeSession.agentId}
+              loading={false}
+              onSave={() => { setShowSessionConfigModal(false); setSessionConfigError(null); showToast('success', 'Configuration saved.'); }}
             />
           </div>
           <div className={consoleStructuredDialogFooterClass}>
@@ -1165,15 +1094,7 @@ export default React.forwardRef(function Sessions({
               onClick={() => { setShowSessionConfigModal(false); setSessionConfigError(null); }}
               className={`h-9 px-3 ${bgCanvas} border ${borderHairline} ${textPrimary} rounded-md text-sm font-medium ${hoverBgSecondary} ${transitionBase}`}
             >
-              Cancel
-            </button>
-            <button
-              type="button"
-              disabled={sessionConfigSaving || sessionConfigLoading}
-              onClick={handleSaveSessionConfig}
-              className={`h-9 px-3 flex items-center justify-center gap-2 bg-[#202124] text-white rounded-md text-sm font-medium hover:bg-[#3C4043] disabled:opacity-50 ${transitionBase}`}
-            >
-              {sessionConfigSaving ? <><Loader2 className="w-4 h-4 animate-spin" /> Saving…</> : 'Save'}
+              Close
             </button>
           </div>
         </ConsoleInlineDialog>
@@ -1522,15 +1443,22 @@ export default React.forwardRef(function Sessions({
                       )}
                     </>
                   )}
-                  <button
-                    type="button"
-                    onClick={() => openSessionConfigModal()}
-                    className={consoleIconButtonClass}
-                    title="Agent configuration"
-                    aria-label="Agent configuration"
-                  >
-                    <Settings2 className="w-4 h-4" strokeWidth={1.75} />
-                  </button>
+                  {(() => {
+                    const sessionAgent = agents.find((a) => a.id === activeSession?.agentId);
+                    const isByok = sessionAgent && (sessionAgent.llm_auth_mode === 'byok' || !sessionAgent.llm_auth_mode);
+                    if (!isByok) return null;
+                    return (
+                      <button
+                        type="button"
+                        onClick={() => setShowSessionConfigModal(true)}
+                        className={consoleIconButtonClass}
+                        title="Agent configuration"
+                        aria-label="Agent configuration"
+                      >
+                        <Settings2 className="w-4 h-4" strokeWidth={1.75} />
+                      </button>
+                    );
+                  })()}
                   <button
                     type="button"
                     onClick={() => setActiveSession(null)}
