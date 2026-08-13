@@ -117,9 +117,10 @@ export default function GitStatusBar({ projectId, project, git }) {
   useEffect(() => {
     if (!branchMenuOpen) return;
     const onClick = (e) => {
-      if (branchBtnRef.current && !branchBtnRef.current.contains(e.target)) {
-        setBranchMenuOpen(false);
-      }
+      if (branchBtnRef.current && branchBtnRef.current.contains(e.target)) return;
+      const menu = document.getElementById('git-branch-menu');
+      if (menu && menu.contains(e.target)) return;
+      setBranchMenuOpen(false);
     };
     document.addEventListener('mousedown', onClick);
     return () => document.removeEventListener('mousedown', onClick);
@@ -414,6 +415,7 @@ export default function GitStatusBar({ projectId, project, git }) {
 
       {branchMenuOpen && branchMenuRect && createPortal(
         <div
+          id="git-branch-menu"
           className={`fixed ${consoleMenuDropdownZClass} ${consoleDropdownPanelClass} py-1 max-h-64 overflow-auto`}
           style={{ bottom: branchMenuRect.bottom, left: branchMenuRect.left, width: branchMenuRect.width }}
         >
