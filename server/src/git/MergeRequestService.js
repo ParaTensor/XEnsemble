@@ -69,6 +69,7 @@ class MergeRequestService {
                     status: this._mapStatus({ state: prInfo.state, merged: prInfo.merged }),
                     remoteState: prInfo.state,
                     mergeSha: prInfo.mergeCommitSha ?? null,
+                    createdAt: prInfo.createdAt ?? existingByNumber[0].createdAt,
                     updatedAt: now,
                     lastSyncedAt: now,
                 })
@@ -93,7 +94,7 @@ class MergeRequestService {
             remoteState: prInfo.state,
             mergeSha: prInfo.mergeCommitSha ?? null,
             createdBy: actorUserId ?? null,
-            createdAt: now,
+            createdAt: prInfo.createdAt ?? now,
             updatedAt: now,
             lastSyncedAt: now,
         };
@@ -205,6 +206,7 @@ class MergeRequestService {
                 status: this._mapStatus({ state: prInfo.state, merged: prInfo.merged }),
                 remoteState: prInfo.state,
                 mergeSha: prInfo.mergeCommitSha ?? null,
+                createdAt: prInfo.createdAt ?? existing.createdAt,
                 updatedAt: now,
                 lastSyncedAt: now,
             })

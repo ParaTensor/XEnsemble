@@ -724,6 +724,14 @@ export default function CodeReviewPanel({ projectId, mergeRequestId, mergeReques
         </div>
       </div>
 
+      {mergeRequestId && (localMR?.description || mergeRequest?.description) && (
+        <div className="px-3 py-2 shrink-0 bg-[#FAFBFC] border-b border-[#E8EAED]">
+          <p className={`text-xs ${textSecondary} whitespace-pre-wrap leading-relaxed max-h-24 overflow-y-auto`}>
+            {localMR?.description || mergeRequest?.description}
+          </p>
+        </div>
+      )}
+
       {!mergeRequestId ? (
         <div className="flex flex-col items-center justify-center py-8 gap-2 text-zinc-400">
           <GitPullRequest className="h-6 w-6" />

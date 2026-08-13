@@ -91,6 +91,7 @@ function normalizePRInfo(ghPr) {
         headRef: ghPr.head?.ref || null,
         baseRef: ghPr.base?.ref || null,
         mergeCommitSha: ghPr.merge_commit_sha || null,
+        createdAt: ghPr.created_at ? Date.parse(ghPr.created_at) : null,
     };
 }
 

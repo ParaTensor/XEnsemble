@@ -80,6 +80,7 @@ function normalizePRInfo(pr) {
         headRef: pr.head?.ref || pr.head?.label || null,
         baseRef: pr.base?.ref || pr.base?.label || null,
         mergeCommitSha: pr.merge_commit_sha || null,
+        createdAt: pr.created_at ? Date.parse(pr.created_at) : null,
     };
 }
 

@@ -83,6 +83,7 @@ function normalizeMRInfo(glMr, apiBase) {
         headRef: glMr.source_branch || null,
         baseRef: glMr.target_branch || null,
         mergeCommitSha: glMr.merge_commit_sha || null,
+        createdAt: glMr.created_at ? Date.parse(glMr.created_at) : null,
     };
 }
 
