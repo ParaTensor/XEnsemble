@@ -3,7 +3,7 @@ import { ArrowLeft, Check, CheckCircle2, ChevronDown, ChevronRight, CircleDot, G
 import * as gitApi from '../../lib/gitApi';
 import { confirm } from '../ConfirmDialog';
 import { useToast } from '../Toast';
-import { renderDiffLines } from './DiffText';
+import { renderDiffLines, DiffText } from './DiffText';
 import {
   consoleIconButtonClass,
   consoleButtonFocusClass,
@@ -106,11 +106,11 @@ function CommentActionButtons({ comment, isOwnComment, onReply, onEdit, onDelete
   );
 }
 
-function CommentItem({ comment, mrFiles, renderDiffLines, isOwnComment, onReply, onEdit, onDelete, actionLoading }) {
+function CommentItem({ comment, mrFiles, renderDiffLines, isOwnComment, onReply, onEdit, onDelete, actionLoading, hideDiff = false }) {
   const isInline = Boolean(comment.path);
-  const fileDiff = isInline ? (mrFiles || []).find((f) => f.path === comment.path)?.diff : null;
+  const fileDiff = isInline && !hideDiff ? (mrFiles || []).find((f) => f.path === comment.path)?.diff : null;
   const [codeExpanded, setCodeExpanded] = useState(true);
-  const hasCode = Boolean(fileDiff || (comment.diffHunk && !fileDiff));
+  const hasCode = Boolean(fileDiff || (comment.diffHunk && !fileDiff && !hideDiff));
   const isEditing = actionLoading?.type === 'edit' && actionLoading?.id === comment.id;
   const [editBody, setEditBody] = useState(comment.body || '');
 
@@ -175,9 +175,7 @@ function CommentItem({ comment, mrFiles, renderDiffLines, isOwnComment, onReply,
 
       {hasCode && codeExpanded && fileDiff && (
         <div className="mb-2.5 rounded-lg border border-[#E8EAED] overflow-hidden shadow-sm">
-          <div className="text-[11px] leading-relaxed overflow-x-auto font-mono select-text max-h-40 overflow-y-auto" style={{ tabSize: 4, MozTabSize: 4 }}>
-            {renderDiffLines(fileDiff)}
-          </div>
+          <DiffText diff={fileDiff} showLineNumbers />
         </div>
       )}
 
@@ -264,9 +262,7 @@ function ThreadGroup({ thread, mrFiles, renderDiffLines, onReply, onEdit, onDele
                   <ChevronDown className="h-3 w-3" />
                 </button>
               </div>
-              <div className="text-[11px] leading-relaxed overflow-x-auto font-mono select-text max-h-32 overflow-y-auto" style={{ tabSize: 4, MozTabSize: 4 }}>
-                {renderDiffLines(fileDiff)}
-              </div>
+              <DiffText diff={fileDiff} showLineNumbers />
             </div>
           )}
           {fileDiff && !codeExpanded && (
@@ -289,6 +285,7 @@ function ThreadGroup({ thread, mrFiles, renderDiffLines, onReply, onEdit, onDele
               onEdit={onEdit}
               onDelete={onDelete}
               actionLoading={actionLoading}
+              hideDiff={true}
             />
           ))}
           {replyingTo && thread.comments.some((c) => c.id === replyingTo) && (

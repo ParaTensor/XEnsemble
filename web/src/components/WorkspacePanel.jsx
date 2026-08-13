@@ -101,6 +101,10 @@ const WorkspacePanel = memo(function WorkspacePanel({
   const [createPROpen, setCreatePROpen] = useState(false);
   const [selectedMR, setSelectedMR] = useState(null);
   const [prRefreshTrigger, setPrRefreshTrigger] = useState(0);
+
+  useEffect(() => {
+    setSelectedMR(null);
+  }, [projectId]);
   const [sidebarOpen, setSidebarOpen] = useState(() => {
     const stored = sessionStorage.getItem('xe_sidebar_open');
     return stored !== null ? stored === 'true' : true;
