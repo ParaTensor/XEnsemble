@@ -58,6 +58,30 @@ async function updatePreferences(userId, updates = {}) {
         }
     }
 
+    if (updates.git_author_name !== undefined) {
+        if (updates.git_author_name) {
+            await setPreference(userId, 'git_author_name', updates.git_author_name);
+        } else {
+            await db.delete(schema.userPreferences)
+                .where(and(
+                    eq(schema.userPreferences.userId, userId),
+                    eq(schema.userPreferences.key, 'git_author_name'),
+                ));
+        }
+    }
+
+    if (updates.git_author_email !== undefined) {
+        if (updates.git_author_email) {
+            await setPreference(userId, 'git_author_email', updates.git_author_email);
+        } else {
+            await db.delete(schema.userPreferences)
+                .where(and(
+                    eq(schema.userPreferences.userId, userId),
+                    eq(schema.userPreferences.key, 'git_author_email'),
+                ));
+        }
+    }
+
     return getPreferences(userId);
 }
 

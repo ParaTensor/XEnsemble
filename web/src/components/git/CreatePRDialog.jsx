@@ -23,6 +23,7 @@ export default function CreatePRDialog({
 }) {
   const { showToast } = useToast();
   const [branches, setBranches] = useState([]);
+  const [branchesError, setBranchesError] = useState(null);
   const [targetBranch, setTargetBranch] = useState(defaultTargetBranch || 'main');
   const [title, setTitle] = useState('');
   const [body, setBody] = useState('');
@@ -39,8 +40,12 @@ export default function CreatePRDialog({
       .listBranches(projectId)
       .then(({ branches: rows }) => {
         setBranches(Array.isArray(rows) ? rows : []);
+        setBranchesError(null);
       })
-      .catch(() => setBranches([]));
+      .catch((err) => {
+        setBranches([]);
+        setBranchesError(err.message || 'Failed to load branches');
+      });
   }, [open, projectId]);
 
   useEffect(() => {
@@ -128,14 +133,18 @@ export default function CreatePRDialog({
           </div>
           <div>
             <FormLabel htmlFor="pr-target">Target branch</FormLabel>
-            <SelectMenu
-              id="pr-target"
-              value={targetBranch}
-              onChange={setTargetBranch}
-              options={branchOptions}
-              placeholder="Select target branch"
-              className="mt-1.5"
-            />
+            {branchesError ? (
+              <p className="mt-1.5 text-xs text-[#C06C5D]">{branchesError}</p>
+            ) : (
+              <SelectMenu
+                id="pr-target"
+                value={targetBranch}
+                onChange={setTargetBranch}
+                options={branchOptions}
+                placeholder="Select target branch"
+                className="mt-1.5"
+              />
+            )}
           </div>
         </div>
 

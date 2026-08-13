@@ -11,7 +11,10 @@ import { buttonClass } from '../lib/buttonStyles';
 import { ConsoleDialogShell } from './ConsoleDialog';
 import CreatePRDialog from './git/CreatePRDialog';
 import { ConflictFileItem } from './git/ConflictResolutionPanel';
+import { confirm } from './ConfirmDialog';
+import { DiffText } from './git/DiffText';
 import { getGitFileDiff } from '../lib/githubApi';
+import { apiFetch } from '../lib/api';
 import { useToast } from './Toast';
 
 const GIT_STATUS_LABELS = {
@@ -57,6 +60,19 @@ export default function SourceControlPanel({ projectId, gitChanges, onJumpToFile
   const [resolvedPaths, setResolvedPaths] = useState(new Set());
   const authorNameRef = useRef(null);
   const actionMenuBtnRef = useRef(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    apiFetch('/api/v1/user/preferences')
+      .then((res) => res.ok ? res.json() : null)
+      .then((prefs) => {
+        if (cancelled || !prefs) return;
+        if (prefs.git_author_name) { setAuthorName(prefs.git_author_name); localStorage.setItem('xe_git_author_name', prefs.git_author_name); }
+        if (prefs.git_author_email) { setAuthorEmail(prefs.git_author_email); localStorage.setItem('xe_git_author_email', prefs.git_author_email); }
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
 
   useEffect(() => {
     if (showAuthorDialog && authorNameRef.current) {
@@ -155,7 +171,7 @@ export default function SourceControlPanel({ projectId, gitChanges, onJumpToFile
   const [discarding, setDiscarding] = useState(false);
 
   const handleDiscardFile = useCallback(async (path) => {
-    if (!window.confirm(`Discard changes to ${path}? This cannot be undone.`)) return;
+    if (!await confirm({ title: 'Discard Changes', message: `Discard changes to ${path}? This cannot be undone.`, confirmLabel: 'Discard', variant: 'danger' })) return;
     setFileDiffs((prev) => { const next = { ...prev }; delete next[path]; return next; });
     await gitChanges?.discard([path]);
   }, [gitChanges]);
@@ -163,7 +179,7 @@ export default function SourceControlPanel({ projectId, gitChanges, onJumpToFile
   const handleDiscardAll = useCallback(async () => {
     const allPaths = [...gitStagedFiles, ...gitUnstagedFiles].map((f) => f.path).filter(Boolean);
     if (allPaths.length === 0) return;
-    if (!window.confirm(`Discard all ${allPaths.length} change(s)? This cannot be undone.`)) return;
+    if (!await confirm({ title: 'Discard All Changes', message: `Discard all ${allPaths.length} change(s)? This cannot be undone.`, confirmLabel: 'Discard All', variant: 'danger' })) return;
     setDiscarding(true);
     try {
       setFileDiffs({});
@@ -217,6 +233,10 @@ export default function SourceControlPanel({ projectId, gitChanges, onJumpToFile
     if (!authorName.trim() || !authorEmail.trim()) return;
     localStorage.setItem('xe_git_author_name', authorName.trim());
     localStorage.setItem('xe_git_author_email', authorEmail.trim());
+    apiFetch('/api/v1/user/preferences', {
+      method: 'PUT',
+      body: JSON.stringify({ git_author_name: authorName.trim(), git_author_email: authorEmail.trim() }),
+    }).catch(() => {});
     setShowAuthorDialog(false);
     setCommitting(true);
     try {
@@ -260,33 +280,6 @@ export default function SourceControlPanel({ projectId, gitChanges, onJumpToFile
       binary: false,
       truncated: false,
     };
-  }, []);
-
-  const renderDiffLines = useCallback((raw) => {
-    if (!raw) return <span className="text-zinc-400">No changes</span>;
-    const lines = raw.split('\n');
-    return lines.map((line, i) => {
-      if (line.startsWith('---') || line.startsWith('+++')) {
-        return null;
-      }
-      if (line.startsWith('diff ') || line.startsWith('index ') || line.startsWith('new file') || line.startsWith('deleted ')) {
-        return null;
-      }
-      if (line.startsWith('\\ No newline')) {
-        return null;
-      }
-      const first = line[0];
-      if (first === '@') {
-        return null;
-      }
-      if (first === '+') {
-        return <div key={i} className="bg-[#DFF7E4] text-[#1A7F37] pl-2">{line.slice(1)}</div>;
-      }
-      if (first === '-') {
-        return <div key={i} className="bg-[#FFEBE9] text-[#CF222E] pl-2">{line.slice(1)}</div>;
-      }
-      return <div key={i} className="bg-white text-[#1F2328] pl-2">{line || ' '}</div>;
-    });
   }, []);
 
   const toggleFileExpand = useCallback(async (filePath) => {
@@ -413,7 +406,7 @@ export default function SourceControlPanel({ projectId, gitChanges, onJumpToFile
               ) : (
                 <div className="text-[11px] leading-relaxed overflow-x-auto font-mono select-text"
                      style={{ tabSize: 4, MozTabSize: 4 }}>
-                  {renderDiffLines(diffText)}
+                  <DiffText diff={diffText} />
                   {diffTruncated && (
                     <div className="px-2 py-1 text-amber-700 bg-amber-50 border-t border-amber-200" data-testid="inline-diff-truncated">
                       Content too large, truncated

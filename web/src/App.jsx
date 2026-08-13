@@ -8,6 +8,7 @@ import UsersAdmin from './pages/UsersAdmin';
 import GatewayAdmin from './pages/GatewayAdmin';
 import AppSidebar from './components/AppSidebar';
 import SettingsModal from './components/SettingsModal';
+import ConfirmDialog from './components/ConfirmDialog';
 import { useWorkspaces } from './hooks/useWorkspaces';
 import { cn } from './lib/utils';
 import { APP_SHELL_ADMIN_CLASS } from './lib/appShellLayout';
@@ -159,6 +160,7 @@ function AuthenticatedLayout({
       {showSettingsModal && (
         <SettingsModal onClose={() => setShowSettingsModal(false)} />
       )}
+      <ConfirmDialog />
     </div>
   );
 }

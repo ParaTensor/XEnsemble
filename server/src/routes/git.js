@@ -605,6 +605,66 @@ function registerGitRoutes(fastify) {
             return reply.code(isAuth ? 400 : 500).send({ error: err.message, code: isAuth ? 'REAUTH_REQUIRED' : undefined });
         }
     });
-}
 
-module.exports = { registerGitRoutes };
+    // ── MR Reviews / Comments / Files (read-only, via MergeRequestService) ──
+
+    fastify.get('/api/v1/projects/:id/merge-requests/:mrId/reviews', {
+        preValidation: [fastify.authenticate, fastify.requireActive],
+    }, async (request, reply) => {
+        const project = await getProjectForUser(request.user.id, request.params.id);
+        if (!project) return reply.code(404).send({ error: 'Project not found' });
+        try {
+            const reviews = await mergeRequestService.listReviews(project, request.params.mrId);
+            return { reviews };
+        } catch (err) {
+            request.log.error(err);
+            return reply.code(500).send({ error: 'Failed to fetch reviews' });
+        }
+    });
+
+    fastify.get('/api/v1/projects/:id/merge-requests/:mrId/comments', {
+        preValidation: [fastify.authenticate, fastify.requireActive],
+    }, async (request, reply) => {
+        const project = await getProjectForUser(request.user.id, request.params.id);
+        if (!project) return reply.code(404).send({ error: 'Project not found' });
+        try {
+            const page = request.query?.page ? Number(request.query.page) : 1;
+            const perPage = request.query?.per_page ? Number(request.query.per_page) : 30;
+            const comments = await mergeRequestService.listReviewComments(project, request.params.mrId, { page, perPage });
+            return { comments };
+        } catch (err) {
+            request.log.error(err);
+            return reply.code(500).send({ error: 'Failed to fetch review comments' });
+        }
+    });
+
+    fastify.get('/api/v1/projects/:id/merge-requests/:mrId/issue-comments', {
+        preValidation: [fastify.authenticate, fastify.requireActive],
+    }, async (request, reply) => {
+        const project = await getProjectForUser(request.user.id, request.params.id);
+        if (!project) return reply.code(404).send({ error: 'Project not found' });
+        try {
+            const page = request.query?.page ? Number(request.query.page) : 1;
+            const perPage = request.query?.per_page ? Number(request.query.per_page) : 30;
+            const comments = await mergeRequestService.listIssueComments(project, request.params.mrId, { page, perPage });
+            return { comments };
+        } catch (err) {
+            request.log.error(err);
+            return reply.code(500).send({ error: 'Failed to fetch issue comments' });
+        }
+    });
+
+    fastify.get('/api/v1/projects/:id/merge-requests/:mrId/files', {
+        preValidation: [fastify.authenticate, fastify.requireActive],
+    }, async (request, reply) => {
+        const project = await getProjectForUser(request.user.id, request.params.id);
+        if (!project) return reply.code(404).send({ error: 'Project not found' });
+        try {
+            const files = await mergeRequestService.listMrFiles(project, request.params.mrId);
+            return { files };
+        } catch (err) {
+            request.log.error(err);
+            return reply.code(500).send({ error: 'Failed to fetch MR files' });
+        }
+    });
+}

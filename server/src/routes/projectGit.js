@@ -5,6 +5,7 @@ const { db } = require('../db/index');
 const schema = require('../db/schema');
 const { getProjectForUser } = require('../projects/getProjectForUser');
 const { withProjectGitLock } = require('../git/gitMutationLock');
+const userPreferences = require('../admin/UserPreferences');
 
 async function ensureLocalGitReady(project, log) {
     // Built-in workspace git should always be available for Changes. Backfill
@@ -51,8 +52,9 @@ function registerProjectGitRoutes(fastify) {
         if (!project) return reply.code(404).send({ error: 'Project not found' });
         const message = String(request.body?.message || '').trim();
         if (!message) return reply.code(400).send({ error: 'message is required' });
-        const authorName = request.body?.author?.name || request.user.displayName || request.user.username || '';
-        const authorEmail = request.body?.author?.email || request.user.email || '';
+        const prefs = await userPreferences.getPreferences(request.user.id).catch(() => ({}));
+        const authorName = request.body?.author?.name || prefs.git_author_name || request.user.username || '';
+        const authorEmail = request.body?.author?.email || prefs.git_author_email || '';
         if (!authorName || !authorEmail) {
             return reply.code(400).send({
                 error: 'Git author info required',

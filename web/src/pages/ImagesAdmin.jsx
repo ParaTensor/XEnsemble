@@ -7,6 +7,7 @@ import { ConsoleDialogShell } from '../components/ConsoleDialog';
 import Input from '../components/Input';
 import Button from '../components/Button';
 import { useToast } from '../components/Toast';
+import { confirm } from '../components/ConfirmDialog';
 import {
     consoleButtonFocusClass,
     consoleInputClass,
@@ -437,7 +438,7 @@ export function ImagesAdminContent() {
     };
 
     const handleRetry = async (buildId) => {
-        if (!window.confirm('Retry this build?')) return;
+        if (!await confirm({ title: 'Retry Build', message: 'Retry this build?', confirmLabel: 'Retry' })) return;
         try {
             await api(`/builds/${buildId}/retry`, { method: 'POST' });
             showToast('success', 'Build retried.');
@@ -449,7 +450,7 @@ export function ImagesAdminContent() {
     };
 
     const handleDiscardBuild = async (buildId) => {
-        if (!window.confirm('Discard this build record? Logs will be permanently deleted.')) return;
+        if (!await confirm({ title: 'Discard Build Record', message: 'Discard this build record? Logs will be permanently deleted.', confirmLabel: 'Discard', variant: 'danger' })) return;
         try {
             await api(`/builds/${buildId}`, { method: 'DELETE' });
             showToast('success', 'Build discarded.');

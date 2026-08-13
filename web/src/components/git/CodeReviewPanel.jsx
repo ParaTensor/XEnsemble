@@ -1,7 +1,9 @@
 import React, { useCallback, useEffect, useState, useMemo } from 'react';
 import { ArrowLeft, Check, CheckCircle2, ChevronDown, ChevronRight, CircleDot, GitPullRequest, GitMerge, Loader2, MessageSquare, RefreshCw, Send, X, XCircle, RotateCcw, Trash2, Pencil, CornerDownRight } from 'lucide-react';
 import * as gitApi from '../../lib/gitApi';
+import { confirm } from '../ConfirmDialog';
 import { useToast } from '../Toast';
+import { renderDiffLines } from './DiffText';
 import {
   consoleIconButtonClass,
   consoleButtonFocusClass,
@@ -391,17 +393,6 @@ export default function CodeReviewPanel({ projectId, mergeRequestId, mergeReques
     });
   };
 
-  const renderDiffLines = (raw) => {
-    if (!raw) return null;
-    return raw.split('\n').map((line, i) => {
-      if (line.startsWith('---') || line.startsWith('+++') || line.startsWith('diff ') || line.startsWith('index ') || line.startsWith('new file') || line.startsWith('deleted ') || line.startsWith('\\ No newline')) return null;
-      if (line[0] === '@') return null;
-      if (line[0] === '+') return <div key={i} className="bg-[#DFF7E4] text-[#1A7F37] pl-2">{line.slice(1)}</div>;
-      if (line[0] === '-') return <div key={i} className="bg-[#FFEBE9] text-[#CF222E] pl-2">{line.slice(1)}</div>;
-      return <div key={i} className="bg-white text-[#1F2328] pl-2">{line || ' '}</div>;
-    });
-  };
-
   const STATUS_LABELS = { added: 'A', modified: 'M', deleted: 'D', renamed: 'R' };
   const STATUS_COLORS = { added: 'text-[#4A7C59]', modified: 'text-[#C06C5D]', deleted: 'text-[#C06C5D]', renamed: 'text-[#5B8DB8]' };
 
@@ -476,7 +467,7 @@ export default function CodeReviewPanel({ projectId, mergeRequestId, mergeReques
   };
 
   const handleMerge = async () => {
-    if (!window.confirm('Merge this pull request? This action cannot be undone.')) return;
+    if (!await confirm({ title: 'Merge Pull Request', message: 'Merge this pull request? This action cannot be undone.', confirmLabel: 'Merge', variant: 'primary' })) return;
     setActionLoading('merge');
     try {
       await gitApi.mergeMergeRequest(projectId, mergeRequestId);
@@ -495,7 +486,7 @@ export default function CodeReviewPanel({ projectId, mergeRequestId, mergeReques
   };
 
   const handleClose = async () => {
-    if (!window.confirm('Close this pull request without merging?')) return;
+    if (!await confirm({ title: 'Close Pull Request', message: 'Close this pull request without merging?', confirmLabel: 'Close', variant: 'secondary' })) return;
     setActionLoading('close');
     try {
       await gitApi.closeMergeRequest(projectId, mergeRequestId);
@@ -615,7 +606,7 @@ export default function CodeReviewPanel({ projectId, mergeRequestId, mergeReques
   };
 
   const handleDeleteComment = async (comment) => {
-    if (!window.confirm('Delete this comment? This cannot be undone.')) return;
+    if (!await confirm({ title: 'Delete Comment', message: 'Delete this comment? This cannot be undone.', confirmLabel: 'Delete', variant: 'danger' })) return;
     setCommentActionLoading({ type: 'delete', id: comment.id, pending: true });
     try {
       await gitApi.deleteMergeRequestComment(projectId, mergeRequestId, comment.id, comment._type || 'issue');

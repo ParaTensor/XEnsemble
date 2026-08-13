@@ -12,6 +12,7 @@ import {
   ConsoleStructuredDialogHeader,
 } from '../components/ConsoleDialog';
 import { useToast } from '../components/Toast';
+import { confirm } from '../components/ConfirmDialog';
 import {
   consoleCardClass,
   consoleDialogAdminFormPanelClass,
@@ -641,7 +642,7 @@ export default function AgentsAdmin() {
   });
 
   const handleUninstall = async (agent) => {
-    if (!window.confirm(`Uninstall ${agent.name} from this server?`)) return;
+    if (!await confirm({ title: 'Uninstall Agent', message: `Uninstall ${agent.name} from this server?`, confirmLabel: 'Uninstall', variant: 'danger' })) return;
     await runAgentAction(agent.id, 'uninstall', {
       agentName: agent.name,
       onSuccess: (data) => showToast(

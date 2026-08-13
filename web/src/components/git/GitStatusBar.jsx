@@ -23,6 +23,7 @@ import {
   textPrimary,
   textPlaceholder,
 } from '../../lib/consoleTheme';
+import { apiFetch } from '../../lib/api';
 import { buttonClass } from '../../lib/buttonStyles';
 
 const GIT_PROVIDERS = new Set(['github', 'gitlab', 'gitea', 'local_git']);
@@ -58,10 +59,24 @@ export default function GitStatusBar({ projectId, project, git }) {
   const [authorName, setAuthorName] = useState(() => localStorage.getItem('xe_git_author_name') || '');
   const [authorEmail, setAuthorEmail] = useState(() => localStorage.getItem('xe_git_author_email') || '');
   const [createPROpen, setCreatePROpen] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    apiFetch('/api/v1/user/preferences')
+      .then((res) => res.ok ? res.json() : null)
+      .then((prefs) => {
+        if (cancelled || !prefs) return;
+        if (prefs.git_author_name) { setAuthorName(prefs.git_author_name); localStorage.setItem('xe_git_author_name', prefs.git_author_name); }
+        if (prefs.git_author_email) { setAuthorEmail(prefs.git_author_email); localStorage.setItem('xe_git_author_email', prefs.git_author_email); }
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
   const [branchMenuOpen, setBranchMenuOpen] = useState(false);
   const [branchMenuRect, setBranchMenuRect] = useState(null);
   const [branches, setBranches] = useState([]);
   const [branchesLoading, setBranchesLoading] = useState(false);
+  const [branchesError, setBranchesError] = useState(null);
   const [newBranchName, setNewBranchName] = useState('');
   const branchBtnRef = useRef(null);
   const newBranchInputRef = useRef(null);
@@ -73,11 +88,13 @@ export default function GitStatusBar({ projectId, project, git }) {
     }
     setBranchMenuOpen(true);
     setBranchesLoading(true);
+    setBranchesError(null);
     try {
       const data = await githubApi.listBranches(projectId);
       setBranches(data.branches || []);
-    } catch {
+    } catch (err) {
       setBranches([]);
+      setBranchesError(err.message || 'Failed to load branches');
     } finally {
       setBranchesLoading(false);
     }
@@ -146,6 +163,10 @@ export default function GitStatusBar({ projectId, project, git }) {
     if (!authorName.trim() || !authorEmail.trim()) return;
     localStorage.setItem('xe_git_author_name', authorName.trim());
     localStorage.setItem('xe_git_author_email', authorEmail.trim());
+    apiFetch('/api/v1/user/preferences', {
+      method: 'PUT',
+      body: JSON.stringify({ git_author_name: authorName.trim(), git_author_email: authorEmail.trim() }),
+    }).catch(() => {});
     setShowAuthorDialog(false);
     setCommitting(true);
     try {
@@ -401,7 +422,18 @@ export default function GitStatusBar({ projectId, project, git }) {
               <Loader2 className="h-4 w-4 animate-spin text-[#9AA0A6]" />
             </div>
           ) : branches.length === 0 ? (
-            <div className="px-3 py-2 text-xs text-[#9AA0A6]">No branches</div>
+            <div className="px-3 py-2 text-xs text-[#9AA0A6]">
+              {branchesError || 'No branches'}
+              {branchesError && (
+                <button
+                  type="button"
+                  onClick={openBranchMenu}
+                  className={`ml-2 text-[#5B8DB8] hover:text-[#4A7298] ${consoleButtonFocusClass}`}
+                >
+                  Retry
+                </button>
+              )}
+            </div>
           ) : (
             branches.map((b) => {
               const isCurrent = b.name === (status?.branch || project?.currentBranch);
