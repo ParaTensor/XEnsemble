@@ -79,3 +79,22 @@ export function buildFileTree(items, { showHidden = false } = {}) {
   sortNodes(root.children);
   return root.children;
 }
+
+export function pathBasename(p) {
+  if (!p || p === '.') return '';
+  const segs = String(p).split('/').filter(Boolean);
+  return segs.length ? segs[segs.length - 1] : '';
+}
+
+export function pathParent(p) {
+  if (!p || p === '.') return '.';
+  const segs = String(p).split('/').filter(Boolean);
+  if (segs.length <= 1) return '.';
+  return segs.slice(0, -1).join('/');
+}
+
+export function pathJoin(dir, name) {
+  if (!dir || dir === '.') return name;
+  if (!name) return dir;
+  return `${dir}/${name}`;
+}

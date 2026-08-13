@@ -3,10 +3,12 @@ import { createPortal } from 'react-dom';
 import {
   FileText, Files, FolderPlus, Plus, PanelLeftClose, PanelLeft, Loader2,
   Terminal, Globe, Monitor, GitBranch, GitPullRequest, X, ArrowLeft,
+  Trash2, Pencil, ClipboardCopy, FilePlus,
 } from 'lucide-react';
 import WorkspaceFileTree from './WorkspaceFileTree';
 import CodeEditor from './CodeEditorLazy';
 import { ConsoleDialogShell } from './ConsoleDialog';
+import { confirm } from './ConfirmDialog';
 import SourceControlPanel from './SourceControlPanel';
 import WorkspacePreviewPane from './WorkspacePreviewPane';
 import WorkspaceBrowserPane from './WorkspaceBrowserPane';
@@ -16,6 +18,7 @@ import CreatePRDialog from './git/CreatePRDialog';
 import { consoleButtonFocusClass, consoleInputClass } from '@/lib/consoleTheme';
 import { consoleDropdownPanelClass, consoleMenuDropdownZClass } from '@/lib/consoleTokens';
 import { buttonClass } from '@/lib/buttonStyles';
+import { pathBasename, pathJoin } from '@/lib/workspaceFileTree';
 
 const DiffViewer = lazy(() => import('./DiffViewer'));
 
@@ -92,6 +95,11 @@ const WorkspacePanel = memo(function WorkspacePanel({
   sessionLive,
   shellContent,
   onShellMount,
+  refreshTrigger,
+  onDeleteFile,
+  onDeleteDir,
+  onRenameFile,
+  onCopyPath,
 }) {
   const [showNewFile, setShowNewFile] = useState(false);
   const [showNewFolder, setShowNewFolder] = useState(false);
@@ -101,6 +109,11 @@ const WorkspacePanel = memo(function WorkspacePanel({
   const [createPROpen, setCreatePROpen] = useState(false);
   const [selectedMR, setSelectedMR] = useState(null);
   const [prRefreshTrigger, setPrRefreshTrigger] = useState(0);
+  const [contextMenu, setContextMenu] = useState(null);
+  const [renaming, setRenaming] = useState(null);
+  const [renamingLoading, setRenamingLoading] = useState(false);
+  const [newHereBasePath, setNewHereBasePath] = useState(null);
+  const renameInputRef = useRef(null);
 
   useEffect(() => {
     setSelectedMR(null);
@@ -143,6 +156,37 @@ const WorkspacePanel = memo(function WorkspacePanel({
   }, [showNewFolder]);
 
   useEffect(() => {
+    if (renaming && renameInputRef.current) {
+      renameInputRef.current.focus();
+      renameInputRef.current.select();
+    }
+  }, [renaming]);
+
+  useEffect(() => {
+    if (!contextMenu) return undefined;
+    const onDoc = (e) => {
+      const menu = document.getElementById('workspace-context-menu');
+      if (menu?.contains(e.target)) return;
+      setContextMenu(null);
+    };
+    const onEsc = (e) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        setContextMenu(null);
+      }
+    };
+    const onResize = () => setContextMenu(null);
+    document.addEventListener('mousedown', onDoc);
+    document.addEventListener('keydown', onEsc);
+    window.addEventListener('resize', onResize);
+    return () => {
+      document.removeEventListener('mousedown', onDoc);
+      document.removeEventListener('keydown', onEsc);
+      window.removeEventListener('resize', onResize);
+    };
+  }, [contextMenu]);
+
+  useEffect(() => {
     if (mainTab === 'terminal') {
       onShellMount?.();
     }
@@ -180,25 +224,79 @@ const WorkspacePanel = memo(function WorkspacePanel({
     if (!newName.trim()) return;
     setCreating(true);
     try {
-      await onCreateFile?.(projectId, newName.trim());
+      const fullPath = newHereBasePath ? pathJoin(newHereBasePath, newName.trim()) : newName.trim();
+      await onCreateFile?.(projectId, fullPath);
       setShowNewFile(false);
       setNewName('');
+      setNewHereBasePath(null);
     } finally {
       setCreating(false);
     }
-  }, [newName, projectId, onCreateFile]);
+  }, [newName, projectId, onCreateFile, newHereBasePath]);
 
   const handleCreateDir = useCallback(async () => {
     if (!newName.trim()) return;
     setCreating(true);
     try {
-      await onCreateDir?.(projectId, newName.trim());
+      const fullPath = newHereBasePath ? pathJoin(newHereBasePath, newName.trim()) : newName.trim();
+      await onCreateDir?.(projectId, fullPath);
       setShowNewFolder(false);
       setNewName('');
+      setNewHereBasePath(null);
     } finally {
       setCreating(false);
     }
-  }, [newName, projectId, onCreateDir]);
+  }, [newName, projectId, onCreateDir, newHereBasePath]);
+
+  const handleContextMenu = useCallback((node, e) => {
+    setContextMenu({ x: e.clientX, y: e.clientY, node });
+  }, []);
+
+  const handleDeleteNode = useCallback(async (node) => {
+    setContextMenu(null);
+    const label = node.name || node.path;
+    const ok = await confirm({
+      title: node.type === 'directory' ? 'Delete Folder' : 'Delete File',
+      message: `Delete "${label}"? This cannot be undone.`,
+      confirmLabel: 'Delete',
+      variant: 'danger',
+    });
+    if (!ok) return;
+    if (node.type === 'directory') {
+      await onDeleteDir?.(projectId, node.path);
+    } else {
+      await onDeleteFile?.(projectId, node.path);
+    }
+  }, [projectId, onDeleteFile, onDeleteDir]);
+
+  const handleStartRename = useCallback((node) => {
+    setContextMenu(null);
+    setRenaming({ node, newName: pathBasename(node.path) });
+  }, []);
+
+  const handleConfirmRename = useCallback(async () => {
+    if (!renaming || !renaming.newName.trim()) return;
+    setRenamingLoading(true);
+    try {
+      await onRenameFile?.(projectId, renaming.node.path, renaming.newName.trim());
+      setRenaming(null);
+    } finally {
+      setRenamingLoading(false);
+    }
+  }, [renaming, projectId, onRenameFile]);
+
+  const handleCopyPath = useCallback((node) => {
+    setContextMenu(null);
+    onCopyPath?.(node.path);
+  }, [onCopyPath]);
+
+  const handleNewHere = useCallback((node, type) => {
+    setContextMenu(null);
+    setNewHereBasePath(node.path);
+    setNewName('');
+    if (type === 'file') setShowNewFile(true);
+    else setShowNewFolder(true);
+  }, []);
 
   const autosaveTimerRef = useRef(null);
   const pendingAutosavePathRef = useRef(null);
@@ -423,7 +521,8 @@ const WorkspacePanel = memo(function WorkspacePanel({
               <div className="w-44 shrink-0 border-r border-[#E8EAED] bg-[#F4F5F6] flex flex-col min-h-0">
                 <div className="flex-1 min-h-0 overflow-y-auto px-2 py-1">
                   <WorkspaceFileTree lazy projectId={projectId} onFetchDir={onFetchDir}
-                    selectedPath={activePath} onOpenFile={handleOpenFile} />
+                    selectedPath={activePath} onOpenFile={handleOpenFile}
+                    refreshTrigger={refreshTrigger} onContextMenu={handleContextMenu} />
                 </div>
               </div>
             )}
@@ -548,15 +647,18 @@ const WorkspacePanel = memo(function WorkspacePanel({
       </div>
 
       {showNewFile && (
-        <ConsoleDialogShell onClose={() => setShowNewFile(false)}>
+        <ConsoleDialogShell onClose={() => { setShowNewFile(false); setNewHereBasePath(null); }}>
           <div className="p-4 w-80">
-            <h3 className="font-bold text-lg text-zinc-900 mb-3">New File</h3>
+            <h3 className="font-bold text-lg text-zinc-900 mb-1">New File</h3>
+            {newHereBasePath && newHereBasePath !== '.' && (
+              <p className="text-xs text-zinc-400 mb-2 font-mono">{newHereBasePath}/</p>
+            )}
             <input ref={newFileInputRef} type="text" placeholder="filename.js"
               value={newName} onChange={(e) => setNewName(e.target.value)}
               onKeyDown={(e) => { if (e.key === 'Enter') handleCreateFile(); }}
               className={consoleInputClass} />
             <div className="flex justify-end gap-2 mt-4">
-              <button onClick={() => setShowNewFile(false)} className={buttonClass('secondary', 'sm')}>Cancel</button>
+              <button onClick={() => { setShowNewFile(false); setNewHereBasePath(null); }} className={buttonClass('secondary', 'sm')}>Cancel</button>
               <button onClick={handleCreateFile} disabled={creating || !newName.trim()} className={buttonClass('primary', 'sm')}>
                 {creating ? 'Creating…' : 'Create'}
               </button>
@@ -566,17 +668,89 @@ const WorkspacePanel = memo(function WorkspacePanel({
       )}
 
       {showNewFolder && (
-        <ConsoleDialogShell onClose={() => setShowNewFolder(false)}>
+        <ConsoleDialogShell onClose={() => { setShowNewFolder(false); setNewHereBasePath(null); }}>
           <div className="p-4 w-80">
-            <h3 className="font-bold text-lg text-zinc-900 mb-3">New Folder</h3>
+            <h3 className="font-bold text-lg text-zinc-900 mb-1">New Folder</h3>
+            {newHereBasePath && newHereBasePath !== '.' && (
+              <p className="text-xs text-zinc-400 mb-2 font-mono">{newHereBasePath}/</p>
+            )}
             <input ref={newFolderInputRef} type="text" placeholder="folder name"
               value={newName} onChange={(e) => setNewName(e.target.value)}
               onKeyDown={(e) => { if (e.key === 'Enter') handleCreateDir(); }}
               className={consoleInputClass} />
             <div className="flex justify-end gap-2 mt-4">
-              <button onClick={() => setShowNewFolder(false)} className={buttonClass('secondary', 'sm')}>Cancel</button>
+              <button onClick={() => { setShowNewFolder(false); setNewHereBasePath(null); }} className={buttonClass('secondary', 'sm')}>Cancel</button>
               <button onClick={handleCreateDir} disabled={creating || !newName.trim()} className={buttonClass('primary', 'sm')}>
                 {creating ? 'Creating…' : 'Create'}
+              </button>
+            </div>
+          </div>
+        </ConsoleDialogShell>
+      )}
+
+      {contextMenu && createPortal(
+        (() => {
+          const MENU_W = 180;
+          const MENU_H_EST = 200;
+          const left = Math.min(contextMenu.x, window.innerWidth - MENU_W - 8);
+          const top = Math.min(contextMenu.y, window.innerHeight - MENU_H_EST - 8);
+          const node = contextMenu.node;
+          const isDir = node.type === 'directory';
+          const menuItems = [];
+          if (isDir) {
+            menuItems.push({ icon: FilePlus, label: 'New File', onClick: () => handleNewHere(node, 'file') });
+            menuItems.push({ icon: FolderPlus, label: 'New Folder', onClick: () => handleNewHere(node, 'folder') });
+            menuItems.push({ divider: true });
+          }
+          menuItems.push({ icon: Pencil, label: 'Rename', onClick: () => handleStartRename(node) });
+          menuItems.push({ icon: ClipboardCopy, label: 'Copy Path', onClick: () => handleCopyPath(node) });
+          menuItems.push({ divider: true });
+          menuItems.push({ icon: Trash2, label: 'Delete', onClick: () => handleDeleteNode(node), danger: true });
+          return (
+            <div
+              id="workspace-context-menu"
+              className={`fixed ${consoleMenuDropdownZClass} ${consoleDropdownPanelClass} py-1 shadow-lg`}
+              style={{ top, left, width: MENU_W }}
+              role="menu"
+            >
+              {menuItems.map((item, i) => (
+                item.divider ? (
+                  <div key={`d${i}`} className="my-1 border-t border-zinc-200" />
+                ) : (
+                  <button
+                    key={item.label}
+                    type="button"
+                    role="menuitem"
+                    onClick={item.onClick}
+                    className={`w-full flex items-center gap-2.5 px-3 py-1.5 text-sm text-left transition-colors ${
+                      item.danger
+                        ? 'text-red-600 hover:bg-red-50'
+                        : 'text-zinc-700 hover:bg-zinc-50'
+                    } ${consoleButtonFocusClass}`}
+                  >
+                    <item.icon className="h-3.5 w-3.5 shrink-0" />
+                    <span>{item.label}</span>
+                  </button>
+                )
+              ))}
+            </div>
+          );
+        })(),
+        document.body,
+      )}
+
+      {renaming && (
+        <ConsoleDialogShell onClose={() => setRenaming(null)}>
+          <div className="p-4 w-80">
+            <h3 className="font-bold text-lg text-zinc-900 mb-3">Rename</h3>
+            <input ref={renameInputRef} type="text" placeholder="new name"
+              value={renaming.newName} onChange={(e) => setRenaming((prev) => prev ? { ...prev, newName: e.target.value } : prev)}
+              onKeyDown={(e) => { if (e.key === 'Enter') handleConfirmRename(); }}
+              className={consoleInputClass} />
+            <div className="flex justify-end gap-2 mt-4">
+              <button onClick={() => setRenaming(null)} className={buttonClass('secondary', 'sm')}>Cancel</button>
+              <button onClick={handleConfirmRename} disabled={renamingLoading || !renaming.newName.trim()} className={buttonClass('primary', 'sm')}>
+                {renamingLoading ? 'Renaming…' : 'Rename'}
               </button>
             </div>
           </div>

@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef, useLayoutEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import AgentConsole from '../components/AgentConsole';
-import WorkspaceFileTree from '../components/WorkspaceFileTree';
 import WorkspaceShell from '../components/WorkspaceShell';
 import WorkspacePanel from '../components/WorkspacePanel';
 import RepoImportDialog from '../components/git/RepoImportDialog';
@@ -68,6 +67,7 @@ import {
   hoverTextPrimary,
 } from '../lib/consoleTheme.js';
 import { buttonClass } from '../lib/buttonStyles';
+import { pathParent, pathJoin } from '../lib/workspaceFileTree';
 
 const DEFAULT_AGENT_ID = 'kimi-code';
 
@@ -745,6 +745,56 @@ export default React.forwardRef(function Sessions({
       })
       .catch((e) => showToast('error', e.message));
   }, [editorTabs.handleCreateDir, showToast, gitChanges]);
+
+  const handleDeleteFile = useCallback(async (projectId, path) => {
+    try {
+      await editorTabs.deleteFile(projectId, path);
+      editorTabs.closeTabByPath(path);
+      editorTabs.bumpTreeRefresh();
+      gitChanges?.fetchStatus?.({ silent: true });
+      showToast('success', 'File deleted.');
+    } catch (e) {
+      showToast('error', e.message);
+    }
+  }, [editorTabs.deleteFile, editorTabs.closeTabByPath, editorTabs.bumpTreeRefresh, showToast, gitChanges]);
+
+  const handleDeleteDir = useCallback(async (projectId, path) => {
+    if (!path || path === '.' || path === '') {
+      showToast('error', 'Cannot delete root directory.');
+      return;
+    }
+    try {
+      await editorTabs.deleteDir(projectId, path);
+      editorTabs.bumpTreeRefresh();
+      gitChanges?.fetchStatus?.({ silent: true });
+      showToast('success', 'Folder deleted.');
+    } catch (e) {
+      showToast('error', e.message);
+    }
+  }, [editorTabs.deleteDir, editorTabs.bumpTreeRefresh, showToast, gitChanges]);
+
+  const handleRenameFile = useCallback(async (projectId, oldPath, newName) => {
+    const newPath = pathJoin(pathParent(oldPath), newName);
+    if (newPath === oldPath) return;
+    try {
+      await editorTabs.moveFile(projectId, oldPath, newPath);
+      editorTabs.renameTabPath(oldPath, newPath);
+      editorTabs.bumpTreeRefresh();
+      gitChanges?.fetchStatus?.({ silent: true });
+      showToast('success', 'Renamed.');
+    } catch (e) {
+      showToast('error', e.message);
+    }
+  }, [editorTabs.moveFile, editorTabs.renameTabPath, editorTabs.bumpTreeRefresh, showToast, gitChanges]);
+
+  const handleCopyPath = useCallback(async (path) => {
+    try {
+      await navigator.clipboard.writeText(path);
+      showToast('success', 'Path copied.');
+    } catch {
+      showToast('error', 'Failed to copy path.');
+    }
+  }, [showToast]);
 
   const handleShowDiff = useCallback((path) => {
     if (!activeSession?.projectId) return;
@@ -1594,6 +1644,11 @@ export default React.forwardRef(function Sessions({
                     sessionLive={sessionAlive}
                     shellContent={shellMounted && <WorkspaceShell projectId={activeSession.projectId} />}
                     onShellMount={() => setShellMounted(true)}
+                    refreshTrigger={editorTabs.treeRefreshTrigger}
+                    onDeleteFile={handleDeleteFile}
+                    onDeleteDir={handleDeleteDir}
+                    onRenameFile={handleRenameFile}
+                    onCopyPath={handleCopyPath}
                   />
                 </div>
                 </>

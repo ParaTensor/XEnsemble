@@ -6,10 +6,12 @@ export function useEditorTabs(projectId) {
   const [tabs, setTabs] = useState([]);
   const [activePath, setActivePath] = useState(null);
   const [diffView, setDiffView] = useState(null);
-  const { listFiles, readFile, writeFile, createDir } = useWorkspaceFiles();
+  const { listFiles, readFile, writeFile, createDir, deleteFile, deleteDir, moveFile } = useWorkspaceFiles();
   const fetchDirLock = useRef({});
   const lastProjectId = useRef(projectId);
   const autoOpenedForProject = useRef(null);
+  const [treeRefreshTrigger, setTreeRefreshTrigger] = useState(0);
+  const bumpTreeRefresh = useCallback(() => setTreeRefreshTrigger((n) => n + 1), []);
 
   // tabsRef keeps the latest tabs array without triggering re-renders,
   // allowing callbacks (openFile, saveTab, showDiff) to have stable
@@ -30,6 +32,7 @@ export function useEditorTabs(projectId) {
       setActivePath(null);
       setDiffView(null);
       fetchDirLock.current = {};
+      setTreeRefreshTrigger(0);
     }
   }, [projectId]);
 
@@ -161,12 +164,34 @@ export function useEditorTabs(projectId) {
   const handleCreateFile = useCallback(async (projectId, name) => {
     // 先创建空文件，然后打开 tab 进入编辑模式
     await writeFile(projectId, name, '');
-    // 刷新文件树由 WorkspaceFileTree 重新拉取处理
-  }, [writeFile]);
+    bumpTreeRefresh();
+  }, [writeFile, bumpTreeRefresh]);
 
   const handleCreateDir = useCallback(async (projectId, name) => {
     await createDir(projectId, name);
-  }, [createDir]);
+    bumpTreeRefresh();
+  }, [createDir, bumpTreeRefresh]);
+
+  const closeTabByPath = useCallback((path) => {
+    const current = tabsRef.current[0];
+    if (!current || current.path !== path) return;
+    tabsRef.current = [];
+    activePathRef.current = null;
+    setTabs([]);
+    setActivePath(null);
+  }, []);
+
+  const renameTabPath = useCallback((oldPath, newPath) => {
+    const current = tabsRef.current[0];
+    if (!current || current.path !== oldPath) return;
+    const next = { ...current, path: newPath };
+    tabsRef.current = [next];
+    setTabs([next]);
+    if (activePathRef.current === oldPath) {
+      activePathRef.current = newPath;
+      setActivePath(newPath);
+    }
+  }, []);
 
   return {
     tabs,
@@ -181,5 +206,12 @@ export function useEditorTabs(projectId) {
     fetchDir,
     handleCreateFile,
     handleCreateDir,
+    deleteFile,
+    deleteDir,
+    moveFile,
+    closeTabByPath,
+    renameTabPath,
+    treeRefreshTrigger,
+    bumpTreeRefresh,
   };
 }

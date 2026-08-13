@@ -1,9 +1,13 @@
-import { useEffect, useMemo, useState, useCallback, memo } from 'react';
+import { useEffect, useMemo, useRef, useState, useCallback, memo } from 'react';
 import { ChevronDown, ChevronRight, FileText, Folder, FolderOpen, Loader2 } from 'lucide-react';
 import { buildFileTree, collectAncestorFolderPaths } from '../lib/workspaceFileTree';
 
-const TreeNode = memo(function TreeNode({ node, depth, expanded, selectedPath, onToggle, onOpenFile }) {
+const TreeNode = memo(function TreeNode({ node, depth, expanded, selectedPath, onToggle, onOpenFile, onContextMenu }) {
   const indent = depth * 12;
+  const handleContextMenu = (e) => {
+    e.preventDefault();
+    onContextMenu?.(node, e);
+  };
 
   if (node.type === 'file') {
     const selected = selectedPath === node.path;
@@ -11,6 +15,7 @@ const TreeNode = memo(function TreeNode({ node, depth, expanded, selectedPath, o
       <button
         type="button"
         onClick={() => onOpenFile(node)}
+        onContextMenu={handleContextMenu}
         className={`flex w-full min-w-0 items-center gap-0.5 rounded-md py-1 pr-2 text-left text-sm transition-colors ${
           selected ? 'bg-zinc-100 font-medium text-zinc-900' : 'text-zinc-600 hover:bg-zinc-50'
         }`}
@@ -30,6 +35,7 @@ const TreeNode = memo(function TreeNode({ node, depth, expanded, selectedPath, o
       <div
         className="group flex min-w-0 items-center gap-0.5 rounded-md hover:bg-zinc-50"
         style={{ paddingLeft: indent + 4 }}
+        onContextMenu={handleContextMenu}
       >
         <button
           type="button"
@@ -70,18 +76,22 @@ const TreeNode = memo(function TreeNode({ node, depth, expanded, selectedPath, o
             selectedPath={selectedPath}
             onToggle={onToggle}
             onOpenFile={onOpenFile}
+            onContextMenu={onContextMenu}
           />
         ))}
     </div>
   );
 });
 
-function LazyTree({ selectedPath, onOpenFile, projectId, onFetchDir }) {
+function LazyTree({ selectedPath, onOpenFile, projectId, onFetchDir, refreshTrigger = 0, onContextMenu }) {
   const [expanded, setExpanded] = useState(() => new Set());
   const [loadedDirs, setLoadedDirs] = useState(() => new Set());
   const [loadingDirs, setLoadingDirs] = useState(() => new Set());
   const [dirChildren, setDirChildren] = useState(() => ({}));
   const [initialLoading, setInitialLoading] = useState(true);
+  const expandedRef = useRef(expanded);
+  expandedRef.current = expanded;
+  const prevRefresh = useRef(refreshTrigger);
 
   useEffect(() => {
     if (!projectId || !onFetchDir) return;
@@ -94,6 +104,38 @@ function LazyTree({ selectedPath, onOpenFile, projectId, onFetchDir }) {
       setInitialLoading(false);
     });
   }, [projectId, onFetchDir]);
+
+  // Silent refresh when refreshTrigger changes: re-fetch root + all expanded dirs,
+  // preserving expanded state. Dirs that fail to fetch (deleted) are collapsed.
+  useEffect(() => {
+    if (prevRefresh.current === refreshTrigger) return;
+    prevRefresh.current = refreshTrigger;
+    if (!projectId || !onFetchDir) return;
+    const currentExpanded = expandedRef.current;
+    const dirsToFetch = ['.', ...Array.from(currentExpanded).filter((p) => p !== '.')];
+    Promise.all(dirsToFetch.map((p) => onFetchDir(projectId, p).catch(() => null))).then((results) => {
+      const nextChildren = {};
+      const nextLoaded = new Set();
+      const failedPaths = new Set();
+      dirsToFetch.forEach((p, i) => {
+        if (results[i] !== null) {
+          nextChildren[p] = results[i];
+          nextLoaded.add(p);
+        } else if (p !== '.') {
+          failedPaths.add(p);
+        }
+      });
+      setDirChildren(nextChildren);
+      setLoadedDirs(nextLoaded);
+      if (failedPaths.size > 0) {
+        setExpanded((prev) => {
+          const next = new Set(prev);
+          for (const p of failedPaths) next.delete(p);
+          return next;
+        });
+      }
+    });
+  }, [refreshTrigger, projectId, onFetchDir]);
 
   const toggle = useCallback(async (path) => {
     if (expanded.has(path)) {
@@ -188,13 +230,14 @@ function LazyTree({ selectedPath, onOpenFile, projectId, onFetchDir }) {
           selectedPath={selectedPath}
           onToggle={toggle}
           onOpenFile={onOpenFile}
+          onContextMenu={onContextMenu}
         />
       ))}
     </div>
   );
 }
 
-export default function WorkspaceFileTree({ items, selectedPath, onOpenFile, showHidden = false, lazy, projectId, onFetchDir }) {
+export default function WorkspaceFileTree({ items, selectedPath, onOpenFile, showHidden = false, lazy, projectId, onFetchDir, refreshTrigger, onContextMenu }) {
   if (lazy) {
     return (
       <LazyTree
@@ -202,6 +245,8 @@ export default function WorkspaceFileTree({ items, selectedPath, onOpenFile, sho
         onOpenFile={onOpenFile}
         projectId={projectId}
         onFetchDir={onFetchDir}
+        refreshTrigger={refreshTrigger}
+        onContextMenu={onContextMenu}
       />
     );
   }
@@ -242,6 +287,7 @@ export default function WorkspaceFileTree({ items, selectedPath, onOpenFile, sho
           selectedPath={selectedPath}
           onToggle={toggle}
           onOpenFile={onOpenFile}
+          onContextMenu={onContextMenu}
         />
       ))}
     </div>

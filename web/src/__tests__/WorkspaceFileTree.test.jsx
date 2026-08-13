@@ -54,7 +54,7 @@ describe('WorkspaceFileTree lazy mode', () => {
 
     await waitFor(() => expect(screen.getByText('src')).toBeInTheDocument());
 
-    const expandButton = screen.getByLabelText('展开/折叠 src');
+    const expandButton = screen.getByLabelText('Expand/Collapse src');
     fireEvent.click(expandButton);
 
     expect(onFetchDir).toHaveBeenCalledWith('proj1', 'src');
@@ -132,7 +132,7 @@ describe('WorkspaceFileTree lazy mode', () => {
 
     await waitFor(() => expect(screen.getByText('src')).toBeInTheDocument());
 
-    const expandButton = screen.getByLabelText('展开/折叠 src');
+    const expandButton = screen.getByLabelText('Expand/Collapse src');
     fireEvent.click(expandButton);
     await waitFor(() => expect(screen.getByText('app.js')).toBeInTheDocument());
 
@@ -162,7 +162,7 @@ describe('WorkspaceFileTree lazy mode', () => {
 
     await waitFor(() => expect(screen.getByText('src')).toBeInTheDocument());
 
-    const expandButton = screen.getByLabelText('展开/折叠 src');
+    const expandButton = screen.getByLabelText('Expand/Collapse src');
     fireEvent.click(expandButton);
     await waitFor(() => expect(screen.getByText('app.js')).toBeInTheDocument());
 
@@ -187,5 +187,107 @@ describe('WorkspaceFileTree lazy mode', () => {
     await waitFor(() => {
       expect(container.querySelector('[data-testid="tree-empty"]')).toBeInTheDocument();
     });
+  });
+
+  it('re-fetches expanded dirs when refreshTrigger changes', async () => {
+    onFetchDir
+      .mockResolvedValueOnce([
+        { name: 'src', path: 'src', type: 'directory' },
+      ])
+      .mockResolvedValueOnce([
+        { name: 'app.js', path: 'src/app.js', type: 'file' },
+      ]);
+
+    const { rerender } = render(
+      <WorkspaceFileTree
+        lazy
+        projectId="proj1"
+        onFetchDir={onFetchDir}
+        onOpenFile={onOpenFile}
+        refreshTrigger={0}
+      />
+    );
+
+    await waitFor(() => expect(screen.getByText('src')).toBeInTheDocument());
+
+    const expandButton = screen.getByLabelText('Expand/Collapse src');
+    fireEvent.click(expandButton);
+    await waitFor(() => expect(screen.getByText('app.js')).toBeInTheDocument());
+
+    // refreshTrigger change should re-fetch root + expanded dirs
+    onFetchDir
+      .mockResolvedValueOnce([
+        { name: 'src', path: 'src', type: 'directory' },
+        { name: 'new.js', path: 'new.js', type: 'file' },
+      ])
+      .mockResolvedValueOnce([
+        { name: 'app.js', path: 'src/app.js', type: 'file' },
+        { name: 'added.js', path: 'src/added.js', type: 'file' },
+      ]);
+
+    rerender(
+      <WorkspaceFileTree
+        lazy
+        projectId="proj1"
+        onFetchDir={onFetchDir}
+        onOpenFile={onOpenFile}
+        refreshTrigger={1}
+      />
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('new.js')).toBeInTheDocument();
+      expect(screen.getByText('added.js')).toBeInTheDocument();
+    });
+  });
+
+  it('calls onContextMenu on right-click of a file', async () => {
+    const onContextMenu = vi.fn();
+    onFetchDir.mockResolvedValueOnce([
+      { name: 'index.js', path: 'index.js', type: 'file' },
+    ]);
+
+    render(
+      <WorkspaceFileTree
+        lazy
+        projectId="proj1"
+        onFetchDir={onFetchDir}
+        onOpenFile={onOpenFile}
+        onContextMenu={onContextMenu}
+      />
+    );
+
+    await waitFor(() => expect(screen.getByText('index.js')).toBeInTheDocument());
+
+    fireEvent.contextMenu(screen.getByText('index.js'));
+    expect(onContextMenu).toHaveBeenCalledWith(
+      expect.objectContaining({ name: 'index.js', path: 'index.js', type: 'file' }),
+      expect.any(Object),
+    );
+  });
+
+  it('calls onContextMenu on right-click of a folder', async () => {
+    const onContextMenu = vi.fn();
+    onFetchDir.mockResolvedValueOnce([
+      { name: 'src', path: 'src', type: 'directory' },
+    ]);
+
+    render(
+      <WorkspaceFileTree
+        lazy
+        projectId="proj1"
+        onFetchDir={onFetchDir}
+        onOpenFile={onOpenFile}
+        onContextMenu={onContextMenu}
+      />
+    );
+
+    await waitFor(() => expect(screen.getByText('src')).toBeInTheDocument());
+
+    fireEvent.contextMenu(screen.getByText('src'));
+    expect(onContextMenu).toHaveBeenCalledWith(
+      expect.objectContaining({ name: 'src', path: 'src', type: 'directory' }),
+      expect.any(Object),
+    );
   });
 });
