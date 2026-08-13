@@ -1,10 +1,13 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { useGitStatus } from './useGitStatus';
 import * as githubApi from '../lib/githubApi';
+
+const OPTIMISTIC_TIMEOUT_MS = 5000;
 
 export function useGitChanges(projectId, fullPollEnabledRef) {
   const { status, loading, operation, commit: originalCommit, push: originalPush, pull: originalPull, fetchRemote: originalFetchRemote, switchBranch: originalSwitchBranch, createBranch: originalCreateBranch, fetchStatus } = useGitStatus(projectId, fullPollEnabledRef);
   const [optimistic, setOptimistic] = useState(null);
+  const optimisticTimerRef = useRef(null);
 
   useEffect(() => {
     if (optimistic && status) {
@@ -18,9 +21,32 @@ export function useGitChanges(projectId, fullPollEnabledRef) {
       );
       if (stagedMatch && unstagedMatch) {
         setOptimistic(null);
+        if (optimisticTimerRef.current) {
+          clearTimeout(optimisticTimerRef.current);
+          optimisticTimerRef.current = null;
+        }
       }
     }
   }, [status, optimistic]);
+
+  // Safety net: clear optimistic state after timeout so stale optimistic
+  // data (e.g. from a failed silent fetchStatus) doesn't hide real changes.
+  useEffect(() => {
+    if (optimistic && !optimisticTimerRef.current) {
+      optimisticTimerRef.current = setTimeout(() => {
+        optimisticTimerRef.current = null;
+        setOptimistic(null);
+      }, OPTIMISTIC_TIMEOUT_MS);
+    }
+    if (!optimistic && optimisticTimerRef.current) {
+      clearTimeout(optimisticTimerRef.current);
+      optimisticTimerRef.current = null;
+    }
+  }, [optimistic]);
+
+  useEffect(() => () => {
+    if (optimisticTimerRef.current) clearTimeout(optimisticTimerRef.current);
+  }, []);
 
   const merged = optimistic || status;
 

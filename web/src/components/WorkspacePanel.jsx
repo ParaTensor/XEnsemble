@@ -354,7 +354,7 @@ const WorkspacePanel = memo(function WorkspacePanel({
   const selectMainTab = useCallback(async (key) => {
     if (key === 'changes') {
       await flushAutosave().catch(() => {});
-      await fetchGitStatus?.({ silent: true, skipIfFreshMs: 2000 });
+      await fetchGitStatus?.({ silent: true });
     }
     setMainTab(key);
   }, [flushAutosave, fetchGitStatus]);

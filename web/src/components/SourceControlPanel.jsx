@@ -11,7 +11,6 @@ import { buttonClass } from '../lib/buttonStyles';
 import { ConsoleDialogShell } from './ConsoleDialog';
 import CreatePRDialog from './git/CreatePRDialog';
 import { ConflictFileItem } from './git/ConflictResolutionPanel';
-import { confirm } from './ConfirmDialog';
 import { DiffText } from './git/DiffText';
 import { getGitFileDiff } from '../lib/githubApi';
 import { apiFetch } from '../lib/api';
@@ -169,28 +168,38 @@ export default function SourceControlPanel({ projectId, gitChanges, onJumpToFile
   }, [gitChanges, expandedFiles, projectId]);
 
   const [discarding, setDiscarding] = useState(false);
+  const [discardConfirm, setDiscardConfirm] = useState(null);
 
   const handleDiscardFile = useCallback(async (path) => {
-    if (!await confirm({ title: 'Discard Changes', message: `Discard changes to ${path}? This cannot be undone.`, confirmLabel: 'Discard', variant: 'danger' })) return;
-    setFileDiffs((prev) => { const next = { ...prev }; delete next[path]; return next; });
-    await gitChanges?.discard([path]);
-  }, [gitChanges]);
+    setDiscardConfirm({ type: 'single', path });
+  }, []);
 
   const handleDiscardAll = useCallback(async () => {
     const allPaths = [...gitStagedFiles, ...gitUnstagedFiles].map((f) => f.path).filter(Boolean);
     if (allPaths.length === 0) return;
-    if (!await confirm({ title: 'Discard All Changes', message: `Discard all ${allPaths.length} change(s)? This cannot be undone.`, confirmLabel: 'Discard All', variant: 'danger' })) return;
+    setDiscardConfirm({ type: 'all', paths: allPaths });
+  }, [gitStagedFiles, gitUnstagedFiles]);
+
+  const handleConfirmDiscard = useCallback(async () => {
+    if (!discardConfirm) return;
+    const { type, paths, path } = discardConfirm;
+    const targetPaths = type === 'all' ? paths : [path];
+    setDiscardConfirm(null);
     setDiscarding(true);
     try {
-      setFileDiffs({});
-      await gitChanges?.discard(allPaths);
-      showToast('success', 'All changes discarded.');
+      if (type === 'single') {
+        setFileDiffs((prev) => { const next = { ...prev }; delete next[path]; return next; });
+      } else {
+        setFileDiffs({});
+      }
+      await gitChanges?.discard(targetPaths);
+      showToast('success', type === 'all' ? 'All changes discarded.' : 'Changes discarded.');
     } catch (err) {
       showToast('error', err.message || 'Discard failed');
     } finally {
       setDiscarding(false);
     }
-  }, [gitStagedFiles, gitUnstagedFiles, gitChanges, showToast]);
+  }, [discardConfirm, gitChanges, showToast]);
 
   const handleCommit = useCallback(async () => {
     if (!commitMessage.trim()) return;
@@ -422,7 +431,7 @@ export default function SourceControlPanel({ projectId, gitChanges, onJumpToFile
   };
 
   return (
-    <div className="flex flex-col h-full min-h-0 w-full">
+    <div className="flex flex-col h-full min-h-0 w-full relative">
       <div className="flex items-center justify-between gap-2 border-b border-[#E8EAED] px-3 py-1.5 shrink-0">
         <div className="flex min-w-0 items-center gap-1.5 text-[11px] text-zinc-500">
           <GitBranch className="h-3 w-3 shrink-0" />
@@ -763,6 +772,42 @@ export default function SourceControlPanel({ projectId, gitChanges, onJumpToFile
             </button>
           </div>
         </ConsoleDialogShell>
+      )}
+
+      {discardConfirm && (
+        <div className="absolute inset-0 z-[90] flex items-center justify-center bg-black/30 p-4">
+          <div className="w-72 rounded-lg border border-zinc-200 bg-white shadow-lg">
+            <div className="px-4 pt-4 pb-2">
+              <h3 className="text-sm font-semibold text-zinc-900">
+                {discardConfirm.type === 'all' ? 'Discard All Changes' : 'Discard Changes'}
+              </h3>
+            </div>
+            <div className="px-4 pb-4">
+              <p className="text-sm text-zinc-600 leading-relaxed">
+                {discardConfirm.type === 'all'
+                  ? `Discard all ${discardConfirm.paths.length} change(s)? This cannot be undone.`
+                  : `Discard changes to ${discardConfirm.path}? This cannot be undone.`}
+              </p>
+            </div>
+            <div className="flex justify-end gap-2 px-4 py-3 border-t border-zinc-200">
+              <button
+                type="button"
+                onClick={() => setDiscardConfirm(null)}
+                className={buttonClass('secondary', 'sm')}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmDiscard}
+                disabled={discarding}
+                className={`${buttonClass('danger', 'sm')} ${consoleButtonFocusClass}`}
+              >
+                {discarding ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : (discardConfirm.type === 'all' ? 'Discard All' : 'Discard')}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
