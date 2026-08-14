@@ -628,7 +628,25 @@ function AgentConsole({
             }
 
             if (inAltScreen) {
-              writeTerminalData(remaining);
+              // Buffer incomplete sync-term blocks even in alt screen.
+              // xterm.js ignores ?2026h/l wrappers but executes internal
+              // content (cursor positioning, space-fill). If a block is
+              // split across flushes, the first fragment clears/overwrites
+              // rows whose full content hasn't arrived yet, leaving blank
+              // gaps. Buffer until the matching ?2026l arrives.
+              if (remaining.includes('\x1b[?2026h')) {
+                const syncEnd = remaining.indexOf('\x1b[?2026l');
+                if (syncEnd === -1) {
+                  const syncStart = remaining.indexOf('\x1b[?2026h');
+                  const before = remaining.slice(0, syncStart);
+                  syncTermPending = remaining.slice(syncStart);
+                  if (before) writeTerminalData(before);
+                } else {
+                  writeTerminalData(remaining);
+                }
+              } else {
+                writeTerminalData(remaining);
+              }
               return;
             }
 
