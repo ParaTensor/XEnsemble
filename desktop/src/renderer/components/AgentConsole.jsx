@@ -201,6 +201,7 @@ function AgentConsole({
     let lastSentCols = 0;
     let lastSentRows = 0;
     let writeRafId = null;
+    let coalesceTimer = null;
     const resizeTimers = [];
 
     // Virtual screen for ANSI diff: declared at useEffect scope so fitTerminal
@@ -635,12 +636,13 @@ function AgentConsole({
               // rows whose full content hasn't arrived yet, leaving blank
               // gaps. Buffer until the matching ?2026l arrives.
               //
-              // Coalesce multiple complete blocks: agents like qwen-code
-              // emit full-screen redraws at 96% gaps < 100ms.  Writing
-              // every intermediate block causes xterm.js to process 5+
-              // full-screen redraws per animation frame, producing visible
-              // flickering.  Keep only the last block (full-screen redraws
-              // overwrite each other).
+              // Coalesce multiple complete blocks across animation frames:
+              // agents like qwen-code emit full-screen redraws at 96% gaps
+              // < 100ms.  Writing every intermediate block causes xterm.js
+              // to process 5+ full-screen redraws per second, producing
+              // visible flickering.  Keep only the last block (full-screen
+              // redraws overwrite each other).  A 50ms timer lets blocks
+              // from subsequent animation frames accumulate before the write.
               if (remaining.includes('\x1b[?2026h')) {
                 const syncEnd = remaining.indexOf('\x1b[?2026l');
                 if (syncEnd === -1) {
@@ -649,29 +651,36 @@ function AgentConsole({
                   syncTermPending = remaining.slice(syncStart);
                   if (before) writeTerminalData(before);
                 } else {
-                  const afterFirst = remaining.slice(syncEnd + '\x1b[?2026l'.length);
-                  const hasMoreBlocks = afterFirst.includes('\x1b[?2026h')
-                    && afterFirst.includes('\x1b[?2026l');
-                  if (hasMoreBlocks) {
-                    const firstSyncStart = remaining.indexOf('\x1b[?2026h');
-                    const lastSyncStart = remaining.lastIndexOf('\x1b[?2026h');
-                    const lastSyncEnd = remaining.indexOf('\x1b[?2026l', lastSyncStart);
+                  // Complete block(s) found.  Buffer and coalesce with a
+                  // timer so blocks arriving in subsequent animation frames
+                  // are accumulated before the final write.
+                  syncTermPending = remaining;
+                  if (coalesceTimer) clearTimeout(coalesceTimer);
+                  coalesceTimer = setTimeout(() => {
+                    coalesceTimer = null;
+                    if (disposed) return;
+                    const data = syncTermPending;
+                    syncTermPending = '';
+                    if (!data) return;
+                    // Find the last complete block in the buffered data.
+                    const lastSyncStart = data.lastIndexOf('\x1b[?2026h');
+                    const lastSyncEnd = data.indexOf('\x1b[?2026l', lastSyncStart);
                     if (lastSyncEnd === -1) {
-                      syncTermPending = remaining.slice(lastSyncStart);
+                      syncTermPending = data.slice(lastSyncStart);
+                      const firstSyncStart = data.indexOf('\x1b[?2026h');
                       if (firstSyncStart > 0) {
-                        writeTerminalData(remaining.slice(0, firstSyncStart));
+                        writeTerminalData(data.slice(0, firstSyncStart));
                       }
                     } else {
+                      const firstSyncStart = data.indexOf('\x1b[?2026h');
                       const lastBlockEnd = lastSyncEnd + '\x1b[?2026l'.length;
                       writeTerminalData(
-                        remaining.slice(0, firstSyncStart)
-                        + remaining.slice(lastSyncStart, lastBlockEnd)
-                        + remaining.slice(lastBlockEnd)
+                        data.slice(0, firstSyncStart)
+                        + data.slice(lastSyncStart, lastBlockEnd)
+                        + data.slice(lastBlockEnd)
                       );
                     }
-                  } else {
-                    writeTerminalData(remaining);
-                  }
+                  }, 50);
                 }
               } else {
                 writeTerminalData(remaining);
@@ -740,7 +749,9 @@ function AgentConsole({
               return;
             }
             if (msg.type === 'error') {
-              if (writeRafId !== null) { cancelAnimationFrame(writeRafId); clearTimeout(writeRafId); writeRafId = null; flushWriteBuffer(); }
+              if (writeRafId !== null) { cancelAnimationFrame(writeRafId); clearTimeout(writeRafId); writeRafId = null; }
+              if (coalesceTimer) { clearTimeout(coalesceTimer); coalesceTimer = null; }
+              flushWriteBuffer();
               hideOverlay();
               connectedRef.current = false;
               const failure = { message: msg.data };
@@ -749,7 +760,9 @@ function AgentConsole({
               return;
             }
             if (msg.type === 'exit') {
-              if (writeRafId !== null) { cancelAnimationFrame(writeRafId); clearTimeout(writeRafId); writeRafId = null; flushWriteBuffer(); }
+              if (writeRafId !== null) { cancelAnimationFrame(writeRafId); clearTimeout(writeRafId); writeRafId = null; }
+              if (coalesceTimer) { clearTimeout(coalesceTimer); coalesceTimer = null; }
+              flushWriteBuffer();
               hideOverlay();
               if (msg.message) terminal.write(msg.message);
               serverEnded = true;
@@ -799,6 +812,7 @@ function AgentConsole({
     return () => {
       disposed = true;
       if (writeRafId !== null) { cancelAnimationFrame(writeRafId); clearTimeout(writeRafId); }
+      if (coalesceTimer) { clearTimeout(coalesceTimer); coalesceTimer = null; }
       if (reconnectTimer) clearTimeout(reconnectTimer);
       resizeTimers.forEach((t) => clearTimeout(t));
       resizeObserver.disconnect();
