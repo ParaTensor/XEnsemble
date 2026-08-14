@@ -597,6 +597,16 @@ const WorkspacePanel = memo(function WorkspacePanel({
                 <div className="flex-1 flex flex-col items-center justify-center gap-3 text-zinc-400">
                   <FileText className="h-12 w-12" />
                   <p className="text-sm">Select a file from the tree to open</p>
+                  {!sidebarOpen && (
+                    <button
+                      type="button"
+                      onClick={() => setSidebarOpen(true)}
+                      className={`flex items-center gap-1.5 text-xs text-zinc-500 hover:text-zinc-700 ${consoleButtonFocusClass}`}
+                    >
+                      <PanelLeft className="h-3 w-3" />
+                      <span>Show file tree</span>
+                    </button>
+                  )}
                 </div>
               )}
             </div>
