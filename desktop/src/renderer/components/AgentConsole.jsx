@@ -39,6 +39,30 @@ const FALLBACK_XTERM_THEME = {
   brightWhite: '#f4f4f5',
 };
 
+function stripAlternateScreen(text) {
+  return text
+    .replace(/\x1b\[\?1049h/g, '')
+    .replace(/\x1b\[\?1049l/g, '')
+    .replace(/\x1b\[\?47h/g, '')
+    .replace(/\x1b\[\?47l/g, '')
+    .replace(/\x1b\[\?1047h/g, '')
+    .replace(/\x1b\[\?1047l/g, '')
+    .replace(/\x1b\[\?1000h/g, '')
+    .replace(/\x1b\[\?1000l/g, '')
+    .replace(/\x1b\[\?1002h/g, '')
+    .replace(/\x1b\[\?1002l/g, '')
+    .replace(/\x1b\[\?1003h/g, '')
+    .replace(/\x1b\[\?1003l/g, '')
+    .replace(/\x1b\[\?1004h/g, '')
+    .replace(/\x1b\[\?1004l/g, '')
+    .replace(/\x1b\[\?1005h/g, '')
+    .replace(/\x1b\[\?1005l/g, '')
+    .replace(/\x1b\[\?1006h/g, '')
+    .replace(/\x1b\[\?1006l/g, '')
+    .replace(/\x1b\[\?1015h/g, '')
+    .replace(/\x1b\[\?1015l/g, '');
+}
+
 function parseMessage(raw) {
   if (typeof raw === 'string') return JSON.parse(raw);
   return JSON.parse(raw.toString());
@@ -178,6 +202,14 @@ function AgentConsole({
     let lastSentRows = 0;
     let writeRafId = null;
     const resizeTimers = [];
+
+    // Virtual screen for ANSI diff: declared at useEffect scope so fitTerminal
+    // (outside connect) can resize vsScreen/vsRows on terminal resize, and
+    // vsProcess (inside connect) can read/update them.
+    let vsScreen = [];
+    let vsCursorY = 0;
+    let vsRows = terminal.rows || 32;
+    for (let y = 0; y < vsRows; y++) vsScreen[y] = '';
 
     const sendResize = (cols, rows) => {
       if (cols > 0 && rows > 0 && wsRef.current?.readyState === WebSocket.OPEN) {
@@ -381,13 +413,8 @@ function AgentConsole({
           // that may have left the terminal in alt screen).
           let inAltScreen = terminal.buffer.active === terminal.buffer.alternate;
 
-          // Virtual screen for ANSI diff: plain text per row, + cursor Y
-          // Used to detect which rows actually changed in a full-screen redraw
-          // and only output the changed rows (eliminates Ink's full-screen flash).
-          let vsScreen = [];
-          let vsCursorY = 0;
-          let vsRows = terminal.rows || 32;
-          for (let y = 0; y < vsRows; y++) vsScreen[y] = '';
+          // vsScreen, vsCursorY, vsRows are declared at useEffect scope so
+          // fitTerminal can resize them on terminal resize.
 
           // Buffer for incomplete sync-term (DECSET 2026) blocks.  Pi and
           // qwen-code wrap UI redraws in \x1b[?2026h ... \x1b[?2026l.  xterm.js
@@ -400,30 +427,6 @@ function AgentConsole({
 
           function vsStripAnsi(text) {
             return text.replace(/\x1b\[[0-9;?]*[a-zA-Z]/g, '').replace(/\x1b\].*?\x07/g, '');
-          }
-
-          function stripAlternateScreen(text) {
-            return text
-              .replace(/\x1b\[\?1049h/g, '')
-              .replace(/\x1b\[\?1049l/g, '')
-              .replace(/\x1b\[\?47h/g, '')
-              .replace(/\x1b\[\?47l/g, '')
-              .replace(/\x1b\[\?1047h/g, '')
-              .replace(/\x1b\[\?1047l/g, '')
-              .replace(/\x1b\[\?1000h/g, '')
-              .replace(/\x1b\[\?1000l/g, '')
-              .replace(/\x1b\[\?1002h/g, '')
-              .replace(/\x1b\[\?1002l/g, '')
-              .replace(/\x1b\[\?1003h/g, '')
-              .replace(/\x1b\[\?1003l/g, '')
-              .replace(/\x1b\[\?1004h/g, '')
-              .replace(/\x1b\[\?1004l/g, '')
-              .replace(/\x1b\[\?1005h/g, '')
-              .replace(/\x1b\[\?1005l/g, '')
-              .replace(/\x1b\[\?1006h/g, '')
-              .replace(/\x1b\[\?1006l/g, '')
-              .replace(/\x1b\[\?1015h/g, '')
-              .replace(/\x1b\[\?1015l/g, '');
           }
 
           function vsProcess(data) {
