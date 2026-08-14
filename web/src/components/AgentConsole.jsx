@@ -320,7 +320,13 @@ function AgentConsole({
             setEnded(true);
           };
           if (data.output) {
-            terminal.write(data.output, () => {
+            // Idle replay uses the raw transcript, which may contain alt-screen
+            // and mouse-tracking sequences from a previous live TUI session.
+            // Keeping them would leave xterm.js in the alternate buffer, where
+            // scrollToBottom is a no-op and modal dialogs appear mis-aligned.
+            // Strip them so the paused session renders in the primary buffer.
+            const replayOutput = stripAlternateScreen(data.output);
+            terminal.write(replayOutput, () => {
               terminal.write(systemMsg, finishReplay);
             });
           } else {
@@ -370,6 +376,11 @@ function AgentConsole({
           replayDoneRef.current = false;
           let writeBuffer = '';
           let pendingSeq = null;
+          // Track whether the terminal is currently in alternate screen mode.
+          // Initialized from xterm.js's actual buffer state (handles idle replay
+          // that may have left the terminal in alt screen).
+          let inAltScreen = terminal.buffer.active === terminal.buffer.alternate;
+
           // Virtual screen for ANSI diff: plain text per row, + cursor Y
           // Used to detect which rows actually changed in a full-screen redraw
           // and only output the changed rows (eliminates Ink's full-screen flash).
@@ -569,8 +580,58 @@ function AgentConsole({
             syncTermPending = '';
             writeBuffer = '';
 
+            // Detect alt screen transitions in this chunk.
+            // When entering alt screen: process pre-transition content with
+            // vsProcess (primary buffer), then pass the transition sequence +
+            // everything after it raw to xterm.js (native TUI rendering).
+            // When exiting alt screen: pass content + exit sequence raw,
+            // then process post-transition content with vsProcess.
+            // While in alt screen: pass everything raw (no linearization,
+            // no sync-term stripping — the TUI handles its own rendering).
+            const altEnterIdx = remaining.search(/\x1b\[\?(?:1049|47|1047)h/);
+            const altExitIdx = remaining.search(/\x1b\[\?(?:1049|47|1047)l/);
+
+            if (!inAltScreen && altEnterIdx >= 0) {
+              const match = remaining.match(/\x1b\[\?(?:1049|47|1047)h/);
+              const before = remaining.slice(0, altEnterIdx);
+              const transitionAndAfter = remaining.slice(altEnterIdx);
+              inAltScreen = true;
+              let output = '';
+              let hasOutput = false;
+              if (before) {
+                const result = processPrimaryBuffer(before);
+                output += result.output;
+                hasOutput = result.hasOutput;
+              }
+              output += transitionAndAfter;
+              hasOutput = true;
+              if (hasOutput) writeTerminalData(output);
+              return;
+            }
+
+            if (inAltScreen && altExitIdx >= 0) {
+              const match = remaining.match(/\x1b\[\?(?:1049|47|1047)l/);
+              const exitEnd = altExitIdx + match[0].length;
+              const beforeAndExit = remaining.slice(0, exitEnd);
+              const after = remaining.slice(exitEnd);
+              inAltScreen = false;
+              let output = beforeAndExit;
+              if (after) {
+                const result = processPrimaryBuffer(after);
+                output += result.output;
+              }
+              writeTerminalData(output);
+              return;
+            }
+
+            if (inAltScreen) {
+              writeTerminalData(remaining);
+              return;
+            }
+
+            // In primary buffer: process with vsProcess + sync-term
             const result = processPrimaryBuffer(remaining);
-            if (result.hasOutput) writeTerminalData(stripAlternateScreen(result.output));
+            if (result.hasOutput) writeTerminalData(result.output);
           };
 
           function writeTerminalData(processed) {
