@@ -97,6 +97,7 @@ export default React.forwardRef(function Sessions({
   activeSession,
   setActiveSession,
   fetchWorkspaces,
+  fetchAgents,
   launchPanelOpen,
   onLaunchPanelClose,
   className,
@@ -444,7 +445,7 @@ export default React.forwardRef(function Sessions({
     return [...projects].sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0))[0];
   }, [activeSession?.projectId, projects]);
 
-  const openLaunchModal = (mode = 'session', workspace = null) => {
+  const openLaunchModal = async (mode = 'session', workspace = null) => {
     setLaunchModalError(null);
     setCreateNewWorkspaceInline(false);
     setCustomImageId('');
@@ -452,6 +453,7 @@ export default React.forwardRef(function Sessions({
     setGitProvider('');
     setImportedProject(null);
     fetchCustomImages();
+    const freshAgents = await fetchAgents?.() || agents;
     if (mode === 'workspace') {
       setLaunchModalMode('workspace');
       setStartSessionAfterCreate(false);
@@ -475,7 +477,7 @@ export default React.forwardRef(function Sessions({
       }
     }
     const prefs = loadSidebarPrefs();
-    const sorted = sortAgentsByRecentUsage(agents, prefs);
+    const sorted = sortAgentsByRecentUsage(freshAgents, prefs);
     if (sorted.length > 0) {
       setSelectedAgentId(sorted[0].id);
     }

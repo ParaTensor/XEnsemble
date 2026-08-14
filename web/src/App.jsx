@@ -29,6 +29,7 @@ function AuthenticatedLayout({
   activeSession,
   setActiveSession,
   fetchWorkspaces,
+  fetchAgents,
   logout,
   showSettingsModal,
   setShowSettingsModal,
@@ -104,6 +105,7 @@ function AuthenticatedLayout({
           activeSession={activeSession}
           setActiveSession={setActiveSession}
           fetchWorkspaces={fetchWorkspaces}
+          fetchAgents={fetchAgents}
           launchPanelOpen={launchPanelOpen}
           onLaunchPanelClose={() => setLaunchPanelOpen(false)}
           className={cn(
@@ -181,6 +183,7 @@ function App() {
     activeSession,
     setActiveSession,
     fetchWorkspaces,
+    fetchAgents,
   } = useWorkspaces(user);
 
   React.useEffect(() => {
@@ -295,6 +298,7 @@ function App() {
                     activeSession={activeSession}
                     setActiveSession={setActiveSession}
                     fetchWorkspaces={fetchWorkspaces}
+                    fetchAgents={fetchAgents}
                     logout={logout}
                     showSettingsModal={showSettingsModal}
                     setShowSettingsModal={setShowSettingsModal}
