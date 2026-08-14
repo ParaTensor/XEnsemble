@@ -647,7 +647,7 @@ function AgentConsole({
               // < 100ms.  Writing every intermediate block causes xterm.js
               // to process 5+ full-screen redraws per second, producing
               // visible flickering.  Keep only the last block (full-screen
-              // redraws overwrite each other).  A 50ms timer lets blocks
+              // redraws overwrite each other).  A 100ms timer lets blocks
               // from subsequent animation frames accumulate before the write.
               if (remaining.includes('\x1b[?2026h')) {
                 const syncEnd = remaining.indexOf('\x1b[?2026l');
@@ -687,7 +687,7 @@ function AgentConsole({
                         + '\x1b[?25l'
                       );
                     }
-                  }, 50);
+                  }, 100);
                 }
               } else {
                 writeTerminalData(remaining);
