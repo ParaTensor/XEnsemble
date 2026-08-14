@@ -12,7 +12,7 @@ import {
   createTerminalReconnectState,
   isTerminalAuthFailure,
   refreshTokenForTerminalFailure,
-} from '../../../shared/terminalReconnect.mjs';
+} from '../../../../shared/terminalReconnect.mjs';
 
 const FALLBACK_XTERM_THEME = {
   background: '#09090b',
