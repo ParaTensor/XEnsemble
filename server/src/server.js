@@ -243,7 +243,8 @@ fastify.post('/api/v1/secrets', { preValidation: [fastify.authenticate] }, async
 fastify.get('/api/v1/agents/:agentId/byok-fields', { preValidation: [fastify.authenticate] }, async (request, reply) => {
     const { agentId } = request.params;
     const { BYOK_FIELDS } = require('./agents/byokFields');
-    return BYOK_FIELDS[agentId] || [];
+    const entry = BYOK_FIELDS[agentId];
+    return entry ? { description: entry.description, fields: entry.fields } : { description: '', fields: [] };
 });
 
 fastify.get('/api/v1/agents/:agentId/byok-config', { preValidation: [fastify.authenticate] }, async (request, reply) => {
@@ -260,7 +261,8 @@ fastify.put('/api/v1/agents/:agentId/byok-config', { preValidation: [fastify.aut
     const values = body.values || body;
     const { BYOK_FIELDS, applyByokToSecrets } = require('./agents/byokFields');
 
-    const fields = BYOK_FIELDS[agentId];
+    const entry = BYOK_FIELDS[agentId];
+    const fields = entry?.fields;
     if (!fields) return reply.code(404).send({ error: 'No BYOK fields for this agent' });
 
     const missing = fields

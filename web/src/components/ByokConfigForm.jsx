@@ -14,6 +14,7 @@ import {
 
 export default function ByokConfigForm({ agentId, loading, onSave }) {
   const [fields, setFields] = useState([]);
+  const [description, setDescription] = useState('');
   const [values, setValues] = useState({});
   const [valuesLoading, setValuesLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -24,12 +25,14 @@ export default function ByokConfigForm({ agentId, loading, onSave }) {
     if (!agentId) return;
     setValuesLoading(true);
     setError(null);
+    setDescription('');
     Promise.all([
       apiFetch(`/api/v1/agents/${encodeURIComponent(agentId)}/byok-fields`).then((r) => r.json()),
       apiFetch(`/api/v1/agents/${encodeURIComponent(agentId)}/byok-config`).then((r) => r.json()),
     ]).then(([fieldsRes, configRes]) => {
       const fieldList = Array.isArray(fieldsRes) ? fieldsRes : (fieldsRes.fields || []);
       setFields(fieldList);
+      if (fieldsRes?.description) setDescription(fieldsRes.description);
       const savedValues = {};
       const config = configRes || {};
       for (const f of fieldList) {
@@ -101,6 +104,11 @@ export default function ByokConfigForm({ agentId, loading, onSave }) {
 
   return (
     <div className="space-y-3">
+      {description && (
+        <p className={cn('text-xs rounded-md bg-[#F4F5F6] px-3 py-2', textSecondary)}>
+          {description}
+        </p>
+      )}
       {error && (
         <p className="text-sm text-[#C06C5D] bg-[#FDECEA] border border-[#FADBD8] rounded-md px-3 py-2">{error}</p>
       )}

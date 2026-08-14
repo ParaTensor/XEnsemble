@@ -11,95 +11,148 @@
  */
 
 const BYOK_FIELDS = {
-    'kimi-code': [
-        { key: 'api_key', label: 'API Key', tooltip: 'Moonshot/Kimi API 密钥', type: 'secret', defaultValue: '', required: true },
-        { key: 'base_url', label: 'Base URL', tooltip: 'API 基础地址', type: 'string', defaultValue: 'https://api.moonshot.cn/v1', required: false },
-        { key: 'model', label: 'Model', tooltip: '模型 ID', type: 'string', defaultValue: 'kimi-k2.5', required: false },
-        { key: 'max_context_size', label: 'Max Context Size', tooltip: '最大上下文窗口（token 数）', type: 'number', defaultValue: 256000, required: false },
-    ],
-    'claude-code': [
-        { key: 'ANTHROPIC_API_KEY', label: 'API Key', tooltip: 'Anthropic API 密钥', type: 'secret', defaultValue: '', required: true },
-        { key: 'ANTHROPIC_BASE_URL', label: 'Base URL', tooltip: 'API 基础地址，可填代理地址', type: 'string', defaultValue: 'https://api.anthropic.com', required: false },
-        { key: 'ANTHROPIC_MODEL', label: 'Model', tooltip: '主模型 ID', type: 'string', defaultValue: '', required: false },
-        { key: 'ANTHROPIC_SMALL_FAST_MODEL', label: 'Small/Fast Model', tooltip: '轻量快速模型 ID（用于简单任务）', type: 'string', defaultValue: '', required: false },
-    ],
-    'opencode': [
-        { key: 'apiKey', label: 'API Key', tooltip: 'LLM Provider API 密钥', type: 'secret', defaultValue: '', required: true },
-        { key: 'baseURL', label: 'Base URL', tooltip: 'API 基础地址', type: 'string', defaultValue: 'https://api.openai.com/v1', required: false },
-        { key: 'model', label: 'Model', tooltip: '默认模型，格式为 provider/model', type: 'string', defaultValue: 'openai/gpt-4o', required: false },
-        { key: 'provider', label: 'Provider Name', tooltip: 'Provider 标识名', type: 'string', defaultValue: 'openai', required: false },
-    ],
-    'cline': [
-        { key: 'ANTHROPIC_API_KEY', label: 'API Key', tooltip: 'Anthropic API 密钥', type: 'secret', defaultValue: '', required: true },
-    ],
-    'droid': [
-        { key: 'apiKey', label: 'API Key', tooltip: 'LLM Provider API 密钥', type: 'secret', defaultValue: '', required: true },
-        { key: 'baseUrl', label: 'Base URL', tooltip: 'API 基础地址', type: 'string', defaultValue: 'https://api.openai.com/v1', required: false },
-        { key: 'model', label: 'Model', tooltip: '模型 ID', type: 'string', defaultValue: 'gpt-4o', required: false },
-        { key: 'provider', label: 'Provider Type', tooltip: 'Provider 类型', type: 'string', defaultValue: 'generic-chat-completion-api', required: false },
-    ],
-    'glm-agent': [
-        { key: 'apiKey', label: 'API Key', tooltip: 'Z.AI API 密钥', type: 'secret', defaultValue: '', required: true },
-        { key: 'baseURL', label: 'Base URL', tooltip: 'API 基础地址', type: 'string', defaultValue: 'https://api.z.ai/api/coding/paas/v4', required: false },
-        { key: 'defaultModel', label: 'Model', tooltip: '默认模型 ID', type: 'string', defaultValue: 'glm-4.6', required: false },
-    ],
-    'qoder': [
-        { key: 'QODER_PERSONAL_ACCESS_TOKEN', label: 'Access Token', tooltip: 'Qoder 平台访问令牌', type: 'secret', defaultValue: '', required: true },
-        { key: 'apiKey', label: 'Provider API Key', tooltip: 'LLM Provider API 密钥（选填，不填则使用 Qoder 官方 API）', type: 'secret', defaultValue: '', required: false },
-        { key: 'baseUrl', label: 'Base URL', tooltip: 'API 基础地址（选填）', type: 'string', defaultValue: '', required: false },
-        { key: 'model', label: 'Model', tooltip: '模型 ID（选填）', type: 'string', defaultValue: '', required: false },
-    ],
-    'qwen-code': [
-        { key: 'DASHSCOPE_API_KEY', label: 'API Key', tooltip: '阿里云 DashScope API 密钥（用于 Qwen 默认模型）', type: 'secret', defaultValue: '', required: true },
-        { key: 'customApiKey', label: 'Custom Provider Key', tooltip: '自定义 Provider 的 API 密钥（选填，填了则使用自定义 Provider 而非 DashScope）', type: 'secret', defaultValue: '', required: false },
-        { key: 'baseUrl', label: 'Custom Base URL', tooltip: '自定义 Provider API 基础地址（选填，配合 customApiKey 使用）', type: 'string', defaultValue: '', required: false },
-        { key: 'model', label: 'Custom Model', tooltip: '自定义模型 ID（选填，配合 customApiKey 使用）', type: 'string', defaultValue: '', required: false },
-    ],
-    'minimax-cli': [
-        { key: 'MINIMAX_API_KEY', label: 'API Key', tooltip: 'MiniMax API 密钥', type: 'secret', defaultValue: '', required: true },
-    ],
-    'pi': [
-        { key: 'ANTHROPIC_API_KEY', label: 'Anthropic API Key', tooltip: 'Anthropic API 密钥', type: 'secret', defaultValue: '', required: true },
-        { key: 'OPENAI_API_KEY', label: 'OpenAI API Key', tooltip: 'OpenAI API 密钥', type: 'secret', defaultValue: '', required: true },
-        { key: 'apiKey', label: 'Custom Provider Key', tooltip: '自定义 Provider API 密钥（选填，用于第三方 LLM）', type: 'secret', defaultValue: '', required: false },
-        { key: 'baseUrl', label: 'Custom Base URL', tooltip: '自定义 Provider API 地址（选填）', type: 'string', defaultValue: '', required: false },
-        { key: 'model', label: 'Custom Model', tooltip: '自定义模型 ID（选填）', type: 'string', defaultValue: '', required: false },
-    ],
-    'commandcode': [
-        { key: 'COHERE_API_KEY', label: 'API Key', tooltip: 'Cohere API 密钥', type: 'secret', defaultValue: '', required: true },
-    ],
-    'hermes': [
-        { key: 'api_key', label: 'API Key', tooltip: 'LLM Provider API 密钥', type: 'secret', defaultValue: '', required: true },
-        { key: 'base_url', label: 'Base URL', tooltip: 'API 基础地址', type: 'string', defaultValue: 'https://api.openai.com/v1', required: false },
-        { key: 'model', label: 'Model', tooltip: '模型 ID', type: 'string', defaultValue: 'gpt-4o', required: false },
-        { key: 'api_mode', label: 'API Mode', tooltip: 'API 协议模式', type: 'string', defaultValue: 'openai', required: false },
-    ],
-    'openclaw': [
-        { key: 'apiKey', label: 'API Key', tooltip: 'LLM Provider API 密钥', type: 'secret', defaultValue: '', required: true },
-        { key: 'baseUrl', label: 'Base URL', tooltip: 'API 基础地址', type: 'string', defaultValue: 'https://api.openai.com/v1', required: false },
-        { key: 'model', label: 'Model', tooltip: '模型 ID', type: 'string', defaultValue: 'gpt-4o', required: false },
-        { key: 'api', label: 'API Type', tooltip: 'API 协议类型', type: 'string', defaultValue: 'openai-completions', required: false },
-    ],
-    'github-copilot': [
-        { key: 'apiKey', label: 'API Key', tooltip: 'LLM Provider API 密钥', type: 'secret', defaultValue: '', required: true },
-        { key: 'baseUrl', label: 'Base URL', tooltip: 'API 基础地址', type: 'string', defaultValue: 'https://api.openai.com/v1', required: false },
-        { key: 'model', label: 'Model', tooltip: '模型 ID', type: 'string', defaultValue: 'gpt-4o', required: false },
-    ],
-    'codebuddy': [
-        { key: 'apiKey', label: 'API Key', tooltip: 'LLM Provider API 密钥', type: 'secret', defaultValue: '', required: true },
-        { key: 'baseUrl', label: 'Base URL', tooltip: 'API 基础地址（需包含 /v1/chat/completions 路径）', type: 'string', defaultValue: 'https://api.openai.com/v1/chat/completions', required: false },
-        { key: 'model', label: 'Model', tooltip: '模型 ID', type: 'string', defaultValue: 'gpt-4o', required: false },
-    ],
-    'cursor': [
-        { key: 'apiKey', label: 'API Key', tooltip: 'LLM Provider API 密钥', type: 'secret', defaultValue: '', required: true },
-        { key: 'baseUrl', label: 'Base URL', tooltip: 'API 基础地址', type: 'string', defaultValue: 'https://api.openai.com/v1', required: false },
-        { key: 'model', label: 'Model', tooltip: '模型 ID', type: 'string', defaultValue: 'gpt-4o', required: false },
-    ],
-    'amp': [
-        { key: 'apiKey', label: 'API Key', tooltip: 'LLM Provider API 密钥', type: 'secret', defaultValue: '', required: true },
-        { key: 'baseUrl', label: 'Base URL', tooltip: 'API 基础地址', type: 'string', defaultValue: 'https://api.openai.com/v1', required: false },
-        { key: 'model', label: 'Model', tooltip: '模型 ID', type: 'string', defaultValue: 'gpt-4o', required: false },
-    ],
+    'kimi-code': {
+        description: 'Only fill API Key to use Kimi/Moonshot. Fill a custom Base URL to use a different OpenAI-compatible endpoint.',
+        fields: [
+            { key: 'api_key', label: 'API Key', tooltip: 'Moonshot/Kimi API 密钥', type: 'secret', defaultValue: '', required: true },
+            { key: 'base_url', label: 'Base URL', tooltip: 'API 基础地址', type: 'string', defaultValue: 'https://api.moonshot.cn/v1', required: false },
+            { key: 'model', label: 'Model', tooltip: '模型 ID', type: 'string', defaultValue: 'kimi-k2.5', required: false },
+            { key: 'max_context_size', label: 'Max Context Size', tooltip: '最大上下文窗口（token 数）', type: 'number', defaultValue: 256000, required: false },
+        ],
+    },
+    'claude-code': {
+        description: 'Only fill API Key to use Anthropic Claude. Fill Base URL + Model to customize the endpoint.',
+        fields: [
+            { key: 'ANTHROPIC_API_KEY', label: 'API Key', tooltip: 'Anthropic API 密钥', type: 'secret', defaultValue: '', required: true },
+            { key: 'ANTHROPIC_BASE_URL', label: 'Base URL', tooltip: 'API 基础地址，可填代理地址', type: 'string', defaultValue: 'https://api.anthropic.com', required: false },
+            { key: 'ANTHROPIC_MODEL', label: 'Model', tooltip: '主模型 ID', type: 'string', defaultValue: '', required: false },
+            { key: 'ANTHROPIC_SMALL_FAST_MODEL', label: 'Small/Fast Model', tooltip: '轻量快速模型 ID（用于简单任务）', type: 'string', defaultValue: '', required: false },
+        ],
+    },
+    'opencode': {
+        description: 'Only fill API Key to use OpenAI. Fill Base URL + Model + Provider to customize.',
+        fields: [
+            { key: 'apiKey', label: 'API Key', tooltip: 'LLM Provider API 密钥', type: 'secret', defaultValue: '', required: true },
+            { key: 'baseURL', label: 'Base URL', tooltip: 'API 基础地址', type: 'string', defaultValue: 'https://api.openai.com/v1', required: false },
+            { key: 'model', label: 'Model', tooltip: '默认模型，格式为 provider/model', type: 'string', defaultValue: 'openai/gpt-4o', required: false },
+            { key: 'provider', label: 'Provider Name', tooltip: 'Provider 标识名', type: 'string', defaultValue: 'openai', required: false },
+        ],
+    },
+    'cline': {
+        description: 'Only fill API Key to use Anthropic Claude (official default). Fill Base URL + Model to use a custom OpenAI-compatible provider.',
+        fields: [
+            { key: 'ANTHROPIC_API_KEY', label: 'API Key', tooltip: 'Anthropic API 密钥（仅填此项, cline 使用官方 Anthropic 默认配置）', type: 'secret', defaultValue: '', required: true },
+            { key: 'baseUrl', label: 'Base URL', tooltip: '自定义 Provider API 基础地址（填了此项后, cline 将使用自定义 OpenAI 兼容 provider）', type: 'string', defaultValue: '', required: false },
+            { key: 'model', label: 'Model', tooltip: '模型 ID（配合自定义 Base URL 使用）', type: 'string', defaultValue: '', required: false },
+        ],
+    },
+    'droid': {
+        description: 'Only fill API Key to use a custom model. Fill Base URL + Model to customize the endpoint.',
+        fields: [
+            { key: 'apiKey', label: 'API Key', tooltip: 'LLM Provider API 密钥', type: 'secret', defaultValue: '', required: true },
+            { key: 'baseUrl', label: 'Base URL', tooltip: 'API 基础地址', type: 'string', defaultValue: 'https://api.openai.com/v1', required: false },
+            { key: 'model', label: 'Model', tooltip: '模型 ID', type: 'string', defaultValue: 'gpt-4o', required: false },
+            { key: 'provider', label: 'Provider Type', tooltip: 'Provider 类型', type: 'string', defaultValue: 'generic-chat-completion-api', required: false },
+        ],
+    },
+    'glm-agent': {
+        description: 'Only fill API Key to use Z.AI GLM. Fill Base URL + Model to customize.',
+        fields: [
+            { key: 'apiKey', label: 'API Key', tooltip: 'Z.AI API 密钥', type: 'secret', defaultValue: '', required: true },
+            { key: 'baseURL', label: 'Base URL', tooltip: 'API 基础地址', type: 'string', defaultValue: 'https://api.z.ai/api/coding/paas/v4', required: false },
+            { key: 'defaultModel', label: 'Model', tooltip: '默认模型 ID', type: 'string', defaultValue: 'glm-4.6', required: false },
+        ],
+    },
+    'qoder': {
+        description: 'Only fill Qoder Token for Qoder official API. Fill Custom Provider to add your own endpoint.',
+        fields: [
+            { key: 'QODER_PERSONAL_ACCESS_TOKEN', label: 'Access Token', tooltip: 'Qoder 平台访问令牌', type: 'secret', defaultValue: '', required: true },
+            { key: 'apiKey', label: 'Provider API Key', tooltip: 'LLM Provider API 密钥（选填，不填则使用 Qoder 官方 API）', type: 'secret', defaultValue: '', required: false },
+            { key: 'baseUrl', label: 'Base URL', tooltip: 'API 基础地址（选填）', type: 'string', defaultValue: '', required: false },
+            { key: 'model', label: 'Model', tooltip: '模型 ID（选填）', type: 'string', defaultValue: '', required: false },
+        ],
+    },
+    'qwen-code': {
+        description: 'Only fill DashScope Key for Qwen official API. Fill Custom Provider to add your own endpoint.',
+        fields: [
+            { key: 'DASHSCOPE_API_KEY', label: 'API Key', tooltip: '阿里云 DashScope API 密钥（用于 Qwen 默认模型）', type: 'secret', defaultValue: '', required: true },
+            { key: 'customApiKey', label: 'Custom Provider Key', tooltip: '自定义 Provider 的 API 密钥（选填，填了则使用自定义 Provider 而非 DashScope）', type: 'secret', defaultValue: '', required: false },
+            { key: 'baseUrl', label: 'Custom Base URL', tooltip: '自定义 Provider API 基础地址（选填，配合 customApiKey 使用）', type: 'string', defaultValue: '', required: false },
+            { key: 'model', label: 'Custom Model', tooltip: '自定义模型 ID（选填，配合 customApiKey 使用）', type: 'string', defaultValue: '', required: false },
+        ],
+    },
+    'minimax-cli': {
+        description: 'Only fill API Key to use MiniMax.',
+        fields: [
+            { key: 'MINIMAX_API_KEY', label: 'API Key', tooltip: 'MiniMax API 密钥', type: 'secret', defaultValue: '', required: true },
+        ],
+    },
+    'pi': {
+        description: 'Only fill Anthropic/OpenAI API Keys for Pi\'s built-in providers. Fill Custom Provider to add your own OpenAI-compatible endpoint.',
+        fields: [
+            { key: 'ANTHROPIC_API_KEY', label: 'Anthropic API Key', tooltip: 'Anthropic API 密钥', type: 'secret', defaultValue: '', required: true },
+            { key: 'OPENAI_API_KEY', label: 'OpenAI API Key', tooltip: 'OpenAI API 密钥', type: 'secret', defaultValue: '', required: true },
+            { key: 'apiKey', label: 'Custom Provider Key', tooltip: '自定义 Provider API 密钥（选填，填了则注册自定义 OpenAI 兼容 provider）', type: 'secret', defaultValue: '', required: false },
+            { key: 'baseUrl', label: 'Custom Base URL', tooltip: '自定义 Provider API 地址（选填）', type: 'string', defaultValue: '', required: false },
+            { key: 'model', label: 'Custom Model', tooltip: '自定义模型 ID（选填）', type: 'string', defaultValue: '', required: false },
+        ],
+    },
+    'commandcode': {
+        description: 'Only fill API Key to use Cohere.',
+        fields: [
+            { key: 'COHERE_API_KEY', label: 'API Key', tooltip: 'Cohere API 密钥', type: 'secret', defaultValue: '', required: true },
+        ],
+    },
+    'hermes': {
+        description: 'Only fill API Key to use Hermes with a custom provider. Fill Base URL + Model to customize the endpoint.',
+        fields: [
+            { key: 'api_key', label: 'API Key', tooltip: 'LLM Provider API 密钥', type: 'secret', defaultValue: '', required: true },
+            { key: 'base_url', label: 'Base URL', tooltip: 'API 基础地址', type: 'string', defaultValue: 'https://api.openai.com/v1', required: false },
+            { key: 'model', label: 'Model', tooltip: '模型 ID', type: 'string', defaultValue: 'gpt-4o', required: false },
+            { key: 'api_mode', label: 'API Mode', tooltip: 'API 协议模式', type: 'string', defaultValue: 'openai', required: false },
+        ],
+    },
+    'openclaw': {
+        description: 'Only fill API Key to use OpenAI. Fill Base URL + Model to customize.',
+        fields: [
+            { key: 'apiKey', label: 'API Key', tooltip: 'LLM Provider API 密钥', type: 'secret', defaultValue: '', required: true },
+            { key: 'baseUrl', label: 'Base URL', tooltip: 'API 基础地址', type: 'string', defaultValue: 'https://api.openai.com/v1', required: false },
+            { key: 'model', label: 'Model', tooltip: '模型 ID', type: 'string', defaultValue: 'gpt-4o', required: false },
+            { key: 'api', label: 'API Type', tooltip: 'API 协议类型', type: 'string', defaultValue: 'openai-completions', required: false },
+        ],
+    },
+    'github-copilot': {
+        description: 'Only fill API Key to use OpenAI. Fill Base URL + Model to customize.',
+        fields: [
+            { key: 'apiKey', label: 'API Key', tooltip: 'LLM Provider API 密钥', type: 'secret', defaultValue: '', required: true },
+            { key: 'baseUrl', label: 'Base URL', tooltip: 'API 基础地址', type: 'string', defaultValue: 'https://api.openai.com/v1', required: false },
+            { key: 'model', label: 'Model', tooltip: '模型 ID', type: 'string', defaultValue: 'gpt-4o', required: false },
+        ],
+    },
+    'codebuddy': {
+        description: 'Only fill API Key to use a custom model. Fill Base URL + Model to customize the endpoint.',
+        fields: [
+            { key: 'apiKey', label: 'API Key', tooltip: 'LLM Provider API 密钥', type: 'secret', defaultValue: '', required: true },
+            { key: 'baseUrl', label: 'Base URL', tooltip: 'API 基础地址（需包含 /v1/chat/completions 路径）', type: 'string', defaultValue: 'https://api.openai.com/v1/chat/completions', required: false },
+            { key: 'model', label: 'Model', tooltip: '模型 ID', type: 'string', defaultValue: 'gpt-4o', required: false },
+        ],
+    },
+    'cursor': {
+        description: 'Only fill API Key to use OpenAI. Fill Base URL + Model to customize.',
+        fields: [
+            { key: 'apiKey', label: 'API Key', tooltip: 'LLM Provider API 密钥', type: 'secret', defaultValue: '', required: true },
+            { key: 'baseUrl', label: 'Base URL', tooltip: 'API 基础地址', type: 'string', defaultValue: 'https://api.openai.com/v1', required: false },
+            { key: 'model', label: 'Model', tooltip: '模型 ID', type: 'string', defaultValue: 'gpt-4o', required: false },
+        ],
+    },
+    'amp': {
+        description: 'Only fill API Key to use OpenAI. Fill Base URL + Model to customize.',
+        fields: [
+            { key: 'apiKey', label: 'API Key', tooltip: 'LLM Provider API 密钥', type: 'secret', defaultValue: '', required: true },
+            { key: 'baseUrl', label: 'Base URL', tooltip: 'API 基础地址', type: 'string', defaultValue: 'https://api.openai.com/v1', required: false },
+            { key: 'model', label: 'Model', tooltip: '模型 ID', type: 'string', defaultValue: 'gpt-4o', required: false },
+        ],
+    },
 };
 
 function byokStorageKey(agentId) {
@@ -140,7 +193,7 @@ function generateByokConfig(agentId, values) {
         case 'kimi-code': return generateKimiCode(values);
         case 'claude-code': return generateClaudeCode(values);
         case 'opencode': return generateOpencode(values);
-        case 'cline': return generateSimpleEnv(values, ['ANTHROPIC_API_KEY']);
+        case 'cline': return generateCline(values);
         case 'droid': return generateDroid(values);
         case 'glm-agent': return generateGlmAgent(values);
         case 'qoder': return generateQoder(values);
@@ -158,7 +211,7 @@ function generateByokConfig(agentId, values) {
     }
 }
 
-// ── Env-only generator for single-key agents (cline, minimax-cli, commandcode) ──
+// ── Env-only generator for single-key agents (minimax-cli, commandcode) ──
 
 function generateSimpleEnv(values, keys) {
     const env = {};
@@ -167,6 +220,46 @@ function generateSimpleEnv(values, keys) {
         if (v) env[k] = v;
     }
     return { env, configFiles: [] };
+}
+
+// ── cline (env-only for default, config file for custom provider) ──
+
+function generateCline(values) {
+    const env = {};
+    const configFiles = [];
+    const apiKey = str(values.ANTHROPIC_API_KEY);
+    const baseUrl = str(values.baseUrl);
+    const model = str(values.model);
+
+    if (!apiKey) return { env, configFiles };
+
+    env.ANTHROPIC_API_KEY = apiKey;
+
+    // Only generate providers.json when user explicitly fills baseUrl (custom provider).
+    if (baseUrl) {
+        const configDir = '${STATE_DIR}';
+        configFiles.push({
+            path: `${configDir}/settings/providers.json`,
+            content: JSON.stringify({
+                version: 1,
+                lastUsedProvider: 'openai-compatible',
+                providers: {
+                    'openai-compatible': {
+                        settings: {
+                            provider: 'openai-compatible',
+                            model: model || 'gpt-4o',
+                            baseUrl: baseUrl,
+                            apiKey: apiKey,
+                        },
+                        updatedAt: new Date().toISOString(),
+                        tokenSource: 'manual',
+                    },
+                },
+            }, null, 2),
+        });
+    }
+
+    return { env, configFiles };
 }
 
 // ── claude-code (env only) ──
@@ -189,6 +282,9 @@ function generateKimiCode(values) {
     const baseUrl = str(values.base_url) || 'https://api.moonshot.cn/v1';
     const model = str(values.model) || 'kimi-k2.5';
     const maxContext = str(values.max_context_size) || '256000';
+    // Use kimi type for Moonshot default, openai type for custom endpoints
+    const isDefaultUrl = baseUrl === 'https://api.moonshot.cn/v1';
+    const providerType = isDefaultUrl ? 'kimi' : 'openai';
 
     if (apiKey) {
         const toml = [
@@ -196,7 +292,7 @@ function generateKimiCode(values) {
             'default_provider = "kimi"',
             '',
             '[providers.kimi]',
-            'type = "kimi"',
+            `type = "${providerType}"`,
             `base_url = "${baseUrl}"`,
             `api_key = "${apiKey}"`,
             '',
@@ -257,6 +353,7 @@ function generateDroid(values) {
     const provider = str(values.provider) || 'generic-chat-completion-api';
 
     if (apiKey) {
+        env.FACTORY_AIRGAP_ENABLED = '1';
         const config = {
             customModels: [
                 {
@@ -447,7 +544,7 @@ function generateHermes(values) {
     const apiMode = str(values.api_mode) || 'openai';
 
     if (apiKey) {
-        const providerName = 'openai';
+        const providerName = 'auto';
         const yaml = [
             'model:',
             `  model: ${model}`,
@@ -455,7 +552,7 @@ function generateHermes(values) {
             '',
             'providers:',
             `  ${providerName}:`,
-            '    name: OpenAI',
+            '    name: Custom',
             `    base_url: ${baseUrl}`,
             `    api_key: ${apiKey}`,
             `    api_mode: ${apiMode}`,

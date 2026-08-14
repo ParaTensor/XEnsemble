@@ -285,14 +285,13 @@ export default React.forwardRef(function Sessions({
     try {
       const res = await apiFetch('/api/v1/secrets');
       const data = await res.json();
-      if (!res.ok) return false;
+      if (!res.ok) return true;
       const missing = required.filter((k) => !data[k]);
       if (missing.length === 0) return true;
-      openLaunchConfigModal();
-      return false;
+      showToast('warning', `${agent.name} requires API keys. Configure them in Settings > API Keys.`);
+      return true;
     } catch {
-      openLaunchConfigModal();
-      return false;
+      return true;
     }
   };
 

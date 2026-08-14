@@ -115,24 +115,33 @@ function resolveAgentSpawnArgs(agentId, configFiles, options = {}) {
     const prepend = [];
     const append = [];
 
-    if (agentId === 'hermes' && authMode === 'gateway') {
-        // hermes chat subcommand accepts -m directly; the gateway config.yaml
-        // is written by ensureGatewayConfig to route through the gateway URL.
-        // --ignore-user-config was removed: it's a no-op in hermes (the CLI flag
-        // exists but never sets HERMES_IGNORE_USER_CONFIG env var), and we now
-        // overwrite config.yaml with gateway credentials instead.
-        if (gatewayModel) {
+    if (agentId === 'hermes') {
+        if (authMode === 'gateway' && gatewayModel) {
             prepend.push('-m', gatewayModel);
+        } else if (configFiles?.length) {
+            const cfg = configFiles.find((cf) => cf.path && cf.path.endsWith('config.yaml'));
+            if (cfg?.content) {
+                const modelMatch = cfg.content.match(/^  model: (.+)$/m);
+                if (modelMatch?.[1]) prepend.push('-m', modelMatch[1]);
+            }
         }
     }
 
-    if (agentId === 'cline' && authMode === 'gateway') {
-        // cline default provider is "cline" (its own API); force it to use the
-        // openai-compatible provider configured in settings/providers.json so
-        // requests route through the gateway.
-        prepend.push('-P', 'openai-compatible');
-        if (gatewayModel) {
-            prepend.push('-m', gatewayModel);
+    if (agentId === 'cline') {
+        if (authMode === 'gateway' && gatewayModel) {
+            prepend.push('-P', 'openai-compatible', '-m', gatewayModel);
+        } else if (configFiles?.length) {
+            const cfg = configFiles.find((cf) => cf.path && cf.path.endsWith('providers.json'));
+            if (cfg?.content) {
+                try {
+                    const parsed = JSON.parse(cfg.content);
+                    const settings = parsed?.providers?.['openai-compatible']?.settings;
+                    if (settings) {
+                        prepend.push('-P', 'openai-compatible');
+                        if (settings.model) prepend.push('-m', settings.model);
+                    }
+                } catch (_) {}
+            }
         }
     }
 
@@ -153,20 +162,39 @@ function resolveAgentSpawnArgs(agentId, configFiles, options = {}) {
         }
     }
 
-    if (agentId === 'pi' && authMode === 'gateway' && gatewayModel) {
-        // Pi defaults to provider "google"; without this the interactive UI
-        // opens on a built-in model and the gateway model (models.json) has to
-        // be picked manually with /model every session. Force the gateway
-        // provider + model so the UI opens on the gateway model.
-        prepend.push('--provider', 'gateway');
-        prepend.push('--model', gatewayModel);
+    if (agentId === 'pi') {
+        if (authMode === 'gateway' && gatewayModel) {
+            prepend.push('--provider', 'gateway');
+            prepend.push('--model', gatewayModel);
+        } else if (configFiles?.length) {
+            const cfg = configFiles.find((cf) => cf.path && cf.path.endsWith('models.json'));
+            if (cfg?.content) {
+                try {
+                    const parsed = JSON.parse(cfg.content);
+                    const providerName = Object.keys(parsed?.providers || {})[0];
+                    if (providerName) {
+                        prepend.push('--provider', providerName);
+                        const model = parsed.providers[providerName]?.models?.[0]?.id;
+                        if (model) prepend.push('--model', model);
+                    }
+                } catch (_) {}
+            }
+        }
     }
 
-    if (agentId === 'codebuddy' && authMode === 'gateway' && gatewayModel) {
-        // CodeBuddy defaults to its official models (gemini/gpt/...), which
-        // require a Tencent login. --model selects the custom model registered
-        // in models.json, bypassing login and routing to the gateway.
-        prepend.push('--model', gatewayModel);
+    if (agentId === 'codebuddy') {
+        if (authMode === 'gateway' && gatewayModel) {
+            prepend.push('--model', gatewayModel);
+        } else if (configFiles?.length) {
+            const cfg = configFiles.find((cf) => cf.path && cf.path.endsWith('models.json'));
+            if (cfg?.content) {
+                try {
+                    const parsed = JSON.parse(cfg.content);
+                    const model = Array.isArray(parsed) ? parsed[0]?.id : parsed?.id;
+                    if (model) prepend.push('--model', model);
+                } catch (_) {}
+            }
+        }
     }
 
     return { prepend, append };

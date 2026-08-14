@@ -20,8 +20,11 @@ test('BYOK_FIELDS: covers all configurable agents', () => {
         'github-copilot', 'codebuddy', 'cursor', 'amp',
     ];
     for (const id of expected) {
-        assert.ok(Array.isArray(BYOK_FIELDS[id]), `missing fields for ${id}`);
-        assert.ok(BYOK_FIELDS[id].length >= 1, `${id} should have at least 1 field`);
+        const entry = BYOK_FIELDS[id];
+        assert.ok(entry, `missing entry for ${id}`);
+        assert.ok(Array.isArray(entry.fields), `missing fields array for ${id}`);
+        assert.ok(entry.fields.length >= 1, `${id} should have at least 1 field`);
+        assert.ok(entry.description, `${id} should have a description`);
     }
 });
 
@@ -30,8 +33,8 @@ test('BYOK_FIELDS: truly non-configurable agents are absent', () => {
 });
 
 test('BYOK_FIELDS: each field has required shape', () => {
-    for (const [agentId, fields] of Object.entries(BYOK_FIELDS)) {
-        for (const f of fields) {
+    for (const [agentId, entry] of Object.entries(BYOK_FIELDS)) {
+        for (const f of entry.fields) {
             assert.ok(f.key, `${agentId}: field missing key`);
             assert.ok(f.label, `${agentId}: field missing label`);
             assert.ok(f.tooltip, `${agentId}: field missing tooltip`);
@@ -42,8 +45,8 @@ test('BYOK_FIELDS: each field has required shape', () => {
 });
 
 test('BYOK_FIELDS: required fields have no defaultValue', () => {
-    for (const [agentId, fields] of Object.entries(BYOK_FIELDS)) {
-        for (const f of fields) {
+    for (const [agentId, entry] of Object.entries(BYOK_FIELDS)) {
+        for (const f of entry.fields) {
             if (f.required) {
                 assert.equal(f.defaultValue, '', `${agentId}.${f.key}: required field should have empty defaultValue`);
             }
@@ -111,6 +114,16 @@ test('generateByokConfig kimi-code: no config file when api_key empty', () => {
     assert.equal(configFiles.length, 0);
 });
 
+test('generateByokConfig kimi-code: uses openai type when base_url is custom', () => {
+    const { configFiles } = generateByokConfig('kimi-code', {
+        api_key: 'sk-ds',
+        base_url: 'https://api.deepseek.com/v1',
+    });
+    const content = configFiles[0].content;
+    assert.ok(content.includes('type = "openai"'));
+    assert.ok(content.includes('base_url = "https://api.deepseek.com/v1"'));
+});
+
 // ── generateByokConfig: claude-code ──
 
 test('generateByokConfig claude-code: generates env only', () => {
@@ -139,13 +152,36 @@ test('generateByokConfig claude-code: skips empty optional fields', () => {
     assert.equal(env.ANTHROPIC_SMALL_FAST_MODEL, undefined);
 });
 
-// ── generateByokConfig: cline / minimax-cli / commandcode ──
+// ── generateByokConfig: cline ──
 
-test('generateByokConfig cline: single env var', () => {
+test('generateByokConfig cline: only apiKey generates env only', () => {
     const { env, configFiles } = generateByokConfig('cline', { ANTHROPIC_API_KEY: 'sk-test' });
     assert.deepEqual(env, { ANTHROPIC_API_KEY: 'sk-test' });
     assert.equal(configFiles.length, 0);
 });
+
+test('generateByokConfig cline: apiKey + baseUrl generates providers.json', () => {
+    const { env, configFiles } = generateByokConfig('cline', {
+        ANTHROPIC_API_KEY: 'sk-test',
+        baseUrl: 'https://api.deepseek.com/v1',
+        model: 'deepseek-chat',
+    });
+    assert.equal(env.ANTHROPIC_API_KEY, 'sk-test');
+    assert.equal(configFiles.length, 1);
+    assert.ok(configFiles[0].path.endsWith('providers.json'));
+    const parsed = JSON.parse(configFiles[0].content);
+    assert.equal(parsed.providers['openai-compatible'].settings.apiKey, 'sk-test');
+    assert.equal(parsed.providers['openai-compatible'].settings.baseUrl, 'https://api.deepseek.com/v1');
+    assert.equal(parsed.providers['openai-compatible'].settings.model, 'deepseek-chat');
+});
+
+test('generateByokConfig cline: no apiKey returns empty', () => {
+    const { env, configFiles } = generateByokConfig('cline', {});
+    assert.deepEqual(env, {});
+    assert.equal(configFiles.length, 0);
+});
+
+// ── generateByokConfig: minimax-cli / commandcode ──
 
 test('generateByokConfig minimax-cli: single env var', () => {
     const { env } = generateByokConfig('minimax-cli', { MINIMAX_API_KEY: 'mmx-test' });
@@ -188,7 +224,7 @@ test('generateByokConfig droid: generates settings.json with customModels', () =
         model: 'deepseek-chat',
         provider: 'generic-chat-completion-api',
     });
-    assert.deepEqual(env, {});
+    assert.deepEqual(env, { FACTORY_AIRGAP_ENABLED: '1' });
     assert.equal(configFiles.length, 1);
     assert.equal(configFiles[0].path, '${STATE_DIR}/.factory/settings.json');
     const parsed = JSON.parse(configFiles[0].content);
