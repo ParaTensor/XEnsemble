@@ -292,6 +292,79 @@ class GiteaAdapter extends GitProviderService {
         };
     }
 
+    async reopenPR(token, repoIdentifier, prNumber, { apiBase } = {}) {
+        const { owner, repo } = this.parseRepoIdentifier(repoIdentifier);
+        const res = await giteaFetch(token, apiBase,
+            `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/pulls/${prNumber}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ state: 'open' }),
+        });
+        return { state: res.state || 'open' };
+    }
+
+    async replyToReviewComment(token, repoIdentifier, prNumber, commentId, body, { apiBase } = {}) {
+        const { owner, repo } = this.parseRepoIdentifier(repoIdentifier);
+        const res = await giteaFetch(token, apiBase,
+            `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/pulls/${prNumber}/comments/${commentId}/replies`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ body }),
+        });
+        return {
+            id: res.id,
+            path: res.path || null,
+            line: res.line || res.original_line || null,
+            side: res.side || null,
+            user: { login: res.user?.login, avatarUrl: res.user?.avatar_url },
+            body: res.body || '',
+            createdAt: res.created_at,
+            updatedAt: res.updated_at,
+            inReplyToId: res.in_reply_to_id || Number(commentId),
+            diffHunk: res.diff_hunk || null,
+        };
+    }
+
+    async editReviewComment(token, repoIdentifier, prNumber, commentId, body, { apiBase } = {}) {
+        const { owner, repo } = this.parseRepoIdentifier(repoIdentifier);
+        const res = await giteaFetch(token, apiBase,
+            `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/pulls/comments/${commentId}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ body }),
+        });
+        return { id: res.id, body: res.body, updatedAt: res.updated_at };
+    }
+
+    async deleteReviewComment(token, repoIdentifier, prNumber, commentId, { apiBase } = {}) {
+        const { owner, repo } = this.parseRepoIdentifier(repoIdentifier);
+        await giteaFetch(token, apiBase,
+            `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/pulls/comments/${commentId}`, {
+            method: 'DELETE',
+        });
+        return { deleted: true };
+    }
+
+    async editIssueComment(token, repoIdentifier, prNumber, commentId, body, { apiBase } = {}) {
+        const { owner, repo } = this.parseRepoIdentifier(repoIdentifier);
+        const res = await giteaFetch(token, apiBase,
+            `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/issues/comments/${commentId}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ body }),
+        });
+        return { id: res.id, body: res.body, updatedAt: res.updated_at };
+    }
+
+    async deleteIssueComment(token, repoIdentifier, prNumber, commentId, { apiBase } = {}) {
+        const { owner, repo } = this.parseRepoIdentifier(repoIdentifier);
+        await giteaFetch(token, apiBase,
+            `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/issues/comments/${commentId}`, {
+            method: 'DELETE',
+        });
+        return { deleted: true };
+    }
+
     // ── Utility ──
 
     parseRepoIdentifier(fullName) {

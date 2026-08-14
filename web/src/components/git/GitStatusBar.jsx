@@ -411,6 +411,7 @@ export default function GitStatusBar({ projectId, project, git }) {
         sourceBranch={status?.branch || project?.currentBranch}
         defaultTargetBranch={project?.repoDefaultBranch || 'main'}
         onClose={() => setCreatePROpen(false)}
+        onCreated={() => { setCreatePROpen(false); fetchRemote?.(); }}
       />
 
       {branchMenuOpen && branchMenuRect && createPortal(

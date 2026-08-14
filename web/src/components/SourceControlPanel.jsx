@@ -230,13 +230,12 @@ export default function SourceControlPanel({ projectId, gitChanges, onJumpToFile
     setPulling(true);
     try {
       await gitChanges?.pull();
-      showToast('success', 'Pulled latest changes.');
-    } catch (err) {
-      showToast('error', err.message || 'Pull failed');
+    } catch {
+      // useGitStatus already shows error toast
     } finally {
       setPulling(false);
     }
-  }, [gitChanges, showToast]);
+  }, [gitChanges]);
 
   const handleAuthorConfirm = useCallback(async () => {
     if (!authorName.trim() || !authorEmail.trim()) return;
@@ -263,13 +262,12 @@ export default function SourceControlPanel({ projectId, gitChanges, onJumpToFile
     setPushing(true);
     try {
       await gitChanges?.push();
-      showToast('success', 'Pushed');
-    } catch (err) {
-      showToast('error', err.message || 'Push failed');
+    } catch {
+      // useGitStatus already shows error toast
     } finally {
       setPushing(false);
     }
-  }, [gitChanges, showToast]);
+  }, [gitChanges]);
 
   const handleOpenCreatePR = useCallback(() => {
     setActionMenuOpen(false);
@@ -731,6 +729,7 @@ export default function SourceControlPanel({ projectId, gitChanges, onJumpToFile
         sourceBranch={branch}
         defaultTargetBranch="main"
         onClose={() => setCreatePROpen(false)}
+        onCreated={() => { setCreatePROpen(false); gitChanges?.fetchStatus?.({ silent: true }); showToast('success', 'Pull request created.'); }}
       />
 
       {/* Author dialog */}

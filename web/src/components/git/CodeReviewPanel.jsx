@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState, useMemo } from 'react';
 import { ArrowLeft, Check, CheckCircle2, ChevronDown, ChevronRight, CircleDot, GitPullRequest, GitMerge, Loader2, MessageSquare, RefreshCw, Send, X, XCircle, RotateCcw, Trash2, Pencil, CornerDownRight } from 'lucide-react';
 import * as gitApi from '../../lib/gitApi';
+import { apiFetch } from '../../lib/api';
 import { confirm } from '../ConfirmDialog';
 import { useToast } from '../Toast';
 import { renderDiffLines, DiffText } from './DiffText';
@@ -222,7 +223,7 @@ function CommentItem({ comment, mrFiles, renderDiffLines, isOwnComment, onReply,
   );
 }
 
-function ThreadGroup({ thread, mrFiles, renderDiffLines, onReply, onEdit, onDelete, actionLoading, replyingTo, replyText, setReplyText, onSendReply, onCancelReply }) {
+function ThreadGroup({ thread, mrFiles, renderDiffLines, onReply, onEdit, onDelete, actionLoading, replyingTo, replyText, setReplyText, onSendReply, onCancelReply, remoteUsername }) {
   const [collapsed, setCollapsed] = useState(false);
   const firstComment = thread.comments[0];
   const path = firstComment?.path || '';
@@ -280,7 +281,7 @@ function ThreadGroup({ thread, mrFiles, renderDiffLines, onReply, onEdit, onDele
               comment={{ ...comment, _isReply: idx > 0 }}
               mrFiles={mrFiles}
               renderDiffLines={renderDiffLines}
-              isOwnComment={true}
+              isOwnComment={comment.user?.login === remoteUsername}
               onReply={onReply}
               onEdit={onEdit}
               onDelete={onDelete}
@@ -346,7 +347,23 @@ export default function CodeReviewPanel({ projectId, mergeRequestId, mergeReques
   const [replyingTo, setReplyingTo] = useState(null);
   const [replyText, setReplyText] = useState('');
   const [commentActionLoading, setCommentActionLoading] = useState(null);
+  const [remoteUsername, setRemoteUsername] = useState(null);
   const COMMENTS_PER_PAGE = 50;
+
+  useEffect(() => {
+    if (!projectId) return;
+    apiFetch('/api/v1/git/connections')
+      .then((res) => res.ok ? res.json() : null)
+      .then((data) => {
+        const conns = data?.connections || [];
+        const provider = mergeRequest?.provider;
+        const conn = provider
+          ? conns.find((c) => c.provider === provider)
+          : conns[0];
+        if (conn?.remote_username) setRemoteUsername(conn.remote_username);
+      })
+      .catch(() => {});
+  }, [projectId, mergeRequest?.provider]);
 
   const fetchData = useCallback(async () => {
     if (!projectId || !mergeRequestId) return;
@@ -877,6 +894,7 @@ export default function CodeReviewPanel({ projectId, mergeRequestId, mergeReques
                           setReplyText={setReplyText}
                           onSendReply={handleSendReply}
                           onCancelReply={handleCancelReply}
+                          remoteUsername={remoteUsername}
                         />
                       );
                     }
@@ -887,7 +905,7 @@ export default function CodeReviewPanel({ projectId, mergeRequestId, mergeReques
                           comment={comment}
                           mrFiles={mrFiles}
                           renderDiffLines={renderDiffLines}
-                          isOwnComment={true}
+                          isOwnComment={comment.user?.login === remoteUsername}
                           onReply={comment._type === 'review' ? handleReply : null}
                           onEdit={handleEditWrapper}
                           onDelete={handleDeleteComment}

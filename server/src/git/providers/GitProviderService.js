@@ -178,6 +178,30 @@ class GitProviderService {
         throw new Error('GitProviderService.addIssueComment not implemented');
     }
 
+    async reopenPR(token, repoIdentifier, prNumber, opts) {
+        throw new Error(`${this.name} does not support reopenPR`);
+    }
+
+    async replyToReviewComment(token, repoIdentifier, prNumber, commentId, body, opts) {
+        throw new Error(`${this.name} does not support replyToReviewComment`);
+    }
+
+    async editReviewComment(token, repoIdentifier, prNumber, commentId, body, opts) {
+        throw new Error(`${this.name} does not support editReviewComment`);
+    }
+
+    async deleteReviewComment(token, repoIdentifier, prNumber, commentId, opts) {
+        throw new Error(`${this.name} does not support deleteReviewComment`);
+    }
+
+    async editIssueComment(token, repoIdentifier, prNumber, commentId, body, opts) {
+        throw new Error(`${this.name} does not support editIssueComment`);
+    }
+
+    async deleteIssueComment(token, repoIdentifier, prNumber, commentId, opts) {
+        throw new Error(`${this.name} does not support deleteIssueComment`);
+    }
+
     // ── Utility ──
 
     /**

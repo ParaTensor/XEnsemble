@@ -152,7 +152,11 @@ export default function MergeRequestListPanel({ projectId, provider, onSelectMR,
         </div>
       </div>
       <div className="min-h-0 flex-1 overflow-auto bg-[#F0F1F3] p-3">
-        {filteredMRs.length === 0 ? (
+        {loading ? (
+          <div className="flex items-center justify-center py-12">
+            <Loader2 className="w-4 h-4 animate-spin text-zinc-400" />
+          </div>
+        ) : filteredMRs.length === 0 ? (
           <div className={`p-6 text-center text-xs ${textPlaceholder} ${consoleEmptyStateClass} rounded-xl bg-white shadow-sm border border-[#E8EAED]`}>
             {mergeRequests.length === 0 ? `No ${label.toLowerCase()} yet.` : 'No results match your filter.'}
           </div>
