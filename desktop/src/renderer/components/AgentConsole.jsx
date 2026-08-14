@@ -634,6 +634,13 @@ function AgentConsole({
               // split across flushes, the first fragment clears/overwrites
               // rows whose full content hasn't arrived yet, leaving blank
               // gaps. Buffer until the matching ?2026l arrives.
+              //
+              // Coalesce multiple complete blocks: agents like qwen-code
+              // emit full-screen redraws at 96% gaps < 100ms.  Writing
+              // every intermediate block causes xterm.js to process 5+
+              // full-screen redraws per animation frame, producing visible
+              // flickering.  Keep only the last block (full-screen redraws
+              // overwrite each other).
               if (remaining.includes('\x1b[?2026h')) {
                 const syncEnd = remaining.indexOf('\x1b[?2026l');
                 if (syncEnd === -1) {
@@ -642,7 +649,29 @@ function AgentConsole({
                   syncTermPending = remaining.slice(syncStart);
                   if (before) writeTerminalData(before);
                 } else {
-                  writeTerminalData(remaining);
+                  const afterFirst = remaining.slice(syncEnd + '\x1b[?2026l'.length);
+                  const hasMoreBlocks = afterFirst.includes('\x1b[?2026h')
+                    && afterFirst.includes('\x1b[?2026l');
+                  if (hasMoreBlocks) {
+                    const firstSyncStart = remaining.indexOf('\x1b[?2026h');
+                    const lastSyncStart = remaining.lastIndexOf('\x1b[?2026h');
+                    const lastSyncEnd = remaining.indexOf('\x1b[?2026l', lastSyncStart);
+                    if (lastSyncEnd === -1) {
+                      syncTermPending = remaining.slice(lastSyncStart);
+                      if (firstSyncStart > 0) {
+                        writeTerminalData(remaining.slice(0, firstSyncStart));
+                      }
+                    } else {
+                      const lastBlockEnd = lastSyncEnd + '\x1b[?2026l'.length;
+                      writeTerminalData(
+                        remaining.slice(0, firstSyncStart)
+                        + remaining.slice(lastSyncStart, lastBlockEnd)
+                        + remaining.slice(lastBlockEnd)
+                      );
+                    }
+                  } else {
+                    writeTerminalData(remaining);
+                  }
                 }
               } else {
                 writeTerminalData(remaining);
