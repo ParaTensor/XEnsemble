@@ -78,6 +78,7 @@ const WorkspacePanel = memo(function WorkspacePanel({
   tabs,
   activePath,
   onSelectTab,
+  onCloseTab,
   onSaveTab,
   onOpenFile,
   onFetchDir,
@@ -356,6 +357,9 @@ const WorkspacePanel = memo(function WorkspacePanel({
       await flushAutosave().catch(() => {});
       await fetchGitStatus?.({ silent: true });
     }
+    if (key === 'files') {
+      setSidebarOpen(true);
+    }
     setMainTab(key);
   }, [flushAutosave, fetchGitStatus]);
 
@@ -540,20 +544,42 @@ const WorkspacePanel = memo(function WorkspacePanel({
                   />
                 </Suspense>
               ) : activeTab ? (
-                <div className="flex-1 min-h-0 overflow-hidden">
-                  <CodeEditor
-                    content={activeTab.content}
-                    path={activeTab.path}
-                    isBinary={activeTab.isBinary}
-                    readOnly={activeTab.isBinary}
-                    saving={saving}
-                    onSave={() => handleImmediateSave(activeTab.path)}
-                    onChange={(value) => {
-                      const currentPath = activePathRef.current;
-                      onSelectTab?.(currentPath, value);
-                      scheduleAutosave(currentPath);
-                    }}
-                  />
+                <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
+                  {!sidebarOpen && (
+                    <div className="shrink-0 flex items-center gap-2 px-3 py-1.5 border-b border-[#E8EAED] bg-[#FAFBFC]">
+                      <button
+                        type="button"
+                        onClick={() => setSidebarOpen(true)}
+                        className={`flex items-center gap-1.5 text-xs text-zinc-500 hover:text-zinc-700 ${consoleButtonFocusClass}`}
+                      >
+                        <PanelLeft className="h-3 w-3" />
+                        <span>Show file tree</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => onCloseTab?.(activeTab.path)}
+                        className={`ml-auto flex items-center gap-1 text-xs text-zinc-400 hover:text-zinc-600 ${consoleButtonFocusClass}`}
+                        title="Close file"
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
+                    </div>
+                  )}
+                  <div className="flex-1 min-h-0 overflow-hidden">
+                    <CodeEditor
+                      content={activeTab.content}
+                      path={activeTab.path}
+                      isBinary={activeTab.isBinary}
+                      readOnly={activeTab.isBinary}
+                      saving={saving}
+                      onSave={() => handleImmediateSave(activeTab.path)}
+                      onChange={(value) => {
+                        const currentPath = activePathRef.current;
+                        onSelectTab?.(currentPath, value);
+                        scheduleAutosave(currentPath);
+                      }}
+                    />
+                  </div>
                 </div>
               ) : (
                 <div className="flex-1 flex flex-col items-center justify-center gap-3 text-zinc-400">

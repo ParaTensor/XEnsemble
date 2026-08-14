@@ -1495,6 +1495,7 @@ export default React.forwardRef(function Sessions({
                     tabs={editorTabs.tabs}
                     activePath={editorTabs.activePath}
                     onSelectTab={editorTabs.selectTab}
+                    onCloseTab={editorTabs.closeTab}
                     onSaveTab={handleSaveTab}
                     onOpenFile={handleEditorOpenFile}
                     onFetchDir={editorTabs.fetchDir}
