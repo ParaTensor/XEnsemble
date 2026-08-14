@@ -675,7 +675,7 @@ function AgentConsole({
                       syncTermPending = data.slice(lastSyncStart);
                       const firstSyncStart = data.indexOf('\x1b[?2026h');
                       if (firstSyncStart > 0) {
-                        writeTerminalData(data.slice(0, firstSyncStart));
+                        writeTerminalData(data.slice(0, firstSyncStart) + '\x1b[?25l');
                       }
                     } else {
                       const firstSyncStart = data.indexOf('\x1b[?2026h');
@@ -684,6 +684,7 @@ function AgentConsole({
                         data.slice(0, firstSyncStart)
                         + data.slice(lastSyncStart, lastBlockEnd)
                         + data.slice(lastBlockEnd)
+                        + '\x1b[?25l'
                       );
                     }
                   }, 50);
