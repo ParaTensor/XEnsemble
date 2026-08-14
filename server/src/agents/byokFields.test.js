@@ -17,6 +17,7 @@ test('BYOK_FIELDS: covers all configurable agents', () => {
         'kimi-code', 'claude-code', 'opencode', 'cline', 'droid',
         'glm-agent', 'qoder', 'qwen-code', 'minimax-cli', 'pi',
         'commandcode', 'hermes', 'openclaw',
+        'github-copilot', 'codebuddy', 'cursor', 'amp',
     ];
     for (const id of expected) {
         assert.ok(Array.isArray(BYOK_FIELDS[id]), `missing fields for ${id}`);
@@ -24,11 +25,8 @@ test('BYOK_FIELDS: covers all configurable agents', () => {
     }
 });
 
-test('BYOK_FIELDS: non-configurable agents are absent', () => {
-    assert.equal(BYOK_FIELDS['cursor'], undefined);
-    assert.equal(BYOK_FIELDS['amp'], undefined);
-    assert.equal(BYOK_FIELDS['codebuddy'], undefined);
-    assert.equal(BYOK_FIELDS['github-copilot'], undefined);
+test('BYOK_FIELDS: truly non-configurable agents are absent', () => {
+    assert.equal(BYOK_FIELDS['nonexistent-agent'], undefined);
 });
 
 test('BYOK_FIELDS: each field has required shape', () => {
@@ -331,6 +329,90 @@ test('generateByokConfig openclaw: generates JSON with mode=merge and logging.le
     assert.equal(parsed.logging.level, 'info');
     assert.equal(parsed.agents.defaults.model.primary, 'my-deepseek/deepseek-chat');
     assert.equal(parsed.models.providers['my-deepseek'].apiKey, 'sk-ds');
+});
+
+// ── generateByokConfig: github-copilot ──
+
+test('generateByokConfig github-copilot: generates env only', () => {
+    const { env, configFiles } = generateByokConfig('github-copilot', {
+        apiKey: 'sk-test',
+        baseUrl: 'https://api.openai.com/v1',
+        model: 'gpt-4o',
+    });
+    assert.deepEqual(env, {
+        COPILOT_PROVIDER_API_KEY: 'sk-test',
+        COPILOT_PROVIDER_BASE_URL: 'https://api.openai.com/v1',
+        COPILOT_PROVIDER_TYPE: 'openai',
+        COPILOT_MODEL: 'gpt-4o',
+    });
+    assert.equal(configFiles.length, 0);
+});
+
+test('generateByokConfig github-copilot: no env when apiKey empty', () => {
+    const { env, configFiles } = generateByokConfig('github-copilot', { apiKey: '' });
+    assert.deepEqual(env, {});
+    assert.equal(configFiles.length, 0);
+});
+
+// ── generateByokConfig: codebuddy ──
+
+test('generateByokConfig codebuddy: generates env + models.json + settings.json', () => {
+    const { env, configFiles } = generateByokConfig('codebuddy', {
+        apiKey: 'sk-test',
+        baseUrl: 'https://api.openai.com/v1/chat/completions',
+        model: 'gpt-4o',
+    });
+    assert.equal(env.CODEBUDDY_API_KEY, 'sk-test');
+    assert.equal(configFiles.length, 2);
+    const modelsJson = configFiles.find((f) => f.path.endsWith('models.json'));
+    assert.ok(modelsJson);
+    const parsed = JSON.parse(modelsJson.content);
+    assert.equal(parsed[0].apiKey, 'sk-test');
+    assert.equal(parsed[0].id, 'gpt-4o');
+    assert.equal(parsed[0].name, 'gpt-4o');
+    assert.equal(parsed[0].vendor, 'custom');
+    const settingsJson = configFiles.find((f) => f.path.endsWith('settings.json'));
+    assert.ok(settingsJson);
+    const settings = JSON.parse(settingsJson.content);
+    assert.equal(settings.trustAll, true);
+});
+
+test('generateByokConfig codebuddy: no config when apiKey empty', () => {
+    const { env, configFiles } = generateByokConfig('codebuddy', { apiKey: '' });
+    assert.deepEqual(env, {});
+    assert.equal(configFiles.length, 0);
+});
+
+// ── generateByokConfig: cursor ──
+
+test('generateByokConfig cursor: generates env only', () => {
+    const { env, configFiles } = generateByokConfig('cursor', {
+        apiKey: 'sk-test',
+        baseUrl: 'https://api.openai.com/v1',
+        model: 'gpt-4o',
+    });
+    assert.deepEqual(env, {
+        OPENAI_API_KEY: 'sk-test',
+        OPENAI_BASE_URL: 'https://api.openai.com/v1',
+        OPENAI_MODEL: 'gpt-4o',
+    });
+    assert.equal(configFiles.length, 0);
+});
+
+// ── generateByokConfig: amp ──
+
+test('generateByokConfig amp: generates env only', () => {
+    const { env, configFiles } = generateByokConfig('amp', {
+        apiKey: 'sk-test',
+        baseUrl: 'https://api.openai.com/v1',
+        model: 'gpt-4o',
+    });
+    assert.deepEqual(env, {
+        OPENAI_API_KEY: 'sk-test',
+        OPENAI_BASE_URL: 'https://api.openai.com/v1',
+        OPENAI_MODEL: 'gpt-4o',
+    });
+    assert.equal(configFiles.length, 0);
 });
 
 // ── generateByokConfig: edge cases ──

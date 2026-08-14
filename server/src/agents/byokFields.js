@@ -80,6 +80,26 @@ const BYOK_FIELDS = {
         { key: 'model', label: 'Model', tooltip: '模型 ID', type: 'string', defaultValue: 'gpt-4o', required: false },
         { key: 'api', label: 'API Type', tooltip: 'API 协议类型', type: 'string', defaultValue: 'openai-completions', required: false },
     ],
+    'github-copilot': [
+        { key: 'apiKey', label: 'API Key', tooltip: 'LLM Provider API 密钥', type: 'secret', defaultValue: '', required: true },
+        { key: 'baseUrl', label: 'Base URL', tooltip: 'API 基础地址', type: 'string', defaultValue: 'https://api.openai.com/v1', required: false },
+        { key: 'model', label: 'Model', tooltip: '模型 ID', type: 'string', defaultValue: 'gpt-4o', required: false },
+    ],
+    'codebuddy': [
+        { key: 'apiKey', label: 'API Key', tooltip: 'LLM Provider API 密钥', type: 'secret', defaultValue: '', required: true },
+        { key: 'baseUrl', label: 'Base URL', tooltip: 'API 基础地址（需包含 /v1/chat/completions 路径）', type: 'string', defaultValue: 'https://api.openai.com/v1/chat/completions', required: false },
+        { key: 'model', label: 'Model', tooltip: '模型 ID', type: 'string', defaultValue: 'gpt-4o', required: false },
+    ],
+    'cursor': [
+        { key: 'apiKey', label: 'API Key', tooltip: 'LLM Provider API 密钥', type: 'secret', defaultValue: '', required: true },
+        { key: 'baseUrl', label: 'Base URL', tooltip: 'API 基础地址', type: 'string', defaultValue: 'https://api.openai.com/v1', required: false },
+        { key: 'model', label: 'Model', tooltip: '模型 ID', type: 'string', defaultValue: 'gpt-4o', required: false },
+    ],
+    'amp': [
+        { key: 'apiKey', label: 'API Key', tooltip: 'LLM Provider API 密钥', type: 'secret', defaultValue: '', required: true },
+        { key: 'baseUrl', label: 'Base URL', tooltip: 'API 基础地址', type: 'string', defaultValue: 'https://api.openai.com/v1', required: false },
+        { key: 'model', label: 'Model', tooltip: '模型 ID', type: 'string', defaultValue: 'gpt-4o', required: false },
+    ],
 };
 
 function byokStorageKey(agentId) {
@@ -130,6 +150,10 @@ function generateByokConfig(agentId, values) {
         case 'commandcode': return generateSimpleEnv(values, ['COHERE_API_KEY']);
         case 'hermes': return generateHermes(values);
         case 'openclaw': return generateOpenclaw(values);
+        case 'github-copilot': return generateGithubCopilot(values);
+        case 'codebuddy': return generateCodebuddy(values);
+        case 'cursor': return generateCursor(values);
+        case 'amp': return generateAmp(values);
         default: return { env: {}, configFiles: [] };
     }
 }
@@ -485,6 +509,87 @@ function generateOpenclaw(values) {
         configFiles.push({ path: '${STATE_DIR}/openclaw.json', content: JSON.stringify(config, null, 2) });
     }
     return { env, configFiles };
+}
+
+// ── github-copilot (env only) ──
+
+function generateGithubCopilot(values) {
+    const env = {};
+    const apiKey = str(values.apiKey);
+    const baseUrl = str(values.baseUrl) || 'https://api.openai.com/v1';
+    const model = str(values.model) || 'gpt-4o';
+    if (apiKey) {
+        env.COPILOT_PROVIDER_API_KEY = apiKey;
+        env.COPILOT_PROVIDER_BASE_URL = baseUrl;
+        env.COPILOT_PROVIDER_TYPE = 'openai';
+        env.COPILOT_MODEL = model;
+    }
+    return { env, configFiles: [] };
+}
+
+// ── codebuddy (env + models.json + settings.json) ──
+
+function generateCodebuddy(values) {
+    const env = {};
+    const configFiles = [];
+    const apiKey = str(values.apiKey);
+    const baseUrl = str(values.baseUrl) || 'https://api.openai.com/v1/chat/completions';
+    const model = str(values.model) || 'gpt-4o';
+
+    if (apiKey) {
+        env.CODEBUDDY_API_KEY = apiKey;
+        const configDir = '${STATE_DIR}';
+        configFiles.push({
+            path: `${configDir}/models.json`,
+            content: JSON.stringify([{
+                id: model,
+                name: model,
+                vendor: 'custom',
+                apiKey: apiKey,
+                url: baseUrl,
+                maxInputTokens: 64000,
+                maxOutputTokens: 8192,
+            }], null, 2),
+        });
+        configFiles.push({
+            path: `${configDir}/settings.json`,
+            content: JSON.stringify({
+                trustAll: true,
+                trustedDirectories: ['/workspace', '/tmp'],
+            }, null, 2),
+        });
+    }
+    return { env, configFiles };
+}
+
+// ── cursor (env only) ──
+
+function generateCursor(values) {
+    const env = {};
+    const apiKey = str(values.apiKey);
+    const baseUrl = str(values.baseUrl) || 'https://api.openai.com/v1';
+    const model = str(values.model) || 'gpt-4o';
+    if (apiKey) {
+        env.OPENAI_API_KEY = apiKey;
+        env.OPENAI_BASE_URL = baseUrl;
+        env.OPENAI_MODEL = model;
+    }
+    return { env, configFiles: [] };
+}
+
+// ── amp (env only) ──
+
+function generateAmp(values) {
+    const env = {};
+    const apiKey = str(values.apiKey);
+    const baseUrl = str(values.baseUrl) || 'https://api.openai.com/v1';
+    const model = str(values.model) || 'gpt-4o';
+    if (apiKey) {
+        env.OPENAI_API_KEY = apiKey;
+        env.OPENAI_BASE_URL = baseUrl;
+        env.OPENAI_MODEL = model;
+    }
+    return { env, configFiles: [] };
 }
 
 // ── Secret management helpers ──
