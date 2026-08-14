@@ -1,4 +1,5 @@
 const { eq, and } = require('drizzle-orm');
+const crypto = require('crypto');
 const { GitOperationService } = require('../github/GitOperationService');
 const { LocalGitService } = require('../git/LocalGitService');
 const { db } = require('../db/index');
@@ -6,6 +7,44 @@ const schema = require('../db/schema');
 const { getProjectForUser } = require('../projects/getProjectForUser');
 const { withProjectGitLock } = require('../git/gitMutationLock');
 const userPreferences = require('../admin/UserPreferences');
+
+function newId(prefix) {
+    return `${prefix}_${crypto.randomBytes(8).toString('hex')}`;
+}
+
+async function upsertProjectBranch(projectId, branchName, values = {}) {
+    const now = Date.now();
+    const existing = await db.select().from(schema.projectBranches)
+        .where(and(
+            eq(schema.projectBranches.projectId, projectId),
+            eq(schema.projectBranches.branchName, branchName),
+        ));
+
+    if (existing.length > 0) {
+        await db.update(schema.projectBranches)
+            .set({
+                ...values,
+                updatedAt: now,
+            })
+            .where(eq(schema.projectBranches.id, existing[0].id));
+        return existing[0].id;
+    }
+
+    const id = newId('br');
+    await db.insert(schema.projectBranches).values({
+        id,
+        projectId,
+        branchName,
+        baseBranch: values.baseBranch || null,
+        isActive: values.isActive ?? false,
+        lastCommitSha: values.lastCommitSha || null,
+        aheadCount: values.aheadCount ?? 0,
+        behindCount: values.behindCount ?? 0,
+        createdAt: now,
+        updatedAt: now,
+    });
+    return id;
+}
 
 async function ensureLocalGitReady(project, log) {
     // Built-in workspace git should always be available for Changes. Backfill
