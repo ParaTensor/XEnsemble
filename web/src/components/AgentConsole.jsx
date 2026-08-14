@@ -190,6 +190,15 @@ function AgentConsole({
       const cols = terminal.cols || 0;
       const rows = terminal.rows || 0;
       if (cols <= 0 || rows <= 0) return;
+      // Update virtual screen dimensions when terminal is resized
+      if (rows !== vsRows) {
+        vsRows = rows;
+        if (vsScreen.length < vsRows) {
+          for (let y = vsScreen.length; y < vsRows; y++) vsScreen[y] = '';
+        } else if (vsScreen.length > vsRows) {
+          vsScreen.length = vsRows;
+        }
+      }
       const changed = cols !== lastSentCols || rows !== lastSentRows;
       if (!changed && !force) return;
       lastSentCols = cols;
@@ -361,13 +370,17 @@ function AgentConsole({
           replayDoneRef.current = false;
           let writeBuffer = '';
           let pendingSeq = null;
+          // Track whether the terminal is currently in alternate screen mode.
+          // Initialized from xterm.js's actual buffer state (handles idle replay
+          // that may have left the terminal in alt screen).
+          let inAltScreen = terminal.buffer.active === terminal.buffer.alternate;
           // Virtual screen for ANSI diff: plain text per row, + cursor Y
           // Used to detect which rows actually changed in a full-screen redraw
           // and only output the changed rows (eliminates Ink's full-screen flash).
           let vsScreen = [];
           let vsCursorY = 0;
-          const VS_ROWS = 32;
-          for (let y = 0; y < VS_ROWS; y++) vsScreen[y] = '';
+          let vsRows = terminal.rows || 32;
+          for (let y = 0; y < vsRows; y++) vsScreen[y] = '';
 
           // Buffer for incomplete sync-term (DECSET 2026) blocks.  Pi and
           // qwen-code wrap UI redraws in \x1b[?2026h ... \x1b[?2026l.  xterm.js
@@ -382,20 +395,10 @@ function AgentConsole({
             return text.replace(/\x1b\[[0-9;?]*[a-zA-Z]/g, '').replace(/\x1b\].*?\x07/g, '');
           }
 
-          function stripAlternateScreen(text) {
-            return text
-              .replace(/\x1b\[\?1049h/g, '')
-              .replace(/\x1b\[\?1049l/g, '')
-              .replace(/\x1b\[\?47h/g, '')
-              .replace(/\x1b\[\?47l/g, '')
-              .replace(/\x1b\[\?1047h/g, '')
-              .replace(/\x1b\[\?1047l/g, '');
-          }
-
           function vsProcess(data) {
             const hasClear = /\x1b\[2J/.test(data);
             if (hasClear) {
-              for (let y = 0; y < VS_ROWS; y++) vsScreen[y] = '';
+              for (let y = 0; y < vsRows; y++) vsScreen[y] = '';
             }
             // Skip leading DEC private mode sequences (e.g. \x1b[?25l, \x1b[?2026h)
             // and OSC sequences before looking for cursor-up pattern.
@@ -422,10 +425,10 @@ function AgentConsole({
                     while (j < data.length && !/[A-Za-z]/.test(data[j])) j++;
                     const p = data.slice(i + 2, j), f = data[j], n = parseInt(p) || 1;
                     if (f === 'A') cy = Math.max(0, cy - n);
-                    else if (f === 'B') cy = Math.min(VS_ROWS - 1, cy + n);
+                    else if (f === 'B') cy = Math.min(vsRows - 1, cy + n);
                     else if (f === 'G') cx = Math.max(0, n - 1);
                     else if (f === 'H') { const s = p.split(';'); cy = Math.max(0, (parseInt(s[0]) || 1) - 1); cx = Math.max(0, (parseInt(s[1]) || 1) - 1); }
-                    else if (f === 'J' && n === 2) for (let y = 0; y < VS_ROWS; y++) vsScreen[y] = '';
+                    else if (f === 'J' && n === 2) for (let y = 0; y < vsRows; y++) vsScreen[y] = '';
                     else if (f === 'K' && (n === 2 || !p)) vsScreen[cy] = '';
                     else if (f === 'd') cy = Math.max(0, n - 1);
                     i = j + 1;
@@ -436,7 +439,7 @@ function AgentConsole({
                 else if (data[i] === '\r') { cx = 0; i++; }
                 else if (data[i] === '\n') { cy++; i++; }
                 else if (data[i] >= ' ') {
-                  if (cy >= 0 && cy < VS_ROWS && cx < 120) {
+                  if (cy >= 0 && cy < vsRows && cx < 120) {
                     const r = vsScreen[cy];
                     vsScreen[cy] = r.substring(0, cx) + data[i] + r.substring(cx + 1);
                   }
@@ -470,7 +473,7 @@ function AgentConsole({
             let currentRow = startRow;
             let anyChanged = false;
             for (const seg of segments) {
-              if (currentRow >= VS_ROWS) break;
+              if (currentRow >= vsRows) break;
               const raw = seg.slice(4);
               const plain = vsStripAnsi(raw);
               if (vsScreen[currentRow] !== plain) {
@@ -494,36 +497,12 @@ function AgentConsole({
             }
           }, 5000);
 
-          const flushWriteBuffer = () => {
-            writeRafId = null;
-            if (disposed) return;
-            if (pendingSeq != null) {
-              setCachedSeq(sessionId, pendingSeq);
-              pendingSeq = null;
-            }
-            if (!writeBuffer && !syncTermPending) return;
-
-            let remaining = syncTermPending + (writeBuffer || '');
-            syncTermPending = '';
-            writeBuffer = '';
-
-            // Process all sync-term blocks in a loop, accumulating output into
-            // a single string for ONE terminal.write() call.  Multiple write()
-            // calls cause xterm.js to render intermediate states between them
-            // (e.g. droid: ASCII art rendered before \x1b[2J clear arrives ->
-            // content mixed on screen).
-            //
-            // For each complete sync-term block (\x1b[?2026h...\x1b[?2026l):
-            // - Strip the sync-term wrappers (xterm.js ignores them anyway)
-            // - Strip \x1b[2J (clear-screen) ONLY if the block also contains
-            //   \x1b[2K (clear-line).  Agents like qwen-code use cursor-up +
-            //   \x1b[2K for row-level updates, making \x1b[2J redundant (it
-            //   only causes visible flashes).  Agents like droid do NOT use
-            //   \x1b[2K and rely on \x1b[2J to clear old content.
-            // - Non-sync-term data between blocks goes through vsProcess.
-            // - Incomplete trailing blocks are buffered in syncTermPending.
+          // Process primary-buffer data through sync-term handling + vsProcess.
+          // Returns { output, hasOutput }.
+          function processPrimaryBuffer(data) {
             let output = '';
             let hasOutput = false;
+            let remaining = data;
 
             while (remaining.length > 0) {
               const syncStart = remaining.indexOf('\x1b[?2026h');
@@ -554,7 +533,74 @@ function AgentConsole({
               remaining = remaining.slice(syncEnd + '\x1b[?2026l'.length);
             }
 
-            if (hasOutput) writeTerminalData(stripAlternateScreen(output));
+            return { output, hasOutput };
+          }
+
+          const flushWriteBuffer = () => {
+            writeRafId = null;
+            if (disposed) return;
+            if (pendingSeq != null) {
+              setCachedSeq(sessionId, pendingSeq);
+              pendingSeq = null;
+            }
+            if (!writeBuffer && !syncTermPending) return;
+
+            let remaining = syncTermPending + (writeBuffer || '');
+            syncTermPending = '';
+            writeBuffer = '';
+
+            // Detect alt screen transitions in this chunk.
+            // When entering alt screen: process pre-transition content with
+            // vsProcess (primary buffer), then pass the transition sequence +
+            // everything after it raw to xterm.js (native TUI rendering).
+            // When exiting alt screen: pass content + exit sequence raw,
+            // then process post-transition content with vsProcess.
+            // While in alt screen: pass everything raw (no linearization,
+            // no sync-term stripping — the TUI handles its own rendering).
+            const altEnterIdx = remaining.search(/\x1b\[\?(?:1049|47|1047)h/);
+            const altExitIdx = remaining.search(/\x1b\[\?(?:1049|47|1047)l/);
+
+            if (!inAltScreen && altEnterIdx >= 0) {
+              const match = remaining.match(/\x1b\[\?(?:1049|47|1047)h/);
+              const before = remaining.slice(0, altEnterIdx);
+              const transitionAndAfter = remaining.slice(altEnterIdx);
+              inAltScreen = true;
+              let output = '';
+              let hasOutput = false;
+              if (before) {
+                const result = processPrimaryBuffer(before);
+                output += result.output;
+                hasOutput = result.hasOutput;
+              }
+              output += transitionAndAfter;
+              hasOutput = true;
+              if (hasOutput) writeTerminalData(output);
+              return;
+            }
+
+            if (inAltScreen && altExitIdx >= 0) {
+              const match = remaining.match(/\x1b\[\?(?:1049|47|1047)l/);
+              const exitEnd = altExitIdx + match[0].length;
+              const beforeAndExit = remaining.slice(0, exitEnd);
+              const after = remaining.slice(exitEnd);
+              inAltScreen = false;
+              let output = beforeAndExit;
+              if (after) {
+                const result = processPrimaryBuffer(after);
+                output += result.output;
+              }
+              writeTerminalData(output);
+              return;
+            }
+
+            if (inAltScreen) {
+              writeTerminalData(remaining);
+              return;
+            }
+
+            // In primary buffer: process with vsProcess + sync-term
+            const result = processPrimaryBuffer(remaining);
+            if (result.hasOutput) writeTerminalData(result.output);
           };
 
           function writeTerminalData(processed) {
