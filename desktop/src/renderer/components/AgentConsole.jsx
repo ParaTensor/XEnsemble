@@ -678,10 +678,25 @@ function AgentConsole({
                         writeTerminalData(data.slice(0, firstSyncStart) + '\x1b[?25l');
                       }
                     } else {
-                      const firstSyncStart = data.indexOf('\x1b[?2026h');
+                      // Extract all non-sync-term data from the coalesced
+                      // buffer (data outside \x1b[?2026h...\x1b[?2026l
+                      // blocks).  This preserves mouse-tracking
+                      // (\x1b[?1003h) and other terminal-state sequences
+                      // that the discarded intermediate blocks are
+                      // full-screen redraws that don't affect.
+                      let nonSync = '';
+                      let pos = 0;
+                      while (pos < data.length) {
+                        const h = data.indexOf('\x1b[?2026h', pos);
+                        if (h === -1) { nonSync += data.slice(pos); break; }
+                        nonSync += data.slice(pos, h);
+                        const l = data.indexOf('\x1b[?2026l', h);
+                        if (l === -1) break;
+                        pos = l + '\x1b[?2026l'.length;
+                      }
                       const lastBlockEnd = lastSyncEnd + '\x1b[?2026l'.length;
                       writeTerminalData(
-                        data.slice(0, firstSyncStart)
+                        nonSync
                         + data.slice(lastSyncStart, lastBlockEnd)
                         + data.slice(lastBlockEnd)
                         + '\x1b[?25l'
