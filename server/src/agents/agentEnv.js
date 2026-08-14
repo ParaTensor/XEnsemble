@@ -460,15 +460,7 @@ async function resolveSpawnEnv({ userId, agentId, envRequired, sessionToken, pro
     const user = await getUserSecrets(userId);
     const env = applySpawnDefaults(pickEnvRequired(user, effectiveRequired), effectiveRequired);
     const missing = findMissing(env, effectiveRequired);
-    if (missing.length > 0) {
-        return {
-            mode,
-            env: null,
-            missing,
-            error: `Missing required keys: ${missing.join(', ')}. Configure them in Settings or before launch.`,
-        };
-    }
-    return finish(env);
+    return finish(env, missing);
 }
 
 async function previewSpawnEnv({ userId, agentId, envRequired, terminalThemeId } = {}) {
