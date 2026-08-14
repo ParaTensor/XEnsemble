@@ -270,8 +270,8 @@ test('generateByokConfig qoder: generates env + settings.json', () => {
     assert.equal(configFiles.length, 1);
     assert.equal(configFiles[0].path, '${STATE_DIR}/settings.json');
     const parsed = JSON.parse(configFiles[0].content);
-    assert.equal(parsed.model, 'my-deepseek/deepseek-chat');
-    assert.equal(parsed.providers['my-deepseek'].apiKey, 'sk-ds');
+    assert.equal(parsed.model, 'custom/deepseek-chat');
+    assert.equal(parsed.providers['custom'].apiKey, 'sk-ds');
     assert.equal(parsed.general.enableAutoUpdate, false);
 });
 
@@ -295,8 +295,8 @@ test('generateByokConfig qwen-code: generates settings.json when customApiKey fi
     assert.equal(env.DASHSCOPE_API_KEY, 'sk-dash');
     assert.equal(configFiles.length, 1);
     const parsed = JSON.parse(configFiles[0].content);
-    assert.equal(parsed.env.DEEPSEEK_API_KEY, 'sk-custom');
-    assert.equal(parsed.modelProviders['my-deepseek'][0].envKey, 'DEEPSEEK_API_KEY');
+    assert.equal(parsed.env.CUSTOM_API_KEY, 'sk-custom');
+    assert.equal(parsed.modelProviders['custom'][0].envKey, 'CUSTOM_API_KEY');
 });
 
 // ── generateByokConfig: pi ──
@@ -324,8 +324,8 @@ test('generateByokConfig pi: generates models.json when apiKey filled', () => {
     assert.equal(configFiles.length, 1);
     assert.equal(configFiles[0].path, '/root/.pi/agent/models.json');
     const parsed = JSON.parse(configFiles[0].content);
-    assert.equal(parsed.providers['my-deepseek'].apiKey, 'sk-custom');
-    assert.equal(parsed.providers['my-deepseek'].api, 'openai-completions');
+    assert.equal(parsed.providers['custom'].apiKey, 'sk-custom');
+    assert.equal(parsed.providers['custom'].api, 'openai-completions');
 });
 
 // ── generateByokConfig: hermes ──
@@ -341,8 +341,8 @@ test('generateByokConfig hermes: generates YAML', () => {
     assert.equal(configFiles.length, 1);
     assert.equal(configFiles[0].path, '${STATE_DIR}/config.yaml');
     const content = configFiles[0].content;
-    assert.ok(content.includes('provider: my-deepseek'));
-    assert.ok(content.includes('name: DeepSeek'));
+    assert.ok(content.includes('provider: auto'));
+    assert.ok(content.includes('name: Custom'));
     assert.ok(content.includes('api_key: sk-ds'));
     assert.ok(content.includes('api_mode: openai'));
     assert.ok(content.includes('model: deepseek-chat'));
@@ -363,8 +363,8 @@ test('generateByokConfig openclaw: generates JSON with mode=merge and logging.le
     const parsed = JSON.parse(configFiles[0].content);
     assert.equal(parsed.models.mode, 'merge');
     assert.equal(parsed.logging.level, 'info');
-    assert.equal(parsed.agents.defaults.model.primary, 'my-deepseek/deepseek-chat');
-    assert.equal(parsed.models.providers['my-deepseek'].apiKey, 'sk-ds');
+    assert.equal(parsed.agents.defaults.model.primary, 'openai/deepseek-chat');
+    assert.equal(parsed.models.providers['openai'].apiKey, 'sk-ds');
 });
 
 // ── generateByokConfig: github-copilot ──

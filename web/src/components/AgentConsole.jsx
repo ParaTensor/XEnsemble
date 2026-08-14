@@ -607,7 +607,13 @@ function AgentConsole({
                 output += result.output;
                 hasOutput = result.hasOutput;
               }
-              output += transitionAndAfter;
+              // Hide xterm.js native cursor in alt screen: the TUI
+              // renders its own cursor inside sync-term blocks. Keeping
+              // the native cursor visible causes a double-cursor (one
+              // from xterm.js at the last ANSI cursor position, one from
+              // the TUI at the input box). The TUI will re-enable the
+              // cursor with \x1b[?25h when it's ready for input.
+              output += transitionAndAfter + '\x1b[?25l';
               hasOutput = true;
               if (hasOutput) writeTerminalData(output);
               return;
