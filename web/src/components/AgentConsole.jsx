@@ -370,10 +370,6 @@ function AgentConsole({
           replayDoneRef.current = false;
           let writeBuffer = '';
           let pendingSeq = null;
-          // Track whether the terminal is currently in alternate screen mode.
-          // Initialized from xterm.js's actual buffer state (handles idle replay
-          // that may have left the terminal in alt screen).
-          let inAltScreen = terminal.buffer.active === terminal.buffer.alternate;
           // Virtual screen for ANSI diff: plain text per row, + cursor Y
           // Used to detect which rows actually changed in a full-screen redraw
           // and only output the changed rows (eliminates Ink's full-screen flash).
@@ -393,6 +389,16 @@ function AgentConsole({
 
           function vsStripAnsi(text) {
             return text.replace(/\x1b\[[0-9;?]*[a-zA-Z]/g, '').replace(/\x1b\].*?\x07/g, '');
+          }
+
+          function stripAlternateScreen(text) {
+            return text
+              .replace(/\x1b\[\?1049h/g, '')
+              .replace(/\x1b\[\?1049l/g, '')
+              .replace(/\x1b\[\?47h/g, '')
+              .replace(/\x1b\[\?47l/g, '')
+              .replace(/\x1b\[\?1047h/g, '')
+              .replace(/\x1b\[\?1047l/g, '');
           }
 
           function vsProcess(data) {
@@ -549,58 +555,8 @@ function AgentConsole({
             syncTermPending = '';
             writeBuffer = '';
 
-            // Detect alt screen transitions in this chunk.
-            // When entering alt screen: process pre-transition content with
-            // vsProcess (primary buffer), then pass the transition sequence +
-            // everything after it raw to xterm.js (native TUI rendering).
-            // When exiting alt screen: pass content + exit sequence raw,
-            // then process post-transition content with vsProcess.
-            // While in alt screen: pass everything raw (no linearization,
-            // no sync-term stripping — the TUI handles its own rendering).
-            const altEnterIdx = remaining.search(/\x1b\[\?(?:1049|47|1047)h/);
-            const altExitIdx = remaining.search(/\x1b\[\?(?:1049|47|1047)l/);
-
-            if (!inAltScreen && altEnterIdx >= 0) {
-              const match = remaining.match(/\x1b\[\?(?:1049|47|1047)h/);
-              const before = remaining.slice(0, altEnterIdx);
-              const transitionAndAfter = remaining.slice(altEnterIdx);
-              inAltScreen = true;
-              let output = '';
-              let hasOutput = false;
-              if (before) {
-                const result = processPrimaryBuffer(before);
-                output += result.output;
-                hasOutput = result.hasOutput;
-              }
-              output += transitionAndAfter;
-              hasOutput = true;
-              if (hasOutput) writeTerminalData(output);
-              return;
-            }
-
-            if (inAltScreen && altExitIdx >= 0) {
-              const match = remaining.match(/\x1b\[\?(?:1049|47|1047)l/);
-              const exitEnd = altExitIdx + match[0].length;
-              const beforeAndExit = remaining.slice(0, exitEnd);
-              const after = remaining.slice(exitEnd);
-              inAltScreen = false;
-              let output = beforeAndExit;
-              if (after) {
-                const result = processPrimaryBuffer(after);
-                output += result.output;
-              }
-              writeTerminalData(output);
-              return;
-            }
-
-            if (inAltScreen) {
-              writeTerminalData(remaining);
-              return;
-            }
-
-            // In primary buffer: process with vsProcess + sync-term
             const result = processPrimaryBuffer(remaining);
-            if (result.hasOutput) writeTerminalData(result.output);
+            if (result.hasOutput) writeTerminalData(stripAlternateScreen(result.output));
           };
 
           function writeTerminalData(processed) {
