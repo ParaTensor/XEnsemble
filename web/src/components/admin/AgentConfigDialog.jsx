@@ -239,7 +239,7 @@ export default function AgentConfigDialog({ agent, gatewayProviders, onClose, on
         Configure - {agent.name}
       </h2>
       <p className="text-sm text-zinc-500 mb-4">
-        Choose BYOK (users enter keys in Settings - BYOK) or Gateway (shared router + model).
+        Choose BYOK (users enter keys in Settings - API Keys) or Gateway (shared router + model).
       </p>
       <form onSubmit={handleSave} className="space-y-4">
         {/* Section: LLM Auth */}
