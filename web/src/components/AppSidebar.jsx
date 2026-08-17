@@ -50,6 +50,7 @@ import {
   hoverBgTertiary,
   bgSecondary,
   bgCanvas,
+  bgActive,
   consoleButtonFocusClass,
   consoleMenuDropdownZClass,
   consoleDropdownPanelClass,
@@ -799,7 +800,7 @@ export default function AppSidebar({
               ));
               return (
                 <div key={ws.id} className="rounded-lg">
-                  <div className={`group flex items-center gap-0.5 rounded-lg hover:bg-[#FAFBFC] ${expanded ? 'bg-[#FAFBFC]' : ''}`}>
+                  <div className={`group flex items-center gap-0.5 rounded-lg hover:bg-[#FAFBFC] ${expanded ? 'bg-[#FAFBFC]' : wsHasActive ? bgActive : ''}`}>
                     <button
                       type="button"
                       onClick={() => toggleWorkspaceExpanded(ws.id)}
@@ -837,7 +838,7 @@ export default function AppSidebar({
                         <button
                           type="button"
                           onClick={() => toggleWorkspaceExpanded(ws.id)}
-                          className={`flex-1 min-w-0 text-left py-2 pr-1 text-[13px] ${wsHasActive ? `font-medium ${textPrimary}` : textPrimary}`}
+                          className={`flex-1 min-w-0 text-left py-2 pr-1 text-[13px] ${wsHasActive ? `font-semibold ${textPrimary}` : textPrimary}`}
                           title={gitTitle}
                         >
                           <span className="flex items-center gap-1.5 min-w-0">

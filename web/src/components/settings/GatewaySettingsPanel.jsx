@@ -872,7 +872,7 @@ export default function GatewaySettingsPanel() {
           <div className="flex justify-end mb-2">
             <Button type="button" size="md" onClick={openAddProviderDialog}>
               <Plus className="w-4 h-4" />
-              Add provider
+              Add Provider
             </Button>
           </div>
           {providers.length === 0 ? (
@@ -901,17 +901,18 @@ export default function GatewaySettingsPanel() {
                     return (
                       <tr key={p.name} className={consoleTableBodyRowClass}>
                         <td className={`${consoleTableBodyCellClass} min-w-0`}>
-                          <p
+                          <div
                             className="font-medium text-zinc-900 truncate"
-                            title={detailTitle || p.name}
+                            title={p.name}
                           >
                             {p.name}
-                          </p>
-                          {p.models?.length > 0 ? (
-                            <p className="text-xs text-zinc-500 truncate" title={detailTitle || undefined}>
-                              {p.models.length} model{p.models.length === 1 ? '' : 's'}
-                            </p>
-                          ) : null}
+                          </div>
+                          <div
+                            className="text-xs text-zinc-400 truncate"
+                            title={detailTitle || undefined}
+                          >
+                            {p.models?.length > 0 ? `${p.models.length} model${p.models.length === 1 ? '' : 's'}` : 'No models'}
+                          </div>
                         </td>
                         <td className={`${consoleTableBodyCellClass} align-middle`}>
                           <ProviderStatusBadge health={providerHealth[p.name]} />
