@@ -109,9 +109,9 @@ export const consoleSettingsTabIdleClass =
 export const consoleSettingsPanelScrollClass =
   'flex-1 min-h-0 min-w-0 overflow-y-auto console-scroll-hidden bg-white px-5 py-4';
 
-/** Fixed-size status badge slot — prevents column shift when spinner appears (DESIGN.md § 页面稳定性) */
+/** Status badge — content-sized; the icon slot (consoleStatusIconSlotClass) stays fixed to prevent column shift when spinner appears (DESIGN.md § 页面稳定性) */
 export const consoleStatusBadgeClass =
-  'inline-flex items-center gap-1 min-w-[6.5rem] h-4 text-xs';
+  'inline-flex items-center gap-1 text-xs whitespace-nowrap';
 
 export const consoleStatusIconSlotClass =
   'inline-flex w-3 h-3 shrink-0 items-center justify-center';

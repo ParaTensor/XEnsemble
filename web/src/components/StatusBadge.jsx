@@ -19,7 +19,7 @@ export default function StatusBadge({ tone = 'neutral', icon: Icon, spinning = f
       title={title}
       className={cn(
         consoleStatusBadgeClass,
-        'rounded border px-1.5',
+        'rounded border px-1.5 py-0.5',
         STATUS_TONES[tone] || STATUS_TONES.neutral,
         className,
       )}
@@ -31,7 +31,7 @@ export default function StatusBadge({ tone = 'neutral', icon: Icon, spinning = f
           <Icon className="h-3 w-3" />
         ) : null}
       </span>
-      <span className="truncate">{label}</span>
+      <span>{label}</span>
     </span>
   );
 }
