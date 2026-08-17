@@ -176,4 +176,4 @@ export const consoleIconButtonClass =
   `inline-flex items-center justify-center rounded-md p-1.5 ${textSecondary} hover:${bgSecondary} hover:${textPrimary} disabled:opacity-40 disabled:pointer-events-none ${consoleButtonFocusClass} transition-colors duration-150 ease-in-out`;
 
 export const consoleIconButtonDangerClass =
-  `inline-flex items-center justify-center rounded-md p-1.5 ${accentRed} hover:bg-[#FDECEA] disabled:opacity-40 disabled:pointer-events-none ${consoleButtonFocusClass} transition-colors duration-150 ease-in-out`;
+  `inline-flex items-center justify-center rounded-md p-1.5 ${textSecondary} hover:bg-[#FDECEA] hover:text-[#C06C5D] disabled:opacity-40 disabled:pointer-events-none ${consoleButtonFocusClass} transition-colors duration-150 ease-in-out`;

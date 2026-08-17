@@ -127,4 +127,4 @@ export const consoleIconButtonClass =
   `inline-flex items-center justify-center rounded-md p-1.5 text-zinc-500 hover:bg-zinc-100 hover:text-zinc-900 disabled:opacity-40 disabled:pointer-events-none ${consoleButtonFocusClass}`;
 
 export const consoleIconButtonDangerClass =
-  `inline-flex items-center justify-center rounded-md p-1.5 text-red-500 hover:bg-red-50 hover:text-red-700 disabled:opacity-40 disabled:pointer-events-none ${consoleButtonFocusClass}`;
+  `inline-flex items-center justify-center rounded-md p-1.5 text-zinc-500 hover:bg-red-50 hover:text-red-700 disabled:opacity-40 disabled:pointer-events-none ${consoleButtonFocusClass}`;

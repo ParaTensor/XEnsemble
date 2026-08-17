@@ -33,7 +33,8 @@ Agent 控制台、Settings 弹窗、Registry 等 authenticated 页面均属 Cons
 
 - **主操作**（Save、Add Agent、Add provider、表单 Submit / Cancel）：`Button` + 文案；`variant="primary"` 或 `secondary`。
 - **图标按钮**（工具栏、Settings 卡片内联、**列表行内操作**、**表单内辅助操作**（Test connection、Fetch models 等）、表格 Actions 列、Preview 控件）：**仅图标**，禁止图标与文字并排（如 ~~Configure~~、~~Edit~~、~~Test connection~~、~~Fetch models~~）。
-- 样式：`consoleIconButtonClass`；**破坏性操作**（删除、卸载等）用 `consoleIconButtonDangerClass`（红色，`Trash2` 图标）。深色终端工具栏（Preview）可用本地变体（如 `text-zinc-400 hover:bg-zinc-800`）。
+- 样式：`consoleIconButtonClass`；**破坏性操作**（删除、卸载等）用 `consoleIconButtonDangerClass`（`Trash2` 图标）。深色终端工具栏（Preview）可用本地变体（如 `text-zinc-400 hover:bg-zinc-800`）。
+- **破坏性图标按钮配色**：默认灰（与普通图标按钮一致），**hover 才变红**（`hover:text-red-700 hover:bg-red-50`）——避免整页红点密集、红色失去警示意义；仅右键菜单（context menu）中的删除项默认红（对齐 macOS / VS Code）。
 - 图标尺寸：表格 / 列表行内 / 表单辅助区 `w-3.5 h-3.5`；Settings 卡片工具条 `w-4 h-4`。
 - 必须同时提供 `title`（hover 提示）与 `aria-label`（读屏）；进行中用 `Loader2` + `animate-spin` 替换图标，`title` 用进行时（如 `Starting…`、`Removing…`）。
 - **常用图标语义**：编辑 `Pencil`、删除 `Trash2`、刷新/重试/测连 `RefreshCw`、拉取列表 `List`、启动 `Play`、停止 `Square`、暂停 `Pause`、恢复 `Play`、配置 `Settings2`。
