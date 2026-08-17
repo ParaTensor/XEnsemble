@@ -161,7 +161,7 @@ const WorkspacePanel = memo(function WorkspacePanel({
       renameInputRef.current.focus();
       renameInputRef.current.select();
     }
-  }, [renaming]);
+  }, [renaming ? 'open' : 'closed']);
 
   useEffect(() => {
     if (!contextMenu) return undefined;
