@@ -794,6 +794,9 @@ export default function AppSidebar({
                   .join(' · ')
                 : ws.name;
               const isCloning = isWorkspaceClonePending(ws);
+              const wsHasActive = !!(activeSession && (
+                ws.id === '_orphan' ? !activeSession.projectId : activeSession.projectId === ws.id
+              ));
               return (
                 <div key={ws.id} className="rounded-lg">
                   <div className={`group flex items-center gap-0.5 rounded-lg hover:bg-[#FAFBFC] ${expanded ? 'bg-[#FAFBFC]' : ''}`}>
@@ -806,9 +809,9 @@ export default function AppSidebar({
                       {expanded ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
                     </button>
                     {gitLinked ? (
-                      <GitBranch className={`w-3.5 h-3.5 ${textPlaceholder} shrink-0`} strokeWidth={1.75} />
+                      <GitBranch className={`w-3.5 h-3.5 ${wsHasActive ? textPrimary : textPlaceholder} shrink-0`} strokeWidth={1.75} />
                     ) : (
-                      <FolderOpen className={`w-3.5 h-3.5 ${textPlaceholder} shrink-0`} strokeWidth={1.75} />
+                      <FolderOpen className={`w-3.5 h-3.5 ${wsHasActive ? textPrimary : textPlaceholder} shrink-0`} strokeWidth={1.75} />
                     )}
                     {renameId === ws.id ? (
                       <>
@@ -834,7 +837,7 @@ export default function AppSidebar({
                         <button
                           type="button"
                           onClick={() => toggleWorkspaceExpanded(ws.id)}
-                          className={`flex-1 min-w-0 text-left py-2 pr-1 text-[13px] ${textPrimary}`}
+                          className={`flex-1 min-w-0 text-left py-2 pr-1 text-[13px] ${wsHasActive ? `font-medium ${textPrimary}` : textPrimary}`}
                           title={gitTitle}
                         >
                           <span className="flex items-center gap-1.5 min-w-0">
