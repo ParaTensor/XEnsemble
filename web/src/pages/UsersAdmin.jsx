@@ -1,11 +1,12 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { Plus, Pencil, Ban, CheckCircle, KeyRound } from 'lucide-react';
+import { Plus, Pencil, Pause, Play, CheckCircle, Clock, KeyRound } from 'lucide-react';
 
 import Button from '../components/Button';
 import Input from '../components/Input';
 import PageHeader from '../components/PageHeader';
 import SelectMenu from '../components/SelectMenu';
 import MultiSelectMenu from '../components/MultiSelectMenu';
+import StatusBadge from '../components/StatusBadge';
 import { ConsoleDialogShell } from '../components/ConsoleDialog';
 import { useToast } from '../components/Toast';
 import {
@@ -19,14 +20,15 @@ import {
 } from '../lib/consoleTokens';
 
 import { apiFetch } from '../lib/api';
+import { cn } from '../lib/utils';
 
 function statusBadge(status) {
   const map = {
-    active: 'bg-emerald-50 text-emerald-700 border-emerald-200',
-    pending: 'bg-amber-50 text-amber-700 border-amber-200',
-    suspended: 'bg-red-50 text-red-700 border-red-200',
+    active: { tone: 'success', icon: CheckCircle, label: 'Active' },
+    pending: { tone: 'warning', icon: Clock, label: 'Pending' },
+    suspended: { tone: 'danger', icon: Pause, label: 'Suspended' },
   };
-  return map[status] || 'bg-zinc-100 text-zinc-600 border-zinc-200';
+  return map[status] || { tone: 'neutral', icon: null, label: status || 'Unknown' };
 }
 
 function formatLastLogin(ts) {
@@ -254,7 +256,7 @@ export default function UsersAdmin() {
   return (
     <div className={consoleAdminPageClass}>
       <PageHeader
-        title="User Management"
+        title="User"
         description="Manage accounts, quotas, and agent access."
         actions={(
           <Button type="button" onClick={openCreate} size="md" className="shrink-0">
@@ -290,9 +292,7 @@ export default function UsersAdmin() {
                     <div className="text-xs text-zinc-400">{user.role}</div>
                   </td>
                   <td className={consoleTableBodyCellClass}>
-                    <span className={`inline-flex rounded border px-1.5 py-0.5 text-[10px] font-semibold uppercase ${statusBadge(user.status)}`}>
-                      {user.status}
-                    </span>
+                    <StatusBadge tone={statusBadge(user.status).tone} icon={statusBadge(user.status).icon} label={statusBadge(user.status).label} />
                   </td>
                   <td className={consoleTableBodyCellClass}>
                     <span className="font-mono text-xs text-zinc-600">
@@ -338,10 +338,17 @@ export default function UsersAdmin() {
                         <button
                           type="button"
                           onClick={() => toggleStatus(user)}
-                          className="p-1.5 rounded-md text-zinc-500 hover:bg-zinc-100 hover:text-zinc-900"
+                          className={cn(
+                            'p-1.5 rounded-md transition-colors',
+                            user.status === 'active'
+                              ? 'text-zinc-500 hover:bg-red-50 hover:text-red-600'
+                              : 'text-zinc-500 hover:bg-emerald-50 hover:text-emerald-600',
+                          )}
                           title={user.status === 'active' ? 'Suspend' : 'Activate'}
                         >
-                          <Ban className="w-3.5 h-3.5" />
+                          {user.status === 'active'
+                            ? <Pause className="w-3.5 h-3.5" />
+                            : <Play className="w-3.5 h-3.5" />}
                         </button>
                       )}
                     </div>

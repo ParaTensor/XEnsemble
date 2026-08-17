@@ -1,8 +1,9 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Plus, Settings2, Play, Square, RefreshCw, Loader2, Pencil, Trash2, Activity, List } from 'lucide-react';
+import { Plus, Settings2, Play, Square, RefreshCw, Loader2, Pencil, Trash2, Activity, List, CheckCircle, XCircle, Clock } from 'lucide-react';
 import Button from '../Button';
 import Input, { FormLabel, Textarea } from '../Input';
 import MaskedApiKeyInput from '../MaskedApiKeyInput';
+import StatusBadge from '../StatusBadge';
 import {
   ConsoleDialogShell,
   ConsoleStructuredDialogBody,
@@ -14,8 +15,6 @@ import {
   consoleCardClass,
   consoleIconButtonClass,
   consoleIconButtonDangerClass,
-  consoleStatusBadgeClass,
-  consoleStatusIconSlotClass,
   consoleStructuredDialogPanelClass,
   consoleTableBodyCellClass,
   consoleTableBodyDivideClass,
@@ -132,31 +131,32 @@ function ProviderStatusBadge({ health }) {
   ].filter(Boolean).join('\n');
 
   let label = 'Not verified';
-  let tone = 'text-zinc-400';
+  let tone = 'neutral';
+  let icon = Clock;
   let spinning = false;
 
   if (status === 'testing') {
     label = 'Verifying…';
-    tone = 'text-zinc-500';
+    tone = 'info';
     spinning = true;
   } else if (status === 'ok') {
     label = 'Available';
-    tone = 'text-green-700 font-medium';
+    tone = 'success';
+    icon = CheckCircle;
   } else if (status === 'error') {
     label = 'Unavailable';
-    tone = 'text-red-600 font-medium';
+    tone = 'danger';
+    icon = XCircle;
   }
 
   return (
-    <span
-      className={`${consoleStatusBadgeClass} ${tone}`}
+    <StatusBadge
+      tone={tone}
+      icon={icon}
+      spinning={spinning}
+      label={label}
       title={detailTitle || undefined}
-    >
-      <span className={consoleStatusIconSlotClass} aria-hidden>
-        {spinning ? <Loader2 className="w-3 h-3 animate-spin" /> : null}
-      </span>
-      <span className="truncate">{label}</span>
-    </span>
+    />
   );
 }
 
