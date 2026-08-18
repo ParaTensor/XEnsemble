@@ -256,7 +256,7 @@ export default function UsersAdmin() {
   return (
     <div className={consoleAdminPageClass}>
       <PageHeader
-        title="User"
+        title="Users"
         description="Manage accounts, quotas, and agent access."
         actions={(
           <Button type="button" onClick={openCreate} size="md" className="shrink-0">
@@ -273,9 +273,9 @@ export default function UsersAdmin() {
               <tr>
                 <th className={consoleTableHeadCellClass}>User</th>
                 <th className={consoleTableHeadCellClass}>Status</th>
-                <th className={consoleTableHeadCellClass}>Usage</th>
-                <th className={consoleTableHeadCellClass}>Quotas</th>
-                <th className={consoleTableHeadCellClass}>Agents</th>
+                <th className={consoleTableHeadCellClass} title="Workspaces / Sessions / Previews">Usage</th>
+                <th className={consoleTableHeadCellClass} title="Resource tier — controls LLM request rate">Tier</th>
+                <th className={consoleTableHeadCellClass} title="Granted agent access">Agents</th>
                 <th className={consoleTableHeadCellClass}>Last login</th>
                 <th className={consoleTableHeadCellClass}>Actions</th>
               </tr>
@@ -296,11 +296,11 @@ export default function UsersAdmin() {
                   </td>
                   <td className={consoleTableBodyCellClass}>
                     <span className="font-mono text-xs text-zinc-600">
-                      W {user.projects_count}/{user.quotas?.max_projects ?? '—'}
+                      <span title="Workspaces">W {user.projects_count}/{user.quotas?.max_projects ?? '—'}</span>
                       {' · '}
-                      S {user.active_sessions}/{user.quotas?.max_sessions ?? '—'}
+                      <span title="Sessions">S {user.active_sessions}/{user.quotas?.max_sessions ?? '—'}</span>
                       {' · '}
-                      V {user.active_previews}/{user.quotas?.max_previews ?? '—'}
+                      <span title="Previews">P {user.active_previews}/{user.quotas?.max_previews ?? '—'}</span>
                     </span>
                   </td>
                   <td className={consoleTableBodyCellClass}>
@@ -451,12 +451,13 @@ export default function UsersAdmin() {
                       />
                     </div>
                     <div>
-                      <label className="text-xs text-zinc-500">Tier</label>
+                      <label className="text-xs text-zinc-500" title="Controls LLM request rate">Tier</label>
                       <SelectMenu
                         value={form.resource_tier}
                         onChange={(v) => setForm({ ...form, resource_tier: v })}
                         options={[
                           { value: 'basic', label: 'Basic' },
+                          { value: 'standard', label: 'Standard' },
                           { value: 'pro', label: 'Pro' },
                           { value: 'enterprise', label: 'Enterprise' },
                         ]}
