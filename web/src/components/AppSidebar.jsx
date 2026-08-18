@@ -286,7 +286,7 @@ export default function AppSidebar({
   fetchWorkspaces,
   onCreateWorkspace,
   onImportFromGit,
-  onNewAgent,
+  onNewSession,
   onRequestDeleteSession,
   onRequestDeleteWorkspace,
   onArchiveSession,
@@ -674,10 +674,10 @@ export default function AppSidebar({
           </button>
           <button
             type="button"
-            disabled={!onNewAgent}
-            onClick={onNewAgent}
-            title="New Agent"
-            aria-label="New Agent"
+            disabled={!onNewSession}
+            onClick={onNewSession}
+            title="New Session"
+            aria-label="New Session"
             className={`p-2 rounded-lg text-[#3C4043] hover:text-[#202124] ${hoverBgTertiary} ${transitionBase} disabled:opacity-40 ${consoleButtonFocusClass}`}
           >
             <PenSquare className="w-4 h-4" strokeWidth={1.75} />
@@ -716,12 +716,12 @@ export default function AppSidebar({
         <div className="space-y-0.5">
           <button
             type="button"
-            disabled={!onNewAgent}
-            onClick={onNewAgent}
+            disabled={!onNewSession}
+            onClick={onNewSession}
             className={`${sidebarNavItemClass} disabled:opacity-40`}
           >
             <PenSquare className="w-4 h-4 shrink-0" strokeWidth={1.75} />
-            New Agent
+            New Session
           </button>
           <label className={`${sidebarNavItemClass} cursor-text`}>
             <Search className="w-4 h-4 shrink-0 text-[#9AA0A6]" strokeWidth={1.75} />
@@ -776,7 +776,7 @@ export default function AppSidebar({
           {filteredWorkspaces.length === 0 ? (
             <p className={`text-xs ${textSecondary} px-2.5 py-2`}>
               {projects.length === 0
-                ? 'No workspaces yet. Create one, then start a New Agent.'
+                ? 'No workspaces yet. Create one, then start a session.'
                 : 'No matching workspaces.'}
             </p>
           ) : (
