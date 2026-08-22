@@ -263,6 +263,7 @@ function registerAdminRoutes(fastify) {
             { prefix: 'GITHUB', fields: ['CLIENT_ID', 'CLIENT_SECRET', 'CALLBACK_URL', 'API_BASE'] },
             { prefix: 'GITLAB', fields: ['CLIENT_ID', 'CLIENT_SECRET', 'CALLBACK_URL', 'API_BASE'] },
             { prefix: 'GITEA', fields: ['CLIENT_ID', 'CLIENT_SECRET', 'CALLBACK_URL', 'API_BASE'] },
+            { prefix: 'BLAXEL', fields: ['WORKSPACE', 'API_KEY', 'REGION', 'SANDBOX_IMAGE', 'SANDBOX_MEMORY'] },
         ];
         for (const { prefix, fields } of gitProviderConfigKeys) {
             for (const field of fields) {

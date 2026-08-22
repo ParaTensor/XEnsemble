@@ -1,12 +1,21 @@
 const { RuntimeProvider, RuntimeError } = require('./interfaces');
 const { SandboxInstance } = require('@blaxel/core');
 const workspace = require('../workspace');
+const PlatformSettings = require('../admin/PlatformSettings');
 
-function getBlaxelConfig() {
+async function getBlaxelConfig() {
+    const get = async (key, envKey, defaultVal) => {
+        const dbVal = await PlatformSettings.get(key);
+        if (dbVal) return dbVal;
+        return process.env[envKey] || defaultVal || '';
+    };
+
     return {
-        workspace: process.env.BL_WORKSPACE || '',
-        apiKey: process.env.BL_API_KEY || '',
-        region: process.env.BL_REGION || 'us-pdx-1',
+        workspace: await get('BLAXEL_WORKSPACE', 'BL_WORKSPACE', ''),
+        apiKey: await get('BLAXEL_API_KEY', 'BL_API_KEY', ''),
+        region: await get('BLAXEL_REGION', 'BL_REGION', 'us-pdx-1'),
+        sandboxImage: await get('BLAXEL_SANDBOX_IMAGE', 'BLAXEL_SANDBOX_IMAGE', 'blaxel/base-image:latest'),
+        sandboxMemory: parseInt(await get('BLAXEL_SANDBOX_MEMORY', 'BLAXEL_SANDBOX_MEMORY', '4096'), 10),
     };
 }
 
@@ -17,10 +26,19 @@ function sandboxName(project) {
 class BlaxelRuntimeProvider extends RuntimeProvider {
     constructor() {
         super();
-        this._config = getBlaxelConfig();
-        if (this._config.apiKey) {
-            this._ensureInitialized();
+        this._configPromise = null;
+    }
+
+    async _getConfig() {
+        if (!this._configPromise) {
+            this._configPromise = getBlaxelConfig().then((config) => {
+                if (config.apiKey) {
+                    this._ensureInitialized();
+                }
+                return config;
+            });
         }
+        return this._configPromise;
     }
 
     async _ensureInitialized() {
@@ -43,9 +61,10 @@ class BlaxelRuntimeProvider extends RuntimeProvider {
     }
 
     async ensureReady(project, opts = {}) {
+        const config = await this._getConfig();
         const name = opts.runtimeId || sandboxName(project);
-        const image = opts.image || process.env.BLAXEL_SANDBOX_IMAGE || 'blaxel/base-image:latest';
-        const memory = parseInt(process.env.BLAXEL_SANDBOX_MEMORY || '4096', 10);
+        const image = opts.image || config.sandboxImage;
+        const memory = opts.memory || config.sandboxMemory;
 
         let sandbox;
         try {
@@ -60,7 +79,7 @@ class BlaxelRuntimeProvider extends RuntimeProvider {
                     name,
                     image,
                     memory,
-                    region: this._config.region,
+                    region: config.region,
                     labels: { project_id: project.id, user_id: project.userId },
                 });
             } catch (e) {
