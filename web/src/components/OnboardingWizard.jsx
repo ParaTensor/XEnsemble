@@ -68,6 +68,14 @@ function RepoDropdown({ provider, onSelect }) {
   const [selectedFullName, setSelectedFullName] = useState('');
   const { showToast } = useToast();
 
+  const repoOptions = useMemo(() =>
+    repos.map((r) => ({
+      value: r.full_name,
+      label: `${r.full_name}${r.private ? ' (Private)' : ''}`,
+    })),
+    [repos],
+  );
+
   useEffect(() => {
     if (!connection) return;
     setReposLoading(true);
@@ -110,14 +118,6 @@ function RepoDropdown({ provider, onSelect }) {
       </div>
     );
   }
-
-  const repoOptions = useMemo(() =>
-    repos.map((r) => ({
-      value: r.full_name,
-      label: `${r.full_name}${r.private ? ' (Private)' : ''}`,
-    })),
-    [repos],
-  );
 
   return (
     <div className="space-y-2">
