@@ -79,7 +79,7 @@ function AuthenticatedLayout({
         onSelectSession={onSelectSession}
         onCreateWorkspace={() => sessionsRef.current?.openLaunchModal?.('workspace')}
         onImportFromGit={() => sessionsRef.current?.openImportDialog?.()}
-        onNewAgent={() => { setLaunchPanelOpen(true); sessionsRef.current?.openLaunchModal?.('session'); }}
+        onNewSession={() => sessionsRef.current?.openLaunchModal?.('session')}
         onRequestDeleteSession={(session, ws) => sessionsRef.current?.requestDeleteSession?.(session, ws)}
         onRequestDeleteWorkspace={(ws) => sessionsRef.current?.requestDeleteWorkspace?.(ws)}
         onArchiveSession={onArchiveSession}
