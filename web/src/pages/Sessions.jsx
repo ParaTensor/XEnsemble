@@ -94,7 +94,6 @@ function defaultWorkspaceName() {
 }
 
 export default React.forwardRef(function Sessions({
-  /* token, user kept for API compat */
   agents,
   projects,
   setProjects,
@@ -107,6 +106,7 @@ export default React.forwardRef(function Sessions({
   launchPanelOpen,
   onLaunchPanelClose,
   className,
+  user,
 }, ref) {
   const navigate = useNavigate();
   const location = useLocation();
