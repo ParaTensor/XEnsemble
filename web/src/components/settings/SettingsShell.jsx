@@ -10,6 +10,7 @@ import GeneralSettingsPanel from './GeneralSettingsPanel';
 import ApiKeysSettingsPanel from './ApiKeysSettingsPanel';
 import GitHubSettingsPanel from './GitHubSettingsPanel';
 import GitProvidersSettingsPanel from './GitProvidersSettingsPanel';
+import RuntimeSettingsPanel from './RuntimeSettingsPanel';
 import QuotaSettingsPanel from './QuotaSettingsPanel';
 
 const QUOTA_SECTION = { id: 'quota', label: 'Quota' };
@@ -17,6 +18,7 @@ const GENERAL_SECTION = { id: 'general', label: 'General' };
 const API_KEYS_SECTION = { id: 'api-keys', label: 'API Keys' };
 const GITHUB_SECTION = { id: 'github', label: 'Git' };
 const GIT_PROVIDERS_SECTION = { id: 'git-providers', label: 'Git' };
+const RUNTIME_SECTION = { id: 'runtime', label: 'Runtime' };
 
 export default function SettingsShell() {
   const { user } = useContext(AuthContext);
@@ -26,7 +28,7 @@ export default function SettingsShell() {
   const sections = [
     GENERAL_SECTION,
     API_KEYS_SECTION,
-    ...(isAdmin ? [GIT_PROVIDERS_SECTION] : [GITHUB_SECTION]),
+    ...(isAdmin ? [GIT_PROVIDERS_SECTION, RUNTIME_SECTION] : [GITHUB_SECTION]),
     QUOTA_SECTION,
   ];
 
@@ -53,6 +55,7 @@ export default function SettingsShell() {
         {section === 'api-keys' && <ApiKeysSettingsPanel />}
         {section === 'git-providers' && <GitProvidersSettingsPanel />}
         {section === 'github' && <GitHubSettingsPanel />}
+        {section === 'runtime' && <RuntimeSettingsPanel />}
         {section === 'quota' && <QuotaSettingsPanel />}
       </div>
     </div>
