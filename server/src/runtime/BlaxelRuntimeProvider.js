@@ -27,13 +27,14 @@ class BlaxelRuntimeProvider extends RuntimeProvider {
     constructor() {
         super();
         this._configPromise = null;
+        this._initialized = false;
     }
 
     async _getConfig() {
         if (!this._configPromise) {
-            this._configPromise = getBlaxelConfig().then((config) => {
-                if (config.apiKey) {
-                    this._ensureInitialized();
+            this._configPromise = getBlaxelConfig().then(async (config) => {
+                if (config.apiKey && !this._initialized) {
+                    await this._ensureInitialized(config);
                 }
                 return config;
             });
@@ -41,12 +42,17 @@ class BlaxelRuntimeProvider extends RuntimeProvider {
         return this._configPromise;
     }
 
-    async _ensureInitialized() {
+    async _ensureInitialized(config) {
         try {
             const { initialize } = require('@blaxel/core');
-            await initialize();
-        } catch (_) {
-            // Already initialized or not needed
+            initialize({
+                apiKey: config.apiKey,
+                workspace: config.workspace,
+                region: config.region,
+            });
+            this._initialized = true;
+        } catch (e) {
+            // Log but don't throw - will retry on next call
         }
     }
 
