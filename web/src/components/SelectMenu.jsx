@@ -19,12 +19,12 @@ function OptionRow({ opt, isSelected, onPick }) {
         onClick={() => onPick(opt.value)}
         className={`w-full flex items-center gap-2 px-3 py-2 text-sm text-left transition-colors ${
           isSelected
-            ? 'bg-zinc-100 text-zinc-900'
-            : 'text-zinc-700 hover:bg-zinc-50'
+            ? 'bg-emerald-500/10 text-emerald-300'
+            : 'text-zinc-300 hover:bg-zinc-800/50'
         }`}
       >
         <span className="w-4 shrink-0 flex items-center justify-center">
-          {isSelected && <Check className="w-3.5 h-3.5 text-zinc-900" strokeWidth={2.5} />}
+          {isSelected && <Check className="w-3.5 h-3.5 text-emerald-400" strokeWidth={2.5} />}
         </span>
         <span className="truncate">{opt.label}</span>
       </button>
@@ -147,7 +147,7 @@ export default function SelectMenu({
   const renderOptions = () => {
     if (filteredOptions.length === 0) {
       return (
-        <li role="presentation" className="px-3 py-3 text-sm text-zinc-400 text-center">
+        <li role="presentation" className="px-3 py-3 text-sm text-zinc-500 text-center">
           No matches
         </li>
       );
@@ -202,7 +202,7 @@ export default function SelectMenu({
       >
         {searchable && (
           <div
-            className="sticky top-0 z-10 border-b border-zinc-100 bg-zinc-950 p-2"
+            className="sticky top-0 z-10 border-b border-zinc-800 bg-zinc-900 p-2"
             onMouseDown={(e) => e.stopPropagation()}
           >
             <div className="relative">
@@ -248,10 +248,10 @@ export default function SelectMenu({
         onClick={() => setOpen((v) => !v)}
         className={cn(
           consoleToolbarInputClass,
-          'relative w-full text-left pr-9 hover:bg-zinc-50 disabled:opacity-50 disabled:cursor-not-allowed',
+          'relative w-full text-left pr-9 hover:bg-zinc-800/50 disabled:opacity-50 disabled:cursor-not-allowed',
         )}
       >
-        <span className={selected ? 'text-zinc-900' : 'text-zinc-400'}>
+        <span className={selected ? 'text-zinc-100' : 'text-zinc-500'}>
           {selected?.label ?? placeholder}
         </span>
         <ChevronDown

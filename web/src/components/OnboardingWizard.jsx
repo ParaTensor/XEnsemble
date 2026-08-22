@@ -19,6 +19,7 @@ import { apiFetch } from '../lib/api';
 import { useToast } from './Toast';
 import { useGitProvider } from '../hooks/useGitProvider';
 import * as gitApi from '../lib/gitApi';
+import SelectMenu from './SelectMenu';
 
 const STEPS = [
   { key: 'source', label: '选择代码来源' },
@@ -110,16 +111,24 @@ function RepoDropdown({ provider, onSelect }) {
     );
   }
 
+  const repoOptions = useMemo(() =>
+    repos.map((r) => ({
+      value: r.full_name,
+      label: `${r.full_name}${r.private ? ' (Private)' : ''}`,
+    })),
+    [repos],
+  );
+
   return (
     <div className="space-y-2">
       <div className="flex items-center justify-between">
         <label className="block text-xs font-medium text-zinc-400">仓库</label>
         <span className="text-[10px] text-zinc-500">{repos.length} 个</span>
       </div>
-      <select
+      <SelectMenu
         value={selectedFullName}
-        onChange={(e) => {
-          const repo = repos.find((r) => r.full_name === e.target.value);
+        onChange={(val) => {
+          const repo = repos.find((r) => r.full_name === val);
           if (repo) {
             setSelectedFullName(repo.full_name);
             onSelect({
@@ -130,16 +139,12 @@ function RepoDropdown({ provider, onSelect }) {
             });
           }
         }}
-        className="w-full bg-zinc-950 border border-zinc-700 rounded-lg px-3 py-2.5 text-sm text-zinc-100 focus:outline-none focus:border-emerald-500 transition cursor-pointer appearance-none"
-        disabled={reposLoading}
-      >
-        <option value="">{reposLoading ? '加载中...' : '选择仓库...'}</option>
-        {repos.map((r) => (
-          <option key={r.full_name || r.id} value={r.full_name}>
-            {r.full_name}{r.private ? ' (Private)' : ''}
-          </option>
-        ))}
-      </select>
+        options={repoOptions}
+        placeholder={reposLoading ? '加载中...' : '选择仓库...'}
+        searchable
+        searchPlaceholder="搜索仓库..."
+        disabled={reposLoading || repoOptions.length === 0}
+      />
     </div>
   );
 }
@@ -330,15 +335,14 @@ export default function OnboardingWizard({ agents, onComplete }) {
               </div>
               <div className="space-y-2">
                 <label className="block text-xs font-medium text-zinc-400">Agent</label>
-                <select
+                <SelectMenu
                   value={selectedAgentId}
-                  onChange={(e) => setSelectedAgentId(e.target.value)}
-                  className="w-full bg-zinc-950 border border-zinc-700 rounded-lg px-3 py-2.5 text-sm text-zinc-100 focus:outline-none focus:border-emerald-500 transition cursor-pointer appearance-none"
-                >
-                  {agents.map((a) => (
-                    <option key={a.id} value={a.id}>{a.name}</option>
-                  ))}
-                </select>
+                  onChange={setSelectedAgentId}
+                  options={agents.map((a) => ({ value: a.id, label: a.name }))}
+                  placeholder="选择 Agent..."
+                  searchable
+                  searchPlaceholder="搜索 Agent..."
+                />
               </div>
             </div>
 
