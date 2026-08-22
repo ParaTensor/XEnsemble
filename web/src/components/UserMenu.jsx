@@ -51,11 +51,11 @@ export default function UserMenu({ username, onLogout, onOpenSettings }) {
       {open && (
         <div
           role="menu"
-          className="absolute right-0 top-full mt-2 w-48 rounded-lg border border-zinc-200 bg-white py-1 shadow-lg shadow-zinc-200/50 z-50"
+          className="absolute right-0 top-full mt-2 w-48 rounded-lg border border-zinc-700 bg-zinc-900 py-1 shadow-lg shadow-zinc-800/50 z-50"
         >
-          <div className="px-3 py-2 border-b border-zinc-100">
+          <div className="px-3 py-2 border-b border-zinc-800">
             <p className="text-xs text-zinc-400">Signed in as</p>
-            <p className="text-sm font-medium text-zinc-900 truncate">{username}</p>
+            <p className="text-sm font-medium text-zinc-100 truncate">{username}</p>
           </div>
           {onOpenSettings && (
             <button

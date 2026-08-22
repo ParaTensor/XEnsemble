@@ -202,7 +202,7 @@ export default function SelectMenu({
       >
         {searchable && (
           <div
-            className="sticky top-0 z-10 border-b border-zinc-100 bg-white p-2"
+            className="sticky top-0 z-10 border-b border-zinc-100 bg-zinc-950 p-2"
             onMouseDown={(e) => e.stopPropagation()}
           >
             <div className="relative">

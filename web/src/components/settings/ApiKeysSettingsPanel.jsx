@@ -99,8 +99,8 @@ export default function ApiKeysSettingsPanel() {
                   'ml-auto text-[10px] font-semibold px-2 py-0.5 rounded-full shrink-0',
                   isByok
                     ? isConfigured
-                      ? 'bg-[#E8F5E9] text-[#4A7C59]'
-                      : 'bg-[#FFF3E0] text-[#E8B339]'
+                      ? 'bg-emerald-950 text-emerald-400'
+                      : 'bg-amber-950 text-amber-400'
                     : 'bg-zinc-100 text-zinc-500',
                 )}>
                   {isByok

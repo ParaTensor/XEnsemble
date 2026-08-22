@@ -18,7 +18,7 @@ import {
 const REVIEW_STATE_STYLES = {
   APPROVED: { icon: Check, bg: 'bg-green-50', text: 'text-green-700', label: 'Approved' },
   CHANGES_REQUESTED: { icon: X, bg: 'bg-red-50', text: 'text-red-700', label: 'Changes Requested' },
-  COMMENTED: { icon: MessageSquare, bg: 'bg-blue-50', text: 'text-blue-700', label: 'Commented' },
+  COMMENTED: { icon: MessageSquare, bg: 'bg-blue-500/10', text: 'text-blue-700', label: 'Commented' },
   PENDING: { icon: CircleDot, bg: 'bg-yellow-50', text: 'text-yellow-700', label: 'Pending' },
   DISMISSED: { icon: X, bg: 'bg-zinc-50', text: 'text-zinc-500', label: 'Dismissed' },
 };
@@ -42,13 +42,13 @@ function ReviewBadge({ state }) {
 
 function ReviewItem({ review }) {
   return (
-    <div className="rounded-xl bg-white shadow-sm border border-[#E8EAED] p-3.5 transition-shadow hover:shadow-md">
+    <div className="rounded-xl bg-zinc-950 shadow-sm border border-zinc-800 p-3.5 transition-shadow hover:shadow-md">
       <div className="flex items-center justify-between gap-2">
         <div className="flex items-center gap-2 min-w-0">
           {review.user?.avatarUrl ? (
-            <img src={review.user.avatarUrl} alt="" className="h-6 w-6 rounded-full ring-1 ring-[#E8EAED]" />
+            <img src={review.user.avatarUrl} alt="" className="h-6 w-6 rounded-full ring-1 ring-zinc-700" />
           ) : (
-            <div className="h-6 w-6 rounded-full bg-[#E8EAED]" />
+            <div className="h-6 w-6 rounded-full bg-zinc-800" />
           )}
           <span className={`text-sm font-medium ${textPrimary} truncate`}>
             {review.user?.login || 'Unknown'}
@@ -77,7 +77,7 @@ function CommentActionButtons({ comment, isOwnComment, onReply, onEdit, onDelete
           onClick={() => onReply(comment)}
           disabled={disabled}
           title="Reply"
-          className={`p-1 rounded text-[#9AA0A6] hover:text-[#5F6368] hover:bg-[#F4F5F6] disabled:opacity-40 ${consoleButtonFocusClass}`}
+          className={`p-1 rounded text-zinc-500 hover:text-zinc-400 hover:bg-zinc-800/50 disabled:opacity-40 ${consoleButtonFocusClass}`}
         >
           <CornerDownRight className="h-3 w-3" />
         </button>
@@ -89,7 +89,7 @@ function CommentActionButtons({ comment, isOwnComment, onReply, onEdit, onDelete
             onClick={() => onEdit(comment)}
             disabled={disabled}
             title="Edit"
-            className={`p-1 rounded text-[#9AA0A6] hover:text-[#5F6368] hover:bg-[#F4F5F6] disabled:opacity-40 ${consoleButtonFocusClass}`}
+            className={`p-1 rounded text-zinc-500 hover:text-zinc-400 hover:bg-zinc-800/50 disabled:opacity-40 ${consoleButtonFocusClass}`}
           >
             <Pencil className="h-3 w-3" />
           </button>
@@ -125,13 +125,13 @@ function CommentItem({ comment, mrFiles, renderDiffLines, isOwnComment, onReply,
   };
 
   return (
-    <div className={`rounded-xl bg-white shadow-sm border border-[#E8EAED] p-3.5 transition-shadow hover:shadow-md group ${comment._isReply ? 'ml-6 border-l-2 border-l-[#5B8DB8]/30' : ''}`}>
+    <div className={`rounded-xl bg-zinc-950 shadow-sm border border-zinc-800 p-3.5 transition-shadow hover:shadow-md group ${comment._isReply ? 'ml-6 border-l-2 border-l-emerald-500/30' : ''}`}>
       <div className="flex items-center justify-between gap-2 mb-2">
         <div className="flex items-center gap-2 min-w-0">
           {comment.user?.avatarUrl ? (
-            <img src={comment.user?.avatarUrl} alt="" className="h-6 w-6 rounded-full ring-1 ring-[#E8EAED]" />
+            <img src={comment.user?.avatarUrl} alt="" className="h-6 w-6 rounded-full ring-1 ring-zinc-700" />
           ) : (
-            <div className="h-6 w-6 rounded-full bg-[#E8EAED]" />
+            <div className="h-6 w-6 rounded-full bg-zinc-800" />
           )}
           <span className={`text-xs font-medium ${textPrimary}`}>
             {comment.user?.login || 'Unknown'}
@@ -145,12 +145,12 @@ function CommentItem({ comment, mrFiles, renderDiffLines, isOwnComment, onReply,
         </div>
         <div className="flex items-center gap-1.5 shrink-0">
           {isInline && (
-            <span className="font-mono text-[10px] bg-[#F4F5F6] rounded-md px-1.5 py-0.5 text-[#5F6368] truncate max-w-[10rem]">
+            <span className="font-mono text-[10px] bg-zinc-800/50 rounded-md px-1.5 py-0.5 text-zinc-400 truncate max-w-[10rem]">
               {comment.path}
             </span>
           )}
           {isInline && comment.line && (
-            <span className="font-mono text-[10px] text-[#9AA0A6]">
+            <span className="font-mono text-[10px] text-zinc-500">
               L{comment.line}
             </span>
           )}
@@ -159,7 +159,7 @@ function CommentItem({ comment, mrFiles, renderDiffLines, isOwnComment, onReply,
               type="button"
               onClick={() => setCodeExpanded((v) => !v)}
               title={codeExpanded ? 'Collapse code' : 'Expand code'}
-              className={`p-0.5 rounded text-[#9AA0A6] hover:text-[#5F6368] hover:bg-[#F4F5F6] ${consoleButtonFocusClass}`}
+              className={`p-0.5 rounded text-zinc-500 hover:text-zinc-400 hover:bg-zinc-800/50 ${consoleButtonFocusClass}`}
             >
               {codeExpanded ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
             </button>
@@ -176,13 +176,13 @@ function CommentItem({ comment, mrFiles, renderDiffLines, isOwnComment, onReply,
       </div>
 
       {hasCode && codeExpanded && fileDiff && (
-        <div className="mb-2.5 rounded-lg border border-[#E8EAED] overflow-hidden shadow-sm">
+        <div className="mb-2.5 rounded-lg border border-zinc-800 overflow-hidden shadow-sm">
           <DiffText diff={fileDiff} showLineNumbers />
         </div>
       )}
 
       {hasCode && codeExpanded && !fileDiff && comment.diffHunk && (
-        <pre className="mb-2.5 rounded-lg bg-[#F4F5F6] p-2 text-[10px] font-mono text-[#5F6368] max-h-20 overflow-auto whitespace-pre-wrap">
+        <pre className="mb-2.5 rounded-lg bg-zinc-800/50 p-2 text-[10px] font-mono text-zinc-400 max-h-20 overflow-auto whitespace-pre-wrap">
           {comment.diffHunk}
         </pre>
       )}
@@ -201,7 +201,7 @@ function CommentItem({ comment, mrFiles, renderDiffLines, isOwnComment, onReply,
               type="button"
               onClick={handleSaveEdit}
               disabled={!editBody.trim() || actionLoading?.pending}
-              className={`flex items-center gap-1 px-2 h-6 text-[11px] font-medium rounded-md text-white bg-[#5B8DB8] hover:bg-[#4A7298] disabled:opacity-40 transition-colors ${consoleButtonFocusClass}`}
+              className={`flex items-center gap-1 px-2 h-6 text-[11px] font-medium rounded-md text-white bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 transition-colors ${consoleButtonFocusClass}`}
             >
               {actionLoading?.pending ? <Loader2 className="h-3 w-3 animate-spin" /> : <Check className="h-3 w-3" />}
               Save
@@ -209,7 +209,7 @@ function CommentItem({ comment, mrFiles, renderDiffLines, isOwnComment, onReply,
             <button
               type="button"
               onClick={() => onEdit(null, null, 'cancel')}
-              className={`px-2 h-6 text-[11px] font-medium rounded-md text-[#5F6368] bg-[#F4F5F6] hover:bg-[#E8EAED] ${consoleButtonFocusClass}`}
+              className={`px-2 h-6 text-[11px] font-medium rounded-md text-zinc-400 bg-zinc-800/50 hover:bg-zinc-800 ${consoleButtonFocusClass}`}
             >
               Cancel
             </button>
@@ -233,33 +233,33 @@ function ThreadGroup({ thread, mrFiles, renderDiffLines, onReply, onEdit, onDele
   const [codeExpanded, setCodeExpanded] = useState(true);
 
   return (
-    <div className="rounded-xl border border-[#E8EAED] overflow-hidden bg-white shadow-sm">
+    <div className="rounded-xl border border-zinc-800 overflow-hidden bg-zinc-950 shadow-sm">
       <button
         type="button"
         onClick={() => setCollapsed((v) => !v)}
-        className={`w-full flex items-center gap-2 px-3 py-2 bg-[#FAFBFC] hover:bg-[#F4F5F6] transition-colors text-left ${consoleButtonFocusClass}`}
+        className={`w-full flex items-center gap-2 px-3 py-2 bg-zinc-800/50 hover:bg-zinc-800/50 transition-colors text-left ${consoleButtonFocusClass}`}
       >
-        {collapsed ? <ChevronRight className="h-3.5 w-3.5 shrink-0 text-[#9AA0A6]" /> : <ChevronDown className="h-3.5 w-3.5 shrink-0 text-[#9AA0A6]" />}
-        <span className="font-mono text-[10px] bg-[#F4F5F6] rounded-md px-1.5 py-0.5 text-[#5F6368] truncate max-w-[12rem]">
+        {collapsed ? <ChevronRight className="h-3.5 w-3.5 shrink-0 text-zinc-500" /> : <ChevronDown className="h-3.5 w-3.5 shrink-0 text-zinc-500" />}
+        <span className="font-mono text-[10px] bg-zinc-800/50 rounded-md px-1.5 py-0.5 text-zinc-400 truncate max-w-[12rem]">
           {path}
         </span>
         {line && (
-          <span className="font-mono text-[10px] text-[#9AA0A6]">L{line}</span>
+          <span className="font-mono text-[10px] text-zinc-500">L{line}</span>
         )}
-        <span className="text-[10px] text-[#9AA0A6]">
+        <span className="text-[10px] text-zinc-500">
           {thread.comments.length} {thread.comments.length === 1 ? 'comment' : 'comments'}
         </span>
       </button>
       {!collapsed && (
         <div className="p-2.5 space-y-2">
           {fileDiff && codeExpanded && (
-            <div className="mb-1 rounded-lg border border-[#E8EAED] overflow-hidden">
-              <div className="flex items-center justify-between px-2 py-1 bg-[#FAFBFC]">
-                <span className="text-[10px] text-[#9AA0A6]">Diff context</span>
+            <div className="mb-1 rounded-lg border border-zinc-800 overflow-hidden">
+              <div className="flex items-center justify-between px-2 py-1 bg-zinc-800/50">
+                <span className="text-[10px] text-zinc-500">Diff context</span>
                 <button
                   type="button"
                   onClick={() => setCodeExpanded(false)}
-                  className={`p-0.5 rounded text-[#9AA0A6] hover:text-[#5F6368] ${consoleButtonFocusClass}`}
+                  className={`p-0.5 rounded text-zinc-500 hover:text-zinc-400 ${consoleButtonFocusClass}`}
                 >
                   <ChevronDown className="h-3 w-3" />
                 </button>
@@ -271,7 +271,7 @@ function ThreadGroup({ thread, mrFiles, renderDiffLines, onReply, onEdit, onDele
             <button
               type="button"
               onClick={() => setCodeExpanded(true)}
-              className={`text-[10px] text-[#5B8DB8] hover:text-[#4A7298] ${consoleButtonFocusClass}`}
+              className={`text-[10px] text-emerald-400 hover:text-emerald-300 ${consoleButtonFocusClass}`}
             >
               Show diff context
             </button>
@@ -311,7 +311,7 @@ function ThreadGroup({ thread, mrFiles, renderDiffLines, onReply, onEdit, onDele
                 type="button"
                 onClick={onSendReply}
                 disabled={!replyText.trim() || actionLoading?.pending}
-                className={`shrink-0 flex items-center gap-1 px-2 h-7 text-[11px] font-medium rounded-md text-white bg-[#5B8DB8] hover:bg-[#4A7298] disabled:opacity-40 transition-colors ${consoleButtonFocusClass}`}
+                className={`shrink-0 flex items-center gap-1 px-2 h-7 text-[11px] font-medium rounded-md text-white bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 transition-colors ${consoleButtonFocusClass}`}
               >
                 {actionLoading?.pending ? <Loader2 className="h-3 w-3 animate-spin" /> : <Send className="h-3 w-3" />}
                 Reply
@@ -319,7 +319,7 @@ function ThreadGroup({ thread, mrFiles, renderDiffLines, onReply, onEdit, onDele
               <button
                 type="button"
                 onClick={onCancelReply}
-                className={`shrink-0 px-2 h-7 text-[11px] font-medium rounded-md text-[#5F6368] bg-[#F4F5F6] hover:bg-[#E8EAED] ${consoleButtonFocusClass}`}
+                className={`shrink-0 px-2 h-7 text-[11px] font-medium rounded-md text-zinc-400 bg-zinc-800/50 hover:bg-zinc-800 ${consoleButtonFocusClass}`}
               >
                 Cancel
               </button>
@@ -407,7 +407,7 @@ export default function CodeReviewPanel({ projectId, mergeRequestId, mergeReques
   };
 
   const STATUS_LABELS = { added: 'A', modified: 'M', deleted: 'D', renamed: 'R' };
-  const STATUS_COLORS = { added: 'text-[#4A7C59]', modified: 'text-[#C06C5D]', deleted: 'text-[#C06C5D]', renamed: 'text-[#5B8DB8]' };
+  const STATUS_COLORS = { added: 'text-emerald-400', modified: 'text-red-400', deleted: 'text-red-400', renamed: 'text-emerald-400' };
 
   const approvedCount = reviews.filter((r) => r.state === 'APPROVED').length;
   const changesCount = reviews.filter((r) => r.state === 'CHANGES_REQUESTED').length;
@@ -639,20 +639,20 @@ export default function CodeReviewPanel({ projectId, mergeRequestId, mergeReques
 
   return (
     <div className="flex flex-col h-full min-h-0">
-      <div className="flex items-center justify-between border-b border-[#DADCE0] px-3 py-2 shrink-0 bg-white shadow-sm z-10">
+      <div className="flex items-center justify-between border-b border-zinc-700 px-3 py-2 shrink-0 bg-zinc-950 shadow-sm z-10">
         <div className="flex items-center gap-2 min-w-0">
           {onBack && (
             <button
               type="button"
               onClick={onBack}
               title="Back to list"
-              className={`p-1 rounded-md text-[#5F6368] hover:text-[#202124] hover:bg-[#E8EAED] ${consoleButtonFocusClass}`}
+              className={`p-1 rounded-md text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 ${consoleButtonFocusClass}`}
             >
               <ArrowLeft className="h-3.5 w-3.5" />
             </button>
           )}
-          {mrNumber && <span className="shrink-0 text-sm font-bold text-[#202124]">#{mrNumber}</span>}
-          <span className="truncate text-sm font-semibold text-[#202124]">{mrTitle}</span>
+          {mrNumber && <span className="shrink-0 text-sm font-bold text-zinc-100">#{mrNumber}</span>}
+          <span className="truncate text-sm font-semibold text-zinc-100">{mrTitle}</span>
           {(approvedCount > 0 || changesCount > 0) && (
             <div className="flex items-center gap-1 shrink-0">
               {approvedCount > 0 && (
@@ -686,7 +686,7 @@ export default function CodeReviewPanel({ projectId, mergeRequestId, mergeReques
                 onClick={handleMerge}
                 disabled={actionLoading !== null}
                 title="Merge pull request"
-                className={`flex items-center gap-1 px-2 h-7 text-[11px] font-medium rounded-md text-white bg-[#4A7C59] hover:bg-[#3d684a] disabled:opacity-40 transition-colors ${consoleButtonFocusClass}`}
+                className={`flex items-center gap-1 px-2 h-7 text-[11px] font-medium rounded-md text-white bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 transition-colors ${consoleButtonFocusClass}`}
               >
                 {actionLoading === 'merge' ? <Loader2 className="h-3 w-3 animate-spin" /> : <GitMerge className="h-3.5 w-3.5" />}
                 Merge
@@ -696,7 +696,7 @@ export default function CodeReviewPanel({ projectId, mergeRequestId, mergeReques
                 onClick={handleClose}
                 disabled={actionLoading !== null}
                 title="Close pull request"
-                className={`flex items-center gap-1 px-2 h-7 text-[11px] font-medium rounded-md text-[#5F6368] bg-[#F4F5F6] hover:bg-[#E8EAED] disabled:opacity-40 transition-colors ${consoleButtonFocusClass}`}
+                className={`flex items-center gap-1 px-2 h-7 text-[11px] font-medium rounded-md text-zinc-400 bg-zinc-800/50 hover:bg-zinc-800 disabled:opacity-40 transition-colors ${consoleButtonFocusClass}`}
               >
                 {actionLoading === 'close' ? <Loader2 className="h-3 w-3 animate-spin" /> : <XCircle className="h-3.5 w-3.5" />}
                 Close
@@ -705,7 +705,7 @@ export default function CodeReviewPanel({ projectId, mergeRequestId, mergeReques
           )}
           {isClosed && (
             <>
-              <span className="flex items-center gap-1 px-2 h-7 text-[11px] font-medium rounded-md text-[#5F6368] bg-[#F4F5F6]">
+              <span className="flex items-center gap-1 px-2 h-7 text-[11px] font-medium rounded-md text-zinc-400 bg-zinc-800/50">
                 <XCircle className="h-3.5 w-3.5" />
                 Closed
               </span>
@@ -714,7 +714,7 @@ export default function CodeReviewPanel({ projectId, mergeRequestId, mergeReques
                 onClick={handleReopen}
                 disabled={actionLoading !== null}
                 title="Reopen pull request"
-                className={`flex items-center gap-1 px-2 h-7 text-[11px] font-medium rounded-md text-[#5B8DB8] bg-blue-50 hover:bg-blue-100 disabled:opacity-40 transition-colors ${consoleButtonFocusClass}`}
+                className={`flex items-center gap-1 px-2 h-7 text-[11px] font-medium rounded-md text-emerald-400 bg-blue-500/10 hover:bg-blue-500/20 disabled:opacity-40 transition-colors ${consoleButtonFocusClass}`}
               >
                 {actionLoading === 'reopen' ? <Loader2 className="h-3 w-3 animate-spin" /> : <RotateCcw className="h-3.5 w-3.5" />}
                 Reopen
@@ -740,7 +740,7 @@ export default function CodeReviewPanel({ projectId, mergeRequestId, mergeReques
       </div>
 
       {mergeRequestId && (localMR?.description || mergeRequest?.description) && (
-        <div className="px-3 py-2 shrink-0 bg-[#FAFBFC] border-b border-[#E8EAED]">
+        <div className="px-3 py-2 shrink-0 bg-zinc-800/50 border-b border-zinc-800">
           <p className={`text-xs ${textSecondary} whitespace-pre-wrap leading-relaxed max-h-24 overflow-y-auto`}>
             {localMR?.description || mergeRequest?.description}
           </p>
@@ -754,14 +754,14 @@ export default function CodeReviewPanel({ projectId, mergeRequestId, mergeReques
         </div>
       ) : (
         <>
-          <div className="flex border-b border-[#DADCE0] px-3 shrink-0 bg-white gap-1 shadow-sm">
+          <div className="flex border-b border-zinc-700 px-3 shrink-0 bg-zinc-950 gap-1 shadow-sm">
             <button
               type="button"
               onClick={() => setActiveTab('reviews')}
               className={`px-3 py-2 text-xs font-medium border-b-2 -mb-px transition-all ${consoleButtonFocusClass} ${
                 activeTab === 'reviews'
-                  ? 'border-[#202124] text-[#202124]'
-                  : 'border-transparent text-[#5F6368] hover:text-[#202124] hover:bg-[#F4F5F6] rounded-t-md'
+                  ? 'border-zinc-100 text-zinc-100'
+                  : 'border-transparent text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800/50 rounded-t-md'
               }`}
             >
               Reviews ({reviews.length})
@@ -771,8 +771,8 @@ export default function CodeReviewPanel({ projectId, mergeRequestId, mergeReques
               onClick={() => setActiveTab('conversation')}
               className={`px-3 py-2 text-xs font-medium border-b-2 -mb-px transition-all ${consoleButtonFocusClass} ${
                 activeTab === 'conversation'
-                  ? 'border-[#202124] text-[#202124]'
-                  : 'border-transparent text-[#5F6368] hover:text-[#202124] hover:bg-[#F4F5F6] rounded-t-md'
+                  ? 'border-zinc-100 text-zinc-100'
+                  : 'border-transparent text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800/50 rounded-t-md'
               }`}
             >
               Conversation ({conversation.length})
@@ -782,8 +782,8 @@ export default function CodeReviewPanel({ projectId, mergeRequestId, mergeReques
               onClick={() => setActiveTab('changes')}
               className={`px-3 py-2 text-xs font-medium border-b-2 -mb-px transition-all ${consoleButtonFocusClass} ${
                 activeTab === 'changes'
-                  ? 'border-[#202124] text-[#202124]'
-                  : 'border-transparent text-[#5F6368] hover:text-[#202124] hover:bg-[#F4F5F6] rounded-t-md'
+                  ? 'border-zinc-100 text-zinc-100'
+                  : 'border-transparent text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800/50 rounded-t-md'
               }`}
             >
               Changes ({mrFiles.length})
@@ -791,19 +791,19 @@ export default function CodeReviewPanel({ projectId, mergeRequestId, mergeReques
           </div>
 
           {activeTab === 'changes' ? (
-            <div className="flex-1 min-h-0 overflow-auto bg-[#F0F1F3] p-3">
+            <div className="flex-1 min-h-0 overflow-auto bg-zinc-900 p-3">
               {loading ? (
-                <div className="flex items-center justify-center gap-2 py-8 text-sm text-[#5F6368]">
+                <div className="flex items-center justify-center gap-2 py-8 text-sm text-zinc-400">
                   <Loader2 className="h-4 w-4 animate-spin" />
                   Loading…
                 </div>
               ) : mrFiles.length === 0 ? (
                 <div className="text-center py-8">
-                  <GitPullRequest className="mx-auto h-8 w-8 text-[#9AA0A6] mb-2" />
+                  <GitPullRequest className="mx-auto h-8 w-8 text-zinc-500 mb-2" />
                   <p className={`text-sm ${textSecondary}`}>No file changes.</p>
                 </div>
               ) : (
-                <div className="rounded-xl bg-white shadow-sm border border-[#E8EAED] overflow-hidden">
+                <div className="rounded-xl bg-zinc-950 shadow-sm border border-zinc-800 overflow-hidden">
                 {mrFiles.map((f) => {
                   const fileName = f.path.split('/').pop();
                   const dirPath = f.path.includes('/') ? f.path.slice(0, f.path.lastIndexOf('/')) : '';
@@ -811,8 +811,8 @@ export default function CodeReviewPanel({ projectId, mergeRequestId, mergeReques
                   const label = STATUS_LABELS[f.status] || 'M';
                   const colorCls = STATUS_COLORS[f.status] || 'text-zinc-400';
                   return (
-                    <div key={f.path} className="border-b border-[#E8EAED] last:border-b-0">
-                      <div className="flex items-center group hover:bg-[#F4F5F6] transition-colors">
+                    <div key={f.path} className="border-b border-zinc-800 last:border-b-0">
+                      <div className="flex items-center group hover:bg-zinc-800/50 transition-colors">
                         <button
                           onClick={() => toggleFileExpand(f.path)}
                           className="shrink-0 p-0.5 ml-2 text-zinc-400 hover:text-zinc-600"
@@ -826,20 +826,20 @@ export default function CodeReviewPanel({ projectId, mergeRequestId, mergeReques
                           <span className={`w-4 text-center font-mono text-[11px] font-semibold ${colorCls} shrink-0`}>
                             {label}
                           </span>
-                          <span className="truncate text-[#202124] text-xs">{fileName}</span>
+                          <span className="truncate text-zinc-100 text-xs">{fileName}</span>
                           {dirPath && (
-                            <span className="truncate text-[#9AA0A6] text-[10px]">{dirPath}</span>
+                            <span className="truncate text-zinc-500 text-[10px]">{dirPath}</span>
                           )}
                           {f.additions != null && f.deletions != null && (
                             <span className="ml-auto text-[10px] shrink-0">
-                              <span className="text-[#1A7F37]">+{f.additions}</span>
-                              <span className="text-[#CF222E]"> -{f.deletions}</span>
+                              <span className="text-emerald-400">+{f.additions}</span>
+                              <span className="text-red-400"> -{f.deletions}</span>
                             </span>
                           )}
                         </button>
                       </div>
                       {isExpanded && f.diff && (
-                        <div className="border-t border-[#E8EAED] bg-[#FAFBFC]">
+                        <div className="border-t border-zinc-800 bg-zinc-800/50">
                           <div className="text-[11px] leading-relaxed overflow-x-auto font-mono select-text" style={{ tabSize: 4, MozTabSize: 4 }}>
                             {renderDiffLines(f.diff)}
                           </div>
@@ -852,16 +852,16 @@ export default function CodeReviewPanel({ projectId, mergeRequestId, mergeReques
               )}
             </div>
           ) : (
-          <div className="flex-1 min-h-0 overflow-auto bg-[#F0F1F3] p-3 space-y-2.5">
+          <div className="flex-1 min-h-0 overflow-auto bg-zinc-900 p-3 space-y-2.5">
             {loading ? (
-              <div className="flex items-center justify-center gap-2 py-8 text-sm text-[#5F6368]">
+              <div className="flex items-center justify-center gap-2 py-8 text-sm text-zinc-400">
                 <Loader2 className="h-4 w-4 animate-spin" />
                 Loading…
               </div>
             ) : activeTab === 'reviews' ? (
               reviews.length === 0 ? (
                 <div className="text-center py-8">
-                  <MessageSquare className="mx-auto h-8 w-8 text-[#9AA0A6] mb-2" />
+                  <MessageSquare className="mx-auto h-8 w-8 text-zinc-500 mb-2" />
                   <p className={`text-sm ${textSecondary}`}>No reviews yet.</p>
                 </div>
               ) : (
@@ -872,7 +872,7 @@ export default function CodeReviewPanel({ projectId, mergeRequestId, mergeReques
             ) : (
               conversation.length === 0 ? (
                 <div className="text-center py-8">
-                  <MessageSquare className="mx-auto h-8 w-8 text-[#9AA0A6] mb-2" />
+                  <MessageSquare className="mx-auto h-8 w-8 text-zinc-500 mb-2" />
                   <p className={`text-sm ${textSecondary}`}>No conversation yet.</p>
                 </div>
               ) : (
@@ -933,7 +933,7 @@ export default function CodeReviewPanel({ projectId, mergeRequestId, mergeReques
                               type="button"
                               onClick={handleSendReply}
                               disabled={!replyText.trim() || commentActionLoading?.pending}
-                              className={`shrink-0 flex items-center gap-1 px-2 h-7 text-[11px] font-medium rounded-md text-white bg-[#5B8DB8] hover:bg-[#4A7298] disabled:opacity-40 transition-colors ${consoleButtonFocusClass}`}
+                              className={`shrink-0 flex items-center gap-1 px-2 h-7 text-[11px] font-medium rounded-md text-white bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 transition-colors ${consoleButtonFocusClass}`}
                             >
                               {commentActionLoading?.pending ? <Loader2 className="h-3 w-3 animate-spin" /> : <Send className="h-3 w-3" />}
                               Reply
@@ -941,7 +941,7 @@ export default function CodeReviewPanel({ projectId, mergeRequestId, mergeReques
                             <button
                               type="button"
                               onClick={handleCancelReply}
-                              className={`shrink-0 px-2 h-7 text-[11px] font-medium rounded-md text-[#5F6368] bg-[#F4F5F6] hover:bg-[#E8EAED] ${consoleButtonFocusClass}`}
+                              className={`shrink-0 px-2 h-7 text-[11px] font-medium rounded-md text-zinc-400 bg-zinc-800/50 hover:bg-zinc-800 ${consoleButtonFocusClass}`}
                             >
                               Cancel
                             </button>
@@ -975,7 +975,7 @@ export default function CodeReviewPanel({ projectId, mergeRequestId, mergeReques
                           }
                         }}
                         disabled={loadingMore}
-                        className={`text-xs text-[#5B8DB8] hover:text-[#4A7298] ${consoleButtonFocusClass}`}
+                        className={`text-xs text-emerald-400 hover:text-emerald-300 ${consoleButtonFocusClass}`}
                       >
                         {loadingMore ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : 'Load more'}
                       </button>
@@ -989,7 +989,7 @@ export default function CodeReviewPanel({ projectId, mergeRequestId, mergeReques
         </>
       )}
       {isOpen && (
-        <div className="flex items-end gap-2 border-t border-[#DADCE0] px-3 py-2 shrink-0 bg-white">
+        <div className="flex items-end gap-2 border-t border-zinc-700 px-3 py-2 shrink-0 bg-zinc-950">
           <textarea
             value={commentText}
             onChange={(e) => setCommentText(e.target.value)}
@@ -1008,7 +1008,7 @@ export default function CodeReviewPanel({ projectId, mergeRequestId, mergeReques
             onClick={handleSendComment}
             disabled={!commentText.trim() || commentSending}
             title="Comment (Ctrl+Enter)"
-            className={`shrink-0 flex items-center gap-1 px-2.5 h-7 text-[11px] font-medium rounded-md text-white bg-[#5B8DB8] hover:bg-[#4A7298] disabled:opacity-40 transition-colors ${consoleButtonFocusClass}`}
+            className={`shrink-0 flex items-center gap-1 px-2.5 h-7 text-[11px] font-medium rounded-md text-white bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 transition-colors ${consoleButtonFocusClass}`}
           >
             {commentSending ? <Loader2 className="h-3 w-3 animate-spin" /> : <Send className="h-3 w-3" />}
             Comment

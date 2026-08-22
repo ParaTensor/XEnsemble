@@ -268,8 +268,8 @@ function App() {
 
   if (!authReady) {
     return (
-      <div className="flex h-full items-center justify-center bg-[#F4F5F6]">
-        <div className="text-sm text-[#5F6368]">Loading…</div>
+      <div className="flex h-full items-center justify-center bg-zinc-950">
+        <div className="text-sm text-zinc-400">Loading…</div>
       </div>
     );
   }

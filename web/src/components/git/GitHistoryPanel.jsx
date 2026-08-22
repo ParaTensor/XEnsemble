@@ -34,11 +34,11 @@ const FILE_STATUS_LABELS = {
 };
 
 const FILE_STATUS_COLORS = {
-  A: 'text-[#1A7F37]',
-  M: 'text-[#CF222E]',
-  D: 'text-[#CF222E]',
-  R: 'text-[#0550AE]',
-  C: 'text-[#0550AE]',
+  A: 'text-emerald-400',
+  M: 'text-red-400',
+  D: 'text-red-400',
+  R: 'text-emerald-400',
+  C: 'text-emerald-400',
 };
 
 function isBranchRef(ref) {
@@ -51,12 +51,12 @@ function isRemoteRef(ref) {
 
 function getGraphDotColor(refs) {
   const branchRefs = (refs || []).filter(isBranchRef);
-  if (branchRefs.length === 0) return '#8B949E';
+  if (branchRefs.length === 0) return '#52525b';
   if (branchRefs.some((r) => r.name === 'HEAD' || r.name === 'main' || r.name === 'master'))
-    return '#1F2328';
+    return '#e4e4e7';
   if (branchRefs.some((r) => isRemoteRef(r)))
-    return '#0969DA';
-  return '#26A641';
+    return '#60a5fa';
+  return '#4ade80';
 }
 
 function BranchBadge({ branchRef }) {
@@ -67,7 +67,7 @@ function BranchBadge({ branchRef }) {
     return (
       <span
         className="inline-flex items-center gap-0.5 text-[10px] font-medium rounded-full px-1.5 py-px whitespace-nowrap"
-        style={{ backgroundColor: '#F0F6FF', color: '#0550AE' }}
+        style={{ backgroundColor: '#1e3a5f', color: '#60a5fa' }}
         title="remote"
       >
         <Cloud className="h-2.5 w-2.5 shrink-0" />
@@ -78,13 +78,13 @@ function BranchBadge({ branchRef }) {
   return (
     <span
       className="inline-flex items-center gap-0.5 text-[10px] font-medium rounded-full px-1.5 py-px whitespace-nowrap"
-      style={{ backgroundColor: '#F4F5F6', color: '#5F6368' }}
+      style={{ backgroundColor: '#1f1f22', color: '#a1a1aa' }}
       title="local"
     >
       <svg width="10" height="10" viewBox="0 0 10 10" className="shrink-0">
-        <circle cx="5" cy="5" r="4" fill="none" stroke="#5F6368" strokeWidth="1" />
-        <circle cx="5" cy="5" r="2.5" fill="none" stroke="#5F6368" strokeWidth="1" />
-        <circle cx="5" cy="5" r="1" fill="#5F6368" />
+        <circle cx="5" cy="5" r="4" fill="none" stroke="#a1a1aa" strokeWidth="1" />
+        <circle cx="5" cy="5" r="2.5" fill="none" stroke="#a1a1aa" strokeWidth="1" />
+        <circle cx="5" cy="5" r="1" fill="#a1a1aa" />
       </svg>
       {name}
     </span>
@@ -131,13 +131,13 @@ function CommitRow({ commit, projectId }) {
             const starIdx = line.indexOf('*');
             if (starIdx === -1) {
               return (
-                <div key={i} className="h-[11px] text-[#8B949E] whitespace-pre">
+                <div key={i} className="h-[11px] text-zinc-500 whitespace-pre">
                   {line || ' '}
                 </div>
               );
             }
             return (
-              <div key={i} className="h-[11px] text-[#656D76] whitespace-pre flex items-center">
+              <div key={i} className="h-[11px] text-zinc-400 whitespace-pre flex items-center">
                 <span>{line.slice(0, starIdx)}</span>
                 <span className="inline-flex items-center">
                   <svg width="11" height="11" viewBox="0 0 11 11" className="shrink-0">
@@ -152,7 +152,7 @@ function CommitRow({ commit, projectId }) {
 
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-1.5 pr-2">
-            <span className="text-[13px] font-medium text-[#1F2328] line-clamp-1 flex-1 min-w-0">
+            <span className="text-[13px] font-medium text-zinc-100 line-clamp-1 flex-1 min-w-0">
               {commit.message}
             </span>
             {refs.length > 0 && (
@@ -162,15 +162,15 @@ function CommitRow({ commit, projectId }) {
                 ))}
               </span>
             )}
-            <span className="text-[11px] text-[#8B949E] shrink-0 max-w-[80px] truncate"
+            <span className="text-[11px] text-zinc-500 shrink-0 max-w-[80px] truncate"
                   title={commit.author}>
               {commit.author?.split(/\s+/)[0]}
             </span>
-            <span className="text-[11px] text-[#8B949E] shrink-0 w-[24px] text-right"
+            <span className="text-[11px] text-zinc-500 shrink-0 w-[24px] text-right"
                   title={formatTimestamp(commit.timestamp)}>
               {formatTimeAgo(commit.timestamp)}
             </span>
-            <span className="font-mono text-[10px] text-[#8B949E] shrink-0 hidden group-hover:inline">
+            <span className="font-mono text-[10px] text-zinc-500 shrink-0 hidden group-hover:inline">
               {commit.sha?.slice(0, 7)}
             </span>
           </div>
@@ -180,7 +180,7 @@ function CommitRow({ commit, projectId }) {
       {expanded && (
         <div className="pl-12 pb-2 pr-3">
           {loadingFiles ? (
-            <div className="flex items-center gap-1.5 py-1.5 text-[11px] text-[#8B949E]">
+            <div className="flex items-center gap-1.5 py-1.5 text-[11px] text-zinc-500">
               <Loader2 className="h-3 w-3 animate-spin" />
               Loading files...
             </div>
@@ -191,13 +191,13 @@ function CommitRow({ commit, projectId }) {
                   <span className={`font-mono font-semibold w-4 text-center shrink-0 ${FILE_STATUS_COLORS[f.status] || 'text-zinc-400'}`}>
                     {FILE_STATUS_LABELS[f.status] || f.status}
                   </span>
-                  <FileText className="h-3 w-3 text-[#9AA0A6] shrink-0" />
-                  <span className="font-mono text-[#1F2328] truncate">{f.path}</span>
+                  <FileText className="h-3 w-3 text-zinc-500 shrink-0" />
+                  <span className="font-mono text-zinc-100 truncate">{f.path}</span>
                 </div>
               ))}
             </div>
           ) : (
-            <p className="text-[11px] text-[#8B949E] py-1">No files changed.</p>
+            <p className="text-[11px] text-zinc-500 py-1">No files changed.</p>
           )}
         </div>
       )}
@@ -233,9 +233,9 @@ export default function GitHistoryPanel({ projectId, filePath }) {
 
   return (
     <div className="flex flex-col h-full min-h-0">
-      <div className="flex items-center justify-between border-b border-[#E8EAED] px-3 py-1.5 shrink-0">
+      <div className="flex items-center justify-between border-b border-zinc-800 px-3 py-1.5 shrink-0">
         <div className="flex items-center gap-2">
-          <GitCommit className="h-3.5 w-3.5 text-[#5F6368]" />
+          <GitCommit className="h-3.5 w-3.5 text-zinc-400" />
           <h3 className={`text-xs font-semibold ${textPrimary}`}>History</h3>
         </div>
         <button
@@ -255,13 +255,13 @@ export default function GitHistoryPanel({ projectId, filePath }) {
 
       <div className="flex-1 min-h-0 overflow-auto">
         {loading && commits.length === 0 ? (
-          <div className="flex items-center justify-center gap-2 py-8 text-sm text-[#5F6368]">
+          <div className="flex items-center justify-center gap-2 py-8 text-sm text-zinc-400">
             <Loader2 className="h-4 w-4 animate-spin" />
             Loading history...
           </div>
         ) : commits.length === 0 ? (
           <div className="text-center py-8">
-            <GitCommit className="mx-auto h-8 w-8 text-[#9AA0A6] mb-2" />
+            <GitCommit className="mx-auto h-8 w-8 text-zinc-500 mb-2" />
             <p className={`text-sm ${textSecondary}`}>No commits found.</p>
           </div>
         ) : (
@@ -278,7 +278,7 @@ export default function GitHistoryPanel({ projectId, filePath }) {
                 <button
                   type="button"
                   onClick={loadMore}
-                  className="text-xs font-medium text-[#5F6368] hover:text-[#202124] transition-colors"
+                  className="text-xs font-medium text-zinc-400 hover:text-zinc-100 transition-colors"
                 >
                   Load more...
                 </button>

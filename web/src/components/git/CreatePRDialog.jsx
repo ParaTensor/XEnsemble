@@ -128,13 +128,13 @@ export default function CreatePRDialog({
               id="pr-source"
               value={sourceBranch || ''}
               readOnly
-              className="mt-1.5 bg-[#F4F5F6]"
+              className="mt-1.5 bg-zinc-800/50"
             />
           </div>
           <div>
             <FormLabel htmlFor="pr-target">Target branch</FormLabel>
             {branchesError ? (
-              <p className="mt-1.5 text-xs text-[#C06C5D]">{branchesError}</p>
+              <p className="mt-1.5 text-xs text-red-400">{branchesError}</p>
             ) : (
               <SelectMenu
                 id="pr-target"
@@ -175,28 +175,28 @@ export default function CreatePRDialog({
           <button
             type="button"
             onClick={() => setShowDiff((v) => !v)}
-            className="text-xs font-medium text-[#5F6368] hover:text-[#202124]"
+            className="text-xs font-medium text-zinc-400 hover:text-zinc-100"
           >
             {showDiff ? 'Hide diff preview' : 'Show diff preview'}
           </button>
           {showDiff && (
-            <div className="mt-2 max-h-48 overflow-auto rounded-md border border-[#E8EAED] bg-[#FAFBFC] p-3">
+            <div className="mt-2 max-h-48 overflow-auto rounded-md border border-zinc-800 bg-zinc-800/50 p-3">
               {diffLoading ? (
-                <div className="flex items-center gap-2 text-xs text-[#5F6368]">
+                <div className="flex items-center gap-2 text-xs text-zinc-400">
                   <Loader2 className="h-3.5 w-3.5 animate-spin" />
                   Loading diff…
                 </div>
               ) : diffBinary ? (
-                <p className="text-xs text-[#5F6368]" data-testid="pr-diff-binary">Binary files are omitted from this preview.</p>
+                <p className="text-xs text-zinc-400" data-testid="pr-diff-binary">Binary files are omitted from this preview.</p>
               ) : diff ? (
                 <>
-                  <pre className="whitespace-pre-wrap font-mono text-xs text-[#3C4043]">{diff}</pre>
+                  <pre className="whitespace-pre-wrap font-mono text-xs text-zinc-300">{diff}</pre>
                   {diffTruncated && (
                     <p className="mt-2 text-xs text-amber-700" data-testid="pr-diff-truncated">Diff truncated due to size.</p>
                   )}
                 </>
               ) : (
-                <p className="text-xs text-[#5F6368]">No diff available.</p>
+                <p className="text-xs text-zinc-400">No diff available.</p>
               )}
             </div>
           )}

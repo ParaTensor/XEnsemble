@@ -29,8 +29,8 @@ function SelectAllControl({ checked, label, onToggle, disabled }) {
         className={cn(
           'flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded border transition-colors',
           checked
-            ? 'border-zinc-900 bg-zinc-900 text-white'
-            : 'border-zinc-300 bg-white',
+            ? 'border-zinc-100 bg-zinc-100 text-zinc-900'
+            : 'border-zinc-600 bg-zinc-800',
         )}
       >
         {checked && <Check className="h-2.5 w-2.5" strokeWidth={3} />}

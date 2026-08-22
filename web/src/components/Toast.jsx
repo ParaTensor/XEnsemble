@@ -10,10 +10,10 @@ const TOAST_ERROR_DURATION_MS = 12000;
 
 const ToastItem = memo(function ToastItem({ message, type }) {
   const styles = {
-    success: 'border-emerald-200 bg-emerald-50/95 text-emerald-900',
-    error: 'border-red-200 bg-red-50/95 text-red-900',
-    warning: 'border-amber-200 bg-amber-50/95 text-amber-900',
-    loading: 'border-blue-200 bg-blue-50/95 text-blue-900',
+    success: 'border-emerald-500/50 bg-zinc-900 text-emerald-300 shadow-xl',
+    error: 'border-red-500/50 bg-zinc-900 text-red-300 shadow-xl',
+    warning: 'border-amber-500/50 bg-zinc-900 text-amber-300 shadow-xl',
+    loading: 'border-blue-500/50 bg-zinc-900 text-blue-300 shadow-xl',
   };
 
   const Icon = type === 'success'
@@ -27,17 +27,17 @@ const ToastItem = memo(function ToastItem({ message, type }) {
       role="status"
       aria-live="polite"
       className={cn(
-        'pointer-events-none flex w-[min(22rem,calc(100vw-2rem))] items-start gap-2.5 rounded-xl border px-4 py-3 text-[13px] shadow-lg',
+        'pointer-events-none flex w-[min(22rem,calc(100vw-2rem))] items-start gap-2.5 rounded-lg border px-4 py-3 text-xs font-medium shadow-xl',
         styles[type] || styles.error,
       )}
     >
       <Icon
         className={cn(
           'mt-0.5 h-4 w-4 shrink-0',
-          type === 'success' && 'text-emerald-600',
-          type === 'error' && 'text-red-600',
-          type === 'warning' && 'text-amber-600',
-          type === 'loading' && 'animate-spin text-blue-600',
+          type === 'success' && 'text-emerald-400',
+          type === 'error' && 'text-red-400',
+          type === 'warning' && 'text-amber-400',
+          type === 'loading' && 'animate-spin text-blue-400',
         )}
         aria-hidden
       />

@@ -7,7 +7,7 @@ import {
   consoleStructuredDialogBodyClass,
   consoleStructuredDialogFooterClass,
   consoleStructuredDialogHeaderClass,
-} from '../lib/consoleTokens';
+} from '../lib/consoleTheme';
 
 export function useConsoleDialogEscape(onClose, active = true) {
   useEffect(() => {

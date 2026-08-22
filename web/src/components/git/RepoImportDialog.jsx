@@ -301,12 +301,12 @@ export default function RepoImportDialog({ open, onClose, onImported, fetchWorks
           type="button"
           onClick={handleConnectPat}
           disabled={!patToken.trim() || patConnecting}
-          className="text-xs font-medium text-[#1967D2] hover:text-[#174EA6] disabled:opacity-50"
+          className="text-xs font-medium text-blue-400 hover:text-blue-300 disabled:opacity-50"
         >
           {patConnecting ? 'Connecting…' : 'Connect with token'}
         </button>
         {patToken && (
-          <span className="text-xs text-[#9AA0A6]">
+          <span className="text-xs text-zinc-500">
             {provider === 'github'
               ? 'Requires the "repo" scope to push.'
               : 'Stored encrypted; used for Git operations.'}
@@ -335,15 +335,15 @@ export default function RepoImportDialog({ open, onClose, onImported, fetchWorks
             onClick={() => { setProvider(p.id); setRepos([]); setSelectedFullName(''); }}
             className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
               provider === p.id
-                ? 'bg-[#202124] text-white'
-                : 'bg-[#F4F5F6] text-[#5F6368] hover:bg-[#E8EAED] hover:text-[#202124]'
+                ? 'bg-zinc-100 text-white'
+                : 'bg-zinc-800/50 text-zinc-400 hover:bg-zinc-800 hover:text-zinc-100'
             }`}
           >
             {p.label}
             {providerOAuthConfigured?.[p.id] === false && (
               <span
                 className={`inline-block h-1.5 w-1.5 rounded-full ${
-                  provider === p.id ? 'bg-[#FADBD8]' : 'bg-[#C06C5D]'
+                  provider === p.id ? 'bg-red-500/10' : 'bg-red-400'
                 }`}
                 title="OAuth not configured"
               />
@@ -373,9 +373,9 @@ export default function RepoImportDialog({ open, onClose, onImported, fetchWorks
             disabledReason={oauthNotConfigured ? formatGitOAuthError(`${provider} OAuth is not configured`, provider) : null}
           />
           <div className="flex items-center gap-2 py-1">
-            <div className="h-px flex-1 bg-[#E8EAED]" />
-            <span className="text-xs text-[#9AA0A6]">or use a personal access token</span>
-            <div className="h-px flex-1 bg-[#E8EAED]" />
+            <div className="h-px flex-1 bg-zinc-800" />
+            <span className="text-xs text-zinc-500">or use a personal access token</span>
+            <div className="h-px flex-1 bg-zinc-800" />
           </div>
           {patSection}
         </div>
@@ -383,9 +383,9 @@ export default function RepoImportDialog({ open, onClose, onImported, fetchWorks
         <div className="space-y-4">
           <div className="flex items-center justify-between gap-3">
             <div className="flex items-center gap-2">
-              <GitBranch className="h-4 w-4 text-[#9AA0A6]" />
+              <GitBranch className="h-4 w-4 text-zinc-500" />
               <span className={`text-sm font-medium ${textPrimary}`}>{username}</span>
-              <span className="text-xs text-[#9AA0A6]">
+              <span className="text-xs text-zinc-500">
                 ({provider}
                 {connection.connection_type === 'pat' ? ' · PAT' : ''})
               </span>
@@ -394,7 +394,7 @@ export default function RepoImportDialog({ open, onClose, onImported, fetchWorks
               type="button"
               onClick={disconnect}
               disabled={connectionLoading}
-              className="text-xs text-[#5F6368] hover:text-[#202124]"
+              className="text-xs text-zinc-400 hover:text-zinc-100"
             >
               Disconnect
             </button>
@@ -403,7 +403,7 @@ export default function RepoImportDialog({ open, onClose, onImported, fetchWorks
           <button
             type="button"
             onClick={() => setPatSectionOpen((v) => !v)}
-            className="text-xs font-medium text-[#1967D2] hover:text-[#174EA6]"
+            className="text-xs font-medium text-blue-400 hover:text-blue-300"
           >
             {patSectionOpen
               ? 'Hide token input'
@@ -415,7 +415,7 @@ export default function RepoImportDialog({ open, onClose, onImported, fetchWorks
             <button
               type="button"
               onClick={() => switchMode('browse')}
-              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${mode === 'browse' ? 'bg-[#202124] text-white' : 'bg-[#F4F5F6] text-[#5F6368] hover:bg-[#E8EAED]'}`}
+              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${mode === 'browse' ? 'bg-zinc-100 text-white' : 'bg-zinc-800/50 text-zinc-400 hover:bg-zinc-800'}`}
             >
               <Search className="h-3 w-3" />
               Browse
@@ -423,7 +423,7 @@ export default function RepoImportDialog({ open, onClose, onImported, fetchWorks
             <button
               type="button"
               onClick={() => switchMode('url')}
-              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${mode === 'url' ? 'bg-[#202124] text-white' : 'bg-[#F4F5F6] text-[#5F6368] hover:bg-[#E8EAED]'}`}
+              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${mode === 'url' ? 'bg-zinc-100 text-white' : 'bg-zinc-800/50 text-zinc-400 hover:bg-zinc-800'}`}
             >
               <Link2 className="h-3 w-3" />
               Paste URL
@@ -452,7 +452,7 @@ export default function RepoImportDialog({ open, onClose, onImported, fetchWorks
                 type="button"
                 onClick={handleFetchUrl}
                 disabled={urlFetching || !urlInput.trim()}
-                className="text-xs font-medium text-[#1967D2] hover:text-[#174EA6] disabled:opacity-50"
+                className="text-xs font-medium text-blue-400 hover:text-blue-300 disabled:opacity-50"
               >
                 {urlFetching ? 'Fetching…' : 'Fetch repository'}
               </button>
@@ -463,9 +463,9 @@ export default function RepoImportDialog({ open, onClose, onImported, fetchWorks
                 </div>
               )}
               {selectedRepo && mode === 'url' && (
-                <div className="flex items-center justify-between rounded-md border border-[#E8EAED] bg-[#FAFBFC] px-3 py-2">
-                  <span className="min-w-0 truncate text-sm font-medium text-[#202124]">{selectedRepo.full_name}</span>
-                  <span className="shrink-0 text-xs text-[#5F6368]">{selectedRepo.private ? 'Private' : 'Public'}{selectedRepo.language ? ` · ${selectedRepo.language}` : ''}</span>
+                <div className="flex items-center justify-between rounded-md border border-zinc-800 bg-zinc-800/50 px-3 py-2">
+                  <span className="min-w-0 truncate text-sm font-medium text-zinc-100">{selectedRepo.full_name}</span>
+                  <span className="shrink-0 text-xs text-zinc-400">{selectedRepo.private ? 'Private' : 'Public'}{selectedRepo.language ? ` · ${selectedRepo.language}` : ''}</span>
                 </div>
               )}
             </div>
@@ -487,29 +487,29 @@ export default function RepoImportDialog({ open, onClose, onImported, fetchWorks
 
           <div className={`max-h-48 overflow-auto rounded-lg border ${borderHairline}`}>
             {reposLoading ? (
-              <div className="flex items-center justify-center gap-2 p-4 text-sm text-[#5F6368]">
+              <div className="flex items-center justify-center gap-2 p-4 text-sm text-zinc-400">
                 <Loader2 className="h-4 w-4 animate-spin" />
                 Loading repositories…
               </div>
             ) : filteredRepos.length === 0 ? (
-              <div className="p-4 text-center text-sm text-[#5F6368]">
+              <div className="p-4 text-center text-sm text-zinc-400">
                 {repos.length === 0 ? 'No repositories found.' : 'No matches.'}
               </div>
             ) : (
-              <ul className="divide-y divide-[#E8EAED]">
+              <ul className="divide-y divide-zinc-800">
                 {filteredRepos.map((repo) => (
                   <li key={repo.id || repo.full_name}>
                     <button
                       type="button"
                       onClick={() => setSelectedFullName(repo.full_name)}
                       className={`flex w-full items-center justify-between px-3 py-2 text-left text-sm transition-colors ${
-                        selectedFullName === repo.full_name ? 'bg-[#F4F5F6]' : 'hover:bg-[#FAFBFC]'
+                        selectedFullName === repo.full_name ? 'bg-zinc-800/50' : 'hover:bg-zinc-800/50'
                       }`}
                     >
-                      <span className="min-w-0 truncate font-medium text-[#202124]">
+                      <span className="min-w-0 truncate font-medium text-zinc-100">
                         {repo.full_name}
                       </span>
-                      <span className="shrink-0 text-xs text-[#5F6368]">
+                      <span className="shrink-0 text-xs text-zinc-400">
                         {repo.private ? 'Private' : 'Public'}
                         {repo.language ? ` · ${repo.language}` : ''}
                       </span>
@@ -523,7 +523,7 @@ export default function RepoImportDialog({ open, onClose, onImported, fetchWorks
           )}
 
           {selectedRepo && (
-            <div className="space-y-3 rounded-lg border border-[#E8EAED] bg-[#FAFBFC] p-4">
+            <div className="space-y-3 rounded-lg border border-zinc-800 bg-zinc-800/50 p-4">
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <FormLabel htmlFor="import-name">Project name</FormLabel>
@@ -547,12 +547,12 @@ export default function RepoImportDialog({ open, onClose, onImported, fetchWorks
                 </div>
               </div>
 
-              <label className="flex items-center gap-2 text-sm text-[#3C4043]">
+              <label className="flex items-center gap-2 text-sm text-zinc-300">
                 <input
                   type="checkbox"
                   checked={autoCreateBranch}
                   onChange={(e) => setAutoCreateBranch(e.target.checked)}
-                  className="rounded border-[#DADCE0] text-[#202124] focus:ring-[#202124]"
+                  className="rounded border-zinc-700 text-zinc-100 focus:ring-zinc-100"
                 />
                 Auto-create work branch
               </label>
@@ -573,7 +573,7 @@ export default function RepoImportDialog({ open, onClose, onImported, fetchWorks
           )}
 
           {importedProjectId && (
-            <div className={`flex items-center gap-2 rounded-md px-3 py-2 text-sm ${cloneStatus === 'failed' ? 'bg-red-50 text-red-600' : 'bg-[#E8F0FE] text-[#1967D2]'}`}>
+            <div className={`flex items-center gap-2 rounded-md px-3 py-2 text-sm ${cloneStatus === 'failed' ? 'bg-red-50 text-red-600' : 'bg-blue-500/100/10 text-blue-400'}`}>
               {cloneStatus === 'failed' ? (
                 <AlertCircle className="h-3.5 w-3.5 shrink-0" />
               ) : (

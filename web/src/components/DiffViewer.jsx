@@ -65,12 +65,12 @@ export default function DiffViewer({
   if (loading) {
     return (
       <div className="flex flex-col h-full w-full">
-        <div className="flex items-center justify-between px-4 py-2 border-b border-[#E8EAED] bg-[#FAFBFC]">
+        <div className="flex items-center justify-between px-4 py-2 border-b border-zinc-800 bg-zinc-800/50">
             <span className="text-sm text-zinc-600">Compare: {displayName}</span>
           <button
             aria-label="Close compare"
             onClick={onClose}
-            className={`p-1 rounded text-zinc-400 hover:text-zinc-600 hover:bg-[#E8EAED] ${consoleButtonFocusClass}`}
+            className={`p-1 rounded text-zinc-400 hover:text-zinc-600 hover:bg-zinc-700 ${consoleButtonFocusClass}`}
           >
             <X className="h-4 w-4" />
           </button>
@@ -90,12 +90,12 @@ export default function DiffViewer({
 
   return (
     <div className="flex flex-col h-full w-full">
-      <div className="flex items-center justify-between px-4 py-2 border-b border-[#E8EAED] bg-[#FAFBFC]">
+      <div className="flex items-center justify-between px-4 py-2 border-b border-zinc-800 bg-zinc-800/50">
         <span className="text-sm text-zinc-600">Compare: {displayName}</span>
         <button
           aria-label="Close compare"
           onClick={onClose}
-          className={`p-1 rounded text-zinc-400 hover:text-zinc-600 hover:bg-[#E8EAED] ${consoleButtonFocusClass}`}
+          className={`p-1 rounded text-zinc-400 hover:text-zinc-600 hover:bg-zinc-700 ${consoleButtonFocusClass}`}
         >
           <X className="h-4 w-4" />
         </button>
@@ -129,7 +129,7 @@ export default function DiffViewer({
             }}
           />
           {showOverlay && (
-            <div className="absolute inset-0 flex items-center justify-center bg-white/80 z-10" data-testid="diff-computing">
+            <div className="absolute inset-0 flex items-center justify-center bg-zinc-950/80 z-10" data-testid="diff-computing">
               <Loader2 className="animate-spin h-6 w-6 text-zinc-400" />
             </div>
           )}

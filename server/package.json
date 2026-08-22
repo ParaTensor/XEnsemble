@@ -25,11 +25,13 @@
     "@fastify/static": "^7.0.4",
     "@fastify/websocket": "^8.2.0",
     "drizzle-orm": "^0.45.2",
-    "postgres": "^3.4.5",
     "fastify": "^4.28.1",
     "http-proxy": "^1.18.1",
+    "https-proxy-agent": "^9.1.0",
     "jsonwebtoken": "^9.0.2",
-    "node-pty": "^1.0.0"
+    "node-pty": "^1.0.0",
+    "postgres": "^3.4.5",
+    "undici": "^8.10.0"
   },
   "devDependencies": {
     "@testcontainers/postgresql": "^10.28.0",

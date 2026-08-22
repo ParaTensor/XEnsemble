@@ -24,38 +24,38 @@
     @apply h-full;
   }
   :root {
-    --background: oklch(1 0 0);
-    --foreground: oklch(0.147 0.004 49.3);
-    --card: oklch(1 0 0);
-    --card-foreground: oklch(0.147 0.004 49.3);
-    --popover: oklch(1 0 0);
-    --popover-foreground: oklch(0.147 0.004 49.3);
-    --primary: oklch(0.214 0.009 43.1);
-    --primary-foreground: oklch(0.986 0.002 67.8);
-    --secondary: oklch(0.96 0.002 17.2);
-    --secondary-foreground: oklch(0.214 0.009 43.1);
-    --muted: oklch(0.96 0.002 17.2);
-    --muted-foreground: oklch(0.547 0.021 43.1);
-    --accent: oklch(0.96 0.002 17.2);
-    --accent-foreground: oklch(0.214 0.009 43.1);
-    --destructive: oklch(0.577 0.245 27.325);
-    --border: oklch(0.922 0.005 34.3);
-    --input: oklch(0.922 0.005 34.3);
-    --ring: oklch(0.714 0.014 41.2);
+    --background: oklch(0.147 0.004 49.3);
+    --foreground: oklch(0.986 0.002 67.8);
+    --card: oklch(0.214 0.009 43.1);
+    --card-foreground: oklch(0.986 0.002 67.8);
+    --popover: oklch(0.214 0.009 43.1);
+    --popover-foreground: oklch(0.986 0.002 67.8);
+    --primary: oklch(0.922 0.005 34.3);
+    --primary-foreground: oklch(0.214 0.009 43.1);
+    --secondary: oklch(0.268 0.011 36.5);
+    --secondary-foreground: oklch(0.986 0.002 67.8);
+    --muted: oklch(0.268 0.011 36.5);
+    --muted-foreground: oklch(0.714 0.014 41.2);
+    --accent: oklch(0.268 0.011 36.5);
+    --accent-foreground: oklch(0.986 0.002 67.8);
+    --destructive: oklch(0.704 0.191 22.216);
+    --border: oklch(1 0 0 / 10%);
+    --input: oklch(1 0 0 / 15%);
+    --ring: oklch(0.547 0.021 43.1);
     --chart-1: oklch(0.868 0.007 39.5);
     --chart-2: oklch(0.547 0.021 43.1);
     --chart-3: oklch(0.438 0.017 39.3);
     --chart-4: oklch(0.367 0.016 35.7);
     --chart-5: oklch(0.268 0.011 36.5);
     --radius: 0.625rem;
-    --sidebar: oklch(0.986 0.002 67.8);
-    --sidebar-foreground: oklch(0.147 0.004 49.3);
-    --sidebar-primary: oklch(0.214 0.009 43.1);
+    --sidebar: oklch(0.214 0.009 43.1);
+    --sidebar-foreground: oklch(0.986 0.002 67.8);
+    --sidebar-primary: oklch(0.488 0.243 264.376);
     --sidebar-primary-foreground: oklch(0.986 0.002 67.8);
-    --sidebar-accent: oklch(0.96 0.002 17.2);
-    --sidebar-accent-foreground: oklch(0.214 0.009 43.1);
-    --sidebar-border: oklch(0.922 0.005 34.3);
-    --sidebar-ring: oklch(0.714 0.014 41.2);
+    --sidebar-accent: oklch(0.268 0.011 36.5);
+    --sidebar-accent-foreground: oklch(0.986 0.002 67.8);
+    --sidebar-border: oklch(1 0 0 / 10%);
+    --sidebar-ring: oklch(0.547 0.021 43.1);
   }
   .dark {
     --background: oklch(0.147 0.004 49.3);
@@ -107,7 +107,7 @@
 
 @layer components {
   .console-input {
-    @apply w-full bg-white border border-zinc-300 rounded-md px-3 py-2 text-sm text-zinc-900 placeholder:text-zinc-400 focus:outline-none focus:border-black focus:ring-1 focus:ring-black transition-colors;
+    @apply w-full bg-zinc-950 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-zinc-100 placeholder:text-zinc-500 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition-colors;
   }
 
   .console-input-mono {
@@ -115,21 +115,22 @@
   }
 
   .console-section-label {
-    @apply text-xs font-semibold uppercase tracking-wider text-zinc-500;
+    @apply text-xs font-semibold uppercase tracking-wider text-zinc-400;
   }
 
   ::-webkit-scrollbar {
-    width: 8px;
-    height: 8px;
+    width: 5px;
+    height: 5px;
   }
   ::-webkit-scrollbar-track {
-    @apply bg-transparent;
+    background: #18181b;
   }
   ::-webkit-scrollbar-thumb {
-    @apply bg-zinc-300 rounded-full;
+    background: #3f3f46;
+    border-radius: 4px;
   }
   ::-webkit-scrollbar-thumb:hover {
-    @apply bg-zinc-400;
+    background: #52525b;
   }
 
   .console-scroll-hidden {
@@ -141,7 +142,7 @@
     display: none;
   }
 
-  /* ParaRouter DESIGN.md — reveal scrollbar thumb on hover/focus */
+  /* Reveal scrollbar thumb on hover/focus */
   .scrollbar-hover {
     scrollbar-gutter: stable both-edges;
     scrollbar-width: thin;
@@ -150,12 +151,12 @@
 
   .scrollbar-hover:hover,
   .scrollbar-hover:focus-within {
-    scrollbar-color: #d4d4d8 transparent;
+    scrollbar-color: #3f3f46 transparent;
   }
 
   .scrollbar-hover::-webkit-scrollbar {
-    width: 8px;
-    height: 8px;
+    width: 5px;
+    height: 5px;
   }
 
   .scrollbar-hover::-webkit-scrollbar-track {
@@ -164,17 +165,27 @@
 
   .scrollbar-hover::-webkit-scrollbar-thumb {
     background: transparent;
-    border-radius: 9999px;
+    border-radius: 4px;
   }
 
   .scrollbar-hover:hover::-webkit-scrollbar-thumb,
   .scrollbar-hover:focus-within::-webkit-scrollbar-thumb {
-    background: #d4d4d8;
+    background: #3f3f46;
   }
 
   .scrollbar-hover:hover::-webkit-scrollbar-thumb:hover,
   .scrollbar-hover:focus-within::-webkit-scrollbar-thumb:hover {
-    background: #a1a1a8;
+    background: #52525b;
+  }
+
+  /* Diff styling for code views */
+  .diff-add {
+    background-color: rgba(34, 197, 94, 0.15);
+    color: #86efac;
+  }
+  .diff-del {
+    background-color: rgba(239, 68, 68, 0.15);
+    color: #fca5a5;
   }
 }
 

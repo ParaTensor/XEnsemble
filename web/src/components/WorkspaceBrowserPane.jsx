@@ -35,8 +35,8 @@ export default function WorkspaceBrowserPane() {
 
   return (
     <div className="flex h-full min-h-0 flex-col" data-testid="workspace-browser-pane">
-      <div className="flex items-center gap-1.5 border-b border-[#E8EAED] px-2 py-1.5 shrink-0">
-        <Globe className="h-3.5 w-3.5 shrink-0 text-[#5F6368]" />
+      <div className="flex items-center gap-1.5 border-b border-zinc-800 px-2 py-1.5 shrink-0">
+        <Globe className="h-3.5 w-3.5 shrink-0 text-zinc-400" />
         <input
           ref={inputRef}
           type="url"
@@ -55,7 +55,7 @@ export default function WorkspaceBrowserPane() {
           type="button"
           title="Go"
           onClick={navigate}
-          className={`p-1.5 rounded text-zinc-400 hover:text-zinc-600 hover:bg-[#E8EAED] ${consoleButtonFocusClass}`}
+          className={`p-1.5 rounded text-zinc-400 hover:text-zinc-600 hover:bg-zinc-700 ${consoleButtonFocusClass}`}
         >
           <ArrowRight className="h-3.5 w-3.5" />
         </button>
@@ -64,19 +64,19 @@ export default function WorkspaceBrowserPane() {
           title="Reload"
           onClick={reload}
           disabled={!activeUrl}
-          className={`p-1.5 rounded text-zinc-400 hover:text-zinc-600 hover:bg-[#E8EAED] disabled:opacity-40 ${consoleButtonFocusClass}`}
+          className={`p-1.5 rounded text-zinc-400 hover:text-zinc-600 hover:bg-zinc-700 disabled:opacity-40 ${consoleButtonFocusClass}`}
         >
           <RefreshCw className="h-3.5 w-3.5" />
         </button>
       </div>
 
-      <div className="flex-1 min-h-0 bg-[#F4F5F6]">
+      <div className="flex-1 min-h-0 bg-zinc-800/50">
         {activeUrl ? (
           <iframe
             key={frameKey}
             title="Browser"
             src={activeUrl}
-            className="h-full w-full border-0 bg-white"
+            className="h-full w-full border-0 bg-zinc-950"
             sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-modals"
           />
         ) : (

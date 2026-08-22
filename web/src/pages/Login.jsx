@@ -6,7 +6,7 @@ import { publicFetch } from '../lib/api';
 import Button from '../components/Button';
 import Input from '../components/Input';
 import { cn } from '../lib/utils';
-import { consoleCardClass, consoleSectionLabelClass } from '../lib/consoleTokens';
+import { consoleCardClass, consoleSectionLabelClass } from '../lib/consoleTheme';
 
 export default function Login() {
   const [isRegister, setIsRegister] = useState(false);
@@ -52,20 +52,20 @@ export default function Login() {
   };
 
   return (
-    <div className="flex h-full items-center justify-center bg-zinc-50 p-4">
+    <div className="flex h-full items-center justify-center bg-zinc-950 p-4">
       <div className={cn(consoleCardClass, 'w-full max-w-sm p-8 flex flex-col gap-6')}>
         <div className="flex flex-col items-center gap-2">
           <BrandMark className="mb-2 h-10 w-10" iconClassName="h-5 w-5" />
-          <h1 className="text-xl font-bold tracking-tight text-zinc-900">
+          <h1 className="text-xl font-bold tracking-tight text-zinc-100">
             {isRegister ? 'Create an Account' : 'Welcome back'}
           </h1>
-          <p className="text-center text-sm text-zinc-500">
+          <p className="text-center text-sm text-zinc-400">
             Sign in to manage your enterprise agents
           </p>
         </div>
 
         {error && (
-          <div className="rounded-md border border-red-200 bg-red-50 p-2 text-sm text-red-700">
+          <div className="rounded-md border border-red-500/30 bg-red-500/10 p-2 text-sm text-red-300">
             {error}
           </div>
         )}
@@ -99,12 +99,12 @@ export default function Login() {
           </Button>
         </form>
 
-        <div className="text-center text-sm text-zinc-500">
+        <div className="text-center text-sm text-zinc-400">
           {isRegister ? 'Already have an account?' : 'New here?'}
           <button
             type="button"
             onClick={() => setIsRegister(!isRegister)}
-            className="ml-1 font-medium text-zinc-900 hover:underline"
+            className="ml-1 font-medium text-zinc-100 hover:underline"
           >
             {isRegister ? 'Sign In' : 'Create an account'}
           </button>

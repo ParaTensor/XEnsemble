@@ -10,10 +10,10 @@ export const buttonSizes = {
 };
 
 export const buttonVariants = {
-  primary: 'bg-black text-white hover:bg-zinc-800',
+  primary: 'bg-emerald-600 text-white hover:bg-emerald-500 shadow-sm',
   secondary:
-    'bg-transparent border border-zinc-300 text-zinc-900 hover:bg-zinc-50',
-  ghost: 'p-2 text-zinc-500 hover:text-zinc-900 hover:bg-zinc-100 rounded-md',
+    'bg-zinc-800 border border-zinc-700 text-zinc-200 hover:bg-zinc-700',
+  ghost: 'p-2 text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800 rounded-md',
   danger: 'bg-red-600 text-white hover:bg-red-700',
 };
 
