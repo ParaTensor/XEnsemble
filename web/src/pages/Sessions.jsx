@@ -1141,345 +1141,196 @@ export default React.forwardRef(function Sessions({
         </ConsoleInlineDialog>
       )}
 
-      {/* Main area */}
-      <div className="flex min-h-0 flex-1 w-full flex-row items-stretch bg-zinc-950">
-        <div className="flex min-h-0 min-w-0 flex-1 flex-col bg-zinc-950">
-          {showNewInstanceModal ? (
-            <div className="flex min-h-0 flex-1 flex-col bg-zinc-800/50">
-              <div className="flex items-center justify-between px-5 py-3 shrink-0 border-b border-zinc-800">
-                <div className="flex items-center gap-2">
-                  <Bot className="w-4 h-4 shrink-0 text-zinc-500" />
-                  <h3 className="text-sm font-semibold text-zinc-300">New Session</h3>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => { setShowNewInstanceModal(false); setLaunchModalError(null); onLaunchPanelClose?.(); }}
-                  className={`p-1.5 rounded-md text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/50 ${consoleButtonFocusClass}`}
-                >
-                  <X className="w-4 h-4" />
-                </button>
+      {/* Main area - 3 Column Layout */}
+      <div className="flex min-h-0 flex-1 w-full flex-col bg-zinc-950">
+        {showNewInstanceModal ? (
+          <div className="flex min-h-0 flex-1 flex-col bg-zinc-800/50">
+            <div className="flex items-center justify-between px-5 py-3 shrink-0 border-b border-zinc-800">
+              <div className="flex items-center gap-2">
+                <Bot className="w-4 h-4 shrink-0 text-zinc-500" />
+                <h3 className="text-sm font-semibold text-zinc-300">New Session</h3>
               </div>
-              <div className="flex-1 min-h-0 overflow-y-auto p-6">
-                <div className="max-w-md mx-auto space-y-6">
-                  {launchModalError && (
-                    <p className="text-sm text-red-400 bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2">{launchModalError}</p>
-                  )}
-
-                  {/* Workspace */}
-                  <div className="space-y-2">
-                    <label className="block text-xs font-medium text-zinc-400">Workspace</label>
-                    <SelectMenu
-                      value={launchWorkspaceId}
-                      onChange={setLaunchWorkspaceId}
-                      options={projects.map((p) => ({ value: p.id, label: p.name }))}
-                      placeholder="Select workspace..."
-                      searchable
-                      searchPlaceholder="Search workspace..."
-                    />
-                  </div>
-
-                  {/* Agent */}
-                  <div className="space-y-2">
-                    <label className="block text-xs font-medium text-zinc-400">Agent</label>
-                    <SelectMenu
-                      value={selectedAgentId}
-                      onChange={setSelectedAgentId}
-                      options={agentSelectOptions}
-                      placeholder="Select agent..."
-                      searchable
-                      searchPlaceholder="Search agent..."
-                    />
-                  </div>
-
-                  {/* Actions */}
-                  <div className="flex justify-end gap-2 pt-4 border-t border-zinc-800">
-                    <button
-                      type="button"
-                      onClick={() => { setShowNewInstanceModal(false); setLaunchModalError(null); onLaunchPanelClose?.(); }}
-                      className={`${buttonClass('secondary', 'sm')} ${consoleButtonFocusClass}`}
-                    >
-                      Cancel
-                    </button>
-                    <button
-                      type="button"
-                      disabled={isLoading || !launchWorkspaceId || !selectedAgentId}
-                      onClick={handleLaunchFromModal}
-                      className={`${buttonClass('primary', 'sm')} ${consoleButtonFocusClass}`}
-                    >
-                      {isLoading ? <><Loader2 className="w-3.5 h-3.5 animate-spin" />Starting...</> : 'Start Session'}
-                    </button>
-                  </div>
+              <button
+                type="button"
+                onClick={() => { setShowNewInstanceModal(false); setLaunchModalError(null); onLaunchPanelClose?.(); }}
+                className={`p-1.5 rounded-md text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/50 ${consoleButtonFocusClass}`}
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="flex-1 min-h-0 overflow-y-auto p-6">
+              <div className="max-w-md mx-auto space-y-6">
+                {launchModalError && (
+                  <p className="text-sm text-red-400 bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2">{launchModalError}</p>
+                )}
+                <div className="space-y-2">
+                  <label className="block text-xs font-medium text-zinc-400">Workspace</label>
+                  <SelectMenu
+                    value={launchWorkspaceId}
+                    onChange={setLaunchWorkspaceId}
+                    options={projects.map((p) => ({ value: p.id, label: p.name }))}
+                    placeholder="Select workspace..."
+                    searchable
+                    searchPlaceholder="Search workspace..."
+                  />
                 </div>
-              </div>
-            </div>
-          ) : (
-            <>
-          <div className="h-12 border-b border-zinc-800 flex items-center justify-between px-5 shrink-0 bg-zinc-950">
-            <div className="flex items-center gap-3 min-w-0">
-              {/* Workspace Switcher */}
-              <WorkspaceSwitcher
-                projects={projects}
-                activeProjectId={activeProject?.id}
-                onSelect={(id) => {
-                  const ws = projects.find((p) => p.id === id);
-                  if (ws) {
-                    // Find first session in this workspace
-                    const firstSession = sessions.find((s) => s.projectId === id);
-                    if (firstSession) {
-                      onSelectSession(firstSession);
-                    }
-                  }
-                }}
-              />
-              <span className="text-zinc-600">/</span>
-              {activeSession ? (
-                <>
-                  <div className="flex items-center gap-2 min-w-0">
-                    <h1 className="truncate text-[15px] font-semibold text-zinc-100">
-                      {activeSession.projectName || activeSession.agentName || 'Session'}
-                    </h1>
-                    <span className="inline-flex shrink-0 items-center rounded-md bg-zinc-800/50 px-2 py-0.5 text-[11px] font-medium text-zinc-400">
-                      {activeSession.agentName}
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-1.5 shrink-0">
-                    <span
-                      className={`w-1.5 h-1.5 rounded-full ${sessionAlive ? 'bg-emerald-500' : sessionPending ? 'bg-amber-500' : sessionFailed ? 'bg-red-500' : 'bg-zinc-500'}`}
-                    />
-                    <span className="text-[11px] text-zinc-500">
-                      {sessionAlive ? 'Running' : sessionPending ? 'Preparing…' : sessionFailed ? 'Failed' : sessionWakeable ? 'Idle' : 'Stopped'}
-                    </span>
-                  </div>
-                </>
-              ) : (
-                <h1 className="text-[15px] font-semibold text-zinc-100">Sessions</h1>
-              )}
-            </div>
-            <div className="flex items-center gap-0.5 shrink-0">
-              {activeSession && (
-                <>
-                  <div className="mx-0.5 h-5 w-px bg-zinc-800" />
-                  {!sessionPending && !sessionFailed && (
-                    <>
-                      {sessionAlive ? (
-                        <button
-                          type="button"
-                          onClick={handleStopSession}
-                          disabled={sessionControlPending}
-                          className={`${consoleIconButtonClass} disabled:opacity-50 disabled:cursor-not-allowed`}
-                          title={stoppingSession ? 'Pausing…' : 'Pause session (keep history)'}
-                          aria-label={stoppingSession ? 'Pausing session' : 'Pause session'}
-                        >
-                          {stoppingSession ? (
-                            <Loader2 className="w-4 h-4 animate-spin" strokeWidth={1.75} />
-                          ) : (
-                            <Square className="w-4 h-4" strokeWidth={1.75} />
-                          )}
-                        </button>
-                      ) : (
-                        <button
-                          type="button"
-                          onClick={handleRestartSession}
-                          disabled={sessionControlPending}
-                          className={`${consoleIconButtonClass} disabled:opacity-50 disabled:cursor-not-allowed`}
-                          title={restartingSession ? 'Starting…' : 'Start session'}
-                          aria-label={restartingSession ? 'Starting session' : 'Start session'}
-                        >
-                          {restartingSession ? (
-                            <Loader2 className="w-4 h-4 animate-spin" strokeWidth={1.75} />
-                          ) : (
-                            <Play className="w-4 h-4" strokeWidth={1.75} />
-                          )}
-                        </button>
-                      )}
-                      {sessionAlive && (
-                        <button
-                          type="button"
-                          onClick={handleRestartSession}
-                          disabled={sessionControlPending}
-                          className={`${consoleIconButtonClass} disabled:opacity-50 disabled:cursor-not-allowed`}
-                          title={restartingSession ? 'Restarting…' : 'Restart session'}
-                          aria-label={restartingSession ? 'Restarting session' : 'Restart session'}
-                        >
-                          {restartingSession ? (
-                            <Loader2 className="w-4 h-4 animate-spin" strokeWidth={1.75} />
-                          ) : (
-                            <RefreshCw className="w-4 h-4" strokeWidth={1.75} />
-                          )}
-                        </button>
-                      )}
-                    </>
-                  )}
-                  {(() => {
-                    const sessionAgent = agents.find((a) => a.id === activeSession?.agentId);
-                    const isByok = sessionAgent && (sessionAgent.llm_auth_mode === 'byok' || !sessionAgent.llm_auth_mode);
-                    if (!isByok) return null;
-                    return (
-                      <button
-                        type="button"
-                        onClick={() => setShowSessionConfigModal(true)}
-                        className={consoleIconButtonClass}
-                        title="Agent configuration"
-                        aria-label="Agent configuration"
-                      >
-                        <Settings2 className="w-4 h-4" strokeWidth={1.75} />
-                      </button>
-                    );
-                  })()}
+                <div className="space-y-2">
+                  <label className="block text-xs font-medium text-zinc-400">Agent</label>
+                  <SelectMenu
+                    value={selectedAgentId}
+                    onChange={setSelectedAgentId}
+                    options={agentSelectOptions}
+                    placeholder="Select agent..."
+                    searchable
+                    searchPlaceholder="Search agent..."
+                  />
+                </div>
+                <div className="flex justify-end gap-2 pt-4 border-t border-zinc-800">
                   <button
                     type="button"
-                    onClick={() => setActiveSession(null)}
-                    className={consoleIconButtonClass}
-                    title="Disconnect view"
-                    aria-label="Disconnect view"
+                    onClick={() => { setShowNewInstanceModal(false); setLaunchModalError(null); onLaunchPanelClose?.(); }}
+                    className={`${buttonClass('secondary', 'sm')} ${consoleButtonFocusClass}`}
                   >
-                    <Unplug className="w-4 h-4" strokeWidth={1.75} />
+                    Cancel
                   </button>
                   <button
                     type="button"
-                    onClick={() => setPanelOpen((prev) => !prev)}
-                    className={`${consoleIconButtonClass} ${panelOpen ? 'bg-zinc-800/50 text-zinc-100' : ''}`}
-                    title={panelOpen ? 'Close workspace panel' : 'Open workspace panel'}
-                    aria-label={panelOpen ? 'Close workspace panel' : 'Open workspace panel'}
+                    disabled={isLoading || !launchWorkspaceId || !selectedAgentId}
+                    onClick={handleLaunchFromModal}
+                    className={`${buttonClass('primary', 'sm')} ${consoleButtonFocusClass}`}
                   >
-                    {panelOpen ? <PanelRightClose className="w-4 h-4" strokeWidth={1.75} /> : <PanelRightOpen className="w-4 h-4" strokeWidth={1.75} />}
+                    {isLoading ? <><Loader2 className="w-3.5 h-3.5 animate-spin" />Starting...</> : 'Start Session'}
                   </button>
-                  {activeSession.projectId ? (
-                    <>
-                      <div className="mx-0.5 h-5 w-px bg-zinc-800" />
-                      <PreviewControlGroup {...preview} />
-                    </>
-                  ) : null}
-                </>
-              )}
+                </div>
+              </div>
             </div>
           </div>
-          {activeSession ? (
-            sessionPending ? (
-              <div className="flex min-h-0 flex-1 flex-col items-center justify-center bg-zinc-950 p-8 text-center">
-                <Loader2 className="w-8 h-8 text-zinc-500 animate-spin mb-4" strokeWidth={1.5} />
-                <h3 className="text-lg font-semibold text-zinc-100 mb-1.5">Preparing your environment…</h3>
-                <p className="text-sm text-zinc-500 max-w-sm">
-                  Pulling image and starting virtual machine. This usually takes less than a minute.
-                </p>
-              </div>
-            ) : sessionFailed ? (
-              <div className="flex min-h-0 flex-1 flex-col items-center justify-center bg-zinc-950 p-8 text-center">
-                <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-red-500/10 mb-5">
-                  <X className="w-7 h-7 text-red-400" strokeWidth={1.5} />
-                </div>
-                <h3 className="text-lg font-semibold text-zinc-100 mb-1.5">Session failed to start</h3>
-                <p className="text-sm text-zinc-500 max-w-md mb-5">
-                  {activeSessionMeta?.provisioningError || 'An unexpected error occurred during provisioning.'}
-                </p>
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => handleDeleteSession(activeSession.sessionId)}
-                    className="h-9 px-4 flex items-center gap-2 bg-red-500 text-white rounded-md text-sm font-medium hover:bg-red-600 disabled:opacity-50 transition-colors"
-                  >
-                    <Trash2 className="w-4 h-4" strokeWidth={1.75} />
-                    Delete session
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setActiveSession(null)}
-                    className="h-9 px-4 flex items-center gap-2 bg-zinc-950 border border-zinc-800 text-zinc-100 rounded-md text-sm font-medium hover:bg-zinc-800/50 transition-colors"
-                  >
-                    Dismiss
-                  </button>
-                </div>
-              </div>
-            ) : (
-<div ref={panelRowRef} className="flex min-h-0 min-w-0 flex-1 flex-row overflow-hidden">
-              <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
-                <div
-                  className="flex min-h-0 flex-1 flex-col overflow-hidden"
-                  style={{ backgroundColor: preset.xterm.background }}
-                >
-                  <AgentConsole
-                    key={activeSession.sessionId}
-                    sessionId={activeSession.sessionId}
-                    reconnectVersion={reconnectVersion}
-                    onSessionEnd={handleSessionEnd}
-                    onSessionConnected={handleSessionConnected}
-                    sessionLive={sessionAlive}
-                    sessionWakeable={sessionWakeable}
-                  />
-                </div>
-                <GitStatusBar projectId={activeSession.projectId} project={activeProject} git={gitChanges} />
-              </div>
-              {panelOpen && (
-                <>
-                <div
-                  onMouseDown={startPanelResize}
-                  className="w-1 shrink-0 cursor-col-resize bg-zinc-800 hover:bg-zinc-100 transition-colors"
-                  title="Drag to resize"
+        ) : (
+          <>
+            {/* Top Bar */}
+            <SessionsTopBar
+              projects={projects}
+              activeProject={activeProject}
+              activeSession={activeSession}
+              sessionAlive={sessionAlive}
+              sessionPending={sessionPending}
+              sessionFailed={sessionFailed}
+              sessionWakeable={sessionWakeable}
+              user={user}
+              panelOpen={panelOpen}
+              onTogglePanel={() => setPanelOpen((v) => !v)}
+              onStopSession={handleStopSession}
+              onRestartSession={handleRestartSession}
+              onDisconnect={() => setActiveSession(null)}
+              onNewSession={() => openLaunchModal('session')}
+            />
+
+            {/* 3-Column Body */}
+            <div className="flex min-h-0 flex-1 overflow-hidden">
+              {/* Left: Session Sidebar */}
+              <SessionSidebar
+                sessions={sessions}
+                agents={agents}
+                activeSession={activeSession}
+                onSelectSession={(session) => {
+                  const projectName = session.projectName || projects.find((p) => p.id === session.projectId)?.name;
+                  onSelectSession({ ...session, projectName });
+                }}
+                onNewSession={() => openLaunchModal('session')}
+                prefs={loadSidebarPrefs()}
+              />
+
+              {/* Center + Right */}
+              {activeSession ? (
+                sessionPending ? (
+                  <div className="flex-1 flex items-center justify-center bg-zinc-950 p-8 text-center">
+                    <Loader2 className="w-8 h-8 text-zinc-500 animate-spin mb-4" strokeWidth={1.5} />
+                    <h3 className="text-lg font-semibold text-zinc-100 mb-1.5">Preparing your environment…</h3>
+                    <p className="text-sm text-zinc-500 max-w-sm">
+                      Pulling image and starting virtual machine. This usually takes less than a minute.
+                    </p>
+                  </div>
+                ) : sessionFailed ? (
+                  <div className="flex-1 flex items-center justify-center bg-zinc-950 p-8 text-center">
+                    <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-red-500/10 mb-5">
+                      <X className="w-7 h-7 text-red-400" strokeWidth={1.5} />
+                    </div>
+                    <h3 className="text-lg font-semibold text-zinc-100 mb-1.5">Session failed to start</h3>
+                    <p className="text-sm text-zinc-500 max-w-md mb-5">
+                      {activeSessionMeta?.provisioningError || 'An unexpected error occurred during provisioning.'}
+                    </p>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteSession(activeSession.sessionId)}
+                        className="h-9 px-4 flex items-center gap-2 bg-red-500 text-white rounded-md text-sm font-medium hover:bg-red-600 disabled:opacity-50 transition-colors"
+                      >
+                        <Trash2 className="w-4 h-4" strokeWidth={1.75} />
+                        Delete session
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setActiveSession(null)}
+                        className="h-9 px-4 flex items-center gap-2 bg-zinc-950 border border-zinc-800 text-zinc-100 rounded-md text-sm font-medium hover:bg-zinc-800/50 transition-colors"
+                      >
+                        Dismiss
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    {/* Center: Chat Panel */}
+                    <ChatPanel
+                      sessionId={activeSession.sessionId}
+                      agentName={activeSession.agentName}
+                      projectName={activeSession.projectName}
+                      isProcessing={false}
+                      onSendMessage={(text) => {
+                        console.log('Send message:', text);
+                      }}
+                    />
+
+                    {/* Right: Workstation Panel */}
+                    {panelOpen && (
+                      <WorkstationPanel
+                        projectId={activeSession.projectId}
+                        changeCount={gitChanges?.unstaged?.length || 0}
+                        previewDevice={previewDevice}
+                        onSetPreviewDevice={setPreviewDevice}
+                        onReloadPreview={() => preview?.refresh?.()}
+                      />
+                    )}
+                  </>
+                )
+              ) : launchingSession ? (
+                <div className="flex-1 bg-zinc-950" />
+              ) : projects.length === 0 ? (
+                <OnboardingWizard
+                  agents={agents}
+                  onComplete={(project) => {
+                    fetchWorkspaces();
+                    if (project) {
+                      const agentId = selectedAgentId || agents[0]?.id;
+                      if (agentId) {
+                        handleStartSession(project.id, project.name);
+                      }
+                    }
+                  }}
                 />
-                <div className="flex min-h-0 shrink-0 flex-col border-l border-zinc-800 bg-zinc-950" style={{ width: panelWidth }}>
-                  <WorkspacePanel
-                    projectId={activeSession.projectId}
-                    tabs={editorTabs.tabs}
-                    activePath={editorTabs.activePath}
-                    onSelectTab={editorTabs.selectTab}
-                    onCloseTab={editorTabs.closeTab}
-                    onSaveTab={handleSaveTab}
-                    onOpenFile={handleEditorOpenFile}
-                    onFetchDir={editorTabs.fetchDir}
-                    onCreateFile={handleCreateFile}
-                    onCreateDir={handleCreateDir}
-                    onShowDiff={handleShowDiff}
-                    diffView={editorTabs.diffView}
-                    onCloseDiff={editorTabs.closeDiff}
-                    gitChanges={gitChanges}
-                    changesTabActiveRef={changesTabActiveRef}
-                    onGitFileClick={handleGitFileClick}
-                    gitDiffView={gitDiffView}
-                    onCloseGitDiff={handleCloseGitDiff}
-                    provider={activeProject?.repoProvider}
-                    sessionLive={sessionAlive}
-                    shellContent={shellMounted && <WorkspaceShell projectId={activeSession.projectId} />}
-                    onShellMount={() => setShellMounted(true)}
-                    refreshTrigger={editorTabs.treeRefreshTrigger}
-                    onDeleteFile={handleDeleteFile}
-                    onDeleteDir={handleDeleteDir}
-                    onRenameFile={handleRenameFile}
-                    onCopyPath={handleCopyPath}
-                  />
+              ) : (
+                <div className="flex-1 flex items-center justify-center bg-zinc-950 p-8 text-center">
+                  <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-zinc-800/50 mb-5">
+                    <TerminalSquare className="w-7 h-7 text-zinc-500" strokeWidth={1.25} />
+                  </div>
+                  <h3 className="text-lg font-semibold text-zinc-100 mb-1.5">No active session</h3>
+                  <p className="text-sm text-zinc-500 max-w-sm">
+                    Select a session from the sidebar, or click "新建" to start one.
+                  </p>
                 </div>
-                </>
               )}
             </div>
-            )
-          ) : launchingSession ? (
-            <div className="flex-1 bg-zinc-950" />
-          ) : projects.length === 0 ? (
-            <OnboardingWizard
-              agents={agents}
-              onComplete={(project) => {
-                fetchWorkspaces();
-                if (project) {
-                  const agentId = selectedAgentId || agents[0]?.id;
-                  if (agentId) {
-                    handleStartSession(project.id, project.name);
-                  }
-                }
-              }}
-            />
-          ) : (
-            <div className="flex h-full flex-col items-center justify-center bg-zinc-950 p-8 text-center">
-              <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-zinc-800/50 mb-5">
-                <TerminalSquare className="w-7 h-7 text-zinc-500" strokeWidth={1.25} />
-              </div>
-              <h3 className="text-lg font-semibold text-zinc-100 mb-1.5">No active session</h3>
-              <p className="text-sm text-zinc-500 max-w-sm">
-                Select a session from the sidebar, or use New Agent to start one in a workspace.
-              </p>
-            </div>
-          )}
-            </>
-          )}
-        </div>
+          </>
+        )}
       </div>
 
       {showImportDialog && (
