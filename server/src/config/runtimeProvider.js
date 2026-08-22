@@ -1,7 +1,7 @@
 /** Default execution plane when RUNTIME_PROVIDER is unset. */
-const DEFAULT_RUNTIME_PROVIDER = 'boxlite';
+const DEFAULT_RUNTIME_PROVIDER = 'blaxel';
 
-const SUPPORTED_RUNTIME_PROVIDERS = new Set(['local', 'boxlite', 'k8s']);
+const SUPPORTED_RUNTIME_PROVIDERS = new Set(['local', 'boxlite', 'blaxel', 'k8s']);
 
 function resolveRuntimeProvider() {
     const raw = process.env.RUNTIME_PROVIDER?.trim();
