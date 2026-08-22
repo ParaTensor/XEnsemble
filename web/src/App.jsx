@@ -2,12 +2,12 @@ import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { Routes, Route, useNavigate, useLocation, Navigate } from 'react-router-dom';
 import Login from './pages/Login';
 import Sessions from './pages/Sessions';
+import Settings from './pages/Settings';
 import AgentsAdmin from './pages/AgentsAdmin';
 import ImagesManager from './pages/ImagesManager';
 import UsersAdmin from './pages/UsersAdmin';
 import GatewayAdmin from './pages/GatewayAdmin';
 import AppSidebar from './components/AppSidebar';
-import SettingsModal from './components/SettingsModal';
 import ConfirmDialog from './components/ConfirmDialog';
 import { useWorkspaces } from './hooks/useWorkspaces';
 import { cn } from './lib/utils';
@@ -31,14 +31,11 @@ function AuthenticatedLayout({
   fetchWorkspaces,
   fetchAgents,
   logout,
-  showSettingsModal,
-  setShowSettingsModal,
 }) {
   const location = useLocation();
   const navigate = useNavigate();
   const sessionsRef = useRef(null);
   const [launchPanelOpen, setLaunchPanelOpen] = useState(false);
-
   useEffect(() => {
     setLaunchPanelOpen(false);
     sessionsRef.current?.closeLaunchModal?.();
@@ -87,7 +84,6 @@ function AuthenticatedLayout({
         onRequestDeleteWorkspace={(ws) => sessionsRef.current?.requestDeleteWorkspace?.(ws)}
         onArchiveSession={onArchiveSession}
         user={user}
-        onOpenSettings={() => setShowSettingsModal(true)}
         onLogout={logout}
       />
       <main
@@ -159,9 +155,6 @@ function AuthenticatedLayout({
             </div>
         )}
       </main>
-      {showSettingsModal && (
-        <SettingsModal onClose={() => setShowSettingsModal(false)} />
-      )}
       <ConfirmDialog />
     </div>
   );
@@ -171,7 +164,6 @@ function App() {
   const [token, setToken] = useState(null);
   const [user, setUser] = useState(null);
   const [authReady, setAuthReady] = useState(false);
-  const [showSettingsModal, setShowSettingsModal] = useState(false);
   const navigate = useNavigate();
 
   const {
@@ -195,12 +187,6 @@ function App() {
     });
     return () => setAuthExpiredHandler(null);
   }, [navigate]);
-
-  React.useEffect(() => {
-    const openSettings = () => setShowSettingsModal(true);
-    window.addEventListener('xe:open-settings', openSettings);
-    return () => window.removeEventListener('xe:open-settings', openSettings);
-  }, []);
 
   React.useEffect(() => {
     (async () => {
@@ -300,8 +286,6 @@ function App() {
                     fetchWorkspaces={fetchWorkspaces}
                     fetchAgents={fetchAgents}
                     logout={logout}
-                    showSettingsModal={showSettingsModal}
-                    setShowSettingsModal={setShowSettingsModal}
                   />
                 ) : (
                   <Navigate to="/login" replace />
@@ -329,7 +313,7 @@ function App() {
               />
             </Route>
 
-            <Route path="/settings" element={<Navigate to="/sessions" replace />} />
+            <Route path="/settings" element={token ? <Settings /> : <Navigate to="/login" replace />} />
             <Route path="/admin/boxlite-images" element={<Navigate to="/admin/images" replace />} />
             <Route path="/admin/platform" element={<Navigate to="/sessions" replace />} />
             <Route path="/" element={<Navigate to={token ? '/sessions' : '/login'} replace />} />

@@ -1,11 +1,6 @@
 import { useState, useContext } from 'react';
 import { AuthContext } from '../../App';
 import { cn } from '../../lib/utils';
-import {
-  consoleSettingsPanelScrollClass,
-  consoleSettingsTabActiveClass,
-  consoleSettingsTabIdleClass,
-} from '../../lib/consoleTokens';
 import GeneralSettingsPanel from './GeneralSettingsPanel';
 import ApiKeysSettingsPanel from './ApiKeysSettingsPanel';
 import GitHubSettingsPanel from './GitHubSettingsPanel';
@@ -33,16 +28,18 @@ export default function SettingsShell() {
   ];
 
   return (
-    <div className="flex h-full overflow-hidden rounded-lg border border-zinc-200">
-      <nav className="w-32 shrink-0 flex flex-col gap-1 border-r border-zinc-200 bg-zinc-50 p-3">
+    <div className="flex h-full overflow-hidden rounded-lg border border-zinc-800">
+      <nav className="w-40 shrink-0 flex flex-col gap-1 border-r border-zinc-800 bg-zinc-900 p-3">
         {sections.map(({ id, label }) => (
           <button
             key={id}
             type="button"
             onClick={() => setSection(id)}
             className={cn(
-              'w-full px-3 py-2 rounded-md text-sm font-bold text-left transition-colors',
-              section === id ? consoleSettingsTabActiveClass : consoleSettingsTabIdleClass,
+              'w-full px-3 py-2 rounded-md text-sm font-medium text-left transition-colors',
+              section === id
+                ? 'bg-zinc-800 text-zinc-100'
+                : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/50',
             )}
           >
             {label}
@@ -50,7 +47,7 @@ export default function SettingsShell() {
         ))}
       </nav>
 
-      <div className={consoleSettingsPanelScrollClass}>
+      <div className="flex-1 min-h-0 overflow-y-auto bg-zinc-950 px-6 py-5">
         {section === 'general' && <GeneralSettingsPanel />}
         {section === 'api-keys' && <ApiKeysSettingsPanel />}
         {section === 'git-providers' && <GitProvidersSettingsPanel />}

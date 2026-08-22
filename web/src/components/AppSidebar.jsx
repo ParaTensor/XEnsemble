@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useMemo, useRef, useLayoutEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { NavLink } from 'react-router-dom';
+import { NavLink, useNavigate } from 'react-router-dom';
 import {
   FolderOpen,
   FolderPlus,
@@ -117,11 +117,12 @@ function buildWorkspaces(projects, sessions, prefs) {
   });
 }
 
-function SidebarAccountMenu({ user, onOpenSettings, onLogout, adminLinkClass, collapsed = false }) {
+function SidebarAccountMenu({ user, onLogout, adminLinkClass, collapsed = false }) {
   const [open, setOpen] = useState(false);
   const [menuRect, setMenuRect] = useState(null);
   const rootRef = useRef(null);
   const menuRef = useRef(null);
+  const navigate = useNavigate();
   const isAdmin = user?.role === 'admin';
 
   const updateMenuRect = useCallback(() => {
@@ -210,20 +211,18 @@ function SidebarAccountMenu({ user, onOpenSettings, onLogout, adminLinkClass, co
           <div className="my-1 border-t border-zinc-800" />
         </>
       )}
-      {onOpenSettings && (
-        <button
-          type="button"
-          role="menuitem"
-          onClick={() => {
-            close();
-            onOpenSettings?.();
-          }}
-          className={menuItemClass}
-        >
-          <Settings2 className="w-3.5 h-3.5 shrink-0" />
-          Settings
-        </button>
-      )}
+      <button
+        type="button"
+        role="menuitem"
+        onClick={() => {
+          close();
+          navigate('/settings');
+        }}
+        className={menuItemClass}
+      >
+        <Settings2 className="w-3.5 h-3.5 shrink-0" />
+        Settings
+      </button>
       <button
         type="button"
         role="menuitem"
@@ -291,7 +290,6 @@ export default function AppSidebar({
   onRequestDeleteWorkspace,
   onArchiveSession,
   user,
-  onOpenSettings,
   onLogout,
 }) {
   const [sidebarPrefs, setSidebarPrefs] = useState(() => loadSidebarPrefs());
@@ -687,7 +685,6 @@ export default function AppSidebar({
         <div className="shrink-0 border-t border-zinc-800 px-1.5 py-2">
           <SidebarAccountMenu
             user={user}
-            onOpenSettings={onOpenSettings}
             onLogout={onLogout}
             adminLinkClass={adminLinkClass}
             collapsed
@@ -904,7 +901,6 @@ export default function AppSidebar({
       <div className="shrink-0 border-t border-zinc-800 px-2 py-2">
         <SidebarAccountMenu
           user={user}
-          onOpenSettings={onOpenSettings}
           onLogout={onLogout}
           adminLinkClass={adminLinkClass}
         />

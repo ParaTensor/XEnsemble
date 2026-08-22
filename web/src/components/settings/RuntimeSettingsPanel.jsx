@@ -43,7 +43,7 @@ export default function RuntimeSettingsPanel() {
     setSaving(true);
     try {
       const res = await apiFetch('/api/v1/admin/platform-settings', {
-        method: 'POST',
+        method: 'PUT',
         body: JSON.stringify(values),
       });
       const data = await res.json();
