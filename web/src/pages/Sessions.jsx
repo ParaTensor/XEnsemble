@@ -4,6 +4,7 @@ import AgentConsole from '../components/AgentConsole';
 import WorkspaceShell from '../components/WorkspaceShell';
 import WorkspacePanel from '../components/WorkspacePanel';
 import OnboardingWizard from '../components/OnboardingWizard';
+import WorkspaceSwitcher from '../components/WorkspaceSwitcher';
 import RepoImportDialog from '../components/git/RepoImportDialog';
 import GitStatusBar from '../components/git/GitStatusBar';
 import { apiFetch } from '../lib/api';
@@ -1141,232 +1142,92 @@ export default React.forwardRef(function Sessions({
         <div className="flex min-h-0 min-w-0 flex-1 flex-col bg-zinc-950">
           {showNewInstanceModal ? (
             <div className="flex min-h-0 flex-1 flex-col bg-zinc-800/50">
-              <div className="flex items-center justify-between px-5 py-3 shrink-0">
+              <div className="flex items-center justify-between px-5 py-3 shrink-0 border-b border-zinc-800">
                 <div className="flex items-center gap-2">
-                  {launchModalMode === 'workspace' ? (
-                    <Plus className="w-4 h-4 shrink-0 text-zinc-500" />
-                  ) : (
-                    <Bot className="w-4 h-4 shrink-0 text-zinc-500" />
-                  )}
-                  <h3 className="text-sm font-semibold text-zinc-300">
-                    {launchModalMode === 'workspace' ? 'New Workspace' : 'New Agent'}
-                  </h3>
+                  <Bot className="w-4 h-4 shrink-0 text-zinc-500" />
+                  <h3 className="text-sm font-semibold text-zinc-300">New Session</h3>
                 </div>
-                <div className="flex items-center gap-1">
-                  <button
-                    type="button"
-                    onClick={() => { setShowNewInstanceModal(false); setLaunchModalError(null); setCreateNewWorkspaceInline(false); setShowLaunchConfigModal(false); setGitImportMode(false); setImportedProject(null); onLaunchPanelClose?.(); }}
-                    className={`p-1.5 rounded-md text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/50 ${consoleButtonFocusClass}`}
-                  >
-                    <X className="w-4 h-4" />
-                  </button>
-                </div>
+                <button
+                  type="button"
+                  onClick={() => { setShowNewInstanceModal(false); setLaunchModalError(null); onLaunchPanelClose?.(); }}
+                  className={`p-1.5 rounded-md text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/50 ${consoleButtonFocusClass}`}
+                >
+                  <X className="w-4 h-4" />
+                </button>
               </div>
-              <div className="flex-1 min-h-0 overflow-y-auto pb-6">
-                <div className="w-full px-6 pt-4 space-y-8">
+              <div className="flex-1 min-h-0 overflow-y-auto p-6">
+                <div className="max-w-md mx-auto space-y-6">
                   {launchModalError && (
                     <p className="text-sm text-red-400 bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2">{launchModalError}</p>
                   )}
 
-                  {/* Page description */}
-                  {launchModalMode === 'workspace' ? (
-                    <p className="text-sm text-zinc-400 leading-relaxed">
-                      Create a new workspace with its own file system, Git history, and agent configurations.
-                    </p>
-                  ) : (
-                    <p className="text-sm text-zinc-400 leading-relaxed">
-                      Select a workspace and agent to launch an isolated sandbox session.
-                    </p>
-                  )}
-
-                  <div className="h-px bg-zinc-800" />
-
-                  {/* Form fields */}
-                  <div className="max-w-2xl mx-auto divide-y divide-zinc-800">
-
                   {/* Workspace */}
-                  {launchModalMode === 'workspace' && (
-                    <div className="flex items-start gap-12 py-5">
-                      <div className="w-52 shrink-0 pt-2">
-                        <label className="block text-sm font-medium text-zinc-300">Workspace</label>
-                        <p className="text-[11px] text-zinc-500 mt-0.5">A workspace is an isolated environment that stores your project files and session history.</p>
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <input type="text" value={newProjectName} onChange={e => setNewProjectName(e.target.value)} placeholder="my-workspace" className={consoleInputClass} autoFocus />
-                      </div>
-                    </div>
-                  )}
-                  {(launchModalMode === 'quickstart' || launchModalMode === 'session') && (
-                    <div className="flex items-start gap-12 py-5">
-                      <div className="w-52 shrink-0 pt-2">
-                        <label className="block text-sm font-medium text-zinc-300">Workspace</label>
-                        <p className="text-[11px] text-zinc-500 mt-0.5">{importedProject ? 'Imported from Git (locked)' : 'Select an existing workspace or create a new one.'}</p>
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        {importedProject ? (
-                          <div className="flex items-center gap-2 px-3 py-2 text-sm bg-zinc-800/50 border border-zinc-800 rounded-md text-zinc-400">
-                            <Check className="w-3.5 h-3.5 shrink-0 text-emerald-400" />
-                            <span className="font-medium truncate">{importedProject.name}</span>
-                            <span className="text-[10px] text-zinc-500 ml-auto shrink-0">Imported</span>
-                          </div>
-                        ) : createNewWorkspaceInline ? (
-                          <div className="flex items-center gap-2">
-                            <input type="text" value={newProjectName} onChange={e => setNewProjectName(e.target.value)} placeholder="my-workspace" className="flex-1 min-w-0 px-3 py-2 text-sm border border-zinc-700 rounded-md bg-zinc-950 focus:outline-none focus:border-emerald-500" autoFocus />
-                            <button type="button" onClick={() => { setCreateNewWorkspaceInline(false); setNewProjectName(''); }} className={`shrink-0 h-9 px-3 text-xs font-medium text-zinc-400 bg-zinc-800/50 border border-zinc-800 rounded-md hover:bg-zinc-700 ${consoleButtonFocusClass}`}>Back</button>
-                          </div>
-                        ) : (
-                          <div className="flex items-center gap-2">
-                            <div className="flex-1 min-w-0">
-                              <SelectMenu value={launchWorkspaceId} onChange={setLaunchWorkspaceId} options={projects.map((p) => ({ value: p.id, label: p.name }))} placeholder="Select workspace" />
-                            </div>
-                            <button type="button" onClick={() => { setCreateNewWorkspaceInline(true); setNewProjectName(''); setLaunchWorkspaceId(''); }} className={`shrink-0 h-9 px-3 text-xs font-medium text-zinc-400 bg-zinc-800/50 border border-zinc-800 rounded-md hover:bg-zinc-700 ${consoleButtonFocusClass}`}>New</button>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Agent (built-in|custom buttons + dropdown) */}
-                  {launchModalMode !== 'workspace' && (
-                    <div className="flex items-start gap-12 py-5">
-                      <div className="w-52 shrink-0 pt-2">
-                        <label className="text-sm font-medium text-zinc-300">Agent</label>
-                        <p className="text-[11px] text-zinc-500 mt-0.5">Select a built-in agent or a custom image you have built. Each agent has its own capabilities and configuration.</p>
-                      </div>
-                      <div className="flex-1 min-w-0 space-y-2">
-                        <div className="flex items-center gap-2">
-                          <button type="button" onClick={() => { setCustomImageId(''); setSelectedAgentId(''); }} className={`flex-1 h-9 px-3 text-xs font-medium rounded-md border transition-colors ${consoleButtonFocusClass} ${!customImageId ? 'bg-zinc-100 text-white border-zinc-100' : 'bg-zinc-950 text-zinc-400 border-zinc-800 hover:bg-zinc-800/50'}`}>Built-in</button>
-                          <button type="button" onClick={handleSelectCustomImage} className={`flex-1 h-9 px-3 text-xs font-medium rounded-md border transition-colors ${consoleButtonFocusClass} ${customImageId ? 'bg-zinc-100 text-white border-zinc-100' : 'bg-zinc-950 text-zinc-400 border-zinc-800 hover:bg-zinc-800/50'}`}>Custom</button>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <div className="flex-1 min-w-0">
-                            {!customImageId && (
-                              <SelectMenu value={selectedAgentId} onChange={(v) => { setSelectedAgentId(v); setShowLaunchConfigModal(false); }} options={agentSelectOptions} placeholder="Select agent" />
-                            )}
-                            {customImageId && customImages.length > 0 && (
-                              <SelectMenu
-                            value={customImageId}
-                            onChange={(v) => {
-                              setCustomImageId(v);
-                              const img = customImages.find((c) => c.id === v);
-                              if (img) {
-                                const ac = (img.components || []).find((c) => (c.component_id || '').startsWith('agent:'));
-                                const aid = ac ? ac.component_id.replace('agent:', '') : '';
-                                if (aid && agents.find((a) => a.id === aid)) setSelectedAgentId(aid);
-                              }
-                            }}
-                            options={customImages.map((img) => {
-                              const ac = (img.components || []).find((c) => (c.component_id || '').startsWith('agent:'));
-                              const agentId = ac ? ac.component_id.replace('agent:', '') : '';
-                              const agent = agents.find((a) => a.id === agentId);
-                              return { value: img.id, label: `${img.name}${agent ? ` (${agent.name})` : ''}` };
-                            })}
-                            placeholder="Select custom image"
-                          />
-                        )}
-                        {customImageId && customImages.length === 0 && (
-                          <p className="text-xs text-zinc-500 py-2">No custom images found. Build one in the Images page first.</p>
-                        )}
-                        </div>
-                        {selectedAgent && (selectedAgent.llm_auth_mode === 'byok' || !selectedAgent.llm_auth_mode) && (
-                          <button type="button" onClick={() => setShowLaunchConfigModal(v => !v)} className={`shrink-0 h-9 px-2.5 text-xs font-medium text-emerald-400 hover:text-emerald-500 border border-zinc-800 rounded-md hover:bg-zinc-800/50 ${consoleButtonFocusClass}`}>
-                            <Settings2 className="w-3.5 h-3.5" />
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                  )}
-                  {showLaunchConfigModal && selectedAgent && (
-                    <div className="rounded-lg bg-zinc-950 border border-zinc-800 p-4">
-                      <div className="flex items-center gap-2 mb-3">
-                        <Settings2 className="w-3.5 h-3.5 text-zinc-500" />
-                        <h4 className="text-xs font-medium text-zinc-400">Configure {selectedAgent.name}</h4>
-                      </div>
-                      <ByokConfigForm agentId={selectedAgentId} loading={false} onSave={() => { setShowLaunchConfigModal(false); showToast('success', 'Configuration saved.'); }} />
-                    </div>
-                  )}
-
-                  {/* Git */}
-                  {launchModalMode !== 'workspace' && (
-                    <div className="flex items-start gap-12 py-5">
-                      <div className="w-52 shrink-0 pt-2">
-                        <label className="block text-sm font-medium text-zinc-300">Git</label>
-                        <p className="text-[11px] text-zinc-500 mt-0.5">Optionally import a Git repository. The agent will have access to the code for editing and development.</p>
-                      </div>
-                      <div className="flex-1 min-w-0 space-y-2">
-                        {importedProject ? (
-                          <div className="flex items-center gap-2 px-3 py-2 text-sm bg-zinc-800/50 border border-zinc-800 rounded-md text-zinc-400">
-                            <Check className="w-3.5 h-3.5 shrink-0 text-emerald-400" />
-                            <span className="font-medium truncate">{gitProvider}</span>
-                            <span className="text-[10px] text-zinc-500 ml-auto shrink-0">Imported</span>
-                          </div>
-                        ) : (
-                          <div className="flex items-center gap-2">
-                            <button type="button" onClick={() => { setGitImportMode(false); setGitProvider(''); setImportedProject(null); }} className={`flex-1 h-9 px-2 text-xs font-medium rounded-md border transition-colors ${consoleButtonFocusClass} ${!gitProvider ? 'bg-zinc-100 text-white border-zinc-100' : 'bg-zinc-950 text-zinc-400 border-zinc-800 hover:bg-zinc-800/50'}`}>None</button>
-                            {['github', 'gitlab', 'gitea'].map((p) => (
-                              <button key={p} type="button" onClick={() => { setGitProvider(p); setGitImportMode(true); setImportedProject(null); }} className={`flex-1 h-9 px-2 text-xs font-medium rounded-md border transition-colors capitalize ${consoleButtonFocusClass} ${gitProvider === p ? 'bg-zinc-100 text-white border-zinc-100' : 'bg-zinc-950 text-zinc-400 border-zinc-800 hover:bg-zinc-800/50'}`}>{p}</button>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  )}
-                  {gitImportMode && !importedProject && gitProvider && (
-                    gitProvider === 'gitea' ? (
-                      <p className="text-sm text-red-400 bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2">Gitea OAuth is not configured. Please ask an administrator to set it up.</p>
-                    ) : (
-                    <RepoImportDialog
-                      key={gitProvider}
-                      open={true}
-                      inline={true}
-                      forceProvider={gitProvider}
-                      onClose={() => { setGitImportMode(false); setGitProvider(''); setImportedProject(null); }}
-                      onImported={(projectId) => {
-                        fetchWorkspaces();
-                        const ws = projects.find((p) => p.id === projectId);
-                        setImportedProject({ id: projectId, name: ws?.name || projectId });
-                        if (!ws) {
-                          setTimeout(() => {
-                            setProjects((prev) => {
-                              const found = prev.find((p) => p.id === projectId);
-                              if (found) setImportedProject({ id: projectId, name: found.name });
-                              return prev;
-                            });
-                          }, 1000);
-                        }
-                      }}
-                      fetchWorkspaces={fetchWorkspaces}
+                  <div className="space-y-2">
+                    <label className="block text-xs font-medium text-zinc-400">Workspace</label>
+                    <SelectMenu
+                      value={launchWorkspaceId}
+                      onChange={setLaunchWorkspaceId}
+                      options={projects.map((p) => ({ value: p.id, label: p.name }))}
+                      placeholder="Select workspace..."
+                      searchable
+                      searchPlaceholder="Search workspace..."
                     />
-                    )
-                  )}
+                  </div>
+
+                  {/* Agent */}
+                  <div className="space-y-2">
+                    <label className="block text-xs font-medium text-zinc-400">Agent</label>
+                    <SelectMenu
+                      value={selectedAgentId}
+                      onChange={setSelectedAgentId}
+                      options={agentSelectOptions}
+                      placeholder="Select agent..."
+                      searchable
+                      searchPlaceholder="Search agent..."
+                    />
+                  </div>
+
+                  {/* Actions */}
+                  <div className="flex justify-end gap-2 pt-4 border-t border-zinc-800">
+                    <button
+                      type="button"
+                      onClick={() => { setShowNewInstanceModal(false); setLaunchModalError(null); onLaunchPanelClose?.(); }}
+                      className={`${buttonClass('secondary', 'sm')} ${consoleButtonFocusClass}`}
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="button"
+                      disabled={isLoading || !launchWorkspaceId || !selectedAgentId}
+                      onClick={handleLaunchFromModal}
+                      className={`${buttonClass('primary', 'sm')} ${consoleButtonFocusClass}`}
+                    >
+                      {isLoading ? <><Loader2 className="w-3.5 h-3.5 animate-spin" />Starting...</> : 'Start Session'}
+                    </button>
                   </div>
                 </div>
-              </div>
-              <div className="flex items-center justify-end gap-2 border-t border-zinc-800 px-5 py-3 shrink-0">
-                <button
-                  type="button"
-                  onClick={() => { setShowNewInstanceModal(false); setCreateNewWorkspaceInline(false); setGitImportMode(false); setImportedProject(null); onLaunchPanelClose?.(); }}
-                  className={`${buttonClass('secondary', 'sm')} ${consoleButtonFocusClass}`}
-                >
-                  Cancel
-                </button>
-                {(!gitImportMode || importedProject) && (
-                  <button
-                    type="button"
-                    disabled={isLoading || projectCreating || (launchModalMode !== 'workspace' && !selectedAgentId) || (!importedProject && launchModalMode === 'session' && !createNewWorkspaceInline && !launchWorkspaceId) || (createNewWorkspaceInline && !newProjectName.trim())}
-                    onClick={handleLaunchFromModal}
-                    className={`${buttonClass('primary', 'sm')} ${consoleButtonFocusClass}`}
-                  >
-                    {isLoading || projectCreating ? <><Loader2 className="w-3.5 h-3.5 animate-spin" />Starting...</> : launchModalMode === 'workspace' ? 'Create workspace' : 'Start agent'}
-                  </button>
-                )}
               </div>
             </div>
           ) : (
             <>
           <div className="h-12 border-b border-zinc-800 flex items-center justify-between px-5 shrink-0 bg-zinc-950">
             <div className="flex items-center gap-3 min-w-0">
+              {/* Workspace Switcher */}
+              <WorkspaceSwitcher
+                projects={projects}
+                activeProjectId={activeProject?.id}
+                onSelect={(id) => {
+                  const ws = projects.find((p) => p.id === id);
+                  if (ws) {
+                    // Find first session in this workspace
+                    const firstSession = sessions.find((s) => s.projectId === id);
+                    if (firstSession) {
+                      onSelectSession(firstSession);
+                    }
+                  }
+                }}
+              />
+              <span className="text-zinc-600">/</span>
               {activeSession ? (
                 <>
                   <div className="flex items-center gap-2 min-w-0">
