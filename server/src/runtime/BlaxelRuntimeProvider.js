@@ -20,7 +20,9 @@ async function getBlaxelConfig() {
 }
 
 function sandboxName(project) {
-    return `xe-${project.userId}-${project.id}`.slice(0, 64);
+    // Blaxel requires: only lowercase alphanumeric and hyphens
+    const sanitize = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9-]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '');
+    return `xe-${sanitize(project.userId)}-${sanitize(project.id)}`.slice(0, 64);
 }
 
 class BlaxelRuntimeProvider extends RuntimeProvider {

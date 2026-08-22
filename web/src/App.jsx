@@ -70,22 +70,6 @@ function AuthenticatedLayout({
 
   return (
     <div className={`h-full flex ${bgCanvas}`}>
-      <AppSidebar
-        agents={agents}
-        projects={projects}
-        sessions={sessions}
-        activeSession={activeSession}
-        fetchWorkspaces={fetchWorkspaces}
-        onSelectSession={onSelectSession}
-        onCreateWorkspace={() => sessionsRef.current?.openLaunchModal?.('workspace')}
-        onImportFromGit={() => sessionsRef.current?.openImportDialog?.()}
-        onNewSession={() => sessionsRef.current?.openLaunchModal?.('session')}
-        onRequestDeleteSession={(session, ws) => sessionsRef.current?.requestDeleteSession?.(session, ws)}
-        onRequestDeleteWorkspace={(ws) => sessionsRef.current?.requestDeleteWorkspace?.(ws)}
-        onArchiveSession={onArchiveSession}
-        user={user}
-        onLogout={logout}
-      />
       <main
         className={`relative flex h-full min-h-0 flex-1 flex-col min-w-0 ${bgCanvas}`}
       >
