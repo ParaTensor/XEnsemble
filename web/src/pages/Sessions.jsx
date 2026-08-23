@@ -105,6 +105,7 @@ export default React.forwardRef(function Sessions({
   fetchAgents,
   launchPanelOpen,
   onLaunchPanelClose,
+  onSelectSession,
   className,
   user,
 }, ref) {
@@ -1329,13 +1330,15 @@ export default React.forwardRef(function Sessions({
                 />
               ) : (
                 <div className="flex-1 flex items-center justify-center bg-zinc-950 p-8 text-center">
-                  <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-zinc-800/50 mb-5">
-                    <TerminalSquare className="w-7 h-7 text-zinc-500" strokeWidth={1.25} />
+                  <div className="flex flex-col items-center">
+                    <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-zinc-800/50 mb-5">
+                      <TerminalSquare className="w-7 h-7 text-zinc-500" strokeWidth={1.25} />
+                    </div>
+                    <h3 className="text-lg font-semibold text-zinc-100 mb-1.5">No active session</h3>
+                    <p className="text-sm text-zinc-500 max-w-sm">
+                      Select a session from the sidebar, or click "新建" to start one.
+                    </p>
                   </div>
-                  <h3 className="text-lg font-semibold text-zinc-100 mb-1.5">No active session</h3>
-                  <p className="text-sm text-zinc-500 max-w-sm">
-                    Select a session from the sidebar, or click "新建" to start one.
-                  </p>
                 </div>
               )}
             </div>

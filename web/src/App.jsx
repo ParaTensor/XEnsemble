@@ -88,6 +88,7 @@ function AuthenticatedLayout({
           fetchAgents={fetchAgents}
           launchPanelOpen={launchPanelOpen}
           onLaunchPanelClose={() => setLaunchPanelOpen(false)}
+          onSelectSession={onSelectSession}
           className={cn(
             'flex h-full min-h-0 flex-1 flex-col',
             (isSessions || launchPanelOpen) ? 'relative z-20' : offRouteClass,
