@@ -1223,6 +1223,16 @@ export default React.forwardRef(function Sessions({
               onRestartSession={handleRestartSession}
               onDisconnect={() => setActiveSession(null)}
               onNewSession={() => openLaunchModal('session')}
+              onSelectWorkspace={(workspaceId) => {
+                const ws = projects.find((p) => p.id === workspaceId);
+                if (ws) {
+                  const firstSession = sessions.find((s) => s.projectId === workspaceId);
+                  if (firstSession) {
+                    const projectName = firstSession.projectName || ws.name;
+                    onSelectSession({ ...firstSession, projectName });
+                  }
+                }
+              }}
             />
 
             {/* 3-Column Body */}

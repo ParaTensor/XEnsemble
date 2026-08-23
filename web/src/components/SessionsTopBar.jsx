@@ -16,6 +16,7 @@ export default function SessionsTopBar({
   onRestartSession,
   onDisconnect,
   onNewSession,
+  onSelectWorkspace,
 }) {
   return (
     <div className="h-12 border-b border-zinc-800 flex items-center justify-between px-4 shrink-0 bg-zinc-900 z-30">
@@ -29,7 +30,7 @@ export default function SessionsTopBar({
         <WorkspaceSwitcher
           projects={projects}
           activeProjectId={activeProject?.id}
-          onSelect={() => {}}
+          onSelect={onSelectWorkspace}
         />
       </div>
 
