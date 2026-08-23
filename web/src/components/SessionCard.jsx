@@ -1,8 +1,9 @@
 import { cn } from '../lib/utils';
 import { formatRelativeTime } from '../lib/formatRelativeTime';
-import { Box } from 'lucide-react';
+import { Box, Trash2 } from 'lucide-react';
+import { consoleIconButtonDangerClass } from '../lib/consoleTheme';
 
-export default function SessionCard({ session, agent, isActive, onClick }) {
+export default function SessionCard({ session, agent, isActive, onClick, onDelete }) {
   const isAlive = session.alive === true;
   const label = session.title?.trim() || agent?.name || session.agentId || 'Session';
   const timestamp = session.createdAt ? formatRelativeTime(session.createdAt) : '';
@@ -11,7 +12,7 @@ export default function SessionCard({ session, agent, isActive, onClick }) {
     <div
       onClick={onClick}
       className={cn(
-        'p-3 rounded-xl text-xs cursor-pointer transition',
+        'group p-3 rounded-xl text-xs cursor-pointer transition',
         isActive
           ? 'bg-zinc-800/90 border-2 border-emerald-500/80 shadow-sm'
           : 'bg-zinc-950/70 hover:bg-zinc-800/50 border border-zinc-800 hover:border-zinc-700',
@@ -34,6 +35,22 @@ export default function SessionCard({ session, agent, isActive, onClick }) {
         )}>
           {isActive ? 'Active' : timestamp || 'Idle'}
         </span>
+        {onDelete && (
+          <button
+            type="button"
+            title="Delete session"
+            onClick={(e) => {
+              e.stopPropagation();
+              onDelete(session.id);
+            }}
+            className={cn(
+              consoleIconButtonDangerClass,
+              'shrink-0 ml-1.5 opacity-0 group-hover:opacity-100 transition-opacity',
+            )}
+          >
+            <Trash2 className="w-3 h-3" />
+          </button>
+        )}
       </div>
 
       {/* Description */}

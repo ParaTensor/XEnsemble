@@ -122,7 +122,9 @@ async function proxyPreviewRequest(request, reply) {
         return reply.code(resolved.status).send(payload);
     }
 
-    const target = `http://127.0.0.1:${resolved.entry.port}`;
+    // Remote upstreams (e.g. blaxel bl.run URLs) carry their own protocol/host;
+    // local entries point at a port on this host.
+    const target = resolved.entry.remote?.url || `http://127.0.0.1:${resolved.entry.port}`;
     const path = stripPreviewPrefix(request.url, deploymentId);
 
     await new Promise((resolve, reject) => {
@@ -131,7 +133,12 @@ async function proxyPreviewRequest(request, reply) {
         proxy.web(
             request.raw,
             reply.raw,
-            { target, changeOrigin: true },
+            {
+                target,
+                changeOrigin: true,
+                secure: false,
+                headers: resolved.entry.remote?.headers || undefined,
+            },
             (err) => {
                 if (err) reject(err);
                 else resolve();

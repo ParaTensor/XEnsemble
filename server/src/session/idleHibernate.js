@@ -1,9 +1,10 @@
 const { eq } = require('drizzle-orm');
+const { resolveRuntimeProvider } = require('../config/runtimeProvider');
 const { terminateDetachedSessionProcess } = require('./sessionTermination');
 
 const AGENT_EXIT_TIMEOUT_MS = 5000;
 
-async function waitForAgentExit(runtime, runtimeRef, agentId) {
+async function waitForAgentExit(runtime, runtimeRef, agentId, opts = {}) {
     if (!runtime?.exec?.exec || !runtimeRef || !agentId) {
         await new Promise((r) => setTimeout(r, 3000));
         return;
@@ -15,7 +16,11 @@ async function waitForAgentExit(runtime, runtimeRef, agentId) {
         if (agent?.cmd) agentCmd = agent.cmd;
     } catch (_) {}
 
-    const isLinux = (process.platform === 'linux');
+    // The target is the SANDBOX's platform, not the server's. Cloud/VM runtimes
+    // (boxlite/blaxel/k8s) are Linux even when the server runs on macOS — the
+    // /proc-based variant is the reliable one there (pkill -x won't match node
+    // CLIs whose process name differs from the command).
+    const isLinux = opts.remoteLinux || (process.platform === 'linux');
 
     // Linux: iterate /proc to find and gracefully terminate agent processes.
     // macOS/other: fall back to pkill, which is the best available mechanism.
@@ -94,6 +99,8 @@ async function stopSession({
     fastifyLog,
     requireRuntimeHibernate = false,
 }) {
+    // Sandboxes for non-local providers are Linux regardless of server platform.
+    const remoteLinuxSandbox = resolveRuntimeProvider() !== 'local';
     if (!session) return { stopped: false, reason: 'missing' };
 
     const sessionId = session.id;
@@ -120,7 +127,7 @@ async function stopSession({
             await terminateDetachedSessionProcess({
                 session: { ...session, runtimeRef },
                 runtime,
-                waitForAgentExit,
+                waitForAgentExit: (rt2, ref2, agentId2) => waitForAgentExit(rt2, ref2, agentId2, { remoteLinux: remoteLinuxSandbox }),
                 fastifyLog,
             });
             if (runtime?.provider?.supportsHibernate?.() && runtimeRef) {
@@ -159,7 +166,7 @@ async function stopSession({
             }
             const runtimeRef = live?.runtimeRef || live?.runtimeId || null;
             if (runtimeRef) {
-                await waitForAgentExit(runtime, runtimeRef, live.agentId);
+                await waitForAgentExit(runtime, runtimeRef, live.agentId, { remoteLinux: remoteLinuxSandbox });
             }
         }
         const rtRef = live?.runtimeRef || live?.runtimeId || live?.handle?.runtimeRef

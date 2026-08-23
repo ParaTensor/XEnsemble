@@ -758,6 +758,13 @@ function AgentConsole({
             setConnected(true);
             setEnded(false);
             onSessionConnectedRef.current?.(sessionId);
+            // Auto-focus the terminal on the first connect of this session so the
+            // user can type immediately (reconnects must not steal focus).
+            if (isFirstConnect && !serverEnded) {
+              requestAnimationFrame(() => {
+                if (!disposed && wsRef.current === ws) terminal.focus();
+              });
+            }
           };
 
           const handleConnectionFailure = async (reason, failure = {}) => {

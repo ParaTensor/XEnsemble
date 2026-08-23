@@ -2,7 +2,6 @@ import { useMemo } from 'react';
 import { Bot, Plus, Disc } from 'lucide-react';
 import SessionCard from './SessionCard';
 import { isArchivedSession } from '../lib/sidebarPrefs';
-import { formatRelativeTime } from '../lib/formatRelativeTime';
 
 function sortSessions(list, prefs) {
   return [...list].sort((a, b) => {
@@ -22,6 +21,7 @@ export default function SessionSidebar({
   activeSession,
   onSelectSession,
   onNewSession,
+  onDeleteSession,
   prefs,
 }) {
   const visibleSessions = useMemo(() => {
@@ -64,6 +64,7 @@ export default function SessionSidebar({
               agent={getAgent(session.agentId)}
               isActive={activeSession?.sessionId === session.id}
               onClick={() => onSelectSession(session)}
+              onDelete={onDeleteSession ? () => onDeleteSession(session.id) : undefined}
             />
           ))
         )}

@@ -1040,7 +1040,8 @@ fastify.delete('/api/v1/sessions/:sessionId', { preValidation: [fastify.authenti
         }
         const runtimeRef = live.runtimeRef || live.runtimeId || null;
         if (runtimeRef) {
-            await waitForAgentExit(runtime, runtimeRef, live.agentId || session.agentId).catch(() => {});
+            await waitForAgentExit(runtime, runtimeRef, live.agentId || session.agentId,
+                { remoteLinux: resolveRuntimeProvider() !== 'local' }).catch(() => {});
         }
     } else if (session.status === 'running' || session.status === 'idle' || session.status === 'pending') {
         let runtimeRef = null;
@@ -1054,7 +1055,8 @@ fastify.delete('/api/v1/sessions/:sessionId', { preValidation: [fastify.authenti
         await terminateDetachedSessionProcess({
             session: { ...session, runtimeRef },
             runtime,
-            waitForAgentExit,
+            waitForAgentExit: (rt2, ref2, agentId2) => waitForAgentExit(rt2, ref2, agentId2,
+                { remoteLinux: resolveRuntimeProvider() !== 'local' }),
             fastifyLog: request.log,
         });
     }
@@ -1064,7 +1066,11 @@ fastify.delete('/api/v1/sessions/:sessionId', { preValidation: [fastify.authenti
     // Destroy the boxlite/blink VM if no other live session for this project still
     // uses the same runtime. Without this, deleting a session leaves an orphan VM
     // behind (which can later fail/panic once its workspace dir is removed).
-    if (session.runtimeId) {
+    // NOTE: only for boxlite — its VM lifecycle is tied to sessions and the host
+    // bare repo holds the persisted git state. For blaxel the sandbox IS the
+    // persistent storage (workspace files live only inside it) and it scales to
+    // zero on its own, so it must survive session deletion.
+    if (session.runtimeId && resolveRuntimeProvider() === 'boxlite') {
         try {
             const siblings = await db.select({ id: schema.sessions.id }).from(schema.sessions)
                 .where(and(
@@ -1427,6 +1433,15 @@ fastify.post('/api/v1/session/start', { preValidation: [fastify.authenticate] },
 
     // --- async provisioning: VM creation + agent spawn ---
     (async () => {
+        // Step timing: identifies which provisioning stage dominates session startup.
+        const provisionStart = Date.now();
+        let lastStepAt = provisionStart;
+        const stepDone = (name) => {
+            const now = Date.now();
+            fastify.log.info({ sessionId, step: name, durationMs: now - lastStepAt, totalMs: now - provisionStart }, '[sessions] provisioning step done');
+            lastStepAt = now;
+        };
+
         let ready;
         let workspacePath;
         let runtimeId;
@@ -1440,6 +1455,7 @@ fastify.post('/api/v1/session/start', { preValidation: [fastify.authenticate] },
             });
             workspacePath = ready.workspacePath;
             runtimeId = ready.runtime.id;
+            stepDone('ensure_project_runtime');
         } catch (err) {
             fastify.log.error({ err, sessionId }, '[sessions] async provisioning: ensureProjectRuntime failed');
             await markSessionFailed(sessionId, err instanceof RuntimeError ? err.message : (err.message || 'Failed to prepare project runtime'));
@@ -1450,6 +1466,7 @@ fastify.post('/api/v1/session/start', { preValidation: [fastify.authenticate] },
         try {
             const localGit = new LocalGitService();
             await localGit.ensureGitInit(project);
+            stepDone('ensure_git_init');
         } catch (err) {
             fastify.log.warn({ err, sessionId, projectId: project.id }, '[sessions] ensureGitInit failed (non-fatal)');
         }
@@ -2001,6 +2018,15 @@ fastify.register(async function workspaceTerminalWsRoutes(app) {
                 let lastErr = null;
                 for (const shellCmd of shellCmds) {
                     try {
+                        // Probe first: remote sandboxes don't throw on a missing
+                        // binary (the process starts and exits 127), so without
+                        // this check the loop would latch onto a dead shell.
+                        if (ref) {
+                            const probe = await runtime.exec.exec('command', ['-v', shellCmd], {}, { runtimeRef: ref, timeoutMs: 5000 });
+                            if ((probe?.exitCode ?? 0) !== 0) {
+                                throw new AgentSpawnError(`shell "${shellCmd}" not found in sandbox`);
+                            }
+                        }
                         const handle = await runtime.exec.spawn(
                             shellCmd,
                             [],

@@ -8,6 +8,10 @@ function safeRel(p) {
     return s || '.';
 }
 
+// @blaxel/core exposes the filesystem as sandbox.fs:
+//   ls(path) -> Directory { name, path, files: File[], subdirectories: Subdirectory[] }
+//   find(path, { patterns, excludeHidden, ... }) -> { matches: [{ path, type }], total }
+//   read(path) / write(path, content) / mkdir(path) / rm(path, recursive)
 class BlaxelFsAdapter extends FsAdapter {
     constructor() {
         super();
@@ -26,38 +30,64 @@ class BlaxelFsAdapter extends FsAdapter {
         try {
             const sandbox = await this._getSandbox(name);
             const targetPath = rel === '.' ? cwd : `${cwd}/${rel}`.replace(/\/+/g, '/');
+            // Normalize trailing slash so path prefix slicing below works.
+            const base = targetPath.replace(/\/+$/, '') || '/';
 
-            const result = await sandbox.filesystem.listDirectory({
-                path: targetPath,
-                recursive: opts.depth !== 'single',
-            });
-
-            const entries = [];
-            const items = result?.entries || result || [];
-
-            for (const item of Array.isArray(items) ? items : []) {
-                const itemPath = item.path || item.name || '';
-                if (!itemPath || itemPath === '.' || itemPath === '..') continue;
-
-                let relPath = itemPath;
-                if (relPath.startsWith(targetPath)) {
-                    relPath = relPath.slice(targetPath.length).replace(/^\//, '');
-                }
-                if (!relPath) continue;
-                if (!opts.includeHidden && isHiddenWorkspacePath(relPath)) continue;
-
-                const entry = {
-                    name: itemPath.split('/').pop() || relPath,
-                    path: relPath,
-                    type: item.type === 'directory' ? 'directory' : 'file',
-                };
-                if (entry.type === 'file' && item.size != null) {
-                    entry.size = item.size;
-                }
-                entries.push(entry);
+            let entries = [];
+            if (opts.depth !== 'single') {
+                // Recursive listing via find (server-side walk).
+                const result = await sandbox.fs.find(base, {
+                    patterns: ['*'],
+                    excludeHidden: false,
+                });
+                const matches = result?.matches || [];
+                entries = matches
+                    .map((m) => {
+                        const itemPath = m.path || '';
+                        let relPath = itemPath.startsWith(`${base}/`)
+                            ? itemPath.slice(base.length + 1)
+                            : itemPath;
+                        return {
+                            relPath,
+                            type: m.type === 'directory' ? 'directory' : 'file',
+                            size: null,
+                        };
+                    })
+                    .filter((e) => e.relPath);
+            } else {
+                // Single-level listing via ls.
+                const dir = await sandbox.fs.ls(base);
+                const files = dir?.files || [];
+                const subdirs = dir?.subdirectories || [];
+                entries = [
+                    ...files.map((f) => ({
+                        relPath: f.path && f.path.startsWith(`${base}/`)
+                            ? f.path.slice(base.length + 1)
+                            : (f.name || ''),
+                        type: 'file',
+                        size: f.size != null ? f.size : null,
+                    })),
+                    ...subdirs.map((d) => ({
+                        relPath: d.path && d.path.startsWith(`${base}/`)
+                            ? d.path.slice(base.length + 1)
+                            : (d.name || ''),
+                        type: 'directory',
+                        size: null,
+                    })),
+                ].filter((e) => e.relPath);
             }
 
-            return entries;
+            const out = [];
+            for (const entry of entries) {
+                if (!opts.includeHidden && isHiddenWorkspacePath(entry.relPath)) continue;
+                out.push({
+                    name: entry.relPath.split('/').pop() || entry.relPath,
+                    path: entry.relPath,
+                    type: entry.type,
+                    ...(entry.type === 'file' && entry.size != null ? { size: entry.size } : {}),
+                });
+            }
+            return out;
         } catch (_) {
             return [];
         }
@@ -72,9 +102,11 @@ class BlaxelFsAdapter extends FsAdapter {
         try {
             const sandbox = await this._getSandbox(name);
             const targetPath = rel.startsWith('/') ? rel : `${cwd}/${rel}`.replace(/\/+/g, '/');
-
-            const result = await sandbox.filesystem.getFile({ path: targetPath });
-            return result?.content || result || '';
+            if (opts.encoding === 'buffer') {
+                const blob = await sandbox.fs.readBinary(targetPath);
+                return Buffer.from(await blob.arrayBuffer());
+            }
+            return await sandbox.fs.read(targetPath);
         } catch (e) {
             throw new RuntimeError(e.message || 'fs read error', 500);
         }
@@ -90,11 +122,22 @@ class BlaxelFsAdapter extends FsAdapter {
             const sandbox = await this._getSandbox(name);
             const targetPath = rel.startsWith('/') ? rel : `${cwd}/${rel}`.replace(/\/+/g, '/');
 
-            const result = await sandbox.filesystem.getFileInfo({ path: targetPath });
+            // No direct stat in the SDK: a successful ls means directory; otherwise
+            // look the file up in its parent's listing for size/mtime.
+            try {
+                await sandbox.fs.ls(targetPath);
+                return { type: 'directory', size: 0, mtime: null };
+            } catch (_) { /* not a directory */ }
+
+            const parent = targetPath.replace(/\/[^/]+$/, '') || '/';
+            const baseName = targetPath.split('/').pop();
+            const dir = await sandbox.fs.ls(parent);
+            const file = (dir?.files || []).find((f) => f.name === baseName || f.path === targetPath);
+            if (!file) throw new Error('not found');
             return {
-                type: result?.type === 'directory' ? 'directory' : 'file',
-                size: result?.size || 0,
-                mtime: result?.mtime || null,
+                type: 'file',
+                size: file.size != null ? file.size : 0,
+                mtime: file.lastModified ? Date.parse(file.lastModified) || null : null,
             };
         } catch (e) {
             throw new RuntimeError(e.message || 'fs stat error', 500);
@@ -110,11 +153,7 @@ class BlaxelFsAdapter extends FsAdapter {
         try {
             const sandbox = await this._getSandbox(name);
             const targetPath = rel.startsWith('/') ? rel : `${cwd}/${rel}`.replace(/\/+/g, '/');
-
-            await sandbox.filesystem.putFile({
-                path: targetPath,
-                body: content,
-            });
+            await sandbox.fs.write(targetPath, content);
         } catch (e) {
             throw new RuntimeError(e.message || 'fs write error', 500);
         }
@@ -129,8 +168,7 @@ class BlaxelFsAdapter extends FsAdapter {
         try {
             const sandbox = await this._getSandbox(name);
             const targetPath = rel.startsWith('/') ? rel : `${cwd}/${rel}`.replace(/\/+/g, '/');
-
-            await sandbox.filesystem.deleteFile({ path: targetPath });
+            await sandbox.fs.rm(targetPath, false);
         } catch (e) {
             throw new RuntimeError(e.message || 'fs delete error', 500);
         }
@@ -145,7 +183,16 @@ class BlaxelFsAdapter extends FsAdapter {
 
         try {
             const sandbox = await this._getSandbox(name);
-            await sandbox.filesystem.renameFile({ from: fromPath, to: toPath });
+            // The SDK has no rename API; shell out to mv inside the sandbox.
+            // ProcessRequest only accepts a single command string, so quote paths.
+            const q = (p) => `'${String(p).replace(/'/g, `'\''`)}'`;
+            const result = await sandbox.process.exec({
+                command: `mv -f -- ${q(fromPath)} ${q(toPath)}`,
+                waitForCompletion: true,
+            });
+            if (result && typeof result.exitCode === 'number' && result.exitCode !== 0) {
+                throw new Error(`mv exited with ${result.exitCode}: ${result.stderr || ''}`);
+            }
         } catch (e) {
             throw new RuntimeError(e.message || 'fs move error', 500);
         }
@@ -160,8 +207,7 @@ class BlaxelFsAdapter extends FsAdapter {
         try {
             const sandbox = await this._getSandbox(name);
             const targetPath = rel.startsWith('/') ? rel : `${cwd}/${rel}`.replace(/\/+/g, '/');
-
-            await sandbox.filesystem.deleteDirectory({ path: targetPath });
+            await sandbox.fs.rm(targetPath, true);
         } catch (e) {
             throw new RuntimeError(e.message || 'fs rmdir error', 500);
         }
@@ -192,12 +238,7 @@ class BlaxelFsAdapter extends FsAdapter {
         try {
             const sandbox = await this._getSandbox(name);
             const targetPath = rel.startsWith('/') ? rel : `${cwd}/${rel}`.replace(/\/+/g, '/');
-
-            await sandbox.filesystem.putDirectory({
-                path: targetPath,
-                body: '',
-                createParents: true,
-            });
+            await sandbox.fs.mkdir(targetPath);
         } catch (e) {
             throw new RuntimeError(e.message || 'fs mkdirp error', 500);
         }

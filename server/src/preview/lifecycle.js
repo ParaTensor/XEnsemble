@@ -27,8 +27,24 @@ async function reconcileStaleRunningPreviews() {
             eq(schema.deployments.status, 'running'),
         ));
 
+    const runtime = getRuntime();
+    if (typeof runtime.provider?.ensureInitialized === 'function') {
+        try { await runtime.provider.ensureInitialized(); } catch (err) {
+            console.warn('[lifecycle] remote preview provider initialization failed:', err.message);
+        }
+    }
     for (const row of rows) {
         if (previewRegistry.get(row.id)) continue;
+
+        // Remote providers (e.g. Blaxel) keep preview state inside the sandbox;
+        // recover it through the provider instead of probing localhost.
+        if (typeof runtime.preview?.recoverPreview === 'function') {
+            const remoteEntry = await runtime.preview.recoverPreview(row);
+            if (remoteEntry) {
+                previewRegistry.set(row.id, remoteEntry, { publicUrl: row.publicUrl });
+                continue;
+            }
+        }
 
         const workspacePath = await resolveWorkspacePath(row);
         const persisted = getPreviewPort(workspacePath, row.id);

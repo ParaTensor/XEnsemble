@@ -7,7 +7,6 @@ import OnboardingWizard from '../components/OnboardingWizard';
 import WorkspaceSwitcher from '../components/WorkspaceSwitcher';
 import SessionsTopBar from '../components/SessionsTopBar';
 import SessionSidebar from '../components/SessionSidebar';
-import ChatPanel from '../components/ChatPanel';
 import WorkstationPanel from '../components/WorkstationPanel';
 import RepoImportDialog from '../components/git/RepoImportDialog';
 import GitStatusBar from '../components/git/GitStatusBar';
@@ -1248,6 +1247,7 @@ export default React.forwardRef(function Sessions({
                   onSelectSession({ ...session, projectName });
                 }}
                 onNewSession={() => openLaunchModal('session')}
+                onDeleteSession={(sessionId) => setDeleteConfirmSession({ sessionId })}
                 prefs={loadSidebarPrefs()}
               />
 
@@ -1294,16 +1294,21 @@ export default React.forwardRef(function Sessions({
                   </div>
                 ) : (
                   <>
-                    {/* Center: Chat Panel */}
-                    <ChatPanel
-                      sessionId={activeSession.sessionId}
-                      agentName={activeSession.agentName}
-                      projectName={activeSession.projectName}
-                      isProcessing={false}
-                      onSendMessage={(text) => {
-                        console.log('Send message:', text);
-                      }}
-                    />
+                    {/* Center: real agent terminal (WS-connected) */}
+                    <div
+                      className="flex min-h-0 flex-1 flex-col overflow-hidden"
+                      style={{ backgroundColor: preset?.xterm?.background }}
+                    >
+                      <AgentConsole
+                        key={activeSession.sessionId}
+                        sessionId={activeSession.sessionId}
+                        reconnectVersion={reconnectVersion}
+                        onSessionEnd={handleSessionEnd}
+                        onSessionConnected={handleSessionConnected}
+                        sessionLive={sessionAlive}
+                        sessionWakeable={sessionWakeable}
+                      />
+                    </div>
 
                     {/* Right: Workstation Panel */}
                     {panelOpen && (

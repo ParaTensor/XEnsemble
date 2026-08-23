@@ -210,26 +210,20 @@ class LocalGitService {
     }
 
     async _initRepoViaRuntime(project) {
-        const bare = bareRepoPath(project.id);
-
-        fs.mkdirSync(bare, { recursive: true });
-        await hostGit(bare, ['init', '--bare', '-b', 'main']);
-
+        // The workspace is inside a remote sandbox (Blaxel/K8s), so a host
+        // filesystem path cannot be used as a guest git remote. Keep the git
+        // repository in the sandbox; external Git providers are handled above.
         const { workspacePath } = await this.ensureProjectRuntime(project);
         await this._git(workspacePath, ['init', '-b', 'main']);
         await this._git(workspacePath, ['config', 'user.email', 'xensemble@local']);
         await this._git(workspacePath, ['config', 'user.name', 'XEnsemble']);
-        try {
-            await this._git(workspacePath, ['remote', 'add', 'origin', bare]);
-        } catch (err) {
-            if (!/remote origin already exists/i.test(String(err.message))) throw err;
-            await this._git(workspacePath, ['remote', 'set-url', 'origin', bare]);
-        }
 
         const runtimeFs = getRuntime().fs;
-        const ignoreExists = await runtimeFs.exists(workspacePath, '.gitignore');
+        const runtimeRef = this._lastRuntimeRef;
+        const fsOpts = runtimeRef ? { runtimeRef } : {};
+        const ignoreExists = await runtimeFs.exists(workspacePath, '.gitignore', fsOpts);
         if (!ignoreExists) {
-            await runtimeFs.fsWrite(workspacePath, '.gitignore', GITIGNORE_TEMPLATE);
+            await runtimeFs.fsWrite(workspacePath, '.gitignore', GITIGNORE_TEMPLATE, fsOpts);
         }
 
         await this._git(workspacePath, ['add', '--', '.gitignore']);
@@ -240,16 +234,12 @@ class LocalGitService {
             ]);
         }
 
-        try {
-            await this._git(workspacePath, ['push', '-u', 'origin', 'main']);
-        } catch {
-            // Best-effort
-        }
-
         await db.update(schema.projects).set({
             repoProvider: 'local_git',
             workspaceMode: 'git',
-            repoUrl: bare,
+            // No host path is visible from a remote sandbox. A future durable
+            // workspace store/remote Git provider can populate repoUrl.
+            repoUrl: project.repoUrl || null,
             repoDefaultBranch: 'main',
             cloneStatus: 'ready',
             cloneError: null,
@@ -264,10 +254,10 @@ class LocalGitService {
             subjectType: 'project',
             subjectId: project.id,
             type: 'local_git.initialized',
-            data: { bareRepoPath: bare, initialSha: sha },
+            data: { initialSha: sha, remoteWorkspace: true },
         });
 
-        return { bareRepoPath: bare, workspacePath, initialSha: sha };
+        return { bareRepoPath: null, workspacePath, initialSha: sha };
     }
 
     /**
@@ -307,11 +297,20 @@ class LocalGitService {
         const { workspacePath } = await this.ensureProjectRuntime(project);
         try {
             await this._git(workspacePath, ['rev-parse', '--git-dir']);
-            if (project.repoProvider !== 'local_git' || project.workspaceMode !== 'git') {
+            // A previous interrupted bootstrap may have created .git without
+            // creating an initial commit. Treat that as uninitialized so that
+            // checkpoint/log/restore operations have a valid HEAD.
+            await this._git(workspacePath, ['rev-parse', '--verify', 'HEAD']);
+            const expectedRepoUrl = usesHostWorkspace()
+                ? (project.repoUrl || bareRepoPath(project.id))
+                : null;
+            if (project.repoProvider !== 'local_git'
+                || project.workspaceMode !== 'git'
+                || project.repoUrl !== expectedRepoUrl) {
                 await db.update(schema.projects).set({
                     repoProvider: 'local_git',
                     workspaceMode: 'git',
-                    repoUrl: project.repoUrl || bareRepoPath(project.id),
+                    repoUrl: expectedRepoUrl,
                     repoDefaultBranch: project.repoDefaultBranch || 'main',
                     cloneStatus: 'ready',
                     cloneError: null,
@@ -357,11 +356,14 @@ class LocalGitService {
             const headResult = await this._git(workspacePath, ['rev-parse', 'HEAD']);
             sha = headResult.stdout.trim();
 
-            // Push to bare repo (best-effort)
-            try {
-                await this._git(workspacePath, ['push', 'origin', 'HEAD']);
-            } catch {
-                // Push failure is non-fatal for checkpoint
+            // A host bare-repo push is valid only for local/boxlite host-backed
+            // workspaces. Remote sandboxes cannot see the control-plane FS path.
+            if (usesHostWorkspace()) {
+                try {
+                    await this._git(workspacePath, ['push', 'origin', 'HEAD']);
+                } catch {
+                    // Push failure is non-fatal for checkpoint
+                }
             }
 
             // Record checkpoint in DB
@@ -458,8 +460,11 @@ class LocalGitService {
                     await this._git(workspacePath, ['add', '-A']);
                     const autoMsg = `auto-checkpoint: pre-restore safety snapshot ${new Date().toISOString()}`;
                     await this._git(workspacePath, ['commit', '-m', autoMsg]);
-                    // Best-effort push to bare repo for backup.
-                    try { await this._git(workspacePath, ['push', 'origin', 'HEAD']); } catch { /* non-fatal */ }
+                    // Best-effort push to the host bare repo only when the
+                    // workspace is host-backed.
+                    if (usesHostWorkspace()) {
+                        try { await this._git(workspacePath, ['push', 'origin', 'HEAD']); } catch { /* non-fatal */ }
+                    }
                 }
             } catch (autoCkptErr) {
                 // Non-fatal: log but proceed with restore even if auto-checkpoint fails.

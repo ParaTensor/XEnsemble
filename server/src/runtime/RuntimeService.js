@@ -110,7 +110,14 @@ async function ensureProjectRuntime(project, opts = {}) {
             ));
         const runtimeRow = rows[0];
         const workspacePath = runtimeRow?.endpoint || project.serverPath;
-        if (runtimeRow?.status === 'ready' && runtimeRow.runtimeRef && workspacePath) {
+        if (runtimeRow?.status === 'ready' && runtimeRow.provider === PROVIDER && runtimeRow.runtimeRef && workspacePath) {
+            // Passive callers (git/FS/preview) may be the first runtime caller
+            // after a control-plane restart. Give providers with lazy SDK auth
+            // a chance to initialize before returning the cached row.
+            const provider = getRuntime().provider;
+            if (typeof provider.ensureInitialized === 'function') {
+                await provider.ensureInitialized();
+            }
             const result = {
                 runtime: runtimeRow,
                 workspacePath,
@@ -180,8 +187,11 @@ async function ensureProjectRuntime(project, opts = {}) {
         const provision = await rt.provider.ensureReady(project, {
             runtimeId: runtimeRow.id,
             forceRecreate: !!opts.forceRecreate,
+            // Blaxel sandboxes share a base image; the agent CLI is installed
+            // into the sandbox at provision time (idempotent), so the provider
+            // needs agentId too.
+            agentId: opts.agentId,
             ...(isBoxLite ? {
-                agentId: opts.agentId,
                 image,
                 storedImage: storedSpecs.image || null,
                 storedMount: storedSpecs.workspace_mount || null,
@@ -205,11 +215,13 @@ async function ensureProjectRuntime(project, opts = {}) {
         const specsJson = Object.keys(nextSpecs).length > 0 ? JSON.stringify(nextSpecs) : runtimeRow.specs;
 
         if (
-            runtimeRow.endpoint !== workspacePath
+            runtimeRow.provider !== PROVIDER
+            || runtimeRow.endpoint !== workspacePath
             || runtimeRow.runtimeRef !== provision.runtimeRef
             || runtimeRow.specs !== specsJson
         ) {
             await db.update(schema.runtimes).set({
+                provider: PROVIDER,
                 runtimeRef: provision.runtimeRef,
                 endpoint: workspacePath,
                 specs: specsJson,
@@ -218,6 +230,7 @@ async function ensureProjectRuntime(project, opts = {}) {
             }).where(eq(schema.runtimes.id, runtimeRow.id));
             runtimeRow = {
                 ...runtimeRow,
+                provider: PROVIDER,
                 runtimeRef: provision.runtimeRef,
                 endpoint: workspacePath,
                 specs: specsJson,
