@@ -1310,9 +1310,6 @@ export default React.forwardRef(function Sessions({
                       <WorkstationPanel
                         projectId={activeSession.projectId}
                         changeCount={gitChanges?.unstaged?.length || 0}
-                        previewDevice={previewDevice}
-                        onSetPreviewDevice={setPreviewDevice}
-                        onReloadPreview={() => preview?.refresh?.()}
                       />
                     )}
                   </>
