@@ -1255,22 +1255,25 @@ export default React.forwardRef(function Sessions({
               {activeSession ? (
                 sessionPending ? (
                   <div className="flex-1 flex items-center justify-center bg-zinc-950 p-8 text-center">
-                    <Loader2 className="w-8 h-8 text-zinc-500 animate-spin mb-4" strokeWidth={1.5} />
-                    <h3 className="text-lg font-semibold text-zinc-100 mb-1.5">Preparing your environment…</h3>
-                    <p className="text-sm text-zinc-500 max-w-sm">
-                      Pulling image and starting virtual machine. This usually takes less than a minute.
-                    </p>
+                    <div className="flex flex-col items-center">
+                      <Loader2 className="w-8 h-8 text-zinc-500 animate-spin mb-4" strokeWidth={1.5} />
+                      <h3 className="text-lg font-semibold text-zinc-100 mb-1.5">Preparing your environment…</h3>
+                      <p className="text-sm text-zinc-500 max-w-sm">
+                        Pulling image and starting virtual machine. This usually takes less than a minute.
+                      </p>
+                    </div>
                   </div>
                 ) : sessionFailed ? (
                   <div className="flex-1 flex items-center justify-center bg-zinc-950 p-8 text-center">
-                    <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-red-500/10 mb-5">
-                      <X className="w-7 h-7 text-red-400" strokeWidth={1.5} />
-                    </div>
-                    <h3 className="text-lg font-semibold text-zinc-100 mb-1.5">Session failed to start</h3>
-                    <p className="text-sm text-zinc-500 max-w-md mb-5">
-                      {activeSessionMeta?.provisioningError || 'An unexpected error occurred during provisioning.'}
-                    </p>
-                    <div className="flex items-center gap-2">
+                    <div className="flex flex-col items-center">
+                      <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-red-500/10 mb-5">
+                        <X className="w-7 h-7 text-red-400" strokeWidth={1.5} />
+                      </div>
+                      <h3 className="text-lg font-semibold text-zinc-100 mb-1.5">Session failed to start</h3>
+                      <p className="text-sm text-zinc-500 max-w-md mb-5">
+                        {activeSessionMeta?.provisioningError || 'An unexpected error occurred during provisioning.'}
+                      </p>
+                      <div className="flex items-center gap-2">
                       <button
                         type="button"
                         onClick={() => handleDeleteSession(activeSession.sessionId)}
@@ -1286,6 +1289,7 @@ export default React.forwardRef(function Sessions({
                       >
                         Dismiss
                       </button>
+                    </div>
                     </div>
                   </div>
                 ) : (
